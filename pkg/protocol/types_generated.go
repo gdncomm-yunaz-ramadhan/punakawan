@@ -1048,6 +1048,9 @@ type KnowledgeRecord struct {
 	// Extraction corresponds to the JSON schema field "extraction".
 	Extraction KnowledgeRecordExtraction `json:"extraction" yaml:"extraction" mapstructure:"extraction"`
 
+	// Formatting conventions, present on convention-profile records. See §27.3.
+	Formatting *KnowledgeRecordFormatting `json:"formatting,omitempty,omitzero" yaml:"formatting,omitempty" mapstructure:"formatting,omitempty"`
+
 	// Id corresponds to the JSON schema field "id".
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
@@ -1059,6 +1062,9 @@ type KnowledgeRecord struct {
 
 	// Status corresponds to the JSON schema field "status".
 	Status string `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Structural conventions, present on convention-profile records. See §27.3.
+	Structure *KnowledgeRecordStructure `json:"structure,omitempty,omitzero" yaml:"structure,omitempty" mapstructure:"structure,omitempty"`
 
 	// Title corresponds to the JSON schema field "title".
 	Title string `json:"title" yaml:"title" mapstructure:"title"`
@@ -1135,6 +1141,18 @@ func (j *KnowledgeRecordExtraction) UnmarshalJSON(value []byte) error {
 	}
 	*j = KnowledgeRecordExtraction(plain)
 	return nil
+}
+
+// Formatting conventions, present on convention-profile records. See §27.3.
+type KnowledgeRecordFormatting struct {
+	// Editorconfig corresponds to the JSON schema field "editorconfig".
+	Editorconfig *bool `json:"editorconfig,omitempty,omitzero" yaml:"editorconfig,omitempty" mapstructure:"editorconfig,omitempty"`
+
+	// Formatters corresponds to the JSON schema field "formatters".
+	Formatters []string `json:"formatters,omitempty,omitzero" yaml:"formatters,omitempty" mapstructure:"formatters,omitempty"`
+
+	// Linters corresponds to the JSON schema field "linters".
+	Linters []string `json:"linters,omitempty,omitzero" yaml:"linters,omitempty" mapstructure:"linters,omitempty"`
 }
 
 type KnowledgeRecordRelationsElem struct {
@@ -1281,6 +1299,21 @@ func (j *KnowledgeRecordSource) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// Structural conventions, present on convention-profile records. See §27.3.
+type KnowledgeRecordStructure struct {
+	// Layout corresponds to the JSON schema field "layout".
+	Layout *string `json:"layout,omitempty,omitzero" yaml:"layout,omitempty" mapstructure:"layout,omitempty"`
+
+	// NamingConvention corresponds to the JSON schema field "naming_convention".
+	NamingConvention *string `json:"naming_convention,omitempty,omitzero" yaml:"naming_convention,omitempty" mapstructure:"naming_convention,omitempty"`
+
+	// PackageManager corresponds to the JSON schema field "package_manager".
+	PackageManager *string `json:"package_manager,omitempty,omitzero" yaml:"package_manager,omitempty" mapstructure:"package_manager,omitempty"`
+
+	// TestFramework corresponds to the JSON schema field "test_framework".
+	TestFramework []string `json:"test_framework,omitempty,omitzero" yaml:"test_framework,omitempty" mapstructure:"test_framework,omitempty"`
+}
+
 type KnowledgeRecordType string
 
 const KnowledgeRecordTypeAcceptanceCriterion KnowledgeRecordType = "acceptance-criterion"
@@ -1292,6 +1325,7 @@ const KnowledgeRecordTypeChangeSet KnowledgeRecordType = "change-set"
 const KnowledgeRecordTypeClaim KnowledgeRecordType = "claim"
 const KnowledgeRecordTypeComponent KnowledgeRecordType = "component"
 const KnowledgeRecordTypeConstraint KnowledgeRecordType = "constraint"
+const KnowledgeRecordTypeConventionProfile KnowledgeRecordType = "convention-profile"
 const KnowledgeRecordTypeDataContract KnowledgeRecordType = "data-contract"
 const KnowledgeRecordTypeDecision KnowledgeRecordType = "decision"
 const KnowledgeRecordTypeDeploymentUnit KnowledgeRecordType = "deployment-unit"
@@ -1333,6 +1367,7 @@ var enumValues_KnowledgeRecordType = []interface{}{
 	"person-or-team",
 	"risk",
 	"review-finding",
+	"convention-profile",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

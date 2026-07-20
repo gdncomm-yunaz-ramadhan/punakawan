@@ -33,7 +33,8 @@ export interface KnowledgeRecord {
     | "external-reference"
     | "person-or-team"
     | "risk"
-    | "review-finding";
+    | "review-finding"
+    | "convention-profile";
   status: string;
   title: string;
   source: {
@@ -79,4 +80,21 @@ export interface KnowledgeRecord {
       | "resolves";
     target: string;
   }[];
+  /**
+   * Formatting conventions, present on convention-profile records. See §27.3.
+   */
+  formatting?: {
+    editorconfig?: boolean;
+    linters?: string[];
+    formatters?: string[];
+  };
+  /**
+   * Structural conventions, present on convention-profile records. See §27.3.
+   */
+  structure?: {
+    layout?: string;
+    package_manager?: string;
+    test_framework?: string[];
+    naming_convention?: string;
+  };
 }

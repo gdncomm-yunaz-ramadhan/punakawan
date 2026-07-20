@@ -15,7 +15,8 @@
         "acceptance-criterion", "claim", "assumption", "constraint", "decision",
         "question", "answer", "api-contract", "data-contract", "browser-flow",
         "test-case", "deployment-unit", "work-item", "change-set", "evidence",
-        "external-reference", "person-or-team", "risk", "review-finding"
+        "external-reference", "person-or-team", "risk", "review-finding",
+        "convention-profile"
       ]
     },
     "status": { "type": "string" },
@@ -76,6 +77,27 @@
           },
           "target": { "type": "string" }
         }
+      }
+    },
+    "formatting": {
+      "description": "Formatting conventions, present on convention-profile records. See §27.3.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "editorconfig": { "type": "boolean" },
+        "linters": { "type": "array", "items": { "type": "string" } },
+        "formatters": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "structure": {
+      "description": "Structural conventions, present on convention-profile records. See §27.3.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layout": { "type": "string" },
+        "package_manager": { "type": "string" },
+        "test_framework": { "type": "array", "items": { "type": "string" } },
+        "naming_convention": { "type": "string" }
       }
     }
   }
