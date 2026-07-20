@@ -1,0 +1,25 @@
+internal/taskcontext/build_test.go
+  fd931d7b51a068b5 1-280
+internal/taskcontext/taskcontext.go
+  fd931d7b51a068b5 1-113,115-118,120-124,126-128,130-131,133-134,136-138,140-142,144-149,156-161,165-282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "a8670aa290c1370523c7f8ef099e489044bb5a9c",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2161,
+      "overriden_lines": 0
+    }
+  }
+}
