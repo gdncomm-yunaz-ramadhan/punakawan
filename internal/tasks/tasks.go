@@ -104,6 +104,71 @@ type NewTaskContractInput struct {
 // bd CLI (dir must contain an initialized bd project); store is the
 // knowledge Store the tracked-by relation is persisted into.
 func CreateTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, req protocol.KnowledgeRecord, in NewTaskContractInput) (protocol.TaskContract, error) {
+	return createTaskForRequirement(ctx, sup, dir, store, req, in)
+}
+
+// ReportDiscoveredWork records newly discovered work found mid-execution of
+// discoveredFromTaskID, per §10.4's discovery rule: "Petruk must not
+// silently increase scope. Newly discovered work becomes a discovered-from
+// task and is reviewed by Semar."
+//
+// It does exactly what CreateTaskForRequirement does (same requirement-type
+// check, TaskContract construction, Beads issue creation, and tracked-by
+// relation persistence via createTaskForRequirement), plus two additions
+// that make the discovery rule hold:
+//
+//  1. in.DiscoveredFrom is forced to point at discoveredFromTaskID. If the
+//     caller already set in.DiscoveredFrom to a different, non-empty value,
+//     that is treated as a conflicting instruction and rejected with an
+//     error rather than silently overwritten — the caller's disagreeing
+//     value is more likely a bug on the caller's side than something this
+//     function should paper over.
+//  2. The created Beads issue's labels always include "discovered" and
+//     "needs-semar-review" in addition to whatever in.BeadsLabels the
+//     caller supplied. Semar (an external MCP-client role per the existing
+//     M3 architecture) can then find every discovered task via
+//     `bd list --label needs-semar-review` without this package needing to
+//     build a dedicated review-queue subsystem.
+func ReportDiscoveredWork(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, req protocol.KnowledgeRecord, discoveredFromTaskID string, in NewTaskContractInput) (protocol.TaskContract, error) {
+	if discoveredFromTaskID == "" {
+		return protocol.TaskContract{}, fmt.Errorf("tasks: discovered-from task id is required")
+	}
+	if in.DiscoveredFrom != nil && *in.DiscoveredFrom != discoveredFromTaskID {
+		return protocol.TaskContract{}, fmt.Errorf("tasks: conflicting discovered_from: input specified %q, but discoveredFromTaskID is %q", *in.DiscoveredFrom, discoveredFromTaskID)
+	}
+	in.DiscoveredFrom = &discoveredFromTaskID
+	in.BeadsLabels = appendMissingLabels(in.BeadsLabels, "discovered", "needs-semar-review")
+
+	return createTaskForRequirement(ctx, sup, dir, store, req, in)
+}
+
+// appendMissingLabels returns labels with each of extra appended, skipping
+// any that are already present, so repeated calls (or a caller that already
+// supplied one of these labels) do not produce duplicate `bd create
+// --labels` entries.
+func appendMissingLabels(labels []string, extra ...string) []string {
+	for _, e := range extra {
+		found := false
+		for _, l := range labels {
+			if l == e {
+				found = true
+				break
+			}
+		}
+		if !found {
+			labels = append(labels, e)
+		}
+	}
+	return labels
+}
+
+// createTaskForRequirement is the shared implementation behind
+// CreateTaskForRequirement and ReportDiscoveredWork: it builds the
+// protocol.TaskContract, creates the Beads issue, and persists the
+// tracked-by relation. See CreateTaskForRequirement's doc comment for the
+// full behavior; ReportDiscoveredWork's callers reach this after adjusting
+// in.DiscoveredFrom and in.BeadsLabels.
+func createTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, req protocol.KnowledgeRecord, in NewTaskContractInput) (protocol.TaskContract, error) {
 	if req.Type != protocol.KnowledgeRecordTypeRequirement {
 		return protocol.TaskContract{}, fmt.Errorf("tasks: %s: expected a requirement record, got type %q", req.Id, req.Type)
 	}
@@ -158,6 +223,117 @@ func CreateTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir st
 	}
 
 	return contract, nil
+}
+
+// GraphItem is one task to create as part of a batch GenerateGraph call.
+// LocalKey identifies the item only within that call (it is never
+// persisted), so DependsOn can reference sibling items before any of them
+// have a real Beads ID.
+type GraphItem struct {
+	LocalKey      string
+	RequirementID string
+	Input         NewTaskContractInput
+	DependsOn     []GraphDependency
+}
+
+// GraphDependency is a dependency edge from one GraphItem onto another
+// item in the same GenerateGraph call, referenced by LocalKey.
+type GraphDependency struct {
+	LocalKey string
+	Type     protocol.TaskContractDependenciesElemType
+}
+
+// GraphResult pairs a created TaskContract with the LocalKey it was built
+// from.
+type GraphResult struct {
+	LocalKey string
+	Contract protocol.TaskContract
+}
+
+// GenerateGraph batch-creates a set of TaskContracts and wires the
+// dependency edges between them, per §10.1-§10.4. Punakawan never calls an
+// LLM itself (§28): the calling role (Petruk/Semar) does the actual
+// decomposition; this function only creates and wires the resulting graph
+// deterministically, in two passes:
+//
+//  1. Every LocalKey and DependsOn reference is validated up front (unique
+//     keys, no reference to an unknown key) before anything is created, so
+//     a malformed graph fails with zero side effects rather than partially
+//     creating Beads issues.
+//  2. Each item's Beads issue and TaskContract are created via the same
+//     createTaskForRequirement path CreateTaskForRequirement uses. Once
+//     every item has a Beads ID, WireDependency is called for each
+//     DependsOn edge, translating LocalKeys to real Beads IDs.
+//
+// If an item's Input.Dependencies is left empty, it is populated from
+// DependsOn (using each target's own Input.TaskID as the contract-level
+// reference) so callers do not have to state the same edges twice; an
+// explicitly supplied Input.Dependencies is left untouched.
+func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, items []GraphItem) ([]GraphResult, error) {
+	byKey := make(map[string]*GraphItem, len(items))
+	for i := range items {
+		item := &items[i]
+		if item.LocalKey == "" {
+			return nil, fmt.Errorf("tasks: item %d: local_key is required", i)
+		}
+		if _, dup := byKey[item.LocalKey]; dup {
+			return nil, fmt.Errorf("tasks: duplicate local_key %q", item.LocalKey)
+		}
+		byKey[item.LocalKey] = item
+	}
+	for _, item := range items {
+		for _, dep := range item.DependsOn {
+			if _, ok := byKey[dep.LocalKey]; !ok {
+				return nil, fmt.Errorf("tasks: item %q: depends_on unknown local_key %q", item.LocalKey, dep.LocalKey)
+			}
+		}
+	}
+
+	for i := range items {
+		item := &items[i]
+		if len(item.Input.Dependencies) > 0 {
+			continue
+		}
+		for _, dep := range item.DependsOn {
+			item.Input.Dependencies = append(item.Input.Dependencies, protocol.TaskContractDependenciesElem{
+				Type: dep.Type,
+				Id:   byKey[dep.LocalKey].Input.TaskID,
+			})
+		}
+	}
+
+	results := make([]GraphResult, len(items))
+	resultByKey := make(map[string]GraphResult, len(items))
+	for i, item := range items {
+		req, err := store.Get(item.RequirementID)
+		if err != nil {
+			return nil, fmt.Errorf("tasks: item %q: load requirement %q: %w", item.LocalKey, item.RequirementID, err)
+		}
+		contract, err := createTaskForRequirement(ctx, sup, dir, store, req, item.Input)
+		if err != nil {
+			return nil, fmt.Errorf("tasks: item %q: %w", item.LocalKey, err)
+		}
+		results[i] = GraphResult{LocalKey: item.LocalKey, Contract: contract}
+		resultByKey[item.LocalKey] = results[i]
+	}
+
+	for _, item := range items {
+		from := resultByKey[item.LocalKey]
+		if from.Contract.BeadsEpic == nil {
+			continue
+		}
+		for _, dep := range item.DependsOn {
+			to := resultByKey[dep.LocalKey]
+			if to.Contract.BeadsEpic == nil {
+				continue
+			}
+			if err := WireDependency(ctx, sup, dir, *from.Contract.BeadsEpic, *to.Contract.BeadsEpic, dep.Type); err != nil {
+				return nil, fmt.Errorf("tasks: wire dependency %q -> %q: %w", item.LocalKey, dep.LocalKey, err)
+			}
+		}
+	}
+
+	return results, nil
 }
 
 // WireDependency creates a Beads dependency edge matching a

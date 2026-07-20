@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -257,5 +258,238 @@ func TestCreateTaskForRequirementNonJiraSourceLeavesJiraKeyEmpty(t *testing.T) {
 	}
 	if contract.JiraKey != nil {
 		t.Fatalf("expected JiraKey to be nil for non-jira source, got %v", *contract.JiraKey)
+	}
+}
+
+// TestReportDiscoveredWorkEndToEnd exercises §10.4's discovery rule: the
+// resulting TaskContract.DiscoveredFrom must point at the discovering task,
+// and the created Beads issue must carry both "discovered" and
+// "needs-semar-review" labels (in addition to any caller-supplied labels)
+// so Semar can find it via `bd list --label needs-semar-review` without a
+// dedicated review-queue subsystem.
+func TestReportDiscoveredWorkEndToEnd(t *testing.T) {
+	requireBinary(t, "dolt")
+	requireBinary(t, "bd")
+
+	root := t.TempDir()
+	sup := tools.New(root)
+
+	store := newTestStore(t, sup, root)
+	newTestBeadsProject(t, sup, root)
+
+	req := requirementRecord()
+	req.Id = "pkw:req/checkout-platform/REQ-2026-0185"
+	if err := store.Put(req); err != nil {
+		t.Fatalf("seed requirement Put: %v", err)
+	}
+
+	const discoveringTaskID = "task-refund-api"
+	contract, err := ReportDiscoveredWork(context.Background(), sup, root, store, req, discoveringTaskID, NewTaskContractInput{
+		TaskID:             "task-refund-retry-handling",
+		Repository:         "checkout-platform",
+		Scope:              "Handle refund gateway timeouts discovered while implementing the refund API",
+		AcceptanceCriteria: []string{"Refund retries on gateway timeout"},
+		DefinitionOfDone:   "Retry handling implemented and tested",
+		BeadsType:          "task",
+		BeadsLabels:        []string{"requirement"},
+	})
+	if err != nil {
+		t.Fatalf("ReportDiscoveredWork: %v", err)
+	}
+
+	if contract.DiscoveredFrom == nil || *contract.DiscoveredFrom != discoveringTaskID {
+		t.Fatalf("DiscoveredFrom = %v, want %q", contract.DiscoveredFrom, discoveringTaskID)
+	}
+	if contract.BeadsEpic == nil || *contract.BeadsEpic == "" {
+		t.Fatal("expected BeadsEpic to be set to the created bd issue id")
+	}
+
+	res, err := sup.Run(context.Background(), tools.Spec{
+		Name: "bd",
+		Args: []string{"show", *contract.BeadsEpic, "--json"},
+		Dir:  root,
+	})
+	if err != nil {
+		t.Fatalf("bd show: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("bd show failed: %s", res.Stderr)
+	}
+
+	// bd show --json emits an array of issues (one per requested id), unlike
+	// bd create --json's single object.
+	var shown []struct {
+		Labels []string `json:"labels"`
+	}
+	if err := json.Unmarshal(res.Stdout, &shown); err != nil {
+		t.Fatalf("decode bd show output: %v", err)
+	}
+	if len(shown) != 1 {
+		t.Fatalf("expected exactly one issue from bd show, got %d", len(shown))
+	}
+	for _, want := range []string{"requirement", "discovered", "needs-semar-review"} {
+		found := false
+		for _, l := range shown[0].Labels {
+			if l == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected label %q on created issue, got %v", want, shown[0].Labels)
+		}
+	}
+}
+
+// TestGenerateGraphRejectsUnknownLocalKey confirms a DependsOn edge onto a
+// nonexistent LocalKey is rejected before anything is created (no dolt/bd
+// required, since the failure happens in the up-front validation pass).
+func TestGenerateGraphRejectsUnknownLocalKey(t *testing.T) {
+	items := []GraphItem{
+		{
+			LocalKey:      "api",
+			RequirementID: "pkw:req/checkout-platform/REQ-2026-0182",
+			Input:         NewTaskContractInput{TaskID: "task-api", AcceptanceCriteria: []string{"c"}},
+			DependsOn:     []GraphDependency{{LocalKey: "does-not-exist", Type: protocol.TaskContractDependenciesElemTypeBlocks}},
+		},
+	}
+	if _, err := GenerateGraph(context.Background(), nil, "", nil, items); err == nil {
+		t.Fatal("expected error for depends_on referencing an unknown local_key")
+	}
+}
+
+// TestGenerateGraphRejectsDuplicateLocalKey confirms duplicate LocalKeys are
+// rejected up front.
+func TestGenerateGraphRejectsDuplicateLocalKey(t *testing.T) {
+	items := []GraphItem{
+		{LocalKey: "api", RequirementID: "req-1", Input: NewTaskContractInput{TaskID: "task-1", AcceptanceCriteria: []string{"c"}}},
+		{LocalKey: "api", RequirementID: "req-1", Input: NewTaskContractInput{TaskID: "task-2", AcceptanceCriteria: []string{"c"}}},
+	}
+	if _, err := GenerateGraph(context.Background(), nil, "", nil, items); err == nil {
+		t.Fatal("expected error for duplicate local_key")
+	}
+}
+
+// TestGenerateGraphEndToEnd exercises §10.2's task graph example: a
+// migration task that blocks an API implementation task, generated as a
+// single batch with dependencies wired between them.
+func TestGenerateGraphEndToEnd(t *testing.T) {
+	requireBinary(t, "dolt")
+	requireBinary(t, "bd")
+
+	root := t.TempDir()
+	sup := tools.New(root)
+
+	store := newTestStore(t, sup, root)
+	newTestBeadsProject(t, sup, root)
+
+	req := requirementRecord()
+	req.Id = "pkw:req/checkout-platform/REQ-2026-0186"
+	if err := store.Put(req); err != nil {
+		t.Fatalf("seed requirement Put: %v", err)
+	}
+
+	items := []GraphItem{
+		{
+			LocalKey:      "migration",
+			RequirementID: req.Id,
+			Input: NewTaskContractInput{
+				TaskID:             "task-refund-migration",
+				Repository:         "checkout-platform",
+				Scope:              "Create database migration",
+				AcceptanceCriteria: []string{"Migration applies cleanly"},
+				DefinitionOfDone:   "Migration merged",
+				BeadsType:          "task",
+			},
+		},
+		{
+			LocalKey:      "api",
+			RequirementID: req.Id,
+			Input: NewTaskContractInput{
+				TaskID:             "task-refund-api",
+				Repository:         "checkout-platform",
+				Scope:              "Implement refund API behavior",
+				AcceptanceCriteria: []string{"Refund endpoint returns 200 on success"},
+				DefinitionOfDone:   "Refund API implemented and tested",
+				BeadsType:          "task",
+			},
+			DependsOn: []GraphDependency{{LocalKey: "migration", Type: protocol.TaskContractDependenciesElemTypeBlocks}},
+		},
+	}
+
+	results, err := GenerateGraph(context.Background(), sup, root, store, items)
+	if err != nil {
+		t.Fatalf("GenerateGraph: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	byKey := make(map[string]GraphResult)
+	for _, r := range results {
+		byKey[r.LocalKey] = r
+	}
+	api := byKey["api"]
+	migration := byKey["migration"]
+
+	if api.Contract.BeadsEpic == nil || migration.Contract.BeadsEpic == nil {
+		t.Fatal("expected both results to have a BeadsEpic set")
+	}
+	if len(api.Contract.Dependencies) != 1 || api.Contract.Dependencies[0].Id != "task-refund-migration" {
+		t.Fatalf("expected api's contract-level dependency to auto-populate with migration's task id, got %+v", api.Contract.Dependencies)
+	}
+
+	// Confirm the dependency was actually wired in Beads, not just recorded
+	// on the contract: bd show should report the api issue as blocked.
+	res, err := sup.Run(context.Background(), tools.Spec{
+		Name: "bd",
+		Args: []string{"show", *api.Contract.BeadsEpic, "--json"},
+		Dir:  root,
+	})
+	if err != nil {
+		t.Fatalf("bd show: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("bd show failed: %s", res.Stderr)
+	}
+	var shown []struct {
+		Dependencies []struct {
+			Id             string `json:"id"`
+			DependencyType string `json:"dependency_type"`
+		} `json:"dependencies"`
+	}
+	if err := json.Unmarshal(res.Stdout, &shown); err != nil {
+		t.Fatalf("decode bd show output: %v", err)
+	}
+	if len(shown) != 1 {
+		t.Fatalf("expected exactly one issue from bd show, got %d", len(shown))
+	}
+	found := false
+	for _, dep := range shown[0].Dependencies {
+		if dep.Id == *migration.Contract.BeadsEpic && dep.DependencyType == "blocks" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a blocks dependency onto %s, got %+v", *migration.Contract.BeadsEpic, shown[0].Dependencies)
+	}
+}
+
+// TestReportDiscoveredWorkRejectsConflictingDiscoveredFrom confirms that a
+// caller-supplied in.DiscoveredFrom which disagrees with the
+// discoveredFromTaskID argument is rejected rather than silently
+// overwritten. It does not require dolt or bd: the conflict is detected
+// before any external process would be invoked.
+func TestReportDiscoveredWorkRejectsConflictingDiscoveredFrom(t *testing.T) {
+	rec := requirementRecord()
+	conflicting := "some-other-task"
+
+	_, err := ReportDiscoveredWork(context.Background(), nil, "", nil, rec, "task-refund-api", NewTaskContractInput{
+		TaskID:             "task-1",
+		AcceptanceCriteria: []string{"criterion"},
+		DiscoveredFrom:     &conflicting,
+	})
+	if err == nil {
+		t.Fatal("expected error for conflicting discovered_from")
 	}
 }
