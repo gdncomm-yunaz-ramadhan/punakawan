@@ -1,0 +1,45 @@
+packages/adapter-atlassian/src/run.ts
+  fd931d7b51a068b5 1-11
+packages/adapter-atlassian/src/mcpClient.ts
+  fd931d7b51a068b5 1-120
+packages/adapter-atlassian/tsconfig.test.json
+  fd931d7b51a068b5 1-14
+packages/adapter-atlassian/test/fakeAtlassianServer.ts
+  fd931d7b51a068b5 1-141
+packages/adapter-atlassian/tsconfig.json
+  fd931d7b51a068b5 1-14
+packages/adapter-atlassian/src/index.ts
+  fd931d7b51a068b5 1-5
+packages/adapter-atlassian/test/adapter.test.ts
+  fd931d7b51a068b5 1-178
+packages/adapter-atlassian/package.json
+  fd931d7b51a068b5 1-25
+packages/adapter-atlassian/src/normalize.ts
+  fd931d7b51a068b5 1-141
+packages/adapter-atlassian/src/manifest.ts
+  fd931d7b51a068b5 1-32
+packages/adapter-atlassian/src/operations.ts
+  fd931d7b51a068b5 1-107
+packages/adapter-atlassian/src/adapter.ts
+  fd931d7b51a068b5 1-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "3be11a9bbae2c165162576b0e046434f7595f50b",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1086,
+      "overriden_lines": 0
+    }
+  }
+}
