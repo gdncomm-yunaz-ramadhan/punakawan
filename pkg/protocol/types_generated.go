@@ -1045,17 +1045,39 @@ func (j *EvidenceRecord) UnmarshalJSON(value []byte) error {
 // A durable knowledge record with provenance and validity state. See
 // punakawan-go-typescript-detailed-plan.md §7.
 type KnowledgeRecord struct {
+	// Bagong's independent final review, present on bagong-review records. See §8.4.
+	BagongReview *KnowledgeRecordBagongReview `json:"bagong_review,omitempty,omitzero" yaml:"bagong_review,omitempty" mapstructure:"bagong_review,omitempty"`
+
+	// Semar's pre-planning context dossier, present on context-dossier records. See
+	// §9.1.
+	ContextDossier *KnowledgeRecordContextDossier `json:"context_dossier,omitempty,omitzero" yaml:"context_dossier,omitempty" mapstructure:"context_dossier,omitempty"`
+
 	// Extraction corresponds to the JSON schema field "extraction".
 	Extraction KnowledgeRecordExtraction `json:"extraction" yaml:"extraction" mapstructure:"extraction"`
+
+	// Semar's final implementation plan, present on final-plan records. See §9.3.
+	FinalPlan *KnowledgeRecordFinalPlan `json:"final_plan,omitempty,omitzero" yaml:"final_plan,omitempty" mapstructure:"final_plan,omitempty"`
 
 	// Formatting conventions, present on convention-profile records. See §27.3.
 	Formatting *KnowledgeRecordFormatting `json:"formatting,omitempty,omitzero" yaml:"formatting,omitempty" mapstructure:"formatting,omitempty"`
 
+	// Gareng's feasibility and risk review, present on gareng-review records. See
+	// §8.2.
+	GarengReview *KnowledgeRecordGarengReview `json:"gareng_review,omitempty,omitzero" yaml:"gareng_review,omitempty" mapstructure:"gareng_review,omitempty"`
+
 	// Id corresponds to the JSON schema field "id".
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
+	// Petruk's usefulness challenge and implementation planning output, present on
+	// petruk-plan records. See §8.3.
+	PetrukPlan *KnowledgeRecordPetrukPlan `json:"petruk_plan,omitempty,omitzero" yaml:"petruk_plan,omitempty" mapstructure:"petruk_plan,omitempty"`
+
 	// Relations corresponds to the JSON schema field "relations".
 	Relations []KnowledgeRecordRelationsElem `json:"relations,omitempty,omitzero" yaml:"relations,omitempty" mapstructure:"relations,omitempty"`
+
+	// Semar's consolidated output after merging Gareng and Petruk findings, present
+	// on semar-synthesis records. See §8.1, §9.2.
+	SemarSynthesis *KnowledgeRecordSemarSynthesis `json:"semar_synthesis,omitempty,omitzero" yaml:"semar_synthesis,omitempty" mapstructure:"semar_synthesis,omitempty"`
 
 	// Source corresponds to the JSON schema field "source".
 	Source KnowledgeRecordSource `json:"source" yaml:"source" mapstructure:"source"`
@@ -1074,6 +1096,92 @@ type KnowledgeRecord struct {
 
 	// Validity corresponds to the JSON schema field "validity".
 	Validity KnowledgeRecordValidity `json:"validity" yaml:"validity" mapstructure:"validity"`
+}
+
+// Bagong's independent final review, present on bagong-review records. See §8.4.
+type KnowledgeRecordBagongReview struct {
+	// CompatibilityFindings corresponds to the JSON schema field
+	// "compatibility_findings".
+	CompatibilityFindings []string `json:"compatibility_findings,omitempty,omitzero" yaml:"compatibility_findings,omitempty" mapstructure:"compatibility_findings,omitempty"`
+
+	// Findings corresponds to the JSON schema field "findings".
+	Findings []string `json:"findings,omitempty,omitzero" yaml:"findings,omitempty" mapstructure:"findings,omitempty"`
+
+	// HonestSummary corresponds to the JSON schema field "honest_summary".
+	HonestSummary *string `json:"honest_summary,omitempty,omitzero" yaml:"honest_summary,omitempty" mapstructure:"honest_summary,omitempty"`
+
+	// RequirementCoverage corresponds to the JSON schema field
+	// "requirement_coverage".
+	RequirementCoverage []string `json:"requirement_coverage,omitempty,omitzero" yaml:"requirement_coverage,omitempty" mapstructure:"requirement_coverage,omitempty"`
+
+	// SecurityFindings corresponds to the JSON schema field "security_findings".
+	SecurityFindings []string `json:"security_findings,omitempty,omitzero" yaml:"security_findings,omitempty" mapstructure:"security_findings,omitempty"`
+
+	// TestGaps corresponds to the JSON schema field "test_gaps".
+	TestGaps []string `json:"test_gaps,omitempty,omitzero" yaml:"test_gaps,omitempty" mapstructure:"test_gaps,omitempty"`
+
+	// Uncertainties corresponds to the JSON schema field "uncertainties".
+	Uncertainties []string `json:"uncertainties,omitempty,omitzero" yaml:"uncertainties,omitempty" mapstructure:"uncertainties,omitempty"`
+
+	// Verdict corresponds to the JSON schema field "verdict".
+	Verdict *string `json:"verdict,omitempty,omitzero" yaml:"verdict,omitempty" mapstructure:"verdict,omitempty"`
+}
+
+// Semar's pre-planning context dossier, present on context-dossier records. See
+// §9.1.
+type KnowledgeRecordContextDossier struct {
+	// AffectedRepositories corresponds to the JSON schema field
+	// "affected_repositories".
+	AffectedRepositories []string `json:"affected_repositories,omitempty,omitzero" yaml:"affected_repositories,omitempty" mapstructure:"affected_repositories,omitempty"`
+
+	// ApiAndDataContracts corresponds to the JSON schema field
+	// "api_and_data_contracts".
+	ApiAndDataContracts []string `json:"api_and_data_contracts,omitempty,omitzero" yaml:"api_and_data_contracts,omitempty" mapstructure:"api_and_data_contracts,omitempty"`
+
+	// Assumptions corresponds to the JSON schema field "assumptions".
+	Assumptions []string `json:"assumptions,omitempty,omitzero" yaml:"assumptions,omitempty" mapstructure:"assumptions,omitempty"`
+
+	// BusinessOrUserValue corresponds to the JSON schema field
+	// "business_or_user_value".
+	BusinessOrUserValue *string `json:"business_or_user_value,omitempty,omitzero" yaml:"business_or_user_value,omitempty" mapstructure:"business_or_user_value,omitempty"`
+
+	// ConfidenceLevel corresponds to the JSON schema field "confidence_level".
+	ConfidenceLevel *string `json:"confidence_level,omitempty,omitzero" yaml:"confidence_level,omitempty" mapstructure:"confidence_level,omitempty"`
+
+	// Contradictions corresponds to the JSON schema field "contradictions".
+	Contradictions []string `json:"contradictions,omitempty,omitzero" yaml:"contradictions,omitempty" mapstructure:"contradictions,omitempty"`
+
+	// CurrentBehavior corresponds to the JSON schema field "current_behavior".
+	CurrentBehavior *string `json:"current_behavior,omitempty,omitzero" yaml:"current_behavior,omitempty" mapstructure:"current_behavior,omitempty"`
+
+	// DeploymentPath corresponds to the JSON schema field "deployment_path".
+	DeploymentPath *string `json:"deployment_path,omitempty,omitzero" yaml:"deployment_path,omitempty" mapstructure:"deployment_path,omitempty"`
+
+	// DesiredBehavior corresponds to the JSON schema field "desired_behavior".
+	DesiredBehavior *string `json:"desired_behavior,omitempty,omitzero" yaml:"desired_behavior,omitempty" mapstructure:"desired_behavior,omitempty"`
+
+	// ExistingImplementationPaths corresponds to the JSON schema field
+	// "existing_implementation_paths".
+	ExistingImplementationPaths []string `json:"existing_implementation_paths,omitempty,omitzero" yaml:"existing_implementation_paths,omitempty" mapstructure:"existing_implementation_paths,omitempty"`
+
+	// ExistingTests corresponds to the JSON schema field "existing_tests".
+	ExistingTests []string `json:"existing_tests,omitempty,omitzero" yaml:"existing_tests,omitempty" mapstructure:"existing_tests,omitempty"`
+
+	// ExplicitNonGoals corresponds to the JSON schema field "explicit_non_goals".
+	ExplicitNonGoals []string `json:"explicit_non_goals,omitempty,omitzero" yaml:"explicit_non_goals,omitempty" mapstructure:"explicit_non_goals,omitempty"`
+
+	// MissingInformation corresponds to the JSON schema field "missing_information".
+	MissingInformation []string `json:"missing_information,omitempty,omitzero" yaml:"missing_information,omitempty" mapstructure:"missing_information,omitempty"`
+
+	// RelevantPreviousDecisions corresponds to the JSON schema field
+	// "relevant_previous_decisions".
+	RelevantPreviousDecisions []string `json:"relevant_previous_decisions,omitempty,omitzero" yaml:"relevant_previous_decisions,omitempty" mapstructure:"relevant_previous_decisions,omitempty"`
+
+	// SourceInventory corresponds to the JSON schema field "source_inventory".
+	SourceInventory []string `json:"source_inventory,omitempty,omitzero" yaml:"source_inventory,omitempty" mapstructure:"source_inventory,omitempty"`
+
+	// UserGoal corresponds to the JSON schema field "user_goal".
+	UserGoal *string `json:"user_goal,omitempty,omitzero" yaml:"user_goal,omitempty" mapstructure:"user_goal,omitempty"`
 }
 
 type KnowledgeRecordExtraction struct {
@@ -1143,6 +1251,79 @@ func (j *KnowledgeRecordExtraction) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// Semar's final implementation plan, present on final-plan records. See §9.3.
+type KnowledgeRecordFinalPlan struct {
+	// AcceptanceCriteria corresponds to the JSON schema field "acceptance_criteria".
+	AcceptanceCriteria []string `json:"acceptance_criteria,omitempty,omitzero" yaml:"acceptance_criteria,omitempty" mapstructure:"acceptance_criteria,omitempty"`
+
+	// ApiImpact corresponds to the JSON schema field "api_impact".
+	ApiImpact *string `json:"api_impact,omitempty,omitzero" yaml:"api_impact,omitempty" mapstructure:"api_impact,omitempty"`
+
+	// ArchitectureDecision corresponds to the JSON schema field
+	// "architecture_decision".
+	ArchitectureDecision *string `json:"architecture_decision,omitempty,omitzero" yaml:"architecture_decision,omitempty" mapstructure:"architecture_decision,omitempty"`
+
+	// CompatibilityConsiderations corresponds to the JSON schema field
+	// "compatibility_considerations".
+	CompatibilityConsiderations []string `json:"compatibility_considerations,omitempty,omitzero" yaml:"compatibility_considerations,omitempty" mapstructure:"compatibility_considerations,omitempty"`
+
+	// DataModelImpact corresponds to the JSON schema field "data_model_impact".
+	DataModelImpact *string `json:"data_model_impact,omitempty,omitzero" yaml:"data_model_impact,omitempty" mapstructure:"data_model_impact,omitempty"`
+
+	// DeploymentChanges corresponds to the JSON schema field "deployment_changes".
+	DeploymentChanges []string `json:"deployment_changes,omitempty,omitzero" yaml:"deployment_changes,omitempty" mapstructure:"deployment_changes,omitempty"`
+
+	// DocumentationPlan corresponds to the JSON schema field "documentation_plan".
+	DocumentationPlan []string `json:"documentation_plan,omitempty,omitzero" yaml:"documentation_plan,omitempty" mapstructure:"documentation_plan,omitempty"`
+
+	// E2EPlan corresponds to the JSON schema field "e2e_plan".
+	E2EPlan []string `json:"e2e_plan,omitempty,omitzero" yaml:"e2e_plan,omitempty" mapstructure:"e2e_plan,omitempty"`
+
+	// ImplementationSequence corresponds to the JSON schema field
+	// "implementation_sequence".
+	ImplementationSequence []string `json:"implementation_sequence,omitempty,omitzero" yaml:"implementation_sequence,omitempty" mapstructure:"implementation_sequence,omitempty"`
+
+	// IntegrationTestPlan corresponds to the JSON schema field
+	// "integration_test_plan".
+	IntegrationTestPlan []string `json:"integration_test_plan,omitempty,omitzero" yaml:"integration_test_plan,omitempty" mapstructure:"integration_test_plan,omitempty"`
+
+	// MigrationPlan corresponds to the JSON schema field "migration_plan".
+	MigrationPlan []string `json:"migration_plan,omitempty,omitzero" yaml:"migration_plan,omitempty" mapstructure:"migration_plan,omitempty"`
+
+	// NonGoals corresponds to the JSON schema field "non_goals".
+	NonGoals []string `json:"non_goals,omitempty,omitzero" yaml:"non_goals,omitempty" mapstructure:"non_goals,omitempty"`
+
+	// ObservabilityPlan corresponds to the JSON schema field "observability_plan".
+	ObservabilityPlan []string `json:"observability_plan,omitempty,omitzero" yaml:"observability_plan,omitempty" mapstructure:"observability_plan,omitempty"`
+
+	// RepositoryImpactMap corresponds to the JSON schema field
+	// "repository_impact_map".
+	RepositoryImpactMap KnowledgeRecordFinalPlanRepositoryImpactMap `json:"repository_impact_map,omitempty,omitzero" yaml:"repository_impact_map,omitempty" mapstructure:"repository_impact_map,omitempty"`
+
+	// Requirements corresponds to the JSON schema field "requirements".
+	Requirements []string `json:"requirements,omitempty,omitzero" yaml:"requirements,omitempty" mapstructure:"requirements,omitempty"`
+
+	// RisksAndMitigations corresponds to the JSON schema field
+	// "risks_and_mitigations".
+	RisksAndMitigations []string `json:"risks_and_mitigations,omitempty,omitzero" yaml:"risks_and_mitigations,omitempty" mapstructure:"risks_and_mitigations,omitempty"`
+
+	// RollbackPlan corresponds to the JSON schema field "rollback_plan".
+	RollbackPlan []string `json:"rollback_plan,omitempty,omitzero" yaml:"rollback_plan,omitempty" mapstructure:"rollback_plan,omitempty"`
+
+	// SecurityConsiderations corresponds to the JSON schema field
+	// "security_considerations".
+	SecurityConsiderations []string `json:"security_considerations,omitempty,omitzero" yaml:"security_considerations,omitempty" mapstructure:"security_considerations,omitempty"`
+
+	// UnitTestPlan corresponds to the JSON schema field "unit_test_plan".
+	UnitTestPlan []string `json:"unit_test_plan,omitempty,omitzero" yaml:"unit_test_plan,omitempty" mapstructure:"unit_test_plan,omitempty"`
+
+	// VerificationCriteria corresponds to the JSON schema field
+	// "verification_criteria".
+	VerificationCriteria []string `json:"verification_criteria,omitempty,omitzero" yaml:"verification_criteria,omitempty" mapstructure:"verification_criteria,omitempty"`
+}
+
+type KnowledgeRecordFinalPlanRepositoryImpactMap map[string]string
+
 // Formatting conventions, present on convention-profile records. See §27.3.
 type KnowledgeRecordFormatting struct {
 	// Editorconfig corresponds to the JSON schema field "editorconfig".
@@ -1153,6 +1334,67 @@ type KnowledgeRecordFormatting struct {
 
 	// Linters corresponds to the JSON schema field "linters".
 	Linters []string `json:"linters,omitempty,omitzero" yaml:"linters,omitempty" mapstructure:"linters,omitempty"`
+}
+
+// Gareng's feasibility and risk review, present on gareng-review records. See
+// §8.2.
+type KnowledgeRecordGarengReview struct {
+	// BlockingFindings corresponds to the JSON schema field "blocking_findings".
+	BlockingFindings []string `json:"blocking_findings,omitempty,omitzero" yaml:"blocking_findings,omitempty" mapstructure:"blocking_findings,omitempty"`
+
+	// MissingAcceptanceCriteria corresponds to the JSON schema field
+	// "missing_acceptance_criteria".
+	MissingAcceptanceCriteria []string `json:"missing_acceptance_criteria,omitempty,omitzero" yaml:"missing_acceptance_criteria,omitempty" mapstructure:"missing_acceptance_criteria,omitempty"`
+
+	// NonBlockingFindings corresponds to the JSON schema field
+	// "non_blocking_findings".
+	NonBlockingFindings []string `json:"non_blocking_findings,omitempty,omitzero" yaml:"non_blocking_findings,omitempty" mapstructure:"non_blocking_findings,omitempty"`
+
+	// RecommendedDefaults corresponds to the JSON schema field
+	// "recommended_defaults".
+	RecommendedDefaults []string `json:"recommended_defaults,omitempty,omitzero" yaml:"recommended_defaults,omitempty" mapstructure:"recommended_defaults,omitempty"`
+
+	// RequiredEvidence corresponds to the JSON schema field "required_evidence".
+	RequiredEvidence []string `json:"required_evidence,omitempty,omitzero" yaml:"required_evidence,omitempty" mapstructure:"required_evidence,omitempty"`
+
+	// Risks corresponds to the JSON schema field "risks".
+	Risks []string `json:"risks,omitempty,omitzero" yaml:"risks,omitempty" mapstructure:"risks,omitempty"`
+
+	// Verdict corresponds to the JSON schema field "verdict".
+	Verdict *string `json:"verdict,omitempty,omitzero" yaml:"verdict,omitempty" mapstructure:"verdict,omitempty"`
+}
+
+// Petruk's usefulness challenge and implementation planning output, present on
+// petruk-plan records. See §8.3.
+type KnowledgeRecordPetrukPlan struct {
+	// Alternatives corresponds to the JSON schema field "alternatives".
+	Alternatives []string `json:"alternatives,omitempty,omitzero" yaml:"alternatives,omitempty" mapstructure:"alternatives,omitempty"`
+
+	// DeploymentPlan corresponds to the JSON schema field "deployment_plan".
+	DeploymentPlan []string `json:"deployment_plan,omitempty,omitzero" yaml:"deployment_plan,omitempty" mapstructure:"deployment_plan,omitempty"`
+
+	// DocumentationPlan corresponds to the JSON schema field "documentation_plan".
+	DocumentationPlan []string `json:"documentation_plan,omitempty,omitzero" yaml:"documentation_plan,omitempty" mapstructure:"documentation_plan,omitempty"`
+
+	// E2EPlan corresponds to the JSON schema field "e2e_plan".
+	E2EPlan []string `json:"e2e_plan,omitempty,omitzero" yaml:"e2e_plan,omitempty" mapstructure:"e2e_plan,omitempty"`
+
+	// ImplementationSteps corresponds to the JSON schema field
+	// "implementation_steps".
+	ImplementationSteps []string `json:"implementation_steps,omitempty,omitzero" yaml:"implementation_steps,omitempty" mapstructure:"implementation_steps,omitempty"`
+
+	// RecommendedSolution corresponds to the JSON schema field
+	// "recommended_solution".
+	RecommendedSolution *string `json:"recommended_solution,omitempty,omitzero" yaml:"recommended_solution,omitempty" mapstructure:"recommended_solution,omitempty"`
+
+	// RepositoryChanges corresponds to the JSON schema field "repository_changes".
+	RepositoryChanges []string `json:"repository_changes,omitempty,omitzero" yaml:"repository_changes,omitempty" mapstructure:"repository_changes,omitempty"`
+
+	// TestPlan corresponds to the JSON schema field "test_plan".
+	TestPlan []string `json:"test_plan,omitempty,omitzero" yaml:"test_plan,omitempty" mapstructure:"test_plan,omitempty"`
+
+	// Tradeoffs corresponds to the JSON schema field "tradeoffs".
+	Tradeoffs []string `json:"tradeoffs,omitempty,omitzero" yaml:"tradeoffs,omitempty" mapstructure:"tradeoffs,omitempty"`
 }
 
 type KnowledgeRecordRelationsElem struct {
@@ -1250,6 +1492,73 @@ func (j *KnowledgeRecordRelationsElem) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// Semar's consolidated output after merging Gareng and Petruk findings, present on
+// semar-synthesis records. See §8.1, §9.2.
+type KnowledgeRecordSemarSynthesis struct {
+	// AffectedComponents corresponds to the JSON schema field "affected_components".
+	AffectedComponents []string `json:"affected_components,omitempty,omitzero" yaml:"affected_components,omitempty" mapstructure:"affected_components,omitempty"`
+
+	// AffectedRepositories corresponds to the JSON schema field
+	// "affected_repositories".
+	AffectedRepositories []string `json:"affected_repositories,omitempty,omitzero" yaml:"affected_repositories,omitempty" mapstructure:"affected_repositories,omitempty"`
+
+	// Assumptions corresponds to the JSON schema field "assumptions".
+	Assumptions []string `json:"assumptions,omitempty,omitzero" yaml:"assumptions,omitempty" mapstructure:"assumptions,omitempty"`
+
+	// Goal corresponds to the JSON schema field "goal".
+	Goal *string `json:"goal,omitempty,omitzero" yaml:"goal,omitempty" mapstructure:"goal,omitempty"`
+
+	// KnownFacts corresponds to the JSON schema field "known_facts".
+	KnownFacts []string `json:"known_facts,omitempty,omitzero" yaml:"known_facts,omitempty" mapstructure:"known_facts,omitempty"`
+
+	// NextGate corresponds to the JSON schema field "next_gate".
+	NextGate *string `json:"next_gate,omitempty,omitzero" yaml:"next_gate,omitempty" mapstructure:"next_gate,omitempty"`
+
+	// OpenQuestions corresponds to the JSON schema field "open_questions".
+	OpenQuestions []KnowledgeRecordSemarSynthesisOpenQuestionsElem `json:"open_questions,omitempty,omitzero" yaml:"open_questions,omitempty" mapstructure:"open_questions,omitempty"`
+
+	// RecommendedWorkflow corresponds to the JSON schema field
+	// "recommended_workflow".
+	RecommendedWorkflow *string `json:"recommended_workflow,omitempty,omitzero" yaml:"recommended_workflow,omitempty" mapstructure:"recommended_workflow,omitempty"`
+
+	// Risks corresponds to the JSON schema field "risks".
+	Risks []string `json:"risks,omitempty,omitzero" yaml:"risks,omitempty" mapstructure:"risks,omitempty"`
+
+	// Scope corresponds to the JSON schema field "scope".
+	Scope *string `json:"scope,omitempty,omitzero" yaml:"scope,omitempty" mapstructure:"scope,omitempty"`
+}
+
+type KnowledgeRecordSemarSynthesisOpenQuestionsElem struct {
+	// Blocking corresponds to the JSON schema field "blocking".
+	Blocking *bool `json:"blocking,omitempty,omitzero" yaml:"blocking,omitempty" mapstructure:"blocking,omitempty"`
+
+	// ImpactIfUnanswered corresponds to the JSON schema field "impact_if_unanswered".
+	ImpactIfUnanswered *string `json:"impact_if_unanswered,omitempty,omitzero" yaml:"impact_if_unanswered,omitempty" mapstructure:"impact_if_unanswered,omitempty"`
+
+	// ObservedConflict corresponds to the JSON schema field "observed_conflict".
+	ObservedConflict *string `json:"observed_conflict,omitempty,omitzero" yaml:"observed_conflict,omitempty" mapstructure:"observed_conflict,omitempty"`
+
+	// Question corresponds to the JSON schema field "question".
+	Question *string `json:"question,omitempty,omitzero" yaml:"question,omitempty" mapstructure:"question,omitempty"`
+
+	// RecommendedDefault corresponds to the JSON schema field "recommended_default".
+	RecommendedDefault *string `json:"recommended_default,omitempty,omitzero" yaml:"recommended_default,omitempty" mapstructure:"recommended_default,omitempty"`
+
+	// Target corresponds to the JSON schema field "target".
+	Target *KnowledgeRecordSemarSynthesisOpenQuestionsElemTarget `json:"target,omitempty,omitzero" yaml:"target,omitempty" mapstructure:"target,omitempty"`
+
+	// WhyItMatters corresponds to the JSON schema field "why_it_matters".
+	WhyItMatters *string `json:"why_it_matters,omitempty,omitzero" yaml:"why_it_matters,omitempty" mapstructure:"why_it_matters,omitempty"`
+}
+
+type KnowledgeRecordSemarSynthesisOpenQuestionsElemTarget struct {
+	// Reference corresponds to the JSON schema field "reference".
+	Reference *string `json:"reference,omitempty,omitzero" yaml:"reference,omitempty" mapstructure:"reference,omitempty"`
+
+	// System corresponds to the JSON schema field "system".
+	System *string `json:"system,omitempty,omitzero" yaml:"system,omitempty" mapstructure:"system,omitempty"`
+}
+
 type KnowledgeRecordSource struct {
 	// ContentHash corresponds to the JSON schema field "content_hash".
 	ContentHash *string `json:"content_hash,omitempty,omitzero" yaml:"content_hash,omitempty" mapstructure:"content_hash,omitempty"`
@@ -1320,23 +1629,29 @@ const KnowledgeRecordTypeAcceptanceCriterion KnowledgeRecordType = "acceptance-c
 const KnowledgeRecordTypeAnswer KnowledgeRecordType = "answer"
 const KnowledgeRecordTypeApiContract KnowledgeRecordType = "api-contract"
 const KnowledgeRecordTypeAssumption KnowledgeRecordType = "assumption"
+const KnowledgeRecordTypeBagongReview KnowledgeRecordType = "bagong-review"
 const KnowledgeRecordTypeBrowserFlow KnowledgeRecordType = "browser-flow"
 const KnowledgeRecordTypeChangeSet KnowledgeRecordType = "change-set"
 const KnowledgeRecordTypeClaim KnowledgeRecordType = "claim"
 const KnowledgeRecordTypeComponent KnowledgeRecordType = "component"
 const KnowledgeRecordTypeConstraint KnowledgeRecordType = "constraint"
+const KnowledgeRecordTypeContextDossier KnowledgeRecordType = "context-dossier"
 const KnowledgeRecordTypeConventionProfile KnowledgeRecordType = "convention-profile"
 const KnowledgeRecordTypeDataContract KnowledgeRecordType = "data-contract"
 const KnowledgeRecordTypeDecision KnowledgeRecordType = "decision"
 const KnowledgeRecordTypeDeploymentUnit KnowledgeRecordType = "deployment-unit"
 const KnowledgeRecordTypeEvidence KnowledgeRecordType = "evidence"
 const KnowledgeRecordTypeExternalReference KnowledgeRecordType = "external-reference"
+const KnowledgeRecordTypeFinalPlan KnowledgeRecordType = "final-plan"
+const KnowledgeRecordTypeGarengReview KnowledgeRecordType = "gareng-review"
 const KnowledgeRecordTypePersonOrTeam KnowledgeRecordType = "person-or-team"
+const KnowledgeRecordTypePetrukPlan KnowledgeRecordType = "petruk-plan"
 const KnowledgeRecordTypeQuestion KnowledgeRecordType = "question"
 const KnowledgeRecordTypeRepository KnowledgeRecordType = "repository"
 const KnowledgeRecordTypeRequirement KnowledgeRecordType = "requirement"
 const KnowledgeRecordTypeReviewFinding KnowledgeRecordType = "review-finding"
 const KnowledgeRecordTypeRisk KnowledgeRecordType = "risk"
+const KnowledgeRecordTypeSemarSynthesis KnowledgeRecordType = "semar-synthesis"
 const KnowledgeRecordTypeSourceArtifact KnowledgeRecordType = "source-artifact"
 const KnowledgeRecordTypeTestCase KnowledgeRecordType = "test-case"
 const KnowledgeRecordTypeWorkItem KnowledgeRecordType = "work-item"
@@ -1368,6 +1683,12 @@ var enumValues_KnowledgeRecordType = []interface{}{
 	"risk",
 	"review-finding",
 	"convention-profile",
+	"context-dossier",
+	"semar-synthesis",
+	"gareng-review",
+	"petruk-plan",
+	"bagong-review",
+	"final-plan",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

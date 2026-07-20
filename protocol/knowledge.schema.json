@@ -16,7 +16,8 @@
         "question", "answer", "api-contract", "data-contract", "browser-flow",
         "test-case", "deployment-unit", "work-item", "change-set", "evidence",
         "external-reference", "person-or-team", "risk", "review-finding",
-        "convention-profile"
+        "convention-profile", "context-dossier", "semar-synthesis",
+        "gareng-review", "petruk-plan", "bagong-review", "final-plan"
       ]
     },
     "status": { "type": "string" },
@@ -98,6 +99,143 @@
         "package_manager": { "type": "string" },
         "test_framework": { "type": "array", "items": { "type": "string" } },
         "naming_convention": { "type": "string" }
+      }
+    },
+    "context_dossier": {
+      "description": "Semar's pre-planning context dossier, present on context-dossier records. See §9.1.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "user_goal": { "type": "string" },
+        "business_or_user_value": { "type": "string" },
+        "current_behavior": { "type": "string" },
+        "desired_behavior": { "type": "string" },
+        "explicit_non_goals": { "type": "array", "items": { "type": "string" } },
+        "source_inventory": { "type": "array", "items": { "type": "string" } },
+        "affected_repositories": { "type": "array", "items": { "type": "string" } },
+        "existing_implementation_paths": { "type": "array", "items": { "type": "string" } },
+        "existing_tests": { "type": "array", "items": { "type": "string" } },
+        "api_and_data_contracts": { "type": "array", "items": { "type": "string" } },
+        "deployment_path": { "type": "string" },
+        "relevant_previous_decisions": { "type": "array", "items": { "type": "string" } },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "missing_information": { "type": "array", "items": { "type": "string" } },
+        "contradictions": { "type": "array", "items": { "type": "string" } },
+        "confidence_level": { "type": "string" }
+      }
+    },
+    "semar_synthesis": {
+      "description": "Semar's consolidated output after merging Gareng and Petruk findings, present on semar-synthesis records. See §8.1, §9.2.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "goal": { "type": "string" },
+        "scope": { "type": "string" },
+        "known_facts": { "type": "array", "items": { "type": "string" } },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "open_questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "question": { "type": "string" },
+              "why_it_matters": { "type": "string" },
+              "observed_conflict": { "type": "string" },
+              "recommended_default": { "type": "string" },
+              "impact_if_unanswered": { "type": "string" },
+              "blocking": { "type": "boolean" },
+              "target": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "system": { "type": "string" },
+                  "reference": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "affected_repositories": { "type": "array", "items": { "type": "string" } },
+        "affected_components": { "type": "array", "items": { "type": "string" } },
+        "risks": { "type": "array", "items": { "type": "string" } },
+        "recommended_workflow": { "type": "string" },
+        "next_gate": { "type": "string" }
+      }
+    },
+    "gareng_review": {
+      "description": "Gareng's feasibility and risk review, present on gareng-review records. See §8.2.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": { "type": "string" },
+        "blocking_findings": { "type": "array", "items": { "type": "string" } },
+        "non_blocking_findings": { "type": "array", "items": { "type": "string" } },
+        "missing_acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+        "risks": { "type": "array", "items": { "type": "string" } },
+        "recommended_defaults": { "type": "array", "items": { "type": "string" } },
+        "required_evidence": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "petruk_plan": {
+      "description": "Petruk's usefulness challenge and implementation planning output, present on petruk-plan records. See §8.3.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recommended_solution": { "type": "string" },
+        "alternatives": { "type": "array", "items": { "type": "string" } },
+        "tradeoffs": { "type": "array", "items": { "type": "string" } },
+        "implementation_steps": { "type": "array", "items": { "type": "string" } },
+        "repository_changes": { "type": "array", "items": { "type": "string" } },
+        "test_plan": { "type": "array", "items": { "type": "string" } },
+        "e2e_plan": { "type": "array", "items": { "type": "string" } },
+        "deployment_plan": { "type": "array", "items": { "type": "string" } },
+        "documentation_plan": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "bagong_review": {
+      "description": "Bagong's independent final review, present on bagong-review records. See §8.4.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": { "type": "string" },
+        "requirement_coverage": { "type": "array", "items": { "type": "string" } },
+        "findings": { "type": "array", "items": { "type": "string" } },
+        "test_gaps": { "type": "array", "items": { "type": "string" } },
+        "security_findings": { "type": "array", "items": { "type": "string" } },
+        "compatibility_findings": { "type": "array", "items": { "type": "string" } },
+        "uncertainties": { "type": "array", "items": { "type": "string" } },
+        "honest_summary": { "type": "string" }
+      }
+    },
+    "final_plan": {
+      "description": "Semar's final implementation plan, present on final-plan records. See §9.3.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requirements": { "type": "array", "items": { "type": "string" } },
+        "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+        "non_goals": { "type": "array", "items": { "type": "string" } },
+        "architecture_decision": { "type": "string" },
+        "data_model_impact": { "type": "string" },
+        "api_impact": { "type": "string" },
+        "repository_impact_map": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "implementation_sequence": { "type": "array", "items": { "type": "string" } },
+        "unit_test_plan": { "type": "array", "items": { "type": "string" } },
+        "integration_test_plan": { "type": "array", "items": { "type": "string" } },
+        "e2e_plan": { "type": "array", "items": { "type": "string" } },
+        "migration_plan": { "type": "array", "items": { "type": "string" } },
+        "rollback_plan": { "type": "array", "items": { "type": "string" } },
+        "observability_plan": { "type": "array", "items": { "type": "string" } },
+        "documentation_plan": { "type": "array", "items": { "type": "string" } },
+        "deployment_changes": { "type": "array", "items": { "type": "string" } },
+        "security_considerations": { "type": "array", "items": { "type": "string" } },
+        "compatibility_considerations": { "type": "array", "items": { "type": "string" } },
+        "verification_criteria": { "type": "array", "items": { "type": "string" } },
+        "risks_and_mitigations": { "type": "array", "items": { "type": "string" } }
       }
     }
   }
