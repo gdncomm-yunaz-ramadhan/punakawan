@@ -2234,3 +2234,50 @@ Baseline scaffolding reuses conventions, not content. It must not copy:
 - Anything the reference repository's license does not permit reusing
 
 Only structural and stylistic conventions (layout, naming, formatting, tooling choices) transfer to the new project.
+
+---
+
+## 28. Role Invocation via MCP
+
+### 28.1 Objective
+
+§8 defines role contracts (Semar, Gareng, Petruk, Bagong) but the plan through §27 never specifies how a role's reasoning is actually performed. Punakawan does not embed its own LLM client. Instead, Punakawan's Go core runs its own MCP server, and any MCP-compatible client (Claude Code, Claude Desktop, or another host) connects to it and performs the reasoning itself, using data and prompts Punakawan supplies.
+
+### 28.2 Division of responsibility
+
+- **Punakawan (MCP server)**: assembles context (workspace, git, durable knowledge), serves each role's prompt template as an MCP prompt, validates and persists the structured output a client submits, and advances workflow state.
+- **Connected LLM client**: fetches a role's prompt, reasons over the supplied context using its own model, and submits the structured result back through an MCP tool call.
+
+Punakawan is the trusted data and protocol boundary; the connected client supplies the reasoning. This keeps evidence and provenance (§2.3, §7.3) enforced server-side regardless of which client or model performed the reasoning.
+
+### 28.3 Why Go, not the TypeScript adapter layer
+
+§3.2 assigns "MCP client and server integration" to TypeScript, but that responsibility is about the TypeScript adapter layer acting as an **MCP client** to third-party providers (Atlassian, Docling, Playwright). Punakawan's own outward-facing MCP server — the one connected LLM clients talk to — is implemented in Go instead, using the official Go SDK (`github.com/modelcontextprotocol/go-sdk`), because:
+
+- It serves Go-core data (workspace, policy, knowledge, tasks, workflow state) directly, in-process, via the existing `internal/app` bootstrap — no extra adapter hop.
+- Role orchestration and the workflow state machine are already Go-core responsibilities (§3.1).
+- A JSON-RPC-over-stdio server is exactly what §5.1 already justified for the adapter protocol; MCP is a JSON-RPC 2.0 protocol with its own method names, so the same rationale (easy to inspect, test, isolate) applies.
+
+### 28.4 Server surface
+
+Exposed as `punakawan mcp serve` (stdio transport), started by the connecting client (e.g. an entry in Claude Code's MCP configuration).
+
+**Prompts** (one per role, sourced from `prompts/<role>/`):
+
+- `semar` — context-dossier synthesis and clarification wording
+- `gareng` — feasibility, risk, and compatibility review
+- `petruk` — usefulness challenge and implementation planning
+- `bagong` — independent final review
+
+**Tools** (data operations; no reasoning):
+
+- `build_context_dossier` — assemble §9.1's dossier fields from workspace, git inspection, and durable knowledge
+- `submit_gareng_review` — validate and persist a Gareng output (§8.2) as durable knowledge
+- `submit_petruk_plan` — validate and persist a Petruk planning output (§8.3)
+- `submit_semar_synthesis` — validate and persist Semar's consolidated clarification or final plan (§8.1, §9.3)
+- `submit_bagong_review` — validate and persist a Bagong output (§8.4)
+- `get_workflow_state` / `advance_workflow` — read and transition the run state machine (§18.1)
+
+### 28.5 Non-goals
+
+Punakawan does not call any LLM API itself, does not select or configure a model, and does not run unattended without a connected client. Autonomous, unattended operation (if ever wanted) is a distinct future decision, not covered by this section.

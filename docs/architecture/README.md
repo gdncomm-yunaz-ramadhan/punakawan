@@ -19,5 +19,6 @@ This directory contains the Architecture Decision Records (ADRs) formalizing the
 | [ADR-0013](./ADR-0013-external-writes-require-approval-by-default.md) | External writes require approval by default. |
 | [ADR-0014](./ADR-0014-petruk-works-one-isolated-task-at-a-time.md) | Petruk works one isolated task at a time. |
 | [ADR-0015](./ADR-0015-bagong-reviews-raw-evidence-independently.md) | Bagong reviews raw evidence independently. |
+| [ADR-0016](./ADR-0016-punakawans-mcp-server-exposes-roles-to-connected-llm-clients.md) | Punakawan's own MCP server exposes roles to connected LLM clients. |
 
-See `punakawan-go-typescript-detailed-plan.md` §25 for the original decision list and the surrounding sections referenced in each ADR's Context for full rationale.
+See `punakawan-go-typescript-detailed-plan.md` §25 for the original decision list (ADR-0001 through ADR-0015) and §28 for the role-invocation design (ADR-0016).
