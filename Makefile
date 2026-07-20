@@ -30,7 +30,7 @@ generate:
 protocol-check: generate
 	git diff --exit-code -- pkg/protocol packages/schema-types/src/generated packages/schema-types/src/index.ts
 
-integration-test:
+integration-test: build
 	go test -tags=integration ./test/integration/...
 
 package:
