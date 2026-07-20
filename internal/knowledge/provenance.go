@@ -8,8 +8,12 @@ import (
 )
 
 // idPattern matches the stable workspace-level URI scheme from §6.2:
-// pkw:<kind>/<workspace>/<local-id>.
-var idPattern = regexp.MustCompile(`^pkw:[a-z][a-z-]*/[a-z0-9-]+/.+$`)
+// pkw:<kind>/<workspace>/<local-id>, e.g. pkw:req/checkout-platform/REQ-1.
+// This must stay identical to protocol/knowledge.schema.json's "id" pattern:
+// the generated KnowledgeRecord type enforces that pattern on every decode
+// (Get, Import, ...), so a looser check here would let Put accept an id
+// that later reads back as an error.
+var idPattern = regexp.MustCompile(`^pkw:[a-z]+/[a-z0-9-]+/.+$`)
 
 // Validate enforces the required provenance fields from §7.3 and the §7.4
 // rule that knowledge must not be silently promoted to verified: a record
