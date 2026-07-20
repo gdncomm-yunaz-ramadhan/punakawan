@@ -202,6 +202,19 @@ func (i *Inspector) CurrentBranch(ctx context.Context, repoPath string) (string,
 	return strings.TrimSpace(string(res.Stdout)), nil
 }
 
+// HeadSHA runs `git rev-parse HEAD` in repoPath and returns the current
+// commit SHA, per §15.4 ("Record base commit and resulting commit").
+func (i *Inspector) HeadSHA(ctx context.Context, repoPath string) (string, error) {
+	res, err := i.run(ctx, repoPath, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	if res.ExitCode != 0 {
+		return "", fmt.Errorf("gitops: git rev-parse HEAD: exit %d: %s", res.ExitCode, res.Stderr)
+	}
+	return strings.TrimSpace(string(res.Stdout)), nil
+}
+
 // run executes `git <args...>` in repoPath through the Supervisor.
 func (i *Inspector) run(ctx context.Context, repoPath string, args ...string) (*tools.Result, error) {
 	return i.sup.Run(ctx, tools.Spec{

@@ -17,6 +17,19 @@ import (
 type Worktree struct {
 	Path   string
 	Branch string
+	// BaseSHA is the base repository's HEAD commit at the moment this
+	// worktree was created, i.e. the commit the task branch forked from.
+	// Recorded per §15.4 ("Record base commit and resulting commit").
+	BaseSHA string
+}
+
+// WorktreePath returns the canonical on-disk path for a task's worktree,
+// per §11.1's example layout (.punakawan/worktrees/<repoID>/<taskID>).
+// Exported so callers that need to address a running task's worktree (e.g.
+// file-editing tools) can derive the same path without duplicating the
+// formula.
+func WorktreePath(workspaceRoot, repoID, taskID string) string {
+	return filepath.Join(workspaceRoot, ".punakawan", "worktrees", repoID, taskID)
 }
 
 // WorktreeManager creates and removes isolated worktrees, gated by approval
@@ -137,8 +150,13 @@ func (m *WorktreeManager) Create(ctx context.Context, workspaceRoot, repoPath, r
 		return nil, fmt.Errorf("gitops: repository %s has uncommitted changes; refusing to create a worktree", repoPath)
 	}
 
+	baseSHA, err := m.inspector.HeadSHA(ctx, repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("gitops: resolve base commit: %w", err)
+	}
+
 	branch := "punakawan/" + taskID
-	worktreeDir := filepath.Join(workspaceRoot, ".punakawan", "worktrees", repoID, taskID)
+	worktreeDir := WorktreePath(workspaceRoot, repoID, taskID)
 	if err := os.MkdirAll(filepath.Dir(worktreeDir), 0o755); err != nil {
 		return nil, fmt.Errorf("gitops: create worktree parent directory: %w", err)
 	}
@@ -155,7 +173,7 @@ func (m *WorktreeManager) Create(ctx context.Context, workspaceRoot, repoPath, r
 		return nil, fmt.Errorf("gitops: git worktree add failed: %s", res.Stderr)
 	}
 
-	return &Worktree{Path: worktreeDir, Branch: branch}, nil
+	return &Worktree{Path: worktreeDir, Branch: branch, BaseSHA: baseSHA}, nil
 }
 
 // Remove removes a previously created worktree from its base repository.
