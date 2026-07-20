@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# SignalsAI Tracker — post-commit chain shim
+# Chains to git-ai's per-repo post-commit hook so refs/notes/ai are written
+# even though core.hooksPath redirects away from .git/hooks/.
+GIT_DIR_PATH="$(git rev-parse --git-dir 2>/dev/null || true)"
+[ -z "$GIT_DIR_PATH" ] && exit 0
+LOCAL_HOOK="$GIT_DIR_PATH/hooks/post-commit"
+[ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"
+exit 0

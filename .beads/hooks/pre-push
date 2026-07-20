@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# SignalsAI Tracker — pre-push hook
+
+# ── Buffer stdin first ─────────────────────────────────────────
+STDIN_DATA="$(cat)"
+REMOTE_NAME="${1:-}"
+REMOTE_URL="${2:-}"
+SIGNALS_BIN="$HOME/.signals/bin"
+# Baseline for integrity
+INTEGRITY_FILE="$HOME/.signals/.integrity"
+
+# --- INTEGRITY SHIM ---
+verify_integrity() {
+  local bin="$1"
+
+  if [ ! -f "$INTEGRITY_FILE" ]; then
+    # External installs (managed_binary=false) never write a baseline — skip silently.
+    local managed
+    managed=$(grep "^managed_binary=" "$SIGNALS_CONFIG" 2>/dev/null | cut -d= -f2 || echo "true")
+    [ "$managed" = "false" ] && return 0
+
+    # Managed install: baseline should always exist after install. A missing file
+    # means it was deleted — warn loudly and skip telemetry.
+    echo "WARNING: SignalsAI integrity baseline missing at $INTEGRITY_FILE." >&2
+    echo "WARNING: Re-run the installer to restore it." >&2
+    logger -t SignalsAI "WARNING: Integrity baseline missing — telemetry skipped. Re-run installer."
+    return 1
+  fi
+
+  local expected
+  expected=$(cat "$INTEGRITY_FILE")
+
+  local actual
+  if command -v shasum &>/dev/null; then
+    actual=$(shasum -a 256 "$bin" | awk '{print $1}')
+  else
+    actual=$(sha256sum "$bin" | awk '{print $1}')
+  fi
+
+  if [ "$actual" != "$expected" ]; then
+    echo "WARNING: SignalsAI binary integrity mismatch detected!" >&2
+    logger -t SignalsAI "TAMPER ALERT: Binary at $bin has been modified."
+    return 1 # Trigger fallback
+  fi
+  return 0
+}
+
+# Get the real path of THIS script to prevent self-invocation
+SELF_PATH=$(realpath "$0" 2>/dev/null || readlink -f "$0")
+
+# --- CHAINING LOGIC ---
+run_external_hook() {
+  local target_hook="$1"
+  [ ! -x "$target_hook" ] && return 0
+
+  # 1. Resolve to real path to prevent symlink spoofing
+  local real_target
+  real_target=$(realpath "$target_hook" 2>/dev/null || readlink -f "$target_hook")
+
+  # 2. Self-invocation guard: Ensure we aren't calling ourselves recursively
+  if [ "$real_target" = "$SELF_PATH" ]; then
+    return 0
+  fi
+
+  # 3. Execute and capture exit code
+  # Downstream hooks are called BEFORE Signals performs reporting
+  if echo "$STDIN_DATA" | "$target_hook" "$REMOTE_NAME" "$REMOTE_URL"; then
+    return 0
+  else
+    local exit_code=$?
+    # 4. Block push on non-zero exit
+    exit $exit_code
+  fi
+}
+
+# Chain to modern Husky
+run_external_hook "$(git rev-parse --show-toplevel 2>/dev/null)/.husky/pre-push"
+# Chain to classic repository-local hooks
+run_external_hook "$(git rev-parse --git-dir 2>/dev/null)/hooks/pre-push"
+
+# ── JSON string encoding (pure POSIX: sed + awk, no jq/python) ────
+json_str() {
+  local s
+  s=$(printf '%s' "$1" \
+    | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g; s/\r/\\r/g')
+  s=$(printf '%s' "$s" | awk 'NR>1{printf "\\n"} {printf "%s", $0}')
+  printf '"%s"' "$s"
+}
+
+{
+# ── Signals reporting ──────────────────────────────────────────
+SIGNALS_CONFIG="$HOME/.config/signals/config"
+API_KEY=$(grep "^api_key=" "$SIGNALS_CONFIG" 2>/dev/null | cut -d= -f2)
+ENDPOINT="https://api.orgsignals.com/api/client/ide/webhook/commit"
+DLP_FILTER="$SIGNALS_BIN/signals-dlp-filter"
+
+[ -z "$API_KEY" ] && exit 0
+command -v curl &>/dev/null || exit 0
+
+# Verify the git-ai binary hasn't been tampered with since install.
+# On mismatch we skip telemetry but never block the push.
+verify_integrity "$SIGNALS_BIN/git-ai" || exit 0
+
+# Work directory for inter-phase temp files. Cleaned up on hook exit.
+# Curl subprocesses only hold a reference to their own /tmp/signals.* payload
+# files (not WORK_DIR), so the trap is safe even though curls are disowned.
+WORK_DIR=$(mktemp -d /tmp/signals.XXXXXX 2>/dev/null) || exit 0
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+# ── Phase 1: collect commits that have AI notes (fast — git reads only) ──
+echo "$STDIN_DATA" | while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+
+  BRANCH="${local_ref#refs/heads/}"
+
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    COMMITS=$(git log --format="%H" "$local_sha" --not --remotes 2>/dev/null || echo "")
+    [ -z "$COMMITS" ] && COMMITS="$local_sha"
+  else
+    COMMITS=$(git log --format="%H" "${remote_sha}..${local_sha}" 2>/dev/null || echo "")
+  fi
+
+  for SHA in $COMMITS; do
+    NOTE_RAW=$(git notes --ref=refs/notes/ai show "$SHA" 2>/dev/null) || continue
+    [ -z "$NOTE_RAW" ] && continue
+    NOTE_JSON=$(echo "$NOTE_RAW" | awk '/^---$/{found=1; next} found{print}')
+    [ -z "$NOTE_JSON" ] && continue
+
+    AUTHOR_EMAIL=$(git log -1 --format="%ae" "$SHA" 2>/dev/null || echo "")
+    COMMITTED_AT=$(git log -1 --format="%cI" "$SHA" 2>/dev/null || echo "")
+
+    # Persist per-commit metadata to WORK_DIR so the pipe subshell
+    # boundary doesn't hide it from the phases below.
+    printf '%s\n' "$SHA" "$BRANCH" "$AUTHOR_EMAIL" "$COMMITTED_AT" \
+      > "$WORK_DIR/${SHA}.meta"
+    printf '%s' "$NOTE_JSON" > "$WORK_DIR/${SHA}.note"
+  done
+done
+
+# ── Phase 2: run all git-ai stats calls in parallel, then wait ───────
+# Each call writes its JSON to ${SHA}.stats. Running them concurrently
+# reduces N × ~50ms to ~1 × (slowest call) for a typical multi-commit push.
+for META_FILE in "$WORK_DIR"/*.meta; do
+  [ -f "$META_FILE" ] || continue
+  SHA=$(sed -n '1p' "$META_FILE")
+  (
+    "$SIGNALS_BIN/git-ai" stats "$SHA" --json 2>/dev/null \
+      > "$WORK_DIR/${SHA}.stats" \
+      || printf '{}' > "$WORK_DIR/${SHA}.stats"
+  ) &
+done
+wait  # all stats collected before we build any payload
+
+# ── Phase 3: build payloads and fire curl (async, non-blocking) ──────
+for META_FILE in "$WORK_DIR"/*.meta; do
+  [ -f "$META_FILE" ] || continue
+  SHA=$(sed -n '1p' "$META_FILE")
+  BRANCH=$(sed -n '2p' "$META_FILE")
+  AUTHOR_EMAIL=$(sed -n '3p' "$META_FILE")
+  COMMITTED_AT=$(sed -n '4p' "$META_FILE")
+  NOTE_JSON=$(cat "$WORK_DIR/${SHA}.note")
+  STATS=$(cat "$WORK_DIR/${SHA}.stats")
+
+  # Escape user-controlled string fields before embedding in JSON.
+  # SHA, COMMITTED_AT, API_KEY are structurally safe (hex/ISO/alphanum).
+  # STATS and NOTE_JSON are already well-formed JSON objects from git-ai.
+  BRANCH_J=$(json_str "$BRANCH")
+  AUTHOR_J=$(json_str "$AUTHOR_EMAIL")
+  REMOTE_J=$(json_str "$REMOTE_URL")
+
+  PAYLOAD_FILE=$(mktemp /tmp/signals.XXXXXX)
+  RAW_FILE="${PAYLOAD_FILE}.raw"
+  cat > "$RAW_FILE" << PAYLOAD
+{
+  "integrationKey": "${API_KEY}",
+  "commitSha": "${SHA}",
+  "committer": ${AUTHOR_J},
+  "committedAt": "${COMMITTED_AT}",
+  "branch": ${BRANCH_J},
+  "repositoryUrl": ${REMOTE_J},
+  "stats": ${STATS},
+  "gitNote": ${NOTE_JSON}
+}
+PAYLOAD
+
+  if [ -x "$DLP_FILTER" ]; then
+    "$DLP_FILTER" < "$RAW_FILE" > "$PAYLOAD_FILE"
+    rm -f "$RAW_FILE"
+  else
+    mv "$RAW_FILE" "$PAYLOAD_FILE"
+  fi
+
+  (
+    curl -s --max-time 10 --retry 0 \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-Signals-Key: ${API_KEY}" \
+      --data "@${PAYLOAD_FILE}" \
+      "${ENDPOINT}" > /dev/null 2>&1
+    rm -f "$PAYLOAD_FILE"
+  ) &
+  disown $! 2>/dev/null || true
+done
+} 2>/dev/null || true
+exit 0
+
+# --- BEGIN BEADS INTEGRATION v1.0.4 ---
+# This section is managed by beads. Do not remove these markers.
+if command -v bd >/dev/null 2>&1; then
+  export BD_GIT_HOOK=1
+  _bd_timeout=${BEADS_HOOK_TIMEOUT:-300}
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$_bd_timeout" bd hooks run pre-push "$@"
+    _bd_exit=$?
+    if [ $_bd_exit -eq 124 ]; then
+      echo >&2 "beads: hook 'pre-push' timed out after ${_bd_timeout}s — continuing without beads"
+      _bd_exit=0
+    fi
+  else
+    bd hooks run pre-push "$@"
+    _bd_exit=$?
+  fi
+  if [ $_bd_exit -eq 3 ]; then
+    echo >&2 "beads: database not initialized — skipping hook 'pre-push'"
+    _bd_exit=0
+  fi
+  if [ $_bd_exit -ne 0 ]; then exit $_bd_exit; fi
+fi
+# --- END BEADS INTEGRATION v1.0.4 ---
