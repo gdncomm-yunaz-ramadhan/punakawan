@@ -132,6 +132,20 @@ CREATE TABLE IF NOT EXISTS knowledge_records (
 	if err != nil {
 		return fmt.Errorf("knowledge: create schema: %w", err)
 	}
+
+	// Normalized index of each record's §7.2 relations, so relations that
+	// cross repository (and therefore knowledge-record-id) boundaries can be
+	// traversed with a query instead of scanning every record's JSON blob.
+	_, err = s.db.Exec(`
+CREATE TABLE IF NOT EXISTS knowledge_relations (
+  from_id VARCHAR(255) NOT NULL,
+  type VARCHAR(64) NOT NULL,
+  to_id VARCHAR(255) NOT NULL,
+  PRIMARY KEY (from_id, type, to_id)
+)`)
+	if err != nil {
+		return fmt.Errorf("knowledge: create relations schema: %w", err)
+	}
 	return nil
 }
 

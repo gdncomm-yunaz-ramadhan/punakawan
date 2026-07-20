@@ -49,7 +49,8 @@ func TestKnowledgeStoreCRUD(t *testing.T) {
 			Method: protocol.KnowledgeRecordExtractionMethodModelAssisted,
 		},
 		Validity: protocol.KnowledgeRecordValidity{
-			State: protocol.KnowledgeRecordValidityStateVerified,
+			State:      protocol.KnowledgeRecordValidityStateVerified,
+			VerifiedBy: []string{"gareng"},
 		},
 	}
 
@@ -99,5 +100,62 @@ func TestKnowledgeGetNotFound(t *testing.T) {
 
 	if _, err := store.Get("pkw:req/fixture/does-not-exist"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestKnowledgePutRejectsInvalidRecord(t *testing.T) {
+	store := newTestStore(t)
+
+	rec := validRecord()
+	rec.Title = ""
+	if err := store.Put(rec); err == nil {
+		t.Fatal("expected Put to reject a record missing required provenance fields")
+	}
+
+	rec = validRecord()
+	rec.Validity.State = protocol.KnowledgeRecordValidityStateVerified
+	rec.Validity.VerifiedBy = nil
+	if err := store.Put(rec); err == nil {
+		t.Fatal("expected Put to reject a verified record with no verified_by")
+	}
+}
+
+func TestKnowledgeRelationsRoundTrip(t *testing.T) {
+	store := newTestStore(t)
+
+	target := validRecord()
+	target.Id = "pkw:req/fixture/REQ-target"
+	if err := store.Put(target); err != nil {
+		t.Fatalf("Put target: %v", err)
+	}
+
+	source := validRecord()
+	source.Id = "pkw:req/fixture/REQ-source"
+	source.Relations = []protocol.KnowledgeRecordRelationsElem{
+		{Type: protocol.KnowledgeRecordRelationsElemTypeDependsOn, Target: target.Id},
+	}
+	if err := store.Put(source); err != nil {
+		t.Fatalf("Put source: %v", err)
+	}
+
+	related, err := store.Related(target.Id)
+	if err != nil {
+		t.Fatalf("Related: %v", err)
+	}
+	if len(related) != 1 || related[0].Id != source.Id {
+		t.Fatalf("expected [%s], got %+v", source.Id, related)
+	}
+
+	// Re-putting source with no relations must clear the stale edge.
+	source.Relations = nil
+	if err := store.Put(source); err != nil {
+		t.Fatalf("Put source (cleared relations): %v", err)
+	}
+	related, err = store.Related(target.Id)
+	if err != nil {
+		t.Fatalf("Related after clear: %v", err)
+	}
+	if len(related) != 0 {
+		t.Fatalf("expected no related records after clearing relations, got %+v", related)
 	}
 }

@@ -13,14 +13,26 @@ import (
 // ErrNotFound is returned by Get when no record exists for the given id.
 var ErrNotFound = errors.New("knowledge: record not found")
 
-// Put creates or replaces a knowledge record.
+// Put creates or replaces a knowledge record, enforcing the §7.3/§7.4
+// provenance rules and keeping the knowledge_relations index in sync with
+// the record's embedded relations list.
 func (s *Store) Put(rec protocol.KnowledgeRecord) error {
+	if err := Validate(rec); err != nil {
+		return err
+	}
+
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("knowledge: marshal record: %w", err)
 	}
 
-	_, err = s.db.Exec(`
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("knowledge: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
 INSERT INTO knowledge_records (id, type, status, validity_state, data, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
@@ -30,7 +42,18 @@ ON DUPLICATE KEY UPDATE
 	if err != nil {
 		return fmt.Errorf("knowledge: put %s: %w", rec.Id, err)
 	}
-	return nil
+
+	if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ?`, rec.Id); err != nil {
+		return fmt.Errorf("knowledge: clear relations for %s: %w", rec.Id, err)
+	}
+	for _, rel := range rec.Relations {
+		if _, err := tx.Exec(`INSERT INTO knowledge_relations (from_id, type, to_id) VALUES (?, ?, ?)`,
+			rec.Id, string(rel.Type), rel.Target); err != nil {
+			return fmt.Errorf("knowledge: index relation %s -> %s: %w", rec.Id, rel.Target, err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 // Get returns a single knowledge record by id.
@@ -76,11 +99,54 @@ func (s *Store) ListByType(recordType protocol.KnowledgeRecordType) ([]protocol.
 	return records, nil
 }
 
-// Delete removes a knowledge record by id. It does not error if the id does
-// not exist.
+// Delete removes a knowledge record by id, along with any relation edges
+// pointing to or from it. It does not error if the id does not exist.
 func (s *Store) Delete(id string) error {
-	if _, err := s.db.Exec(`DELETE FROM knowledge_records WHERE id = ?`, id); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("knowledge: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM knowledge_records WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("knowledge: delete %s: %w", id, err)
 	}
-	return nil
+	if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ? OR to_id = ?`, id, id); err != nil {
+		return fmt.Errorf("knowledge: delete relations for %s: %w", id, err)
+	}
+	return tx.Commit()
+}
+
+// Related returns every knowledge record that declares a relation targeting
+// id. This is the reverse-lookup direction: a record's own outgoing
+// relations are already available via its embedded Relations field, but
+// finding which other records point at it requires the indexed
+// knowledge_relations table rather than a full scan.
+func (s *Store) Related(id string) ([]protocol.KnowledgeRecord, error) {
+	rows, err := s.db.Query(`
+SELECT r.data FROM knowledge_relations kr
+JOIN knowledge_records r ON r.id = kr.from_id
+WHERE kr.to_id = ?
+ORDER BY r.id`, id)
+	if err != nil {
+		return nil, fmt.Errorf("knowledge: related %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var records []protocol.KnowledgeRecord
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, fmt.Errorf("knowledge: scan related record: %w", err)
+		}
+		var rec protocol.KnowledgeRecord
+		if err := json.Unmarshal(data, &rec); err != nil {
+			return nil, fmt.Errorf("knowledge: decode related record: %w", err)
+		}
+		records = append(records, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("knowledge: iterate related records: %w", err)
+	}
+	return records, nil
 }
