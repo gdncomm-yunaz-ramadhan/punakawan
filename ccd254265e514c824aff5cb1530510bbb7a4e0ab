@@ -1,0 +1,25 @@
+internal/knowledge/importexport.go
+  fd931d7b51a068b5 1-85
+internal/knowledge/importexport_test.go
+  fd931d7b51a068b5 1-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ccd254265e514c824aff5cb1530510bbb7a4e0ab",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 905,
+      "total_deletions": 10,
+      "accepted_lines": 895,
+      "overriden_lines": 0
+    }
+  }
+}
