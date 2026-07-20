@@ -1,0 +1,49 @@
+packages/docling-adapter/src/adapter.ts
+  fd931d7b51a068b5 1-32
+packages/docling-adapter/src/manifest.ts
+  fd931d7b51a068b5 1-39
+packages/docling-adapter/src/normalize.test.ts
+  fd931d7b51a068b5 8
+packages/docling-adapter/src/execute.ts
+  fd931d7b51a068b5 1-57
+packages/docling-adapter/src/index.ts
+  fd931d7b51a068b5 1-4
+packages/docling-adapter/src/manifest.test.ts
+  fd931d7b51a068b5 4
+packages/docling-adapter/src/execute.test.ts
+  fd931d7b51a068b5 3-4
+.gitignore
+  fd931d7b51a068b5 14
+packages/docling-adapter/tsconfig.json
+  fd931d7b51a068b5 1-14
+packages/docling-adapter/src/doclingClient.ts
+  fd931d7b51a068b5 1-86
+packages/docling-adapter/src/doclingClient.test.ts
+  fd931d7b51a068b5 6-7
+packages/docling-adapter/package.json
+  fd931d7b51a068b5 5-12,14-22
+packages/docling-adapter/src/fixtures.ts
+  fd931d7b51a068b5 1
+packages/docling-adapter/src/normalize.ts
+  fd931d7b51a068b5 1-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "55cd8307a5d38b210e47b5826617c90304e9a95a",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 331,
+      "total_deletions": 11,
+      "accepted_lines": 1968,
+      "overriden_lines": 1
+    }
+  }
+}
