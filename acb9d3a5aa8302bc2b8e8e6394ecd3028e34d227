@@ -1,0 +1,37 @@
+packages/adapter-sdk/src/stdio.ts
+  fd931d7b51a068b5 1-88
+packages/adapter-sdk/src/index.ts
+  fd931d7b51a068b5 1
+Makefile
+  fd931d7b51a068b5 33
+internal/adapters/stdio.go
+  fd931d7b51a068b5 1-184
+packages/adapter-sdk/tsconfig.json
+  fd931d7b51a068b5 1-14
+packages/adapter-sdk/package.json
+  fd931d7b51a068b5 5-21,23
+test/integration/adapter_stdio_test.go
+  fd931d7b51a068b5 1-101
+packages/adapter-sdk/src/prototypeAdapter.ts
+  fd931d7b51a068b5 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "acb9d3a5aa8302bc2b8e8e6394ecd3028e34d227",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 446,
+      "total_deletions": 5,
+      "accepted_lines": 443,
+      "overriden_lines": 0
+    }
+  }
+}
