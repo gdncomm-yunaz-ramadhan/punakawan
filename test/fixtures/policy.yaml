@@ -1,0 +1,32 @@
+capabilities:
+  filesystem:
+    read:
+      - "workspace/**"
+    write:
+      - "workspace/**"
+    deny:
+      - "**/.env"
+      - "**/.ssh/**"
+      - "**/secrets/**"
+
+  git:
+    commit: allowed
+    push: approval
+    force_push: denied
+    default_branch_write: denied
+
+  external:
+    jira_read: allowed
+    jira_write: approval
+    confluence_read: allowed
+    confluence_write: approval
+
+  browser:
+    controlled_profile: allowed
+    existing_profile: approval
+    record_inputs: sanitized
+
+  execution:
+    network: restricted
+    timeout_seconds: 600
+    max_output_bytes: 1000000

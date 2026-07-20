@@ -1,0 +1,26 @@
+version: punakawan.workspace/v1
+id: fixture-workspace
+name: Fixture Workspace
+
+repositories:
+  - id: repo-a
+    path: ./repo-a
+    roles:
+      - implementation
+  - id: repo-b
+    path: ./repo-b
+    roles:
+      - e2e-tests
+
+relations:
+  - from: repo-b
+    type: tests
+    to: repo-a
+
+knowledge:
+  store: dolt
+  database: .punakawan/knowledge
+
+tasks:
+  provider: beads
+  path: .punakawan/tasks

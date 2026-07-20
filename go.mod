@@ -3,6 +3,11 @@ module github.com/ygrip/punakawan
 go 1.26
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.0
+	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/atombender/go-jsonschema v0.23.1 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
