@@ -1,0 +1,33 @@
+internal/tools/ripgrep.go
+  fd931d7b51a068b5 1-13
+internal/tools/rtk.go
+  fd931d7b51a068b5 1-23
+internal/evidence/bundle.go
+  fd931d7b51a068b5 1-33
+internal/tools/rtk_test.go
+  fd931d7b51a068b5 1-35
+internal/evidence/bundle_test.go
+  fd931d7b51a068b5 1-41
+internal/tools/ripgrep_test.go
+  fd931d7b51a068b5 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "bdc5b6abfe5ab974086b4ed4e4b2abba0e723aef",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 648,
+      "total_deletions": 0,
+      "accepted_lines": 648,
+      "overriden_lines": 0
+    }
+  }
+}
