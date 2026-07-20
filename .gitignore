@@ -11,6 +11,7 @@
 # Node / pnpm
 node_modules/
 packages/*/dist/
+packages/*/dist-test/
 
 # Claude Code runtime state
 .claude/scheduled_tasks.lock
