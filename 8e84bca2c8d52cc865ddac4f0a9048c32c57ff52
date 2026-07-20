@@ -1,0 +1,37 @@
+internal/app/app_test.go
+  fd931d7b51a068b5 1-36
+internal/app/app.go
+  fd931d7b51a068b5 1-67
+cmd/punakawan/workspace_cmd.go
+  fd931d7b51a068b5 1-51
+cmd/punakawan/doctor_cmd.go
+  fd931d7b51a068b5 1-37
+cmd/punakawan/main_test.go
+  fd931d7b51a068b5 1-153
+cmd/punakawan/main.go
+  fd931d7b51a068b5 1-2,5-7,9-10,13-30
+cmd/punakawan/git_cmd.go
+  fd931d7b51a068b5 1-135
+cmd/punakawan/worktree_cmd.go
+  fd931d7b51a068b5 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8e84bca2c8d52cc865ddac4f0a9048c32c57ff52",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 648,
+      "total_deletions": 22,
+      "accepted_lines": 628,
+      "overriden_lines": 0
+    }
+  }
+}
