@@ -1,0 +1,37 @@
+id: atlassian-cloud
+name: Atlassian Cloud Adapter
+version: 0.1.0
+protocol: punakawan.adapter/v1
+runtime: node
+
+provides:
+  - knowledge-source
+  - issue-tracker
+  - documentation-system
+
+permissions:
+  network:
+    hosts:
+      - "*.atlassian.net"
+  filesystem:
+    read: []
+    write: []
+  secrets:
+    - ATLASSIAN_ACCESS_TOKEN
+
+operations:
+  jira.search:
+    side_effect: false
+  jira.read:
+    side_effect: false
+  jira.create:
+    side_effect: true
+    approval: required
+  jira.comment:
+    side_effect: true
+    approval: required
+  confluence.read:
+    side_effect: false
+  confluence.update:
+    side_effect: true
+    approval: required
