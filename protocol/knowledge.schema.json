@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/knowledge.schema.json",
+  "title": "KnowledgeRecord",
+  "description": "A durable knowledge record with provenance and validity state. See punakawan-go-typescript-detailed-plan.md §7.",
+  "type": "object",
+  "required": ["id", "type", "status", "title", "source", "extraction", "validity"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^pkw:[a-z]+/[a-z0-9-]+/.+$" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "workspace", "repository", "component", "source-artifact", "requirement",
+        "acceptance-criterion", "claim", "assumption", "constraint", "decision",
+        "question", "answer", "api-contract", "data-contract", "browser-flow",
+        "test-case", "deployment-unit", "work-item", "change-set", "evidence",
+        "external-reference", "person-or-team", "risk", "review-finding"
+      ]
+    },
+    "status": { "type": "string" },
+    "title": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["provider", "retrieved_at"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string" },
+        "external_id": { "type": "string" },
+        "version": { "type": ["string", "integer"] },
+        "uri": { "type": "string" },
+        "section": { "type": "string" },
+        "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "retrieved_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "extraction": {
+      "type": "object",
+      "required": ["method"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string", "enum": ["model-assisted", "manual", "imported"] },
+        "extractor_version": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "validity": {
+      "type": "object",
+      "required": ["state"],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["observed", "inferred", "assumed", "verified", "disputed", "superseded", "invalid", "stale"]
+        },
+        "verified_by": { "type": "array", "items": { "type": "string" } },
+        "verified_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "target"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "derived-from", "supersedes", "implements", "validates", "tested-by",
+              "automated-by", "deployed-by", "depends-on", "blocks", "related-to",
+              "conflicts-with", "owned-by", "applies-to", "verified-by",
+              "discovered-from", "documented-in", "tracked-by", "observed-in",
+              "assumes", "resolves"
+            ]
+          },
+          "target": { "type": "string" }
+        }
+      }
+    }
+  }
+}

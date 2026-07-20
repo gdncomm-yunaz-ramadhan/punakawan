@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/flow.schema.json",
+  "title": "BrowserFlow",
+  "description": "A normalized, semantic browser flow recorded by the human-guided recorder. See punakawan-go-typescript-detailed-plan.md §12.9.",
+  "type": "object",
+  "required": ["id", "name", "version", "purpose", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "purpose": {
+      "type": "object",
+      "required": ["actor", "goal"],
+      "additionalProperties": false,
+      "properties": {
+        "actor": { "type": "string" },
+        "goal": { "type": "string" }
+      }
+    },
+    "preconditions": { "type": "array", "items": { "type": "string" } },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "action"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "action": {
+            "type": "string",
+            "enum": ["navigate", "click", "fill", "select", "check", "uncheck", "submit", "keyboard"]
+          },
+          "route": { "type": "string" },
+          "target": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "role": { "type": "string" },
+              "name": { "type": "string" },
+              "name_pattern": { "type": "string" },
+              "label": { "type": "string" },
+              "placeholder": { "type": "string" },
+              "text": { "type": "string" }
+            }
+          },
+          "value": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "required": ["kind"],
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "type": "string", "const": "secret" },
+                  "parameter": { "type": "string" },
+                  "recorded": { "type": "boolean", "const": false }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["parameter"],
+                "additionalProperties": false,
+                "properties": {
+                  "parameter": { "type": "string" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "expected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["text_visible", "url_matches", "element_visible"] },
+          "value": { "type": "string" }
+        }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "target"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["validates", "automated-by"] },
+          "target": { "type": "string" }
+        }
+      }
+    }
+  }
+}

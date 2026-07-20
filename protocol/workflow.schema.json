@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/workflow.schema.json",
+  "title": "WorkflowRun",
+  "description": "A running or completed workflow instance and its state-machine position. See punakawan-go-typescript-detailed-plan.md §9, §18.1.",
+  "type": "object",
+  "required": ["id", "workspace", "workflow_name", "state", "created_at", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "workspace": { "type": "string" },
+    "workflow_name": {
+      "type": "string",
+      "enum": [
+        "feature-delivery",
+        "requirement-review",
+        "browser-flow-capture",
+        "implementation-only",
+        "final-review"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "created",
+        "context-building",
+        "awaiting-clarification",
+        "planning",
+        "awaiting-approval",
+        "executing",
+        "reviewing",
+        "blocked",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["state", "at"],
+        "additionalProperties": false,
+        "properties": {
+          "state": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

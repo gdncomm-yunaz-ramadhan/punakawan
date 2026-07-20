@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/evidence.schema.json",
+  "title": "EvidenceRecord",
+  "description": "A single piece of evidence linked to a task run and its supporting artifact. See punakawan-go-typescript-detailed-plan.md §17.",
+  "type": "object",
+  "required": ["id", "run_id", "type", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "source-excerpt", "repository-snapshot", "command-output", "test-report",
+        "playwright-trace", "screenshot", "api-diff", "git-diff", "commit",
+        "user-answer", "approval-record", "external-response", "review-finding"
+      ]
+    },
+    "path": { "type": "string" },
+    "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "summary": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}

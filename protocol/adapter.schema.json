@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/adapter.schema.json",
+  "title": "AdapterManifest",
+  "description": "Manifest describing a TypeScript adapter's identity, transport, capabilities, and permissions. See punakawan-go-typescript-detailed-plan.md §5.4.",
+  "type": "object",
+  "required": ["id", "name", "version", "protocol", "runtime", "provides", "permissions", "operations"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "name": { "type": "string" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$" },
+    "protocol": { "type": "string", "const": "punakawan.adapter/v1" },
+    "runtime": { "type": "string", "enum": ["node"] },
+    "provides": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "permissions": {
+      "type": "object",
+      "required": ["network", "filesystem", "secrets"],
+      "additionalProperties": false,
+      "properties": {
+        "network": {
+          "type": "object",
+          "required": ["hosts"],
+          "additionalProperties": false,
+          "properties": {
+            "hosts": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "filesystem": {
+          "type": "object",
+          "required": ["read", "write"],
+          "additionalProperties": false,
+          "properties": {
+            "read": { "type": "array", "items": { "type": "string" } },
+            "write": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "secrets": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["side_effect"],
+        "additionalProperties": false,
+        "properties": {
+          "side_effect": { "type": "boolean" },
+          "approval": { "type": "string", "enum": ["required"] }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/event.schema.json",
+  "title": "Event",
+  "description": "Structured event record written to the JSONL event journal. See punakawan-go-typescript-detailed-plan.md §7.5, §19.1.",
+  "type": "object",
+  "required": ["id", "type", "timestamp", "run_id", "operation", "result"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "type": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "run_id": { "type": "string" },
+    "workflow": { "type": "string" },
+    "role": { "type": "string", "enum": ["semar", "gareng", "petruk", "bagong"] },
+    "workspace": { "type": "string" },
+    "repository": { "type": "string" },
+    "task": { "type": "string" },
+    "adapter": { "type": "string" },
+    "tool": { "type": "string" },
+    "operation": { "type": "string" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "result": { "type": "string", "enum": ["success", "failure", "cancelled", "timeout"] },
+    "approval_id": { "type": "string" },
+    "payload": { "type": "object" }
+  }
+}
