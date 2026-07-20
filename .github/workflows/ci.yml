@@ -25,6 +25,9 @@ jobs:
           node-version: "22"
           cache: pnpm
 
+      - name: Install Dolt
+        run: sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
+
       - name: Bootstrap
         run: make bootstrap
 
