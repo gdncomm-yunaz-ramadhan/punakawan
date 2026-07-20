@@ -103,3 +103,170 @@ func TestCreateTaskAndDependency(t *testing.T) {
 		t.Fatalf("AddDependency: %v", err)
 	}
 }
+
+func TestReadyNoIssues(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	issues, err := Ready(ctx, sup, dir, ReadyOptions{})
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("expected no ready issues in an empty project, got %d", len(issues))
+	}
+}
+
+func TestReadyListsOpenIssue(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	taskID, err := CreateTask(ctx, sup, dir, "Ready task", "task description", CreateTaskOptions{
+		Labels: []string{"alpha"},
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	issues, err := Ready(ctx, sup, dir, ReadyOptions{})
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected exactly 1 ready issue, got %d: %+v", len(issues), issues)
+	}
+	if issues[0].ID != taskID {
+		t.Fatalf("expected ready issue id %q, got %q", taskID, issues[0].ID)
+	}
+	if issues[0].Status != "open" {
+		t.Fatalf("expected status %q, got %q", "open", issues[0].Status)
+	}
+	if issues[0].Title != "Ready task" {
+		t.Fatalf("expected title %q, got %q", "Ready task", issues[0].Title)
+	}
+}
+
+func TestReadyExcludeLabel(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	if _, err := CreateTask(ctx, sup, dir, "Excluded task", "desc", CreateTaskOptions{
+		Labels: []string{"skip-me"},
+	}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	keepID, err := CreateTask(ctx, sup, dir, "Kept task", "desc", CreateTaskOptions{})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	issues, err := Ready(ctx, sup, dir, ReadyOptions{ExcludeLabels: []string{"skip-me"}})
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected exactly 1 ready issue after exclude-label filter, got %d: %+v", len(issues), issues)
+	}
+	if issues[0].ID != keepID {
+		t.Fatalf("expected remaining issue id %q, got %q", keepID, issues[0].ID)
+	}
+}
+
+func TestReadyExcludeType(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	if _, err := CreateTask(ctx, sup, dir, "Epic", "desc", CreateTaskOptions{Type: "epic"}); err != nil {
+		t.Fatalf("CreateTask (epic): %v", err)
+	}
+	taskID, err := CreateTask(ctx, sup, dir, "Plain task", "desc", CreateTaskOptions{Type: "task"})
+	if err != nil {
+		t.Fatalf("CreateTask (task): %v", err)
+	}
+
+	issues, err := Ready(ctx, sup, dir, ReadyOptions{ExcludeTypes: []string{"epic"}})
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected exactly 1 ready issue after exclude-type filter, got %d: %+v", len(issues), issues)
+	}
+	if issues[0].ID != taskID {
+		t.Fatalf("expected remaining issue id %q, got %q", taskID, issues[0].ID)
+	}
+}
+
+func TestReadyAssigneeFilterExcludesUnassigned(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	if _, err := CreateTask(ctx, sup, dir, "Unassigned task", "desc", CreateTaskOptions{}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	issues, err := Ready(ctx, sup, dir, ReadyOptions{Assignee: "nobody-in-particular"})
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("expected no ready issues for a non-matching assignee filter, got %d: %+v", len(issues), issues)
+	}
+}
+
+func TestClaimReadyClaimsAndStopsReturningIssue(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	taskID, err := CreateTask(ctx, sup, dir, "Claimable task", "desc", CreateTaskOptions{})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, err := ClaimReady(ctx, sup, dir, ReadyOptions{})
+	if err != nil {
+		t.Fatalf("ClaimReady: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("expected exactly 1 claimed issue, got %d: %+v", len(claimed), claimed)
+	}
+	if claimed[0].ID != taskID {
+		t.Fatalf("expected claimed issue id %q, got %q", taskID, claimed[0].ID)
+	}
+	if claimed[0].Status != "in_progress" {
+		t.Fatalf("expected status %q after claim, got %q", "in_progress", claimed[0].Status)
+	}
+	if claimed[0].Assignee == "" {
+		t.Fatal("expected a non-empty assignee after claim")
+	}
+
+	// The task is now in_progress, so it must no longer show up as ready
+	// (plain Ready) nor be claimable again (ClaimReady).
+	stillReady, err := Ready(ctx, sup, dir, ReadyOptions{})
+	if err != nil {
+		t.Fatalf("Ready after claim: %v", err)
+	}
+	if len(stillReady) != 0 {
+		t.Fatalf("expected no ready issues after claiming the only one, got %d: %+v", len(stillReady), stillReady)
+	}
+
+	reclaimed, err := ClaimReady(ctx, sup, dir, ReadyOptions{})
+	if err != nil {
+		t.Fatalf("ClaimReady (second attempt): %v", err)
+	}
+	if len(reclaimed) != 0 {
+		t.Fatalf("expected no issue to be claimable a second time, got %d: %+v", len(reclaimed), reclaimed)
+	}
+}
+
+func TestClaimReadyNoIssues(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	claimed, err := ClaimReady(ctx, sup, dir, ReadyOptions{})
+	if err != nil {
+		t.Fatalf("ClaimReady: %v", err)
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("expected no claimed issues in an empty project, got %d", len(claimed))
+	}
+}

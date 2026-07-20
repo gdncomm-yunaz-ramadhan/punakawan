@@ -161,3 +161,147 @@ func Available(ctx context.Context, sup *tools.Supervisor, dir string) bool {
 	res, err := sup.Run(ctx, tools.Spec{Name: "bd", Args: []string{"--version"}, Dir: dir, Timeout: 5 * time.Second})
 	return err == nil && res.ExitCode == 0
 }
+
+// ReadyIssue is the subset of `bd ready --json`'s (and `bd ready --claim
+// --json`'s) per-issue output this package needs. Verified empirically (bd
+// version 1.0.4): both invocations emit the same JSON object shape, one
+// difference being that a successful --claim additionally populates
+// Assignee and StartedAt and sets Status to "in_progress" (plain `bd ready`
+// only lists issues that are still "open"). bd omits empty fields (e.g.
+// Description, Labels, Dependencies, Parent) rather than emitting zero
+// values, which is why every field below is tagged omitempty-tolerant via
+// pointer-free zero values decoding cleanly from an absent key.
+//
+// bd emits additional fields this package does not need (schema_version,
+// comment_count, dependency_count, dependent_count, ...); the JSON decoder
+// simply ignores them.
+type ReadyIssue struct {
+	ID           string            `json:"id"`
+	Title        string            `json:"title"`
+	Description  string            `json:"description"`
+	Status       string            `json:"status"`
+	Priority     int               `json:"priority"`
+	IssueType    string            `json:"issue_type"`
+	Owner        string            `json:"owner"`
+	Assignee     string            `json:"assignee"`
+	Labels       []string          `json:"labels,omitempty"`
+	Parent       string            `json:"parent"`
+	Dependencies []ReadyDependency `json:"dependencies,omitempty"`
+	CreatedAt    string            `json:"created_at"`
+	CreatedBy    string            `json:"created_by"`
+	UpdatedAt    string            `json:"updated_at"`
+	StartedAt    string            `json:"started_at"`
+}
+
+// ReadyDependency is the subset of a ReadyIssue's "dependencies" entries
+// this package needs, matching depResult's field naming for consistency.
+type ReadyDependency struct {
+	IssueId     string `json:"issue_id"`
+	DependsOnId string `json:"depends_on_id"`
+	Type        string `json:"type"`
+}
+
+// ReadyOptions holds the optional `bd ready` filters this package exposes.
+// Fields left empty/zero are simply omitted from the argv, deferring to
+// bd's own defaults (notably --limit's default of 100; this package does
+// not override it, so callers wanting more than 100 results must page via
+// repeated calls, and callers wanting bd's "unlimited" behavior have no way
+// to request --limit 0 through this struct today).
+//
+// Flags intentionally not exposed: --claim (mutating; see ClaimReady
+// below), --mol/--mol-type/--gated (molecule-specific dispatch, out of
+// scope for a thin ready-task-selection wrapper), --explain (debug/human
+// output, not additional structured data), --plain/--pretty (display-only,
+// irrelevant with --json), --unassigned (redundant with Assignee=="" filtering
+// client-side if ever needed), --label/--label-any/--priority/--type/--sort/
+// --parent/--has-metadata-key/--metadata-field/--include-deferred/
+// --include-ephemeral (not called out by the task's "at minimum" list and
+// not needed by the plan's current callers; can be added later if a real
+// caller needs them).
+type ReadyOptions struct {
+	// Assignee filters by bd's -a/--assignee.
+	Assignee string
+	// ExcludeLabels excludes issues with ANY of these labels, via bd's
+	// --exclude-label (repeatable on the CLI).
+	ExcludeLabels []string
+	// ExcludeTypes excludes these issue types, via bd's --exclude-type
+	// (repeatable on the CLI).
+	ExcludeTypes []string
+}
+
+// readyArgs builds the shared argv tail for `bd ready` and `bd ready
+// --claim`, given opts.
+func readyArgs(opts ReadyOptions) []string {
+	var args []string
+	if opts.Assignee != "" {
+		args = append(args, "--assignee", opts.Assignee)
+	}
+	for _, label := range opts.ExcludeLabels {
+		args = append(args, "--exclude-label", label)
+	}
+	for _, issueType := range opts.ExcludeTypes {
+		args = append(args, "--exclude-type", issueType)
+	}
+	return args
+}
+
+// decodeReadyIssues runs argv (a `bd ready` invocation already carrying
+// --json) in dir and decodes its stdout as a []ReadyIssue. An empty result
+// set is not an error: bd exits 0 and prints "[]" when no issues match, per
+// empirical verification, so callers get a nil/empty slice rather than an
+// error in that case.
+func decodeReadyIssues(ctx context.Context, sup *tools.Supervisor, dir string, argv []string) ([]ReadyIssue, error) {
+	res, err := sup.Run(ctx, tools.Spec{Name: "bd", Args: argv, Dir: dir, Timeout: 30 * time.Second})
+	if err != nil {
+		return nil, fmt.Errorf("beads: bd ready: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("beads: bd ready failed: %s", strings.TrimSpace(string(res.Stderr)))
+	}
+
+	var out []ReadyIssue
+	if err := json.Unmarshal(res.Stdout, &out); err != nil {
+		return nil, fmt.Errorf("beads: decode bd ready output: %w", err)
+	}
+	return out, nil
+}
+
+// Ready runs `bd ready --json` in dir, filtered per opts, and returns the
+// issues bd considers claimable right now (open, with no active blockers;
+// bd's GetReadyWork semantics exclude in_progress, blocked, deferred, and
+// hooked issues on its own).
+//
+// dir must be a directory Supervisor sup is permitted to run commands in
+// (see tools.Supervisor.AllowedRoots) and must contain (or be within) an
+// initialized bd project (`bd init`).
+//
+// This corresponds to punakawan-go-typescript-detailed-plan.md §9's flow
+// diagram step "Petruk executes ready task": Ready is how a caller
+// discovers which task to execute next, without mutating any issue state
+// (see ClaimReady for the mutating variant, §11.3's "claim task" step).
+func Ready(ctx context.Context, sup *tools.Supervisor, dir string, opts ReadyOptions) ([]ReadyIssue, error) {
+	args := append([]string{"ready", "--json"}, readyArgs(opts)...)
+	return decodeReadyIssues(ctx, sup, dir, args)
+}
+
+// ClaimReady runs `bd ready --claim --json` in dir, filtered per opts,
+// atomically claiming (per bd ready --help) the first ready issue matching
+// the filters: bd sets its status to in_progress and its assignee, and
+// returns that single issue's data in the same shape as Ready, as a
+// one-element slice. If no issue matches, it returns an empty slice and no
+// error, exactly like Ready (verified empirically: bd exits 0 and prints
+// "[]" in that case too, it does not treat "nothing to claim" as a
+// failure).
+//
+// This is split out from Ready, rather than a Claim bool field on
+// ReadyOptions, because it is a mutating action (it changes issue state in
+// bd's store) where Ready is read-only; keeping them as separate functions
+// makes that distinction visible at call sites, mirroring this package's
+// existing CreateTask/AddDependency split between issue-graph construction
+// and (here) issue-graph traversal vs. claiming. This corresponds to
+// punakawan-go-typescript-detailed-plan.md §11.3's execution loop step 1,
+// "claim task".
+func ClaimReady(ctx context.Context, sup *tools.Supervisor, dir string, opts ReadyOptions) ([]ReadyIssue, error) {
+	args := append([]string{"ready", "--claim", "--json"}, readyArgs(opts)...)
+	return decodeReadyIssues(ctx, sup, dir, args)
+}
