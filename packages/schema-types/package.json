@@ -2,5 +2,22 @@
   "name": "@punakawan/schema-types",
   "version": "0.1.0",
   "private": true,
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.4",
+    "json-schema-to-zod": "^2.8.1",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
 }

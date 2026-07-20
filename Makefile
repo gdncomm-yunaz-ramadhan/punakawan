@@ -21,13 +21,14 @@ lint:
 	go vet ./...
 	pnpm -r --if-present lint
 
-# Schema-driven codegen lands with the Canonical JSON Schemas task (M0).
+# Regenerates Go structs and TS interfaces/Zod validators from protocol/*.schema.json.
 generate:
-	@echo "generate: no schemas yet (tracked under M0 Canonical JSON Schemas / Generated types)"
+	go generate ./...
+	pnpm -r --if-present generate
 
-# Cross-language schema compatibility check lands with the protocol package (M0).
-protocol-check:
-	@echo "protocol-check: no protocol package yet (tracked under M0)"
+# Fails if generated code is stale relative to protocol/*.schema.json (§5.5).
+protocol-check: generate
+	git diff --exit-code -- pkg/protocol packages/schema-types/src/generated packages/schema-types/src/index.ts
 
 integration-test:
 	go test -tags=integration ./test/integration/...
