@@ -88,6 +88,10 @@ The knowledge model must support this naturally rather than treating repositorie
 
 Punakawan can ask the user to demonstrate an existing browser flow. It should record the semantic path, sanitize sensitive input, save it as durable project knowledge, and generate or adjust Playwright tests.
 
+### 2.7 Conform to existing conventions before imposing defaults
+
+A repository's existing code style, `.editorconfig`, linter/formatter configuration, and directory structure take precedence over Punakawan's own defaults. Punakawan must detect these conventions, store them as durable knowledge with provenance, and conform to them when implementing tasks. The same durable profile lets a reference repository serve as a style and structure baseline when scaffolding a new project (see §27).
+
 ---
 
 ## 3. High-Level Architecture
@@ -515,6 +519,7 @@ Use Dolt as the canonical relational knowledge store. Use Git-tracked YAML and J
 - Workspace
 - Repository
 - Component
+- ConventionProfile
 - SourceArtifact
 - Requirement
 - AcceptanceCriterion
@@ -702,6 +707,7 @@ Responsibilities:
 - E2E adjustments
 - Documentation changes
 - Discovery of follow-up tasks
+- Scaffolding new projects from a reference repository's convention profile
 
 Petruk planning output:
 
@@ -1249,6 +1255,18 @@ Capabilities:
 - Detect breaking changes
 - Generate compatibility evidence
 - Map operations to E2E flows and requirements
+
+### 13.5 Repository convention extraction
+
+Detect a repository's existing conventions rather than assuming Punakawan's own defaults apply. See §27 for the full design.
+
+Capabilities:
+
+- Detect `.editorconfig`, linter and formatter configuration (ESLint, Prettier, golangci-lint, gofmt, stylelint, rustfmt, and equivalents)
+- Detect directory layout and naming patterns
+- Detect package manager and build tooling in use
+- Normalize findings into a `ConventionProfile` knowledge record with provenance
+- Reuse a `ConventionProfile` as a baseline when scaffolding a new project
 
 ---
 
@@ -1803,6 +1821,7 @@ Deliverables:
 - Cross-repository relations
 - Knowledge import and export
 - Staleness detection
+- Repository convention profile extraction
 
 Acceptance criteria:
 
@@ -1810,6 +1829,7 @@ Acceptance criteria:
 - Every relation retains source provenance.
 - Beads tasks map back to requirements and Jira keys.
 - Knowledge changes can be diffed and versioned.
+- A repository's editorconfig, formatter/linter config, and directory conventions are captured as a `ConventionProfile` with provenance.
 
 ---
 
@@ -1996,6 +2016,7 @@ The first useful release should include:
 - OpenAPI diff
 - Approval-gated external writes
 - Evidence bundles
+- Repository convention profile extraction (style/structure baseline reuse for new-project scaffolding)
 
 Do not include initially:
 
@@ -2129,3 +2150,87 @@ Punakawan is successful when the following scenario works reliably:
 15. Punakawan reports an honest final verdict and preserves a reproducible evidence bundle.
 
 That is the first complete Punakawan experience. Everything else is expansion, polish, or another opportunity for a dependency to publish a breaking minor release.
+
+---
+
+## 27. Repository Convention Learning and Baseline Scaffolding
+
+### 27.1 Objective
+
+Punakawan must not impose its own defaults onto a repository that already has established conventions. It should detect those conventions, store them as durable, provenance-backed knowledge, and conform to them for every task executed in that repository. The same durable record lets a reference repository act as a style and structure baseline when scaffolding an unrelated new project.
+
+### 27.2 Convention sources detected
+
+- `.editorconfig`
+- Formatter configuration (Prettier, gofmt, `go fmt` settings, rustfmt, black/ruff, clang-format)
+- Linter configuration (ESLint, golangci-lint, stylelint, and equivalents)
+- Directory layout and naming patterns (derived from the existing tree, not assumed)
+- Package manager and build tooling already in use (npm/pnpm/yarn, go.work vs single module, Makefile vs Taskfile)
+- License header conventions, if present
+
+### 27.3 ConventionProfile knowledge record
+
+Follows the same provenance model as §7.3.
+
+```yaml
+id: pkw:convention/checkout-platform/checkout-api
+type: convention-profile
+status: active
+title: checkout-api convention profile
+
+source:
+  provider: git
+  external_id: checkout-api@main
+  version: <commit-sha>
+  uri: repo://checkout-api
+  retrieved_at: 2026-07-20T04:00:00Z
+
+extraction:
+  method: model-assisted
+  extractor_version: 0.1.0
+  confidence: 0.9
+
+validity:
+  state: observed
+
+formatting:
+  editorconfig: true
+  linters: [eslint, golangci-lint]
+  formatters: [prettier, gofmt]
+
+structure:
+  layout: monorepo
+  package_manager: pnpm
+  test_framework: [go test, vitest]
+  naming_convention: kebab-case-dirs
+```
+
+### 27.4 Detection method and confidence
+
+- Explicit configuration files (`.editorconfig`, `.eslintrc*`, `.prettierrc*`, `.golangci.yml`) are recorded with `validity.state: observed` and high confidence.
+- Patterns inferred from repository structure without an explicit config file (e.g. consistent kebab-case directory naming with no documented rule) are recorded with `validity.state: inferred` and a lower confidence score, per §7.4.
+- A `ConventionProfile` is revalidated when the source commit changes, following the same staleness detection as other knowledge (§7, Milestone 2).
+
+### 27.5 Applying a profile during implementation
+
+When Petruk executes a task in a repository with an existing `ConventionProfile`, that profile's formatting and structural conventions take precedence over Punakawan's own defaults. Gareng may flag a task whose plan would deviate from the profile without justification.
+
+### 27.6 Baseline scaffolding workflow
+
+To scaffold a new project from a reference repository:
+
+1. Extract or load the reference repository's `ConventionProfile`.
+2. Apply its structure (layout, naming, package manager, build tooling) to the new project's initial scaffold.
+3. Apply its formatting and linter configuration.
+4. Record the new project's `ConventionProfile` with a `derived-from` relation (§7.2) pointing to the reference repository's profile.
+
+### 27.7 What is not copied
+
+Baseline scaffolding reuses conventions, not content. It must not copy:
+
+- Secrets or credentials
+- Proprietary or repository-specific business logic
+- License-incompatible code
+- Anything the reference repository's license does not permit reusing
+
+Only structural and stylistic conventions (layout, naming, formatting, tooling choices) transfer to the new project.
