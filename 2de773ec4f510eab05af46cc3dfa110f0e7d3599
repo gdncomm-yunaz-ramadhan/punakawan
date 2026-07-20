@@ -1,0 +1,45 @@
+internal/mcpserver/tools_workflow.go
+  fd931d7b51a068b5 1-70
+cmd/punakawan/mcp_cmd.go
+  fd931d7b51a068b5 1-32
+cmd/punakawan/main.go
+  fd931d7b51a068b5 30
+internal/mcpserver/tools_dossier.go
+  fd931d7b51a068b5 1-68
+internal/app/app.go
+  fd931d7b51a068b5 8-10,13,16,28-31,62-66,74,83-116
+internal/mcpserver/server_test.go
+  fd931d7b51a068b5 1-281
+internal/mcpserver/tools.go
+  fd931d7b51a068b5 1-54
+internal/mcpserver/prompts.go
+  fd931d7b51a068b5 1-51
+internal/mcpserver/server.go
+  fd931d7b51a068b5 1-40
+prompts/prompts.go
+  fd931d7b51a068b5 1-11
+internal/mcpserver/tools_roles.go
+  fd931d7b51a068b5 1-89
+internal/mcpserver/tools_semar.go
+  fd931d7b51a068b5 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2de773ec4f510eab05af46cc3dfa110f0e7d3599",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 806,
+      "total_deletions": 9,
+      "accepted_lines": 797,
+      "overriden_lines": 0
+    }
+  }
+}
