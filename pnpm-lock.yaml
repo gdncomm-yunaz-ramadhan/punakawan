@@ -1,0 +1,31 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  packages/adapter-host: {}
+
+  packages/adapter-sdk: {}
+
+  packages/atlassian-adapter: {}
+
+  packages/docling-adapter: {}
+
+  packages/github-adapter: {}
+
+  packages/gitlab-adapter: {}
+
+  packages/openapi-adapter: {}
+
+  packages/playwright-adapter: {}
+
+  packages/playwright-generator: {}
+
+  packages/playwright-recorder: {}
+
+  packages/schema-types: {}
