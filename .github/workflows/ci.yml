@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Bootstrap
+        run: make bootstrap
+
+      - name: Lint (gofmt, go vet, TS typecheck)
+        run: make lint
+
+      - name: Protocol check (fail if generated code is stale)
+        run: make protocol-check
+
+      - name: Test (Go + TS)
+        run: make test
+
+      - name: Integration test
+        run: make integration-test
