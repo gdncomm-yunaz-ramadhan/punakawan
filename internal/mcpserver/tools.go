@@ -138,4 +138,9 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "sync_jira_subtasks",
 		Description: "Create Jira subtasks under a parent issue for candidates that don't already exist, deduplicating by normalized summary.",
 	}, syncJiraSubtasksHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_jira_task_progress",
+		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment - each independently optional.",
+	}, updateJiraTaskProgressHandler(a))
 }
