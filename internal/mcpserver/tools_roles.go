@@ -67,9 +67,12 @@ func submitPetrukPlanHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 	}
 }
 
-// SubmitBagongReviewInput is submit_bagong_review's input.
+// SubmitBagongReviewInput is submit_bagong_review's input. RunId (unlike
+// Gareng/Petruk/Semar's generic "Id") is a required, dedicated field: the
+// advance_workflow completion gate (§18.1) looks up a run's Bagong review by
+// this exact id, so it cannot be left to a "usually the run id" convention.
 type SubmitBagongReviewInput struct {
-	Id     string                               `json:"id" jsonschema:"short local id for this review, e.g. the run id"`
+	RunId  string                               `json:"run_id" jsonschema:"the workflow run id this review belongs to"`
 	Title  string                               `json:"title" jsonschema:"human-readable title"`
 	Review protocol.KnowledgeRecordBagongReview `json:"review" jsonschema:"the Bagong review payload (§8.4)"`
 }
@@ -80,7 +83,7 @@ func submitBagongReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 		if err != nil {
 			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
-		rec, err := roles.SubmitBagongReview(store, recordID(a, "bagong", in.Id), in.Title, in.Review)
+		rec, err := roles.SubmitBagongReview(store, recordID(a, "bagong", in.RunId), in.Title, in.Review)
 		if err != nil {
 			return nil, SubmitOutput{}, err
 		}
