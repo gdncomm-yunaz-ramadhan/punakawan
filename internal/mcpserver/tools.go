@@ -148,4 +148,9 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "update_jira_task_progress",
 		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes.",
 	}, updateJiraTaskProgressHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "submit_jira_assessment",
+		Description: "Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result.",
+	}, submitJiraAssessmentHandler(a))
 }
