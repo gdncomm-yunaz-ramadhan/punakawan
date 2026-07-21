@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -109,4 +110,35 @@ func (s *Store) Pending() ([]protocol.ApprovalRecord, error) {
 		}
 	}
 	return pending, nil
+}
+
+// Resolve marks the approval record identified by id as approved or denied,
+// appending a new record with the same id per the append-only history
+// convention (see the Store doc comment). This is the generic entry point
+// punakawan's approvals CLI uses: it resolves purely by id, status, and
+// approver, with no notion of which domain (worktree creation, adapter
+// operation, ...) requested it - §16's approval record has no such domain
+// concept either. gitops.WorktreeManager.Approve/Deny and
+// adapters.Gate.Approve/Deny each keep their own inline equivalent rather
+// than being migrated to call this - they predate it, are already tested,
+// and this method's already-resolved guard (below) is a deliberately
+// stricter contract not worth risking against their existing behavior.
+func (s *Store) Resolve(id string, status protocol.ApprovalRecordStatus, approvedBy string) error {
+	current, err := s.Current()
+	if err != nil {
+		return err
+	}
+	rec, ok := current[id]
+	if !ok {
+		return fmt.Errorf("approvals: no request %q; it must be requested before it can be resolved", id)
+	}
+	if rec.Status != protocol.ApprovalRecordStatusPending {
+		return fmt.Errorf("approvals: request %q is already %s", id, rec.Status)
+	}
+
+	now := time.Now().UTC()
+	rec.Status = status
+	rec.ApprovedBy = &approvedBy
+	rec.ResolvedAt = &now
+	return s.Append(rec)
 }

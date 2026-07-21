@@ -28,5 +28,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newWorktreeCmd())
 	root.AddCommand(newDoctorCmd())
 	root.AddCommand(newMCPCmd())
+	root.AddCommand(newApprovalsCmd())
 	return root
 }

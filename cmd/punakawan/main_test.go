@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // newSmokeWorkspace creates a real workspace.yaml plus a real, clean git
@@ -149,5 +153,61 @@ func TestWorktreeCreateWithoutApprovalFailsFromCLI(t *testing.T) {
 
 	if _, err := runCLI(t, dir, "worktree", "create", "repo-a", "task-2"); err == nil {
 		t.Fatal("expected worktree create to fail without a prior approval")
+	}
+}
+
+// TestApprovalsListApproveDeny exercises the generic approvals CLI against
+// an adapter-operation-shaped approval record, which "worktree
+// approve/deny" cannot resolve (it only knows the repo-id/task-id worktree
+// shape) - this is the surface a human uses to grant a pending Jira write.
+func TestApprovalsListApproveDeny(t *testing.T) {
+	dir := newSmokeWorkspace(t)
+
+	a, err := app.Load(dir)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	defer a.Close()
+
+	rec := protocol.ApprovalRecord{
+		Id:          "approval-adapter-atlassian-atlassian.addJiraComment-run-1",
+		RunId:       "run-1",
+		Operation:   protocol.ApprovalRecordOperationExternalWrite,
+		RequestedBy: protocol.ApprovalRecordRequestedBySemar,
+		Status:      protocol.ApprovalRecordStatusPending,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := a.Approvals.Append(rec); err != nil {
+		t.Fatalf("seed pending approval: %v", err)
+	}
+
+	out, err := runCLI(t, dir, "approvals", "list")
+	if err != nil {
+		t.Fatalf("approvals list: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, rec.Id) {
+		t.Fatalf("expected pending approval id in output: %s", out)
+	}
+
+	if _, err := runCLI(t, dir, "approvals", "approve", rec.Id, "--by", "ygrip"); err != nil {
+		t.Fatalf("approvals approve: %v", err)
+	}
+
+	out, err = runCLI(t, dir, "approvals", "list")
+	if err != nil {
+		t.Fatalf("approvals list after approve: %v\n%s", err, out)
+	}
+	if strings.Contains(out, rec.Id) {
+		t.Fatalf("expected no pending approvals after approve, got: %s", out)
+	}
+
+	// Deny requires a fresh pending record; the first is already resolved.
+	rec2 := rec
+	rec2.Id = "approval-adapter-atlassian-atlassian.transitionJiraIssue-run-1"
+	if err := a.Approvals.Append(rec2); err != nil {
+		t.Fatalf("seed second pending approval: %v", err)
+	}
+	if _, err := runCLI(t, dir, "approvals", "deny", rec2.Id, "--by", "ygrip"); err != nil {
+		t.Fatalf("approvals deny: %v", err)
 	}
 }
