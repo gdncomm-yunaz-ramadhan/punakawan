@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/evidence"
@@ -71,6 +72,34 @@ func TestRunOneCommandFailsButOthersStillRun(t *testing.T) {
 	}
 	if report.Results[2].Stdout != "still-ran" {
 		t.Fatalf("command 2 stdout: got %q, want %q (should have run after command 1 failed)", report.Results[2].Stdout, "still-ran")
+	}
+}
+
+func TestSpecForWrapsWithRTKWhenEnabled(t *testing.T) {
+	cmd := Command{Name: "go", Args: []string{"test", "./..."}, Dir: "/repo"}
+
+	spec := specFor(cmd, true)
+	if spec.Name != "rtk" {
+		t.Fatalf("Name: got %q, want %q", spec.Name, "rtk")
+	}
+	want := []string{"go", "test", "./..."}
+	if !reflect.DeepEqual(spec.Args, want) {
+		t.Fatalf("Args: got %v, want %v", spec.Args, want)
+	}
+	if spec.Dir != cmd.Dir {
+		t.Fatalf("Dir: got %q, want %q", spec.Dir, cmd.Dir)
+	}
+}
+
+func TestSpecForRunsDirectlyWhenRTKDisabled(t *testing.T) {
+	cmd := Command{Name: "go", Args: []string{"test", "./..."}, Dir: "/repo"}
+
+	spec := specFor(cmd, false)
+	if spec.Name != "go" {
+		t.Fatalf("Name: got %q, want %q", spec.Name, "go")
+	}
+	if !reflect.DeepEqual(spec.Args, cmd.Args) {
+		t.Fatalf("Args: got %v, want %v", spec.Args, cmd.Args)
 	}
 }
 

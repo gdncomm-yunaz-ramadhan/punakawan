@@ -67,12 +67,19 @@ func Run(ctx context.Context, sup *tools.Supervisor, commands []Command) (Report
 		AllPassed: true,
 	}
 
+	// Checked once, not per command: rtk's presence on PATH does not vary
+	// between commands in the same batch. When available, commands run
+	// through it (e.g. "go test ./..." becomes "rtk go test ./..."), which
+	// executes the same underlying command and exit code but returns
+	// compact, LLM-facing output instead of raw tool output, per
+	// punakawan-go-typescript-detailed-plan.md §11.4/§2.1 ("RTK for compact
+	// command output"). rtk keeps its own full-fidelity tee log on disk, so
+	// this is not a loss of the underlying detail, just a different place to
+	// find it than this package's own evidence bundle.
+	useRTK := len(commands) > 0 && sup.RTKAvailable(ctx, commands[0].Dir)
+
 	for _, cmd := range commands {
-		spec := tools.Spec{
-			Name: cmd.Name,
-			Args: cmd.Args,
-			Dir:  cmd.Dir,
-		}
+		spec := specFor(cmd, useRTK)
 
 		start := time.Now()
 		res, err := sup.Run(ctx, spec)
@@ -96,6 +103,20 @@ func Run(ctx context.Context, sup *tools.Supervisor, commands []Command) (Report
 	}
 
 	return report, nil
+}
+
+// specFor builds the tools.Spec to execute for cmd. When useRTK is true, the
+// command runs wrapped as "rtk <cmd.Name> <cmd.Args...>" instead of
+// executing cmd.Name directly (see the rtk note on Run above); split out
+// from Run so the wrapping decision can be tested without spawning any
+// process.
+func specFor(cmd Command, useRTK bool) tools.Spec {
+	name, args := cmd.Name, cmd.Args
+	if useRTK {
+		name = "rtk"
+		args = append([]string{cmd.Name}, cmd.Args...)
+	}
+	return tools.Spec{Name: name, Args: args, Dir: cmd.Dir}
 }
 
 // MarshalJSON renders the report as tests.json-shaped JSON, per
