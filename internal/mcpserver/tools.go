@@ -153,4 +153,9 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "submit_jira_assessment",
 		Description: "Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result.",
 	}, submitJiraAssessmentHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reopen_task",
+		Description: "Reopen a closed Beads issue, e.g. when Bagong's independent review finds a blocking regression in already-completed work (§8.4). Pairs with report_discovered_task, which covers the 'create a new task' half of the same acceptance criterion.",
+	}, reopenTaskHandler(a))
 }
