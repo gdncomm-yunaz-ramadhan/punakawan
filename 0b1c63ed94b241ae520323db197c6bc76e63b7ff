@@ -1,0 +1,35 @@
+packages/adapter-atlassian/src/mcpClient.ts
+  fd931d7b51a068b5 32-39,63-64,66,72-99,140,143,145-149,152,155-165
+packages/adapter-atlassian/src/manifest.ts
+  fd931d7b51a068b5 21-26
+scripts/install.sh
+  fd931d7b51a068b5 113-121,132,154
+packages/adapter-atlassian/src/operations.ts
+  fd931d7b51a068b5 41-42,44,53-54,59,69-70,79,88-89,94,105,159,179,203,219,242,268,270,281
+packages/adapter-atlassian/test/adapter.test.ts
+  fd931d7b51a068b5 30-32,38-45,58,294-301,316,319-320,357,387,409,431,453,475,497
+packages/adapter-atlassian/test/mcpClient.test.ts
+  fd931d7b51a068b5 3,7,14,19-22,41-84
+packages/adapter-atlassian/src/adapter.ts
+  fd931d7b51a068b5 28,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "0b1c63ed94b241ae520323db197c6bc76e63b7ff",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 180,
+      "total_deletions": 48,
+      "accepted_lines": 180,
+      "overriden_lines": 0
+    }
+  }
+}
