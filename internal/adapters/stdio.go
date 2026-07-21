@@ -56,10 +56,27 @@ type Client struct {
 	done chan struct{}
 }
 
-// Start spawns the adapter process and begins reading its responses.
+// Start spawns the adapter process and begins reading its responses. The
+// child inherits this process's full environment, matching exec.Cmd's
+// default behavior when Env is nil.
 func Start(ctx context.Context, name string, args ...string) (*Client, error) {
+	return start(ctx, nil, name, args...)
+}
+
+// StartWithEnv spawns the adapter process with exactly env as its
+// environment (not inheriting the parent process's environment), for
+// callers that need to scope which variables - especially secrets - a
+// spawned adapter can see, per §11.4/§15.2's secret-lease philosophy.
+func StartWithEnv(ctx context.Context, env []string, name string, args ...string) (*Client, error) {
+	return start(ctx, env, name, args...)
+}
+
+func start(ctx context.Context, env []string, name string, args ...string) (*Client, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stderr = os.Stderr
+	if env != nil {
+		cmd.Env = env
+	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
