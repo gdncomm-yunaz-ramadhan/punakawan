@@ -117,4 +117,10 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "report_discovered_task",
 		Description: "Record newly discovered work found mid-execution as a discovered-from task, labeled for Semar's review (§10.4's discovery rule).",
 	}, reportDiscoveredTaskHandler(a))
+
+	// Jira as source of truth: adapter invocation (§5.1-§5.3).
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "call_adapter_operation",
+		Description: "Invoke any operation an adapter's manifest declares (e.g. Jira/Confluence via the atlassian adapter), starting the adapter process on first use and enforcing its approval requirements.",
+	}, callAdapterOperationHandler(a))
 }
