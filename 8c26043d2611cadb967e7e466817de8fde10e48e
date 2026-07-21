@@ -1,0 +1,29 @@
+internal/workspace/workspace.go
+  fd931d7b51a068b5 92-98,105-106,108,111-113,115-153,221-288
+cmd/punakawan/doctor_cmd.go
+  fd931d7b51a068b5 17
+internal/app/app.go
+  fd931d7b51a068b5 75-81
+internal/workspace/workspace_test.go
+  fd931d7b51a068b5 4-5,37-86,109-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8c26043d2611cadb967e7e466817de8fde10e48e",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 460,
+      "total_deletions": 13,
+      "accepted_lines": 460,
+      "overriden_lines": 0
+    }
+  }
+}
