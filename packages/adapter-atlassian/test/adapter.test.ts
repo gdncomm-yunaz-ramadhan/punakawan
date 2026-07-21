@@ -50,7 +50,7 @@ describe('manifest', () => {
     assert.equal(parsed.runtime, 'node');
     assert.deepEqual(parsed.provides, ['jira', 'confluence']);
     assert.deepEqual(parsed.permissions.network.hosts, ['mcp.atlassian.com']);
-    assert.deepEqual(parsed.permissions.secrets, ['ATLASSIAN_MCP_TOKEN']);
+    assert.deepEqual(parsed.permissions.secrets, ['ATLASSIAN_MCP_TOKEN', 'ATLASSIAN_EMAIL']);
   });
 
   test('declares the write operation as side-effecting and requiring approval', () => {

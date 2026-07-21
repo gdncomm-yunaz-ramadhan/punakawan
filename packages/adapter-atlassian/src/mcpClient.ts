@@ -3,18 +3,42 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 /**
- * Real Atlassian remote MCP endpoint (token-header variant, not the
- * interactive OAuth 2.1 variant). Confirmed via Context7
- * `/atlassian/atlassian-mcp-server`. See
+ * Real Atlassian remote MCP endpoint (headless variant, not the interactive
+ * OAuth 2.1 `/mcp/authv2` variant). Confirmed via Context7
+ * `/atlassian/atlassian-mcp-server` and
+ * https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/.
+ * This single endpoint serves both headless auth variants below - only the
+ * Authorization header differs. See
  * punakawan-go-typescript-detailed-plan.md §13.2.
+ *
+ * Requires an organization admin to have enabled API token authentication
+ * for the Rovo MCP server (Atlassian Administration -> Rovo -> Rovo MCP
+ * server -> Authentication) - neither variant below works otherwise.
  */
 export const ATLASSIAN_MCP_ENDPOINT = 'https://mcp.atlassian.com/v1/mcp';
 
 export interface AtlassianConfig {
-  /** Bearer token for the Atlassian MCP server. Read from ATLASSIAN_MCP_TOKEN. */
+  /**
+   * Read from ATLASSIAN_MCP_TOKEN. Two distinct credential types share this
+   * field, distinguished by whether `email` is also set:
+   *  - A personal API token (created by an individual Atlassian user,
+   *    scoped to their own account) - requires `email` alongside it.
+   *  - A service-account API key (org-level, not tied to one person) - used
+   *    alone, with no email.
+   * Confirmed via the docs above: these are NOT interchangeable header
+   * formats (see buildAuthorizationHeader).
+   */
   token: string;
   /** Atlassian Cloud ID, required by every tool call. Read from ATLASSIAN_CLOUD_ID. */
   cloudId: string;
+  /**
+   * Email of the personal-API-token owner. Read from ATLASSIAN_EMAIL.
+   * Optional: a service-account API key has no associated email. When set,
+   * this is a personal token and the Authorization header must be Basic
+   * base64(email:token); when unset, token is treated as a service-account
+   * Bearer key.
+   */
+  email?: string;
 }
 
 /**
@@ -26,7 +50,7 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Atlassi
   const token = env.ATLASSIAN_MCP_TOKEN;
   if (!token) {
     throw new Error(
-      'Missing required environment variable ATLASSIAN_MCP_TOKEN: the Atlassian adapter cannot authenticate to the remote MCP server without a bearer token.',
+      'Missing required environment variable ATLASSIAN_MCP_TOKEN: the Atlassian adapter cannot authenticate to the remote MCP server without a token.',
     );
   }
 
@@ -37,7 +61,25 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Atlassi
     );
   }
 
-  return { token, cloudId };
+  const email = env.ATLASSIAN_EMAIL || undefined;
+
+  return { token, cloudId, email };
+}
+
+/**
+ * Builds the Authorization header value for AtlassianConfig, per
+ * https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/:
+ * a personal API token (email set) uses `Basic base64(email:token)`; a
+ * service-account API key (no email) uses `Bearer <token>`. These are not
+ * interchangeable - sending a personal token as a Bearer value (or vice
+ * versa) is rejected by the server.
+ */
+export function buildAuthorizationHeader(config: Pick<AtlassianConfig, 'token' | 'email'>): string {
+  if (config.email) {
+    const encoded = Buffer.from(`${config.email}:${config.token}`, 'utf8').toString('base64');
+    return `Basic ${encoded}`;
+  }
+  return `Bearer ${config.token}`;
 }
 
 /**
@@ -45,11 +87,11 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Atlassi
  * real StreamableHTTPClientTransport pointed at the live Atlassian endpoint;
  * tests override this to point at an in-process fake server instead.
  */
-export type TransportFactory = (token: string) => Transport;
+export type TransportFactory = (config: Pick<AtlassianConfig, 'token' | 'email'>) => Transport;
 
-export function defaultTransportFactory(token: string): Transport {
+export function defaultTransportFactory(config: Pick<AtlassianConfig, 'token' | 'email'>): Transport {
   return new StreamableHTTPClientTransport(new URL(ATLASSIAN_MCP_ENDPOINT), {
-    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    requestInit: { headers: { Authorization: buildAuthorizationHeader(config) } },
   });
 }
 
@@ -80,7 +122,7 @@ export class AtlassianMcpClient {
 
     this.connecting = (async () => {
       const client = new Client({ name: 'punakawan-atlassian-adapter', version: '0.1.0' });
-      const transport = this.transportFactory(this.config.token);
+      const transport = this.transportFactory({ token: this.config.token, email: this.config.email });
       await client.connect(transport);
       this.client = client;
       return client;

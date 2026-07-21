@@ -20,7 +20,7 @@ export const manifest: AdapterManifest = {
   permissions: {
     network: { hosts: ['mcp.atlassian.com'] },
     filesystem: { read: [], write: [] },
-    secrets: ['ATLASSIAN_MCP_TOKEN'],
+    secrets: ['ATLASSIAN_MCP_TOKEN', 'ATLASSIAN_EMAIL'],
   },
   operations: {
     'atlassian.searchJira': { side_effect: false },
