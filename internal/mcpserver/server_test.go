@@ -114,6 +114,27 @@ func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]
 	}
 }
 
+// TestServerInstructionsCoverApprovalAndPipeline guards the one piece of
+// automatic agent guidance punakawan can give regardless of which project
+// it's attached to (InitializeResult.Instructions) - it must mention both
+// the expected tool call sequence and how to grant a write approval, since
+// skipping the former and not knowing the latter is exactly what caused
+// real usage to stall.
+func TestServerInstructionsCoverApprovalAndPipeline(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	instructions := cs.InitializeResult().Instructions
+	if instructions == "" {
+		t.Fatal("Instructions is empty")
+	}
+	for _, want := range []string{"create_workflow_run", "punakawan approvals"} {
+		if !strings.Contains(instructions, want) {
+			t.Errorf("Instructions does not mention %q:\n%s", want, instructions)
+		}
+	}
+}
+
 func TestSemarPromptServesEmbeddedTemplate(t *testing.T) {
 	a := newTestApp(t)
 	cs := connect(t, a)
