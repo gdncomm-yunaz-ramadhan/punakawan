@@ -166,3 +166,12 @@ func (w *Workspace) PolicyPath() string {
 	}
 	return filepath.Join(w.Root, dirName, "policy.yaml")
 }
+
+// JiraWorkflowPath returns the absolute path to the workspace's Jira
+// workflow config file (.punakawan/jira-workflow.yaml). Unlike PolicyPath,
+// this has no override field: jiraworkflow.Load already treats a missing
+// file as a safe empty default, so there is no need for this location
+// itself to be configurable too.
+func (w *Workspace) JiraWorkflowPath() string {
+	return filepath.Join(w.Root, dirName, "jira-workflow.yaml")
+}

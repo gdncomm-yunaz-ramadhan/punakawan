@@ -123,4 +123,9 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "call_adapter_operation",
 		Description: "Invoke any operation an adapter's manifest declares (e.g. Jira/Confluence via the atlassian adapter), starting the adapter process on first use and enforcing its approval requirements.",
 	}, callAdapterOperationHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "request_jira_clarification",
+		Description: "Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it.",
+	}, requestJiraClarificationHandler(a))
 }

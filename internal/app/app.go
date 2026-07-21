@@ -13,6 +13,7 @@ import (
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/gitops"
+	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/tools"
@@ -33,6 +34,9 @@ type App struct {
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
+
+	jiraWorkflowMu     sync.Mutex
+	jiraWorkflowConfig *jiraworkflow.Config
 }
 
 // Load discovers the workspace containing startDir and wires up its services.
@@ -114,6 +118,25 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	}
 	a.knowledgeStore = store
 	return store, nil
+}
+
+// JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
+// config (.punakawan/jira-workflow.yaml). Safe to call even if the file
+// does not exist: jiraworkflow.Load returns a safe empty default in that
+// case rather than erroring.
+func (a *App) JiraWorkflow() (*jiraworkflow.Config, error) {
+	a.jiraWorkflowMu.Lock()
+	defer a.jiraWorkflowMu.Unlock()
+
+	if a.jiraWorkflowConfig != nil {
+		return a.jiraWorkflowConfig, nil
+	}
+	cfg, err := jiraworkflow.Load(a.Workspace.JiraWorkflowPath())
+	if err != nil {
+		return nil, err
+	}
+	a.jiraWorkflowConfig = cfg
+	return cfg, nil
 }
 
 // Close releases resources opened on demand (the knowledge store's Dolt
