@@ -159,3 +159,39 @@ func TestKnowledgeRelationsRoundTrip(t *testing.T) {
 		t.Fatalf("expected no related records after clearing relations, got %+v", related)
 	}
 }
+
+func TestOpenReusesExistingDoltServer(t *testing.T) {
+	if _, err := exec.LookPath("dolt"); err != nil {
+		t.Skip("dolt not installed")
+	}
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "knowledge")
+	sup := tools.New(dir)
+
+	owner, err := Open(sup, dataDir)
+	if err != nil {
+		t.Fatalf("Open owner: %v", err)
+	}
+	shared, err := Open(sup, dataDir)
+	if err != nil {
+		_ = owner.Close()
+		t.Fatalf("Open shared: %v", err)
+	}
+	if shared.server != nil {
+		t.Fatal("expected the second store to reuse the existing server")
+	}
+
+	server := owner.server
+	if err := owner.Close(); err != nil {
+		t.Fatalf("Close owner: %v", err)
+	}
+	if err := shared.db.Ping(); err != nil {
+		t.Fatalf("shared connection stopped with owner: %v", err)
+	}
+	if err := shared.Close(); err != nil {
+		t.Fatalf("Close shared: %v", err)
+	}
+	if server != nil {
+		_ = server.Stop()
+	}
+}

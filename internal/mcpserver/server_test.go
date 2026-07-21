@@ -104,6 +104,12 @@ func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]
 	if res.IsError {
 		t.Fatalf("CallTool(%s) returned an error result: %+v", name, res.Content)
 	}
+	if len(res.Content) != 1 {
+		t.Fatalf("CallTool(%s) content blocks = %d, want compact marker", name, len(res.Content))
+	}
+	if text, ok := res.Content[0].(*mcp.TextContent); !ok || text.Text != "Structured result." {
+		t.Fatalf("CallTool(%s) content = %+v, want compact structured-result marker", name, res.Content)
+	}
 
 	data, err := json.Marshal(res.StructuredContent)
 	if err != nil {

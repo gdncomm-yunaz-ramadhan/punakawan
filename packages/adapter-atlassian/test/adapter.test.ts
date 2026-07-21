@@ -17,6 +17,7 @@ import {
   createJiraSubtask,
 } from '../src/operations.js';
 import { manifest } from '../src/manifest.js';
+import { normalizeJiraIssue } from '../src/normalize.js';
 import { AdapterManifestSchema } from '@punakawan/schema-types';
 import {
   FIXTURE_CONFLUENCE_PAGE,
@@ -96,9 +97,10 @@ describe('manifest', () => {
 });
 
 describe('getJiraIssue', () => {
-  test('normalizes provider, external_id, version, and preserves fields', async () => {
+  test('normalizes the planning fields without returning the raw REST envelope by default', async () => {
     const client = await fakeClient();
-    const { normalized, raw } = await getJiraIssue(client, { issueIdOrKey: 'PROJ-123' });
+    const result = await getJiraIssue(client, { issueIdOrKey: 'PROJ-123' });
+    const { normalized } = result;
 
     assert.equal(normalized.source.provider, 'jira');
     assert.equal(normalized.source.external_id, 'PROJ-123');
@@ -108,9 +110,38 @@ describe('getJiraIssue', () => {
     assert.equal(normalized.summary, FIXTURE_JIRA_ISSUE.fields.summary);
     assert.equal(normalized.status, 'In Progress');
     assert.equal(normalized.description, FIXTURE_JIRA_ISSUE.fields.description);
-    assert.ok(raw, 'raw tool result should be returned alongside normalization');
+    assert.equal('raw' in result, false);
 
     await client.close();
+  });
+
+  test('returns the raw envelope only when explicitly requested', async () => {
+    const client = await fakeClient();
+    const compact = await getJiraIssue(client, { issueIdOrKey: 'PROJ-123' });
+    const diagnostic = await getJiraIssue(client, { issueIdOrKey: 'PROJ-123', includeRaw: true });
+
+    assert.ok(diagnostic.raw);
+    assert.ok(JSON.stringify(compact).length < JSON.stringify(diagnostic).length);
+    await client.close();
+  });
+
+  test('flattens multiline ADF to compact plain text instead of serializing its JSON tree', () => {
+    const normalized = normalizeJiraIssue({
+      key: 'PROJ-9',
+      fields: {
+        summary: 'ADF issue',
+        description: {
+          type: 'doc',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'First line' }] },
+            { type: 'paragraph', content: [{ type: 'text', text: 'second line' }] },
+          ],
+        },
+      },
+    }, 'cloud');
+
+    assert.equal(normalized.description, 'First line second line');
+    assert.equal(normalized.description?.includes('"type"'), false);
   });
 
   test('rejects an unknown issue key with the fake server error', async () => {
@@ -144,12 +175,24 @@ describe('search operations', () => {
     const result = await searchJira(client, { jql: 'project = PROJ', fields: ['summary', 'status'], maxResults: 25 });
 
     assert.equal(result.normalized.length, 1);
+    assert.equal('source' in (result.normalized[0] ?? {}), false, 'search rows should not repeat provenance metadata');
     assert.equal(rest.requests[0]?.path, '/rest/api/3/search/jql');
     assert.deepEqual(rest.requests[0]?.body, {
       jql: 'project = PROJ',
       fields: ['summary', 'status'],
       maxResults: 25,
     });
+    await client.close();
+  });
+
+  test('defaults to a bounded compact planning search', async () => {
+    const { client, rest } = fakeClientWithRest();
+    await searchJira(client, { jql: 'project = PROJ' });
+
+    assert.equal(rest.requests[0]?.body.maxResults, 20);
+    assert.deepEqual(rest.requests[0]?.body.fields, [
+      'summary', 'status', 'issuetype', 'priority', 'assignee', 'parent', 'updated',
+    ]);
     await client.close();
   });
 
@@ -221,13 +264,13 @@ describe('editJiraIssueFields', () => {
   test('passes an arbitrary fields map through to the fake server', async () => {
     const { client, rest } = fakeClientWithRest();
     const fields = { customfield_10016: 5, timetracking: { originalEstimate: '8h' } };
-    const { payload } = await editJiraIssueFields(client, {
+    const result = await editJiraIssueFields(client, {
       issueIdOrKey: 'PROJ-123',
       fields,
     });
 
     assert.deepEqual(rest.editedFields, [{ issueIdOrKey: 'PROJ-123', fields }]);
-    assert.equal(payload.fields && typeof payload.fields, 'object');
+    assert.deepEqual(result, { ok: true, issueIdOrKey: 'PROJ-123', updatedFields: ['customfield_10016', 'timetracking'] });
     await client.close();
   });
 });
@@ -235,23 +278,23 @@ describe('editJiraIssueFields', () => {
 describe('addWorklog', () => {
   test('adds a worklog with a comment and returns an id', async () => {
     const { client, rest } = fakeClientWithRest();
-    const { payload } = await addWorklog(client, {
+    const result = await addWorklog(client, {
       issueIdOrKey: 'PROJ-123',
       timeSpentSeconds: 3600,
       comment: 'Investigated root cause',
     });
 
-    assert.ok(typeof payload.id === 'string' && payload.id.length > 0);
-    assert.equal(payload.timeSpentSeconds, 3600);
+    assert.ok(typeof result.worklogId === 'string' && result.worklogId.length > 0);
+    assert.equal(result.timeSpentSeconds, 3600);
     assert.equal(adfText(rest.addedWorklogs[0]?.body.comment), 'Investigated root cause');
     await client.close();
   });
 
   test('adds a worklog without a comment', async () => {
     const client = await fakeClient();
-    const { payload } = await addWorklog(client, { issueIdOrKey: 'PROJ-123', timeSpentSeconds: 1800 });
+    const result = await addWorklog(client, { issueIdOrKey: 'PROJ-123', timeSpentSeconds: 1800 });
 
-    assert.equal(payload.timeSpentSeconds, 1800);
+    assert.equal(result.timeSpentSeconds, 1800);
     await client.close();
   });
 });
@@ -426,9 +469,10 @@ describe('execute via handlers', () => {
     const result = (await handlers.execute(
       { op: 'atlassian.editJiraIssueFields', issueIdOrKey: 'PROJ-123', fields: { customfield_10016: 8 } },
       new AbortController().signal,
-    )) as { payload: { fields: Record<string, unknown> } };
+    )) as { ok: boolean; updatedFields: string[] };
 
-    assert.equal(result.payload.fields.customfield_10016, 8);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.updatedFields, ['customfield_10016']);
     await handlers.shutdown(undefined, new AbortController().signal);
   });
 
@@ -438,9 +482,9 @@ describe('execute via handlers', () => {
     const result = (await handlers.execute(
       { op: 'atlassian.addWorklog', issueIdOrKey: 'PROJ-123', timeSpentSeconds: 900, comment: 'Quick fix' },
       new AbortController().signal,
-    )) as { payload: { timeSpentSeconds: number } };
+    )) as { timeSpentSeconds: number };
 
-    assert.equal(result.payload.timeSpentSeconds, 900);
+    assert.equal(result.timeSpentSeconds, 900);
     await handlers.shutdown(undefined, new AbortController().signal);
   });
 

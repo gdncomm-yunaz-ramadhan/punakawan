@@ -43,11 +43,28 @@ func CheckSourceStale(ctx context.Context, store *knowledge.Store, gate gateCall
 		return false, fmt.Errorf("reconcile: %s: fetch current source: %w", rec.Id, err)
 	}
 
-	stale, err := store.CheckStale(rec.Id, knowledge.ContentHash(raw))
+	stale, err := store.CheckStale(rec.Id, knowledge.ContentHash(stableSourcePayload(raw)))
 	if err != nil {
 		return false, fmt.Errorf("reconcile: %s: check stale: %w", rec.Id, err)
 	}
 	return stale, nil
+}
+
+// stableSourcePayload extracts the direct REST response body from an
+// includeRaw adapter result. The normalized envelope contains retrieved_at,
+// which changes on every read and must not make unchanged Jira content look
+// stale. Older/custom adapters without this envelope retain the prior
+// whole-response hashing behavior.
+func stableSourcePayload(result json.RawMessage) json.RawMessage {
+	var envelope struct {
+		Raw struct {
+			Data json.RawMessage `json:"data"`
+		} `json:"raw"`
+	}
+	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Raw.Data) > 0 && string(envelope.Raw.Data) != "null" {
+		return envelope.Raw.Data
+	}
+	return result
 }
 
 // fetchOpForSource maps a knowledge record's source provenance onto the
@@ -64,9 +81,12 @@ func fetchOpForSource(src protocol.KnowledgeRecordSource) (string, map[string]an
 
 	switch src.Provider {
 	case "jira":
-		return "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": *src.ExternalId}, nil
+		// Reconciliation is internal and hashes the raw body rather than placing
+		// it in model context, so request every field to preserve full-change
+		// detection while normal agent reads stay compact.
+		return "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": *src.ExternalId, "fields": []string{"*all"}, "includeRaw": true}, nil
 	case "confluence":
-		return "atlassian.getConfluencePage", map[string]any{"pageId": *src.ExternalId}, nil
+		return "atlassian.getConfluencePage", map[string]any{"pageId": *src.ExternalId, "includeRaw": true}, nil
 	default:
 		return "", nil, fmt.Errorf("reconcile: no reconciliation adapter operation for source.provider %q", src.Provider)
 	}

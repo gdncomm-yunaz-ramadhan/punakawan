@@ -8,6 +8,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -53,6 +54,34 @@ func newServer(a *app.App) (*mcp.Server, error) {
 		return nil, err
 	}
 	registerTools(server, a)
+	server.AddReceivingMiddleware(compactStructuredToolResults)
 
 	return server, nil
+}
+
+// compactStructuredToolResults removes the Go SDK's automatic full JSON copy
+// from content when the same value is already present in structuredContent.
+// Modern MCP clients (including Codex and Claude) consume structuredContent;
+// retaining a two-word content marker keeps the response legible to older
+// clients without charging the model context twice for every result.
+func compactStructuredToolResults(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		result, err := next(ctx, method, req)
+		if err != nil || method != "tools/call" {
+			return result, err
+		}
+		toolResult, ok := result.(*mcp.CallToolResult)
+		if !ok || toolResult.IsError || toolResult.StructuredContent == nil || len(toolResult.Content) != 1 {
+			return result, nil
+		}
+		text, ok := toolResult.Content[0].(*mcp.TextContent)
+		if !ok {
+			return result, nil
+		}
+		structured, marshalErr := json.Marshal(toolResult.StructuredContent)
+		if marshalErr == nil && text.Text == string(structured) {
+			text.Text = "Structured result."
+		}
+		return result, nil
+	}
 }
