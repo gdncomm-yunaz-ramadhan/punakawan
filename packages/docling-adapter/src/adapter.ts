@@ -17,6 +17,10 @@ serveStdio({
     return { ok: true, id: validated.id, version: validated.version };
   },
 
+  async capabilities() {
+    return AdapterManifestSchema.parse(manifest);
+  },
+
   async execute(params) {
     const { op, ...rest } = params as { op: string } & Record<string, unknown>;
     if (op !== 'docling.convert') {
