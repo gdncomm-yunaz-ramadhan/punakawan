@@ -27,7 +27,30 @@ const PARSE_ERROR = -32700;
 const METHOD_NOT_FOUND = -32601;
 const INTERNAL_ERROR = -32603;
 
+/**
+ * Without these, an error that escapes the handler().then().catch() chain
+ * below (e.g. thrown from an event emitter inside a dependency, rather than
+ * rejected from a Promise) crashes the process silently - Go's Client sees
+ * only a closed pipe ("broken pipe" on its next write), with no indication
+ * of what happened on the TypeScript side. Logging to stderr before exiting
+ * turns that into a diagnosable failure; exiting (rather than continuing)
+ * is deliberate, since an uncaught exception leaves process state
+ * unverified - the Go-side registry is expected to detect the exit and
+ * respawn a fresh process for the next call.
+ */
+function installCrashDiagnostics(): void {
+  const report = (label: string, err: unknown) => {
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    process.stderr.write(`adapter-sdk: ${label}, exiting: ${detail}\n`);
+    process.exit(1);
+  };
+  process.on('uncaughtException', (err) => report('uncaught exception', err));
+  process.on('unhandledRejection', (reason) => report('unhandled rejection', reason));
+}
+
 export function serveStdio(handlers: Record<string, Handler>): void {
+  installCrashDiagnostics();
+
   const inflight = new Map<string | number, AbortController>();
   const rl = createInterface({ input: process.stdin, terminal: false });
 
