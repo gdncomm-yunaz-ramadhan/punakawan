@@ -5,9 +5,12 @@
 package app
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/knowledge"
@@ -19,13 +22,14 @@ import (
 
 // App bundles a loaded workspace and the services built from it.
 type App struct {
-	Workspace  *workspace.Workspace
-	Policy     *policy.Policy
-	Supervisor *tools.Supervisor
-	Approvals  *approvals.Store
-	Inspector  *gitops.Inspector
-	Worktrees  *gitops.WorktreeManager
-	Workflow   *workflow.Store
+	Workspace       *workspace.Workspace
+	Policy          *policy.Policy
+	Supervisor      *tools.Supervisor
+	Approvals       *approvals.Store
+	Inspector       *gitops.Inspector
+	Worktrees       *gitops.WorktreeManager
+	Workflow        *workflow.Store
+	AdapterRegistry *adapters.Registry
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
@@ -64,14 +68,24 @@ func Load(startDir string) (*App, error) {
 		return nil, err
 	}
 
+	specs := make(map[string]adapters.AdapterSpec, len(ws.Adapters))
+	for id, cfg := range ws.Adapters {
+		specs[id] = adapters.AdapterSpec{
+			Command:        cfg.Command,
+			Args:           cfg.Args,
+			EnvPassthrough: cfg.EnvPassthrough,
+		}
+	}
+
 	return &App{
-		Workspace:  ws,
-		Policy:     pol,
-		Supervisor: sup,
-		Approvals:  store,
-		Inspector:  gitops.NewInspector(sup),
-		Worktrees:  gitops.NewWorktreeManager(sup, store, pol),
-		Workflow:   wf,
+		Workspace:       ws,
+		Policy:          pol,
+		Supervisor:      sup,
+		Approvals:       store,
+		Inspector:       gitops.NewInspector(sup),
+		Worktrees:       gitops.NewWorktreeManager(sup, store, pol),
+		Workflow:        wf,
+		AdapterRegistry: adapters.NewRegistry(specs, store),
 	}, nil
 }
 
@@ -102,16 +116,24 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	return store, nil
 }
 
-// Close releases resources opened on demand (currently, the knowledge
-// store's Dolt server, if OpenKnowledge was ever called).
+// Close releases resources opened on demand (the knowledge store's Dolt
+// server, if OpenKnowledge was ever called) and shuts down any adapter
+// processes the AdapterRegistry has started.
 func (a *App) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	adapterErr := a.AdapterRegistry.Close(ctx)
+
 	a.knowledgeMu.Lock()
 	defer a.knowledgeMu.Unlock()
 
 	if a.knowledgeStore == nil {
-		return nil
+		return adapterErr
 	}
-	err := a.knowledgeStore.Close()
+	knowledgeErr := a.knowledgeStore.Close()
 	a.knowledgeStore = nil
-	return err
+	if adapterErr != nil {
+		return adapterErr
+	}
+	return knowledgeErr
 }

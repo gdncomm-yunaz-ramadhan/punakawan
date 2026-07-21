@@ -59,17 +59,30 @@ type PolicyConfig struct {
 	File string `yaml:"file,omitempty"`
 }
 
+// AdapterConfig declares how to spawn one adapter process (§5.1's stdio
+// JSON-RPC transport). EnvPassthrough names additional environment
+// variables (beyond the process's default allowlist) to copy into the
+// spawned adapter, e.g. secrets like ATLASSIAN_MCP_TOKEN - only these named
+// variables are copied, not the full parent environment, per §11.4/§15.2's
+// secret-lease philosophy.
+type AdapterConfig struct {
+	Command        string   `yaml:"command"`
+	Args           []string `yaml:"args,omitempty"`
+	EnvPassthrough []string `yaml:"env_passthrough,omitempty"`
+}
+
 // Workspace is the parsed contents of workspace.yaml plus its resolved root.
 type Workspace struct {
-	Version      string          `yaml:"version"`
-	ID           string          `yaml:"id"`
-	Name         string          `yaml:"name"`
-	Repositories []Repository    `yaml:"repositories"`
-	Relations    []Relation      `yaml:"relations,omitempty"`
-	External     External        `yaml:"external,omitempty"`
-	Knowledge    KnowledgeConfig `yaml:"knowledge,omitempty"`
-	Tasks        TasksConfig     `yaml:"tasks,omitempty"`
-	Policy       PolicyConfig    `yaml:"policy,omitempty"`
+	Version      string                   `yaml:"version"`
+	ID           string                   `yaml:"id"`
+	Name         string                   `yaml:"name"`
+	Repositories []Repository             `yaml:"repositories"`
+	Relations    []Relation               `yaml:"relations,omitempty"`
+	External     External                 `yaml:"external,omitempty"`
+	Knowledge    KnowledgeConfig          `yaml:"knowledge,omitempty"`
+	Tasks        TasksConfig              `yaml:"tasks,omitempty"`
+	Policy       PolicyConfig             `yaml:"policy,omitempty"`
+	Adapters     map[string]AdapterConfig `yaml:"adapters,omitempty"`
 
 	// Root is the directory containing .punakawan/. Not part of the YAML.
 	Root string `yaml:"-"`
