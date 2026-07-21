@@ -18,14 +18,11 @@ export const manifest: AdapterManifest = {
   runtime: 'node',
   provides: ['jira', 'confluence'],
   permissions: {
-    // '*.atlassian.net' covers the one-time, unauthenticated cloudId lookup
-    // (resolveCloudId in mcpClient.ts) against the operator-configured
-    // ATLASSIAN_HOST - the real hostname varies per Atlassian site, so it
-    // cannot be declared as a single literal value the way mcp.atlassian.com
-    // can.
-    network: { hosts: ['mcp.atlassian.com', '*.atlassian.net'] },
+    // Direct REST uses the site URL for unscoped personal tokens and
+    // api.atlassian.com for scoped personal/service-account tokens.
+    network: { hosts: ['api.atlassian.com', '*.atlassian.net'] },
     filesystem: { read: [], write: [] },
-    secrets: ['ATLASSIAN_MCP_TOKEN', 'ATLASSIAN_EMAIL'],
+    secrets: ['ATLASSIAN_API_TOKEN', 'ATLASSIAN_EMAIL'],
   },
   operations: {
     'atlassian.searchJira': { side_effect: false },

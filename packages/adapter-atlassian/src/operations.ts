@@ -1,47 +1,39 @@
-import type { AtlassianMcpClient } from './mcpClient.js';
+import type { AtlassianRestClient, RestResponse } from './restClient.js';
 import { normalizeConfluencePage, normalizeJiraIssue, type NormalizedJiraIssue } from './normalize.js';
-
-/**
- * `execute` handlers for each operation declared in the manifest. Each
- * calls the corresponding real Atlassian MCP tool (names confirmed via
- * Context7 `/atlassian/atlassian-mcp-server`) and returns both the raw tool
- * result and this adapter's own normalization, per
- * punakawan-go-typescript-detailed-plan.md §13.2.
- */
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
-/** Extracts a structured JSON payload from a CallToolResult, preferring structuredContent. */
-function extractPayload(result: { content: unknown; structuredContent?: Record<string, unknown> }): Record<string, unknown> {
-  if (result.structuredContent) return result.structuredContent;
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
 
-  const blocks = Array.isArray(result.content) ? result.content : [];
-  for (const block of blocks) {
-    if (block && typeof block === 'object' && (block as { type?: unknown }).type === 'text') {
-      const text = (block as { text?: unknown }).text;
-      if (typeof text === 'string') {
-        try {
-          return asRecord(JSON.parse(text));
-        } catch {
-          // Not JSON; fall through to try other blocks.
-        }
-      }
-    }
-  }
-  return {};
+function plainTextAdf(text: string): Record<string, unknown> {
+  return {
+    type: 'doc',
+    version: 1,
+    content: [{ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] }],
+  };
+}
+
+function successPayload(response: RestResponse): Record<string, unknown> {
+  const payload = asRecord(response.data);
+  return Object.keys(payload).length > 0 ? payload : { ok: true };
+}
+
+function encodePath(value: string): string {
+  return encodeURIComponent(value);
 }
 
 export interface GetJiraIssueParams {
   issueIdOrKey: string;
 }
 
-export async function getJiraIssue(client: AtlassianMcpClient, params: GetJiraIssueParams) {
+export async function getJiraIssue(client: AtlassianRestClient, params: GetJiraIssueParams) {
+  const raw = await client.jira<Record<string, unknown>>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`);
   const cloudId = await client.getCloudId();
-  const result = await client.callTool('getJiraIssue', { cloudId, issueIdOrKey: params.issueIdOrKey });
-  const payload = extractPayload(result);
-  return { raw: result, normalized: normalizeJiraIssue(payload, cloudId) };
+  return { raw, normalized: normalizeJiraIssue(asRecord(raw.data), cloudId) };
 }
 
 export interface GetConfluencePageParams {
@@ -49,14 +41,20 @@ export interface GetConfluencePageParams {
   contentFormat?: string;
 }
 
-export async function getConfluencePage(client: AtlassianMcpClient, params: GetConfluencePageParams) {
-  const cloudId = await client.getCloudId();
-  const args: Record<string, unknown> = { cloudId, pageId: params.pageId };
-  if (params.contentFormat) args.contentFormat = params.contentFormat;
+function confluenceRepresentation(requested: string | undefined): string {
+  // Direct Confluence REST does not expose Rovo's synthetic markdown format.
+  // Storage is lossless and available through the v1 content API.
+  const supported = new Set(['storage', 'view', 'export_view', 'styled_view', 'editor', 'anonymous_export_view']);
+  return requested && supported.has(requested) ? requested : 'storage';
+}
 
-  const result = await client.callTool('getConfluencePage', args);
-  const payload = extractPayload(result);
-  return { raw: result, normalized: normalizeConfluencePage(payload, cloudId) };
+export async function getConfluencePage(client: AtlassianRestClient, params: GetConfluencePageParams) {
+  const format = confluenceRepresentation(params.contentFormat);
+  const raw = await client.confluence<Record<string, unknown>>(`/wiki/rest/api/content/${encodePath(params.pageId)}`, {
+    query: { expand: `body.${format},version,space` },
+  });
+  const payload = { ...asRecord(raw.data), contentFormat: format };
+  return { raw, normalized: normalizeConfluencePage(payload, await client.getCloudId()) };
 }
 
 export interface SearchJiraParams {
@@ -65,33 +63,32 @@ export interface SearchJiraParams {
   maxResults?: number;
 }
 
-export async function searchJira(client: AtlassianMcpClient, params: SearchJiraParams) {
-  const cloudId = await client.getCloudId();
-  const args: Record<string, unknown> = { cloudId, jql: params.jql };
-  if (params.fields) args.fields = params.fields;
-  if (params.maxResults !== undefined) args.maxResults = params.maxResults;
+export async function searchJira(client: AtlassianRestClient, params: SearchJiraParams) {
+  const body: Record<string, unknown> = { jql: params.jql };
+  if (params.fields) body.fields = params.fields;
+  if (params.maxResults !== undefined) body.maxResults = params.maxResults;
 
-  const result = await client.callTool('searchJiraIssuesUsingJql', args);
-  const payload = extractPayload(result);
+  const raw = await client.jira<Record<string, unknown>>('/rest/api/3/search/jql', { method: 'POST', body });
+  const payload = asRecord(raw.data);
   const issues = Array.isArray(payload.issues) ? payload.issues : [];
-  return {
-    raw: result,
-    normalized: issues.map((issue) => normalizeJiraIssue(asRecord(issue), cloudId)),
-  };
+  const cloudId = await client.getCloudId();
+  return { raw, normalized: issues.map((issue) => normalizeJiraIssue(asRecord(issue), cloudId)) };
 }
 
 export interface SearchConfluenceParams {
   cql: string;
 }
 
-export async function searchConfluence(client: AtlassianMcpClient, params: SearchConfluenceParams) {
-  const cloudId = await client.getCloudId();
-  const result = await client.callTool('searchConfluenceUsingCql', { cloudId, cql: params.cql });
-  const payload = extractPayload(result);
+export async function searchConfluence(client: AtlassianRestClient, params: SearchConfluenceParams) {
+  const raw = await client.confluence<Record<string, unknown>>('/wiki/rest/api/content/search', {
+    query: { cql: params.cql, expand: 'body.storage,version,space' },
+  });
+  const payload = asRecord(raw.data);
   const pages = Array.isArray(payload.results) ? payload.results : [];
+  const cloudId = await client.getCloudId();
   return {
-    raw: result,
-    normalized: pages.map((page) => normalizeConfluencePage(asRecord(page), cloudId)),
+    raw,
+    normalized: pages.map((page) => normalizeConfluencePage({ ...asRecord(page), contentFormat: 'storage' }, cloudId)),
   };
 }
 
@@ -100,31 +97,16 @@ export interface AddJiraCommentParams {
   commentBody: string;
 }
 
-export async function addJiraComment(client: AtlassianMcpClient, params: AddJiraCommentParams) {
-  const result = await client.callTool('addCommentToJiraIssue', {
-    cloudId: await client.getCloudId(),
-    issueIdOrKey: params.issueIdOrKey,
-    commentBody: params.commentBody,
-  });
-  const payload = extractPayload(result);
-  return { raw: result, commentId: typeof payload.id === 'string' ? payload.id : undefined };
+export async function addJiraComment(client: AtlassianRestClient, params: AddJiraCommentParams) {
+  const raw = await client.jira<Record<string, unknown>>(
+    `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/comment`,
+    { method: 'POST', body: { body: plainTextAdf(params.commentBody) } },
+  );
+  const payload = asRecord(raw.data);
+  const id = payload.id;
+  return { raw, commentId: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined };
 }
 
-/**
- * A single available workflow transition, as returned by
- * `getTransitionsForJiraIssue`.
- *
- * ASSUMPTION (pending verification against a real MCP server): the exact
- * response shape of this tool is not documented beyond "list available
- * workflow transitions for an issue" (support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools/).
- * Jira's underlying REST API (`GET /issue/{id}/transitions`) shapes its
- * response as `{ transitions: [{ id, name, to: { id, name } }] }`, and since
- * this MCP tool almost certainly wraps that REST endpoint 1:1, we assume the
- * same field names here: each transition has a string `id`, a string `name`,
- * and a `to` object describing the destination status (`id`/`name`). If the
- * real MCP tool's response differs, only `extractTransitions` below should
- * need correcting.
- */
 export interface JiraTransition {
   id: string;
   name: string;
@@ -146,21 +128,15 @@ function extractTransitions(payload: Record<string, unknown>): JiraTransition[] 
   });
 }
 
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
-
 export interface GetTransitionsForJiraIssueParams {
   issueIdOrKey: string;
 }
 
-export async function getTransitionsForJiraIssue(client: AtlassianMcpClient, params: GetTransitionsForJiraIssueParams) {
-  const result = await client.callTool('getTransitionsForJiraIssue', {
-    cloudId: await client.getCloudId(),
-    issueIdOrKey: params.issueIdOrKey,
-  });
-  const payload = extractPayload(result);
-  return { raw: result, transitions: extractTransitions(payload) };
+export async function getTransitionsForJiraIssue(client: AtlassianRestClient, params: GetTransitionsForJiraIssueParams) {
+  const raw = await client.jira<Record<string, unknown>>(
+    `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/transitions`,
+  );
+  return { raw, transitions: extractTransitions(asRecord(raw.data)) };
 }
 
 export interface TransitionJiraIssueParams {
@@ -168,44 +144,26 @@ export interface TransitionJiraIssueParams {
   transitionId: string;
 }
 
-/**
- * Performs a workflow transition on a Jira issue. Transitions are id-based,
- * not status-name-based, because the same target status can be reachable via
- * different transition ids depending on the issue's workflow — callers must
- * discover the id first via `getTransitionsForJiraIssue`.
- */
-export async function transitionJiraIssue(client: AtlassianMcpClient, params: TransitionJiraIssueParams) {
-  const result = await client.callTool('transitionJiraIssue', {
-    cloudId: await client.getCloudId(),
-    issueIdOrKey: params.issueIdOrKey,
-    transitionId: params.transitionId,
+export async function transitionJiraIssue(client: AtlassianRestClient, params: TransitionJiraIssueParams) {
+  const raw = await client.jira(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/transitions`, {
+    method: 'POST',
+    body: { transition: { id: params.transitionId } },
   });
-  const payload = extractPayload(result);
-  return { raw: result, payload };
+  return { raw, payload: successPayload(raw) };
 }
 
 export interface EditJiraIssueFieldsParams {
   issueIdOrKey: string;
-  /**
-   * Arbitrary Jira fields map, e.g. `{"customfield_10016": 5}` for a
-   * site-specific story-points custom field, or
-   * `{"timetracking": {"originalEstimate": "8h"}}` for Jira's native
-   * original-estimate field. This operation is a thin, honest passthrough —
-   * it does not know or hardcode which custom field id means "story points"
-   * for any given Jira site (that varies per site); callers should discover
-   * field ids via `getIssueTypeFieldMeta` first.
-   */
   fields: Record<string, unknown>;
 }
 
-export async function editJiraIssueFields(client: AtlassianMcpClient, params: EditJiraIssueFieldsParams) {
-  const result = await client.callTool('editJiraIssue', {
-    cloudId: await client.getCloudId(),
-    issueIdOrKey: params.issueIdOrKey,
-    fields: params.fields,
+export async function editJiraIssueFields(client: AtlassianRestClient, params: EditJiraIssueFieldsParams) {
+  const raw = await client.jira(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
+    method: 'PUT',
+    query: { returnIssue: true },
+    body: { fields: params.fields },
   });
-  const payload = extractPayload(result);
-  return { raw: result, payload };
+  return { raw, payload: successPayload(raw) };
 }
 
 export interface AddWorklogParams {
@@ -214,17 +172,14 @@ export interface AddWorklogParams {
   comment?: string;
 }
 
-export async function addWorklog(client: AtlassianMcpClient, params: AddWorklogParams) {
-  const args: Record<string, unknown> = {
-    cloudId: await client.getCloudId(),
-    issueIdOrKey: params.issueIdOrKey,
-    timeSpentSeconds: params.timeSpentSeconds,
-  };
-  if (params.comment !== undefined) args.comment = params.comment;
-
-  const result = await client.callTool('addWorklogToJiraIssue', args);
-  const payload = extractPayload(result);
-  return { raw: result, payload };
+export async function addWorklog(client: AtlassianRestClient, params: AddWorklogParams) {
+  const body: Record<string, unknown> = { timeSpentSeconds: params.timeSpentSeconds };
+  if (params.comment !== undefined) body.comment = plainTextAdf(params.comment);
+  const raw = await client.jira<Record<string, unknown>>(
+    `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/worklog`,
+    { method: 'POST', body },
+  );
+  return { raw, payload: asRecord(raw.data) };
 }
 
 export interface GetIssueTypeFieldMetaParams {
@@ -232,19 +187,11 @@ export interface GetIssueTypeFieldMetaParams {
   issueTypeId: string;
 }
 
-/**
- * Fetches create-field metadata for a project and issue type, used by
- * callers to discover a site's actual story-points custom field id (or any
- * other field) before calling `editJiraIssueFields`.
- */
-export async function getIssueTypeFieldMeta(client: AtlassianMcpClient, params: GetIssueTypeFieldMetaParams) {
-  const result = await client.callTool('getJiraIssueTypeMetaWithFields', {
-    cloudId: await client.getCloudId(),
-    projectIdOrKey: params.projectIdOrKey,
-    issueTypeId: params.issueTypeId,
-  });
-  const payload = extractPayload(result);
-  return { raw: result, payload };
+export async function getIssueTypeFieldMeta(client: AtlassianRestClient, params: GetIssueTypeFieldMetaParams) {
+  const raw = await client.jira<Record<string, unknown>>(
+    `/rest/api/3/issue/createmeta/${encodePath(params.projectIdOrKey)}/issuetypes/${encodePath(params.issueTypeId)}`,
+  );
+  return { raw, payload: asRecord(raw.data) };
 }
 
 export interface CreateJiraIssueParams {
@@ -256,32 +203,30 @@ export interface CreateJiraIssueParams {
   additionalFields?: Record<string, unknown>;
 }
 
-/**
- * Wraps the real `createJiraIssue(cloudId, projectKey, issueTypeName,
- * summary, description, parent, additional_fields)` MCP tool. Referenced
- * throughout the atlassian-mcp-server skills docs but not previously wrapped
- * in this adapter. Used directly by callers that already know there's no
- * duplicate, and internally by `createJiraSubtask` for genuinely-new
- * candidates.
- */
-export async function createJiraIssue(client: AtlassianMcpClient, params: CreateJiraIssueParams) {
-  const cloudId = await client.getCloudId();
-  const args: Record<string, unknown> = {
-    cloudId,
-    projectKey: params.projectKey,
-    issueTypeName: params.issueTypeName,
+export async function createJiraIssue(client: AtlassianRestClient, params: CreateJiraIssueParams) {
+  const fields: Record<string, unknown> = {
+    ...(params.additionalFields ?? {}),
+    project: { key: params.projectKey },
+    issuetype: { name: params.issueTypeName },
     summary: params.summary,
   };
-  if (params.description !== undefined) args.description = params.description;
-  if (params.parent !== undefined) args.parent = params.parent;
-  if (params.additionalFields !== undefined) args.additional_fields = params.additionalFields;
+  if (params.description !== undefined) fields.description = plainTextAdf(params.description);
+  if (params.parent !== undefined) fields.parent = { key: params.parent };
 
-  const result = await client.callTool('createJiraIssue', args);
-  const payload = extractPayload(result);
-  return { raw: result, normalized: normalizeJiraIssue(payload, cloudId) };
+  const createResponse = await client.jira<Record<string, unknown>>('/rest/api/3/issue', {
+    method: 'POST',
+    body: { fields },
+  });
+  const created = asRecord(createResponse.data);
+  const key = asString(created.key) ?? asString(created.id);
+  if (!key) throw new Error('Jira create issue response is missing both "key" and "id".');
+
+  // Jira's create endpoint returns identifiers, not the fields needed by the
+  // stable normalized result, so read the newly created issue once.
+  const fetched = await getJiraIssue(client, { issueIdOrKey: key });
+  return { raw: { create: createResponse, issue: fetched.raw }, normalized: fetched.normalized };
 }
 
-/** Trims, collapses internal whitespace, and lowercases a summary for exact (non-fuzzy) comparison. */
 function normalizeSummaryForComparison(summary: string): string {
   return summary.trim().replace(/\s+/g, ' ').toLowerCase();
 }
@@ -295,12 +240,6 @@ export interface CreateJiraSubtaskCandidate {
 export interface CreateJiraSubtaskParams {
   parentKey: string;
   projectKey: string;
-  /**
-   * The real issue-type name for subtasks (varies per Jira project — the
-   * caller must discover it via `getJiraProjectIssueTypesMetadata`; this
-   * operation does not call that tool itself and does not hardcode
-   * "Sub-task").
-   */
   issueTypeName: string;
   candidates: CreateJiraSubtaskCandidate[];
 }
@@ -310,23 +249,11 @@ export interface CreateJiraSubtaskResult {
   skipped: { summary: string; existingKey: string }[];
 }
 
-/**
- * Creates subtasks under `parentKey`, deduplicating against already-existing
- * children first. Existing children are discovered via `searchJira` (JQL
- * `parent = "<parentKey>"`); a candidate is skipped only on an exact match
- * (trimmed, whitespace-collapsed, case-insensitive) against an existing
- * child's summary — deliberately no fuzzy matching, since a false-positive
- * skip silently drops real work, which is worse than an occasional missed
- * dedup.
- */
 export async function createJiraSubtask(
-  client: AtlassianMcpClient,
+  client: AtlassianRestClient,
   params: CreateJiraSubtaskParams,
 ): Promise<CreateJiraSubtaskResult> {
-  const { normalized: existingChildren } = await searchJira(client, {
-    jql: `parent = "${params.parentKey}"`,
-  });
-
+  const { normalized: existingChildren } = await searchJira(client, { jql: `parent = "${params.parentKey}"` });
   const existingBySummary = new Map<string, string>();
   for (const child of existingChildren) {
     existingBySummary.set(normalizeSummaryForComparison(child.summary), child.key);
@@ -334,16 +261,13 @@ export async function createJiraSubtask(
 
   const created: NormalizedJiraIssue[] = [];
   const skipped: { summary: string; existingKey: string }[] = [];
-
   for (const candidate of params.candidates) {
-    const normalizedSummary = normalizeSummaryForComparison(candidate.summary);
-    const existingKey = existingBySummary.get(normalizedSummary);
+    const existingKey = existingBySummary.get(normalizeSummaryForComparison(candidate.summary));
     if (existingKey) {
       skipped.push({ summary: candidate.summary, existingKey });
       continue;
     }
-
-    const { normalized } = await createJiraIssue(client, {
+    const result = await createJiraIssue(client, {
       projectKey: params.projectKey,
       issueTypeName: params.issueTypeName,
       summary: candidate.summary,
@@ -351,8 +275,7 @@ export async function createJiraSubtask(
       parent: params.parentKey,
       additionalFields: candidate.additionalFields,
     });
-    created.push(normalized);
+    created.push(result.normalized);
   }
-
   return { created, skipped };
 }

@@ -95,27 +95,25 @@ GLOBAL_ENV="$GLOBAL_DIR/.env"
 if [[ -f "$GLOBAL_ENV" ]]; then
   log "$GLOBAL_ENV already exists, leaving credentials as-is"
 else
-  log "Atlassian / Jira connection"
+  log "Direct Jira REST connection"
   cat <<'EOF'
-Requires an org admin to have already enabled API token authentication for
-the Rovo MCP server: Atlassian Administration -> Rovo -> Rovo MCP server ->
-Authentication. Without that, neither credential type below will work and
-you would need the interactive OAuth 2.1 flow instead (not set up by this
-script - that flow is meant for interactive desktop MCP clients, not a
-headless adapter process).
+Punakawan calls Jira Cloud REST API v3 directly. Rovo MCP is not used.
 
-The admin must also grant the Rovo MCP permission groups you need. For the
-Jira MVP, enable read_jira, search_jira, and write_jira, and create the token
-or service-account key with read:jira-work, search:jira-work, and
-write:jira-work scopes. Atlassian filters tools/list by this access; a missing
-group appears to clients as "Tool <name> not found".
+Choose the token type you created:
+  1) Personal API token without scopes (email + site URL)
+  2) Personal API token with scopes (email + Atlassian API gateway)
+  3) Service-account scoped token (Bearer + Atlassian API gateway)
 
-Two credential types are supported - pick whichever you have:
-  1) Personal API token (tied to your own Atlassian account + email)
-  2) Service account API key (org-level, no email)
+Scoped Jira tokens should include read:jira-work and write:jira-work. The
+account itself still needs the corresponding Jira project permissions.
+Confluence reads additionally require Confluence product access/scopes.
 EOF
-  read -rp "Which do you have? [1/2, default 1]: " AUTH_CHOICE
+  read -rp "Which do you have? [1/2/3, default 1]: " AUTH_CHOICE
   AUTH_CHOICE="${AUTH_CHOICE:-1}"
+  if [[ ! "$AUTH_CHOICE" =~ ^[123]$ ]]; then
+    echo "Invalid token choice: $AUTH_CHOICE" >&2
+    exit 1
+  fi
 
   read -rp "Atlassian site host (e.g. yourteam.atlassian.net): " ATLASSIAN_HOST_INPUT
   if command -v curl >/dev/null 2>&1; then
@@ -130,12 +128,18 @@ EOF
   echo ""
 
   EMAIL=""
-  if [[ "$AUTH_CHOICE" == "1" ]]; then
+  if [[ "$AUTH_CHOICE" != "3" ]]; then
     read -rp "Atlassian account email: " EMAIL
   fi
 
+  TOKEN_SCOPED="false"
+  if [[ "$AUTH_CHOICE" != "1" ]]; then
+    TOKEN_SCOPED="true"
+  fi
+
   {
-    echo "ATLASSIAN_MCP_TOKEN=${API_TOKEN}"
+    echo "ATLASSIAN_API_TOKEN=${API_TOKEN}"
+    echo "ATLASSIAN_API_TOKEN_SCOPED=${TOKEN_SCOPED}"
     echo "ATLASSIAN_HOST=${ATLASSIAN_HOST_INPUT}"
     if [[ -n "$EMAIL" ]]; then
       echo "ATLASSIAN_EMAIL=${EMAIL}"
@@ -157,7 +161,8 @@ adapters:
     args:
       - ${ADAPTER_ATLASSIAN_ENTRY}
     env_passthrough:
-      - ATLASSIAN_MCP_TOKEN
+      - ATLASSIAN_API_TOKEN
+      - ATLASSIAN_API_TOKEN_SCOPED
       - ATLASSIAN_HOST
       - ATLASSIAN_EMAIL
 YAML

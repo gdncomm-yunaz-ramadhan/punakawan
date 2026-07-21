@@ -118,7 +118,7 @@ func TestLoadGlobalConfigFromMissingFileReturnsEmpty(t *testing.T) {
 
 func TestLoadGlobalConfigFromParsesAdapters(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	yaml := "adapters:\n  atlassian:\n    command: node\n    args: [\"/path/to/run.js\"]\n    env_passthrough: [ATLASSIAN_MCP_TOKEN]\n"
+	yaml := "adapters:\n  atlassian:\n    command: node\n    args: [\"/path/to/run.js\"]\n    env_passthrough: [ATLASSIAN_API_TOKEN]\n"
 	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

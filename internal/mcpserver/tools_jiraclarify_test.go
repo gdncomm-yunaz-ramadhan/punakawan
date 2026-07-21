@@ -44,7 +44,7 @@ func atlassianTestManifest() protocol.AdapterManifest {
 		Runtime:  protocol.AdapterManifestRuntimeNode,
 		Provides: []string{"jira"},
 		Permissions: protocol.AdapterManifestPermissions{
-			Network:    protocol.AdapterManifestPermissionsNetwork{Hosts: []string{"mcp.atlassian.com"}},
+			Network:    protocol.AdapterManifestPermissionsNetwork{Hosts: []string{"api.atlassian.com"}},
 			Filesystem: protocol.AdapterManifestPermissionsFilesystem{Read: []string{}, Write: []string{}},
 			Secrets:    []string{},
 		},

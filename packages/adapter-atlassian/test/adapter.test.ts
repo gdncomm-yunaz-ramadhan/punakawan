@@ -1,11 +1,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { createHandlers } from '../src/adapter.js';
-import { AtlassianMcpClient, loadConfigFromEnv } from '../src/mcpClient.js';
+import { AtlassianRestClient, loadConfigFromEnv } from '../src/restClient.js';
 import {
   getJiraIssue,
   getConfluencePage,
+  searchJira,
+  searchConfluence,
   addJiraComment,
   getTransitionsForJiraIssue,
   transitionJiraIssue,
@@ -24,29 +25,33 @@ import {
   FIXTURE_PARENT_KEY,
   FIXTURE_EXISTING_SUBTASKS,
   FIXTURE_ISSUE_TYPE_FIELD_META,
-  startFakeAtlassianServer,
-  type FakeAtlassianServerOptions,
-} from './fakeAtlassianServer.js';
+  adfText,
+  createFakeAtlassianRest,
+  type FakeAtlassianRest,
+} from './fakeAtlassianRest.js';
 
-const TEST_ENV = { ATLASSIAN_MCP_TOKEN: 'fake-token', ATLASSIAN_HOST: 'fake-team.atlassian.net' };
+const TEST_ENV = {
+  ATLASSIAN_API_TOKEN: 'fake-token',
+  ATLASSIAN_HOST: 'fake-team.atlassian.net',
+  ATLASSIAN_EMAIL: 'tester@example.com',
+};
 /** Stands in for resolveCloudId in tests so no real network request is made. */
 const TEST_CLOUD_ID_RESOLVER = async () => 'fake-cloud-id';
 
-/** Builds an AtlassianMcpClient wired to a fresh fake server instance. */
-async function fakeClient(options: FakeAtlassianServerOptions = {}): Promise<AtlassianMcpClient> {
+function fakeClientWithRest(): { client: AtlassianRestClient; rest: FakeAtlassianRest } {
   const config = loadConfigFromEnv(TEST_ENV);
-  let transport: Transport | undefined;
-  const client = new AtlassianMcpClient(
-    config,
-    () => {
-      if (!transport) throw new Error('transport requested before fake server started');
-      return transport;
-    },
-    TEST_CLOUD_ID_RESOLVER,
-  );
-  const { clientTransport } = await startFakeAtlassianServer(options);
-  transport = clientTransport;
-  return client;
+  const rest = createFakeAtlassianRest();
+  return { client: new AtlassianRestClient(config, rest.fetch, TEST_CLOUD_ID_RESOLVER), rest };
+}
+
+async function fakeClient(): Promise<AtlassianRestClient> {
+  return fakeClientWithRest().client;
+}
+
+function fakeHandlers() {
+  const rest = createFakeAtlassianRest();
+  const handlers = createHandlers({ env: TEST_ENV, fetchImpl: rest.fetch, cloudIdResolver: TEST_CLOUD_ID_RESOLVER });
+  return { handlers, rest };
 }
 
 describe('manifest', () => {
@@ -56,8 +61,8 @@ describe('manifest', () => {
     assert.equal(parsed.protocol, 'punakawan.adapter/v1');
     assert.equal(parsed.runtime, 'node');
     assert.deepEqual(parsed.provides, ['jira', 'confluence']);
-    assert.deepEqual(parsed.permissions.network.hosts, ['mcp.atlassian.com', '*.atlassian.net']);
-    assert.deepEqual(parsed.permissions.secrets, ['ATLASSIAN_MCP_TOKEN', 'ATLASSIAN_EMAIL']);
+    assert.deepEqual(parsed.permissions.network.hosts, ['api.atlassian.com', '*.atlassian.net']);
+    assert.deepEqual(parsed.permissions.secrets, ['ATLASSIAN_API_TOKEN', 'ATLASSIAN_EMAIL']);
   });
 
   test('declares the write operation as side-effecting and requiring approval', () => {
@@ -114,66 +119,59 @@ describe('getJiraIssue', () => {
     await client.close();
   });
 
-  test('explains the missing read_jira permission group and advertised tools', async () => {
-    const client = await fakeClient({ omitGetJiraIssue: true, includeTeamworkGraphObject: true });
-
-    await assert.rejects(
-      () => getJiraIssue(client, { issueIdOrKey: 'PROJ-123' }),
-      (error: unknown) => {
-        assert.ok(error instanceof Error);
-        assert.match(error.message, /does not advertise required tool "getJiraIssue"/);
-        assert.match(error.message, /permission group "read_jira"/);
-        assert.match(error.message, /scope "read:jira-work"/);
-        assert.match(error.message, /getTeamworkGraphObject/);
-        assert.match(error.message, /organization admin/);
-        return true;
-      },
-    );
-    await client.close();
-  });
-
-  test('translates an API-token access rejection into the administrator remedy', async () => {
-    const client = await fakeClient({
-      getJiraIssueError: "You don't have permission to connect via API token. Please ask your organization admin for access.",
-    });
-
-    await assert.rejects(
-      () => getJiraIssue(client, { issueIdOrKey: 'PROJ-123' }),
-      (error: unknown) => {
-        assert.ok(error instanceof Error);
-        assert.match(error.message, /rejected API-token access/);
-        assert.match(error.message, /enable API-token authentication/);
-        assert.match(error.message, /organization admin/);
-        return true;
-      },
-    );
-    await client.close();
-  });
 });
 
 describe('getConfluencePage', () => {
   test('normalizes provider, external_id, version, and preserves content', async () => {
     const client = await fakeClient();
-    const { normalized } = await getConfluencePage(client, { pageId: '987654', contentFormat: 'markdown' });
+    const { normalized } = await getConfluencePage(client, { pageId: '987654', contentFormat: 'storage' });
 
     assert.equal(normalized.source.provider, 'confluence');
     assert.equal(normalized.source.external_id, '987654');
     assert.equal(normalized.source.version, FIXTURE_CONFLUENCE_PAGE.version.number);
     assert.equal(normalized.source.uri, 'confluence://fake-cloud-id/987654');
     assert.equal(normalized.title, FIXTURE_CONFLUENCE_PAGE.title);
-    assert.equal(normalized.spaceKey, FIXTURE_CONFLUENCE_PAGE.spaceKey);
-    assert.equal(normalized.content, FIXTURE_CONFLUENCE_PAGE.body.markdown.value);
+    assert.equal(normalized.spaceKey, FIXTURE_CONFLUENCE_PAGE.space.key);
+    assert.equal(normalized.content, FIXTURE_CONFLUENCE_PAGE.body.storage.value);
 
     await client.close();
   });
 });
 
+describe('search operations', () => {
+  test('posts JQL, fields, and limit to enhanced Jira search', async () => {
+    const { client, rest } = fakeClientWithRest();
+    const result = await searchJira(client, { jql: 'project = PROJ', fields: ['summary', 'status'], maxResults: 25 });
+
+    assert.equal(result.normalized.length, 1);
+    assert.equal(rest.requests[0]?.path, '/rest/api/3/search/jql');
+    assert.deepEqual(rest.requests[0]?.body, {
+      jql: 'project = PROJ',
+      fields: ['summary', 'status'],
+      maxResults: 25,
+    });
+    await client.close();
+  });
+
+  test('uses direct Confluence CQL search', async () => {
+    const { client, rest } = fakeClientWithRest();
+    const result = await searchConfluence(client, { cql: 'space = ENG' });
+
+    assert.equal(result.normalized[0]?.title, FIXTURE_CONFLUENCE_PAGE.title);
+    assert.equal(rest.requests[0]?.path, '/wiki/rest/api/content/search');
+    assert.match(rest.requests[0]?.url ?? '', /cql=space(?:\+|%20)%3D(?:\+|%20)ENG/);
+    await client.close();
+  });
+});
+
 describe('addJiraComment', () => {
-  test('round-trips a comment through the fake server', async () => {
-    const client = await fakeClient();
+  test('posts an ADF comment to the direct Jira REST endpoint', async () => {
+    const { client, rest } = fakeClientWithRest();
     const result = await addJiraComment(client, { issueIdOrKey: 'PROJ-123', commentBody: 'Can you clarify the repro steps?' });
 
     assert.ok(result.commentId, 'expected a commentId to come back');
+    assert.equal(rest.requests.at(-1)?.path, '/rest/api/3/issue/PROJ-123/comment');
+    assert.equal(adfText(rest.addedComments[0]?.body.body), 'Can you clarify the repro steps?');
     await client.close();
   });
 });
@@ -201,10 +199,11 @@ describe('getTransitionsForJiraIssue', () => {
 
 describe('transitionJiraIssue', () => {
   test('performs a transition using a discovered transitionId', async () => {
-    const client = await fakeClient();
+    const { client, rest } = fakeClientWithRest();
     const { payload } = await transitionJiraIssue(client, { issueIdOrKey: 'PROJ-123', transitionId: '11' });
 
     assert.equal(payload.ok, true);
+    assert.deepEqual(rest.transitionedIssues, [{ issueIdOrKey: 'PROJ-123', transitionId: '11' }]);
     await client.close();
   });
 
@@ -220,20 +219,22 @@ describe('transitionJiraIssue', () => {
 
 describe('editJiraIssueFields', () => {
   test('passes an arbitrary fields map through to the fake server', async () => {
-    const client = await fakeClient();
+    const { client, rest } = fakeClientWithRest();
+    const fields = { customfield_10016: 5, timetracking: { originalEstimate: '8h' } };
     const { payload } = await editJiraIssueFields(client, {
       issueIdOrKey: 'PROJ-123',
-      fields: { customfield_10016: 5, timetracking: { originalEstimate: '8h' } },
+      fields,
     });
 
-    assert.equal(payload.ok, true);
+    assert.deepEqual(rest.editedFields, [{ issueIdOrKey: 'PROJ-123', fields }]);
+    assert.equal(payload.fields && typeof payload.fields, 'object');
     await client.close();
   });
 });
 
 describe('addWorklog', () => {
   test('adds a worklog with a comment and returns an id', async () => {
-    const client = await fakeClient();
+    const { client, rest } = fakeClientWithRest();
     const { payload } = await addWorklog(client, {
       issueIdOrKey: 'PROJ-123',
       timeSpentSeconds: 3600,
@@ -242,6 +243,7 @@ describe('addWorklog', () => {
 
     assert.ok(typeof payload.id === 'string' && payload.id.length > 0);
     assert.equal(payload.timeSpentSeconds, 3600);
+    assert.equal(adfText(rest.addedWorklogs[0]?.body.comment), 'Investigated root cause');
     await client.close();
   });
 
@@ -266,7 +268,7 @@ describe('getIssueTypeFieldMeta', () => {
 
 describe('createJiraIssue', () => {
   test('creates an issue and returns a normalized result', async () => {
-    const client = await fakeClient();
+    const { client, rest } = fakeClientWithRest();
     const { normalized } = await createJiraIssue(client, {
       projectKey: 'PROJ',
       issueTypeName: 'Sub-task',
@@ -277,6 +279,8 @@ describe('createJiraIssue', () => {
 
     assert.equal(normalized.summary, 'A brand new subtask');
     assert.equal(normalized.source.provider, 'jira');
+    assert.deepEqual(rest.createdIssues[0]?.fields.parent, { key: 'PROJ-200' });
+    assert.equal(adfText(rest.createdIssues[0]?.fields.description), 'Some description');
     await client.close();
   });
 });
@@ -322,57 +326,35 @@ describe('createJiraSubtask', () => {
   });
 });
 
-describe('connection reuse', () => {
-  test('reuses a single MCP connection across multiple calls', async () => {
-    const client = await fakeClient();
-    let connectCount = 0;
-    const config = loadConfigFromEnv(TEST_ENV);
-    const { clientTransport } = await startFakeAtlassianServer();
-    const countingClient = new AtlassianMcpClient(
-      config,
-      () => {
-        connectCount += 1;
-        return clientTransport;
-      },
-      TEST_CLOUD_ID_RESOLVER,
+describe('direct REST transport', () => {
+  test('never calls the hosted Rovo MCP endpoint', async () => {
+    const { client, rest } = fakeClientWithRest();
+    await getJiraIssue(client, { issueIdOrKey: 'PROJ-123' });
+    await getConfluencePage(client, { pageId: '987654' });
+
+    assert.ok(rest.requests.every((request) => !request.url.includes('mcp.atlassian.com')));
+    assert.deepEqual(
+      rest.requests.map((request) => request.path),
+      ['/rest/api/3/issue/PROJ-123', '/wiki/rest/api/content/987654'],
     );
-
-    await getJiraIssue(countingClient, { issueIdOrKey: 'PROJ-123' });
-    await getJiraIssue(countingClient, { issueIdOrKey: 'PROJ-123' });
-    await getConfluencePage(countingClient, { pageId: '987654' });
-
-    assert.equal(connectCount, 1, 'transport factory should be invoked exactly once across three calls');
-
-    await client.close();
-    await countingClient.close();
-  });
-});
-
-describe('remote tool discovery', () => {
-  test('returns the exact tools advertised by the authenticated connection', async () => {
-    const client = await fakeClient();
-    const tools = await client.listTools();
-
-    assert.ok(tools.some((tool) => tool.name === 'getJiraIssue'));
-    assert.ok(tools.some((tool) => tool.name === 'editJiraIssue'));
     await client.close();
   });
 });
 
 describe('missing configuration fails fast', () => {
-  test('missing ATLASSIAN_MCP_TOKEN throws before any network attempt', () => {
-    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_HOST: 'x.atlassian.net' }), /ATLASSIAN_MCP_TOKEN/);
+  test('missing ATLASSIAN_API_TOKEN throws before any network attempt', () => {
+    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_HOST: 'x.atlassian.net' }), /ATLASSIAN_API_TOKEN/);
   });
 
   test('missing ATLASSIAN_HOST throws before any network attempt', () => {
-    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_MCP_TOKEN: 'x' }), /ATLASSIAN_HOST/);
+    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_API_TOKEN: 'x' }), /ATLASSIAN_HOST/);
   });
 
   test('execute() surfaces the config error immediately instead of hanging on a real connection attempt', async () => {
     const handlers = createHandlers({ env: {} });
     await assert.rejects(
       () => handlers.execute({ op: 'atlassian.getJiraIssue', issueIdOrKey: 'PROJ-123' }, new AbortController().signal),
-      /ATLASSIAN_MCP_TOKEN/,
+      /ATLASSIAN_API_TOKEN/,
     );
   });
 });
@@ -395,17 +377,7 @@ describe('capabilities', () => {
 
 describe('execute via handlers', () => {
   test('atlassian.getJiraIssue through the full handler dispatch', async () => {
-    let transport: Transport | undefined;
-    const handlers = createHandlers({
-      env: TEST_ENV,
-      transportFactory: () => {
-        if (!transport) throw new Error('transport requested before fake server started');
-        return transport;
-      },
-      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
-    });
-    const { clientTransport } = await startFakeAtlassianServer();
-    transport = clientTransport;
+    const { handlers } = fakeHandlers();
 
     const result = (await handlers.execute(
       { op: 'atlassian.getJiraIssue', issueIdOrKey: 'PROJ-123' },
@@ -425,17 +397,7 @@ describe('execute via handlers', () => {
   });
 
   test('atlassian.getTransitionsForJiraIssue through the full handler dispatch', async () => {
-    let transport: Transport | undefined;
-    const handlers = createHandlers({
-      env: TEST_ENV,
-      transportFactory: () => {
-        if (!transport) throw new Error('transport requested before fake server started');
-        return transport;
-      },
-      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
-    });
-    const { clientTransport } = await startFakeAtlassianServer();
-    transport = clientTransport;
+    const { handlers } = fakeHandlers();
 
     const result = (await handlers.execute(
       { op: 'atlassian.getTransitionsForJiraIssue', issueIdOrKey: 'PROJ-123' },
@@ -447,17 +409,7 @@ describe('execute via handlers', () => {
   });
 
   test('atlassian.transitionJiraIssue through the full handler dispatch', async () => {
-    let transport: Transport | undefined;
-    const handlers = createHandlers({
-      env: TEST_ENV,
-      transportFactory: () => {
-        if (!transport) throw new Error('transport requested before fake server started');
-        return transport;
-      },
-      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
-    });
-    const { clientTransport } = await startFakeAtlassianServer();
-    transport = clientTransport;
+    const { handlers } = fakeHandlers();
 
     const result = (await handlers.execute(
       { op: 'atlassian.transitionJiraIssue', issueIdOrKey: 'PROJ-123', transitionId: '11' },
@@ -469,39 +421,19 @@ describe('execute via handlers', () => {
   });
 
   test('atlassian.editJiraIssueFields through the full handler dispatch', async () => {
-    let transport: Transport | undefined;
-    const handlers = createHandlers({
-      env: TEST_ENV,
-      transportFactory: () => {
-        if (!transport) throw new Error('transport requested before fake server started');
-        return transport;
-      },
-      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
-    });
-    const { clientTransport } = await startFakeAtlassianServer();
-    transport = clientTransport;
+    const { handlers } = fakeHandlers();
 
     const result = (await handlers.execute(
       { op: 'atlassian.editJiraIssueFields', issueIdOrKey: 'PROJ-123', fields: { customfield_10016: 8 } },
       new AbortController().signal,
-    )) as { payload: { ok: boolean } };
+    )) as { payload: { fields: Record<string, unknown> } };
 
-    assert.equal(result.payload.ok, true);
+    assert.equal(result.payload.fields.customfield_10016, 8);
     await handlers.shutdown(undefined, new AbortController().signal);
   });
 
   test('atlassian.addWorklog through the full handler dispatch', async () => {
-    let transport: Transport | undefined;
-    const handlers = createHandlers({
-      env: TEST_ENV,
-      transportFactory: () => {
-        if (!transport) throw new Error('transport requested before fake server started');
-        return transport;
-      },
-      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
-    });
-    const { clientTransport } = await startFakeAtlassianServer();
-    transport = clientTransport;
+    const { handlers } = fakeHandlers();
 
     const result = (await handlers.execute(
       { op: 'atlassian.addWorklog', issueIdOrKey: 'PROJ-123', timeSpentSeconds: 900, comment: 'Quick fix' },
@@ -513,17 +445,7 @@ describe('execute via handlers', () => {
   });
 
   test('atlassian.getIssueTypeFieldMeta through the full handler dispatch', async () => {
-    let transport: Transport | undefined;
-    const handlers = createHandlers({
-      env: TEST_ENV,
-      transportFactory: () => {
-        if (!transport) throw new Error('transport requested before fake server started');
-        return transport;
-      },
-      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
-    });
-    const { clientTransport } = await startFakeAtlassianServer();
-    transport = clientTransport;
+    const { handlers } = fakeHandlers();
 
     const result = (await handlers.execute(
       { op: 'atlassian.getIssueTypeFieldMeta', projectIdOrKey: 'PROJ', issueTypeId: '10001' },
@@ -535,17 +457,7 @@ describe('execute via handlers', () => {
   });
 
   test('atlassian.createJiraSubtask through the full handler dispatch', async () => {
-    let transport: Transport | undefined;
-    const handlers = createHandlers({
-      env: TEST_ENV,
-      transportFactory: () => {
-        if (!transport) throw new Error('transport requested before fake server started');
-        return transport;
-      },
-      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
-    });
-    const { clientTransport } = await startFakeAtlassianServer();
-    transport = clientTransport;
+    const { handlers } = fakeHandlers();
 
     const result = (await handlers.execute(
       {

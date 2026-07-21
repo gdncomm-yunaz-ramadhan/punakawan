@@ -62,7 +62,7 @@ type PolicyConfig struct {
 // AdapterConfig declares how to spawn one adapter process (§5.1's stdio
 // JSON-RPC transport). EnvPassthrough names additional environment
 // variables (beyond the process's default allowlist) to copy into the
-// spawned adapter, e.g. secrets like ATLASSIAN_MCP_TOKEN - only these named
+// spawned adapter, e.g. secrets like ATLASSIAN_API_TOKEN - only these named
 // variables are copied, not the full parent environment, per §11.4/§15.2's
 // secret-lease philosophy.
 type AdapterConfig struct {

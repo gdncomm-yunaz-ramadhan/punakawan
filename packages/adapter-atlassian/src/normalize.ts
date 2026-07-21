@@ -1,5 +1,5 @@
 /**
- * Normalization of raw Atlassian MCP tool results into shapes that map
+ * Normalization of raw Atlassian REST results into shapes that map
  * cleanly onto `protocol.KnowledgeRecord`'s `source` sub-shape (provider,
  * external_id, version, uri, retrieved_at) without being full
  * KnowledgeRecords themselves — per
@@ -66,8 +66,7 @@ function extractDescription(description: unknown): string | undefined {
 }
 
 /**
- * Normalizes a raw `getJiraIssue` tool result (via `structuredContent`, or
- * best-effort parsed from a JSON text content block) into a stable shape.
+ * Normalizes a Jira REST issue response into a stable shape.
  * The `version` field always reflects the live, just-fetched value from
  * Atlassian, so a caller can compare it against a previously-stored version
  * to detect staleness (§13.2) — this module does not perform that

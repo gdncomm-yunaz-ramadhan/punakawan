@@ -54,7 +54,7 @@ func CheckSourceStale(ctx context.Context, store *knowledge.Store, gate gateCall
 // adapter operation (and parameters) that re-fetches it, per the Atlassian
 // adapter's manifest (packages/adapter-atlassian): "atlassian.getJiraIssue"
 // takes issueIdOrKey, "atlassian.getConfluencePage" takes pageId — both
-// mirroring the real Atlassian MCP server's own parameter names
+// mirroring the Atlassian adapter's stable parameter names
 // (getJiraIssue(cloudId, issueIdOrKey), getConfluencePage(cloudId, pageId)),
 // so rec.Source.ExternalId is expected to hold the issue key / page id.
 func fetchOpForSource(src protocol.KnowledgeRecordSource) (string, map[string]any, error) {

@@ -22,7 +22,7 @@ type AdapterSpec struct {
 	// EnvPassthrough lists additional environment variable names (beyond
 	// defaultEnvAllowlist) to copy from this process's environment into the
 	// spawned adapter's environment, if set - e.g. secrets like
-	// ATLASSIAN_MCP_TOKEN. Only these names are copied; the adapter process
+	// ATLASSIAN_API_TOKEN. Only these names are copied; the adapter process
 	// does not inherit the full parent environment, per §11.4/§15.2's
 	// secret-lease philosophy.
 	EnvPassthrough []string

@@ -1,6 +1,6 @@
 import { AdapterManifestSchema } from '@punakawan/schema-types';
 import type { Handler } from '@punakawan/adapter-sdk';
-import { AtlassianMcpClient, loadConfigFromEnv, type TransportFactory } from './mcpClient.js';
+import { AtlassianRestClient, loadConfigFromEnv } from './restClient.js';
 import { manifest } from './manifest.js';
 import {
   addJiraComment,
@@ -20,20 +20,19 @@ import {
  * Builds the `initialize`/`execute`/`shutdown` handler set for the Atlassian
  * adapter, mirroring packages/adapter-sdk/src/prototypeAdapter.ts's pattern.
  * Split out from the top-level script (see src/index.ts) so tests can
- * exercise it with an injected fake-server transport instead of the real
- * mcp.atlassian.com endpoint.
+ * exercise it with an injected fetch implementation instead of live APIs.
  */
 export function createHandlers(options?: {
-  transportFactory?: TransportFactory;
+  fetchImpl?: typeof fetch;
   cloudIdResolver?: (host: string) => Promise<string>;
   env?: NodeJS.ProcessEnv;
 }): Record<string, Handler> {
-  let client: AtlassianMcpClient | undefined;
+  let client: AtlassianRestClient | undefined;
 
-  function getClient(): AtlassianMcpClient {
+  function getClient(): AtlassianRestClient {
     if (!client) {
       const config = loadConfigFromEnv(options?.env ?? process.env);
-      client = new AtlassianMcpClient(config, options?.transportFactory, options?.cloudIdResolver);
+      client = new AtlassianRestClient(config, options?.fetchImpl, options?.cloudIdResolver);
     }
     return client;
   }

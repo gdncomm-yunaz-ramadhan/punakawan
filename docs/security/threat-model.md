@@ -259,7 +259,7 @@ testing, or review.
 
 ### 3.7 External MCP/adapter behavior drift
 
-**Threat:** A third-party MCP provider or external API (Atlassian MCP,
+**Threat:** A third-party MCP provider or external API (Atlassian REST,
 Docling service, GitHub/GitLab API, etc.) changes its behavior, response
 shape, or semantics over time, causing Punakawan to misinterpret results,
 silently degrade, or take an incorrect action based on stale assumptions

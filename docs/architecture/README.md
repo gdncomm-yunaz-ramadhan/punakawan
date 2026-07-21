@@ -13,12 +13,13 @@ This directory contains the Architecture Decision Records (ADRs) formalizing the
 | [ADR-0007](./ADR-0007-jsonl-is-the-event-and-raw-evidence-format.md) | JSONL is the event and raw evidence format. |
 | [ADR-0008](./ADR-0008-git-tracked-yaml-stores-portable-human-reviewable-project-knowledge.md) | Git-tracked YAML stores portable, human-reviewable project knowledge. |
 | [ADR-0009](./ADR-0009-docling-is-reused-for-document-parsing.md) | Docling is reused for document parsing. |
-| [ADR-0010](./ADR-0010-atlassian-mcp-is-reused-for-jira-and-confluence-cloud.md) | Atlassian MCP is reused for Jira and Confluence Cloud. |
+| [ADR-0010](./ADR-0010-atlassian-mcp-is-reused-for-jira-and-confluence-cloud.md) | Atlassian MCP is reused for Jira and Confluence Cloud (superseded). |
 | [ADR-0011](./ADR-0011-playwright-mcp-or-direct-playwright-apis-are-reused-for-browser-control.md) | Playwright MCP or direct Playwright APIs are reused for browser control. |
 | [ADR-0012](./ADR-0012-the-punakawan-recorder-is-custom-and-injected-visibly.md) | The Punakawan recorder is custom and injected visibly. |
 | [ADR-0013](./ADR-0013-external-writes-require-approval-by-default.md) | External writes require approval by default. |
 | [ADR-0014](./ADR-0014-petruk-works-one-isolated-task-at-a-time.md) | Petruk works one isolated task at a time. |
 | [ADR-0015](./ADR-0015-bagong-reviews-raw-evidence-independently.md) | Bagong reviews raw evidence independently. |
 | [ADR-0016](./ADR-0016-punakawans-mcp-server-exposes-roles-to-connected-llm-clients.md) | Punakawan's own MCP server exposes roles to connected LLM clients. |
+| [ADR-0017](./ADR-0017-direct-atlassian-rest-replaces-rovo-mcp.md) | Direct Atlassian REST replaces Rovo MCP. |
 
 See `punakawan-go-typescript-detailed-plan.md` §25 for the original decision list (ADR-0001 through ADR-0015) and §28 for the role-invocation design (ADR-0016).

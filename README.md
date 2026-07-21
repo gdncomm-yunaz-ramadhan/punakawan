@@ -40,16 +40,12 @@ For automated provisioning, set `PUNAKAWAN_AGENT_SELECTION` to `codex`,
 `claude`, `both`, `generic`, or `skip`. Set `PUNAKAWAN_DRY_RUN=1` to preview
 registration commands without changing client configuration.
 
-Before setup, an Atlassian organization admin must enable API-token
-authentication for the Rovo MCP server. The installer accepts either:
-
-- a personal API token plus Atlassian account email; or
-- a service-account API key without an email.
-
-For Jira assessment and updates, the admin must enable the `read_jira`,
-`search_jira`, and `write_jira` Rovo MCP permission groups. The personal token
-or service-account key also needs `read:jira-work`, `search:jira-work`, and
-`write:jira-work`. Atlassian filters the MCP tool list by these settings.
+Punakawan calls Jira Cloud REST API v3 directly; it does not require or use
+Rovo MCP. The installer accepts an unscoped personal API token, a scoped
+personal token, or a scoped service-account token. Personal tokens also use
+the Atlassian account email. Scoped tokens should include `read:jira-work`
+and `write:jira-work`; every token remains limited by its account's Jira
+project permissions.
 
 It also asks for the site host (for example `yourteam.atlassian.net`) and
 derives the cloud ID automatically. No per-project Punakawan file is required;
@@ -82,19 +78,18 @@ punakawan approvals list
 punakawan approvals approve <id> --by <your-name>
 ```
 
-### Jira tool not found
+### Jira authentication
 
-Punakawan discovers the tools advertised for the authenticated Atlassian
-connection before invoking one. If `getJiraIssue` or another official tool is
-missing, the error now reports its required permission group and scope plus
-the tools Atlassian actually advertised.
+The installer stores `ATLASSIAN_API_TOKEN`, `ATLASSIAN_HOST`, and, for a
+personal token, `ATLASSIAN_EMAIL`. It also records whether the token is
+scoped. Unscoped personal tokens call `https://<site>.atlassian.net`; scoped
+personal and service-account tokens call
+`https://api.atlassian.com/ex/jira/<cloudId>`.
 
-An error mentioning `read_jira` means the adapter and credentials reached
-Atlassian, but the organization/token has not exposed Jira reads. Ask an admin
-to enable API-token authentication and the required permission groups, update
-the token scopes, then restart the agent client so Punakawan reconnects. See
-[Atlassian's API-token authentication guide](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/)
-and [supported tools](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools/).
+HTTP 401/403 errors mean the direct token, configured mode/scopes, account
+product access, or Jira project permissions need correction. See
+[Atlassian's API-token guide](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/)
+and [Jira REST v3 documentation](https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/).
 
 ## Development
 

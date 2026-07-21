@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Rich document conversion, Atlassian Cloud connectivity, and browser automation are already mature in the Node/TypeScript ecosystem (Docling MCP, Atlassian Rovo MCP, Playwright), and the plan's guiding principle is to orchestrate rather than reimplement these providers (§2.1 Orchestrate rather than reimplement). TypeScript is therefore designated as the integration and browser ecosystem (§3.2 TypeScript responsibilities).
+Rich document conversion, Atlassian Cloud connectivity, and browser automation are already mature in the Node/TypeScript ecosystem (Docling MCP, Atlassian REST APIs, Playwright), and the plan's guiding principle is to orchestrate rather than reimplement these providers (§2.1 Orchestrate rather than reimplement). TypeScript is therefore designated as the integration and browser ecosystem (§3.2 TypeScript responsibilities).
 
 ## Decision
 TypeScript owns adapters, MCP integrations, and browser automation.

@@ -1,7 +1,7 @@
 # ADR-0010: Atlassian MCP is reused for Jira and Confluence Cloud
 
 ## Status
-Accepted
+Superseded by [ADR-0017](./ADR-0017-direct-atlassian-rest-replaces-rovo-mcp.md)
 
 ## Context
 Jira and Confluence are the primary sources of requirements and documentation context, and the guiding principle of orchestrating rather than reimplementing calls out the Atlassian Rovo MCP specifically for Jira and Confluence Cloud (§2.1 Orchestrate rather than reimplement; §13.2 Jira and Confluence).

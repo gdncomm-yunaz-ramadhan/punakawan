@@ -38,7 +38,7 @@ The platform should:
 Reuse existing providers wherever possible:
 
 - Docling MCP or Docling Serve for rich document conversion.
-- Atlassian Rovo MCP for Jira and Confluence Cloud.
+- Jira Cloud REST API v3 and Confluence REST for Atlassian Cloud.
 - Playwright MCP and Playwright Test for browser automation.
 - Git for source history and worktrees.
 - Dolt for versioned relational knowledge.
@@ -118,7 +118,7 @@ flowchart TB
     CORE --> EVID
 
     TOOL --> TS[TypeScript Adapter Host]
-    TS --> ATL[Atlassian MCP]
+    TS --> ATL[Atlassian REST APIs]
     TS --> DOC[Docling MCP or Serve]
     TS --> PW[Playwright MCP]
     TS --> GH[GitHub or GitLab Adapter]
@@ -1212,7 +1212,7 @@ Punakawan responsibilities:
 
 ### 13.2 Jira and Confluence
 
-Use official Atlassian MCP for Cloud where possible.
+Use the official Jira Cloud REST API v3 and Confluence REST APIs directly.
 
 Punakawan responsibilities:
 
@@ -2120,7 +2120,7 @@ Mitigation:
 7. **JSONL is the event and raw evidence format.**
 8. **Git-tracked YAML stores portable, human-reviewable project knowledge.**
 9. **Docling is reused for document parsing.**
-10. **Atlassian MCP is reused for Jira and Confluence Cloud.**
+10. **Direct Atlassian REST is used for Jira and Confluence Cloud.**
 11. **Playwright MCP or direct Playwright APIs are reused for browser control.**
 12. **The Punakawan recorder is custom and injected visibly.**
 13. **External writes require approval by default.**
