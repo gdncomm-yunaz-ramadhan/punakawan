@@ -374,6 +374,19 @@ describe('addJiraComment', () => {
 
     await client.close();
   });
+
+  test('decodes HTML entities a caller sent literally, e.g. "-&gt;" instead of "->"', async () => {
+    const { client, rest } = fakeClientWithRest();
+    await addJiraComment(client, {
+      issueIdOrKey: 'PROJ-123',
+      commentBody: 'createShareLink() -&gt; validateRequestFields() &amp; friends',
+    });
+
+    const flattened = adfText(rest.addedComments[0]?.body.body);
+    assert.equal(flattened, 'createShareLink() -> validateRequestFields() & friends');
+
+    await client.close();
+  });
 });
 
 describe('getTransitionsForJiraIssue', () => {

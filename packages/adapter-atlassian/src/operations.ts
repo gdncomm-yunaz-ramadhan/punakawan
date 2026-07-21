@@ -14,6 +14,24 @@ function asString(value: unknown): string | undefined {
 }
 
 /**
+ * Decodes the handful of named HTML entities a caller's Markdown source can
+ * end up containing (observed in practice: an upstream MCP client sending
+ * "->" as the literal 4 characters "-&gt;" rather than "->" or "→").
+ * markdownToAdf does not decode entities - it is a Markdown parser, not an
+ * HTML one - so left alone they land verbatim in the rendered comment as
+ * "&gt;" instead of ">". &amp; must decode last, or a source ampersand
+ * combined with a real entity elsewhere could get double-unescaped.
+ */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/**
  * Renders caller-supplied text (comment bodies, descriptions) as Atlassian
  * Document Format, parsing it as Markdown first so headings, bold/italic,
  * lists, and code blocks become real ADF nodes instead of literal "##"/"**"
@@ -24,7 +42,7 @@ function asString(value: unknown): string | undefined {
  */
 function markdownAdf(text: string): Record<string, unknown> {
   if (!text) return { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [] }] };
-  return markdownToAdf(text) as Record<string, unknown>;
+  return markdownToAdf(decodeHtmlEntities(text)) as Record<string, unknown>;
 }
 
 function successPayload(response: RestResponse): Record<string, unknown> {
