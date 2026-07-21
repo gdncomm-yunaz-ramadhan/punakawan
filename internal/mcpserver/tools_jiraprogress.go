@@ -36,8 +36,15 @@ type UpdateJiraTaskProgressInput struct {
 type UpdateJiraTaskProgressOutput struct {
 	EstimateUpdated bool    `json:"estimate_updated"`
 	EstimateHours   float64 `json:"estimate_hours,omitempty"`
-	WorklogAdded    bool    `json:"worklog_added"`
-	CommentPosted   bool    `json:"comment_posted"`
+	// EstimateSkipReason explains why EstimateUpdated is false despite the
+	// caller having asked for an estimate (StoryPoints was given but no
+	// points-to-hours ratio is configured) - left empty both when no
+	// estimate was requested at all and when one was written successfully,
+	// so callers can tell "nothing asked for" apart from "asked for but
+	// silently couldn't be fulfilled" instead of both looking identical.
+	EstimateSkipReason string `json:"estimate_skip_reason,omitempty"`
+	WorklogAdded       bool   `json:"worklog_added"`
+	CommentPosted      bool   `json:"comment_posted"`
 }
 
 func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, UpdateJiraTaskProgressInput) (*mcp.CallToolResult, UpdateJiraTaskProgressOutput, error) {
@@ -64,7 +71,8 @@ func updateJiraTaskProgress(ctx context.Context, gate *adapters.Gate, cfg *jiraw
 	var out UpdateJiraTaskProgressOutput
 	requestedBy := protocol.ApprovalRecordRequestedBy(in.RequestedBy)
 
-	estimateHours, hasEstimate := resolveEstimateHours(cfg, in)
+	estimateHours, hasEstimate, estimateSkipReason := resolveEstimateHours(cfg, in)
+	out.EstimateSkipReason = estimateSkipReason
 	if hasEstimate {
 		if _, err := gate.RequestApproval(in.RunId, "atlassian.editJiraIssueFields", requestedBy); err != nil {
 			return out, fmt.Errorf("mcpserver: request approval for editJiraIssueFields: %w", err)
@@ -114,18 +122,25 @@ func updateJiraTaskProgress(ctx context.Context, gate *adapters.Gate, cfg *jiraw
 
 // resolveEstimateHours implements the user's decision: an explicit
 // OriginalEstimateHours always wins; otherwise StoryPoints is converted via
-// the workspace's configured points-to-hours ratio. If neither is given, or
-// StoryPoints is given but no ratio is configured (EstimateHours' ok is
-// false - jiraworkflow makes no default up), there is nothing to fill and
-// hasEstimate is false rather than silently writing an invented value.
-func resolveEstimateHours(cfg *jiraworkflow.Config, in UpdateJiraTaskProgressInput) (hours float64, hasEstimate bool) {
+// the workspace's configured points-to-hours ratio. If neither is given,
+// there is nothing to fill and hasEstimate is false with no skipReason -
+// this is simply "no estimate requested", not a failure. If StoryPoints is
+// given but no ratio is configured (EstimateHours' ok is false - jiraworkflow
+// makes no default up), hasEstimate is still false (no invented value is
+// written), but skipReason is set so the caller can tell that case apart
+// from "nothing was requested" instead of both looking like a silent no-op.
+func resolveEstimateHours(cfg *jiraworkflow.Config, in UpdateJiraTaskProgressInput) (hours float64, hasEstimate bool, skipReason string) {
 	if in.OriginalEstimateHours != nil {
-		return *in.OriginalEstimateHours, true
+		return *in.OriginalEstimateHours, true, ""
 	}
 	if in.StoryPoints != nil {
-		return cfg.EstimateHours(*in.StoryPoints)
+		hours, ok := cfg.EstimateHours(*in.StoryPoints)
+		if !ok {
+			return 0, false, "story_points was given but no points_to_hours ratio is configured in jira-workflow.yaml"
+		}
+		return hours, true, ""
 	}
-	return 0, false
+	return 0, false, ""
 }
 
 // formatJiraDuration renders hours as a Jira time-tracking duration string

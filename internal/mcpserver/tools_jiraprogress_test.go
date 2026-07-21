@@ -90,6 +90,9 @@ func TestUpdateJiraTaskProgressNoEstimateWhenRatioUnconfigured(t *testing.T) {
 	if out.EstimateUpdated {
 		t.Error("EstimateUpdated = true, want false when points_to_hours is unconfigured")
 	}
+	if out.EstimateSkipReason == "" {
+		t.Error("EstimateSkipReason is empty, want an explanation since story_points was given but no ratio is configured")
+	}
 	if len(fc.calls) != 0 {
 		t.Fatalf("calls = %+v, want none", fc.calls)
 	}
@@ -113,6 +116,9 @@ func TestUpdateJiraTaskProgressWorklogAndComment(t *testing.T) {
 	}
 	if out.EstimateUpdated {
 		t.Error("EstimateUpdated = true, want false (no estimate input given)")
+	}
+	if out.EstimateSkipReason != "" {
+		t.Errorf("EstimateSkipReason = %q, want empty (no estimate was requested at all)", out.EstimateSkipReason)
 	}
 
 	var sawWorklog, sawComment bool
