@@ -122,6 +122,67 @@ export function buildAuthorizationHeader(config: Pick<AtlassianConfig, 'token' |
  */
 export type TransportFactory = (config: Pick<AtlassianConfig, 'token' | 'email'>) => Transport;
 
+export interface AtlassianRemoteTool {
+  name: string;
+  inputSchema: {
+    type: 'object';
+    properties?: Record<string, object>;
+    required?: string[];
+    [key: string]: unknown;
+  };
+}
+
+const TOOL_ACCESS: Record<string, { group: string; scope: string }> = {
+  getJiraIssue: { group: 'read_jira', scope: 'read:jira-work' },
+  getJiraIssueTypeMetaWithFields: { group: 'read_jira', scope: 'read:jira-work' },
+  getTransitionsForJiraIssue: { group: 'read_jira', scope: 'read:jira-work' },
+  searchJiraIssuesUsingJql: { group: 'search_jira', scope: 'search:jira-work' },
+  getConfluencePage: { group: 'read_confluence', scope: 'read:page:confluence' },
+  searchConfluenceUsingCql: { group: 'search_confluence', scope: 'search:confluence' },
+  addCommentToJiraIssue: { group: 'write_jira', scope: 'write:jira-work' },
+  addWorklogToJiraIssue: { group: 'write_jira', scope: 'write:jira-work' },
+  createJiraIssue: { group: 'write_jira', scope: 'write:jira-work' },
+  editJiraIssue: { group: 'write_jira', scope: 'write:jira-work' },
+  transitionJiraIssue: { group: 'write_jira', scope: 'write:jira-work' },
+};
+
+const ATLASSIAN_TOKEN_AUTH_DOC =
+  'https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/';
+
+function apiTokenPermissionError(detail?: string): Error {
+  return new Error(
+    [
+      'Atlassian MCP rejected API-token access.',
+      detail,
+      'Ask an organization admin to enable API-token authentication for the Rovo MCP server, then ensure this personal token or service-account key has the required product scopes.',
+      'Restart Punakawan after access is changed so it reconnects and refreshes the advertised tool list.',
+      `Setup guide: ${ATLASSIAN_TOKEN_AUTH_DOC}`,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+}
+
+function unavailableToolError(name: string, availableTools: readonly AtlassianRemoteTool[]): Error {
+  const access = TOOL_ACCESS[name];
+  const availableNames = availableTools.map((tool) => tool.name).sort();
+  const advertised = availableNames.length > 0 ? availableNames.join(', ') : '(none)';
+  const requirement = access
+    ? `The official ${name} tool belongs to permission group "${access.group}" and requires scope "${access.scope}".`
+    : `The requested tool is not advertised for this connection.`;
+
+  return new Error(
+    [
+      `Atlassian MCP does not advertise required tool "${name}" for this authenticated connection.`,
+      requirement,
+      `Advertised tools: ${advertised}.`,
+      'Ask an organization admin to enable API-token authentication and the required Rovo MCP permission group, and recreate or update the token/key with the required scope.',
+      'Restart Punakawan after access is changed so it reconnects and refreshes the advertised tool list.',
+      `Setup guide: ${ATLASSIAN_TOKEN_AUTH_DOC}`,
+    ].join(' '),
+  );
+}
+
 export function defaultTransportFactory(config: Pick<AtlassianConfig, 'token' | 'email'>): Transport {
   return new StreamableHTTPClientTransport(new URL(ATLASSIAN_MCP_ENDPOINT), {
     requestInit: { headers: { Authorization: buildAuthorizationHeader(config) } },
@@ -141,6 +202,7 @@ export class AtlassianMcpClient {
   private client: Client | undefined;
   private connecting: Promise<Client> | undefined;
   private cloudIdPromise: Promise<string> | undefined;
+  private toolsPromise: Promise<AtlassianRemoteTool[]> | undefined;
 
   constructor(
     config: AtlassianConfig,
@@ -184,11 +246,39 @@ export class AtlassianMcpClient {
     }
   }
 
+  /**
+   * Returns the exact tools advertised for this authenticated connection.
+   * Atlassian filters tools by authentication mode, organization permission
+   * groups, product access, and token scopes, so the public supported-tools
+   * list is not sufficient to know what this caller can actually invoke.
+   */
+  async listTools(): Promise<readonly AtlassianRemoteTool[]> {
+    if (!this.toolsPromise) {
+      this.toolsPromise = (async () => {
+        const client = await this.connect();
+        const tools: AtlassianRemoteTool[] = [];
+        let cursor: string | undefined;
+        do {
+          const result = await client.listTools(cursor ? { cursor } : undefined);
+          tools.push(...(result.tools as AtlassianRemoteTool[]));
+          cursor = result.nextCursor;
+        } while (cursor);
+        return tools;
+      })();
+    }
+    return this.toolsPromise;
+  }
+
   async callTool(name: string, args: Record<string, unknown>): Promise<{
     content: unknown;
     structuredContent?: Record<string, unknown>;
   }> {
     const client = await this.connect();
+    const tools = await this.listTools();
+    if (!tools.some((tool) => tool.name === name)) {
+      throw unavailableToolError(name, tools);
+    }
+
     const result = await client.callTool({ name, arguments: args });
     if (result.isError) {
       const text = Array.isArray(result.content)
@@ -197,6 +287,9 @@ export class AtlassianMcpClient {
             .filter(Boolean)
             .join('; ')
         : '';
+      if (/don't have permission to connect via API token/i.test(text)) {
+        throw apiTokenPermissionError(text);
+      }
       throw new Error(`Atlassian MCP tool "${name}" returned an error${text ? `: ${text}` : ''}`);
     }
     return { content: result.content, structuredContent: result.structuredContent as Record<string, unknown> | undefined };
@@ -206,6 +299,7 @@ export class AtlassianMcpClient {
     if (this.client) {
       await this.client.close();
       this.client = undefined;
+      this.toolsPromise = undefined;
     }
   }
 }

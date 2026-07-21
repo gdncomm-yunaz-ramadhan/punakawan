@@ -25,6 +25,7 @@ import {
   FIXTURE_EXISTING_SUBTASKS,
   FIXTURE_ISSUE_TYPE_FIELD_META,
   startFakeAtlassianServer,
+  type FakeAtlassianServerOptions,
 } from './fakeAtlassianServer.js';
 
 const TEST_ENV = { ATLASSIAN_MCP_TOKEN: 'fake-token', ATLASSIAN_HOST: 'fake-team.atlassian.net' };
@@ -32,7 +33,7 @@ const TEST_ENV = { ATLASSIAN_MCP_TOKEN: 'fake-token', ATLASSIAN_HOST: 'fake-team
 const TEST_CLOUD_ID_RESOLVER = async () => 'fake-cloud-id';
 
 /** Builds an AtlassianMcpClient wired to a fresh fake server instance. */
-async function fakeClient(): Promise<AtlassianMcpClient> {
+async function fakeClient(options: FakeAtlassianServerOptions = {}): Promise<AtlassianMcpClient> {
   const config = loadConfigFromEnv(TEST_ENV);
   let transport: Transport | undefined;
   const client = new AtlassianMcpClient(
@@ -43,7 +44,7 @@ async function fakeClient(): Promise<AtlassianMcpClient> {
     },
     TEST_CLOUD_ID_RESOLVER,
   );
-  const { clientTransport } = await startFakeAtlassianServer();
+  const { clientTransport } = await startFakeAtlassianServer(options);
   transport = clientTransport;
   return client;
 }
@@ -110,6 +111,42 @@ describe('getJiraIssue', () => {
   test('rejects an unknown issue key with the fake server error', async () => {
     const client = await fakeClient();
     await assert.rejects(() => getJiraIssue(client, { issueIdOrKey: 'NOPE-1' }), /Unknown issue/);
+    await client.close();
+  });
+
+  test('explains the missing read_jira permission group and advertised tools', async () => {
+    const client = await fakeClient({ omitGetJiraIssue: true, includeTeamworkGraphObject: true });
+
+    await assert.rejects(
+      () => getJiraIssue(client, { issueIdOrKey: 'PROJ-123' }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /does not advertise required tool "getJiraIssue"/);
+        assert.match(error.message, /permission group "read_jira"/);
+        assert.match(error.message, /scope "read:jira-work"/);
+        assert.match(error.message, /getTeamworkGraphObject/);
+        assert.match(error.message, /organization admin/);
+        return true;
+      },
+    );
+    await client.close();
+  });
+
+  test('translates an API-token access rejection into the administrator remedy', async () => {
+    const client = await fakeClient({
+      getJiraIssueError: "You don't have permission to connect via API token. Please ask your organization admin for access.",
+    });
+
+    await assert.rejects(
+      () => getJiraIssue(client, { issueIdOrKey: 'PROJ-123' }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /rejected API-token access/);
+        assert.match(error.message, /enable API-token authentication/);
+        assert.match(error.message, /organization admin/);
+        return true;
+      },
+    );
     await client.close();
   });
 });
@@ -308,6 +345,17 @@ describe('connection reuse', () => {
 
     await client.close();
     await countingClient.close();
+  });
+});
+
+describe('remote tool discovery', () => {
+  test('returns the exact tools advertised by the authenticated connection', async () => {
+    const client = await fakeClient();
+    const tools = await client.listTools();
+
+    assert.ok(tools.some((tool) => tool.name === 'getJiraIssue'));
+    assert.ok(tools.some((tool) => tool.name === 'editJiraIssue'));
+    await client.close();
   });
 });
 

@@ -63,12 +63,20 @@ export interface FakeServerHandle {
   createdIssues: { projectKey: string; issueTypeName: string; summary: string; description?: string; parent?: string }[];
 }
 
+export interface FakeAtlassianServerOptions {
+  omitGetJiraIssue?: boolean;
+  getJiraIssueError?: string;
+  includeTeamworkGraphObject?: boolean;
+}
+
 /**
  * Builds an McpServer with the Atlassian tool set registered, and returns
  * one end of an in-memory linked transport pair (the caller connects the
  * other end to a real Client).
  */
-export function createFakeAtlassianServer(): { server: McpServer; clientTransport: Transport; handle: FakeServerHandle } {
+export function createFakeAtlassianServer(
+  options: FakeAtlassianServerOptions = {},
+): { server: McpServer; clientTransport: Transport; handle: FakeServerHandle } {
   const server = new McpServer({ name: 'fake-atlassian-mcp', version: '0.0.1' });
   const handle: FakeServerHandle = {
     serverTransport: undefined as unknown as Transport,
@@ -79,23 +87,39 @@ export function createFakeAtlassianServer(): { server: McpServer; clientTranspor
     createdIssues: [],
   };
 
-  server.registerTool(
-    'getJiraIssue',
-    {
-      description: 'Fetch full details for a specific Jira issue.',
-      inputSchema: z.object({ cloudId: z.string(), issueIdOrKey: z.string() }),
-    },
-    async ({ cloudId, issueIdOrKey }) => {
-      if (!cloudId) return { isError: true, content: [{ type: 'text', text: 'cloudId is required' }] };
-      if (issueIdOrKey !== FIXTURE_JIRA_ISSUE.key) {
-        return { isError: true, content: [{ type: 'text', text: `Unknown issue: ${issueIdOrKey}` }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(FIXTURE_JIRA_ISSUE) }],
-        structuredContent: FIXTURE_JIRA_ISSUE,
-      };
-    },
-  );
+  if (!options.omitGetJiraIssue) {
+    server.registerTool(
+      'getJiraIssue',
+      {
+        description: 'Fetch full details for a specific Jira issue.',
+        inputSchema: z.object({ cloudId: z.string(), issueIdOrKey: z.string() }),
+      },
+      async ({ cloudId, issueIdOrKey }) => {
+        if (options.getJiraIssueError) {
+          return { isError: true, content: [{ type: 'text' as const, text: options.getJiraIssueError }] };
+        }
+        if (!cloudId) return { isError: true, content: [{ type: 'text', text: 'cloudId is required' }] };
+        if (issueIdOrKey !== FIXTURE_JIRA_ISSUE.key) {
+          return { isError: true, content: [{ type: 'text', text: `Unknown issue: ${issueIdOrKey}` }] };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify(FIXTURE_JIRA_ISSUE) }],
+          structuredContent: FIXTURE_JIRA_ISSUE,
+        };
+      },
+    );
+  }
+
+  if (options.includeTeamworkGraphObject) {
+    server.registerTool(
+      'getTeamworkGraphObject',
+      {
+        description: 'Fetch Teamwork Graph objects.',
+        inputSchema: z.object({ cloudId: z.string(), objects: z.array(z.string()) }),
+      },
+      async () => ({ content: [{ type: 'text', text: JSON.stringify({ objects: [] }) }] }),
+    );
+  }
 
   server.registerTool(
     'getConfluencePage',
@@ -282,8 +306,10 @@ export function createFakeAtlassianServer(): { server: McpServer; clientTranspor
 }
 
 /** Connects the fake server's server-side transport; call before connecting the client. */
-export async function startFakeAtlassianServer(): Promise<{ clientTransport: Transport; handle: FakeServerHandle }> {
-  const { server, clientTransport, handle } = createFakeAtlassianServer();
+export async function startFakeAtlassianServer(
+  options: FakeAtlassianServerOptions = {},
+): Promise<{ clientTransport: Transport; handle: FakeServerHandle }> {
+  const { server, clientTransport, handle } = createFakeAtlassianServer(options);
   await server.connect(handle.serverTransport);
   return { clientTransport, handle };
 }

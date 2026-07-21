@@ -46,6 +46,11 @@ authentication for the Rovo MCP server. The installer accepts either:
 - a personal API token plus Atlassian account email; or
 - a service-account API key without an email.
 
+For Jira assessment and updates, the admin must enable the `read_jira`,
+`search_jira`, and `write_jira` Rovo MCP permission groups. The personal token
+or service-account key also needs `read:jira-work`, `search:jira-work`, and
+`write:jira-work`. Atlassian filters the MCP tool list by these settings.
+
 It also asks for the site host (for example `yourteam.atlassian.net`) and
 derives the cloud ID automatically. No per-project Punakawan file is required;
 an optional `.punakawan/workspace.yaml` can override global defaults.
@@ -76,6 +81,20 @@ client cannot show MCP elicitation, Punakawan returns the exact CLI fallback:
 punakawan approvals list
 punakawan approvals approve <id> --by <your-name>
 ```
+
+### Jira tool not found
+
+Punakawan discovers the tools advertised for the authenticated Atlassian
+connection before invoking one. If `getJiraIssue` or another official tool is
+missing, the error now reports its required permission group and scope plus
+the tools Atlassian actually advertised.
+
+An error mentioning `read_jira` means the adapter and credentials reached
+Atlassian, but the organization/token has not exposed Jira reads. Ask an admin
+to enable API-token authentication and the required permission groups, update
+the token scopes, then restart the agent client so Punakawan reconnects. See
+[Atlassian's API-token authentication guide](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/)
+and [supported tools](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools/).
 
 ## Development
 

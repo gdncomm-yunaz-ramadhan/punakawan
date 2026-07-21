@@ -104,6 +104,12 @@ you would need the interactive OAuth 2.1 flow instead (not set up by this
 script - that flow is meant for interactive desktop MCP clients, not a
 headless adapter process).
 
+The admin must also grant the Rovo MCP permission groups you need. For the
+Jira MVP, enable read_jira, search_jira, and write_jira, and create the token
+or service-account key with read:jira-work, search:jira-work, and
+write:jira-work scopes. Atlassian filters tools/list by this access; a missing
+group appears to clients as "Tool <name> not found".
+
 Two credential types are supported - pick whichever you have:
   1) Personal API token (tied to your own Atlassian account + email)
   2) Service account API key (org-level, no email)
