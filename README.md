@@ -22,11 +22,23 @@ approval gates.
 
 The global installer installs missing prerequisites, builds Punakawan and its
 Atlassian adapter, collects Jira credentials outside git-tracked projects, and
-registers `punakawan` as a user-scope Claude Code MCP server:
+opens a wizard to integrate `punakawan` with Codex, Claude Code, both, another
+STDIO MCP client, or no client yet:
 
 ```bash
 ./scripts/install.sh
 ```
+
+The final wizard offers Codex, Claude Code, both, a generic STDIO MCP config,
+or skip. To add or change clients later, rerun only the integration wizard:
+
+```bash
+./scripts/configure-agent.sh "$HOME/Library/Application Support/punakawan/run-mcp.sh"
+```
+
+For automated provisioning, set `PUNAKAWAN_AGENT_SELECTION` to `codex`,
+`claude`, `both`, `generic`, or `skip`. Set `PUNAKAWAN_DRY_RUN=1` to preview
+registration commands without changing client configuration.
 
 Before setup, an Atlassian organization admin must enable API-token
 authentication for the Rovo MCP server. The installer accepts either:
@@ -40,8 +52,8 @@ an optional `.punakawan/workspace.yaml` can override global defaults.
 
 ## Jira MVP workflow
 
-Open Claude Code in any git repository after installation and ask it to use
-Punakawan for a Jira issue, for example:
+Open the agent client selected during installation in any git repository and
+ask it to use Punakawan for a Jira issue, for example:
 
 > Use Punakawan to read PAY-123, assess feasibility and risks with Semar and
 > Gareng, produce an implementation plan with Petruk, create the Beads tasks

@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test test-go test-ts lint generate protocol-check integration-test package doctor
+.PHONY: bootstrap build test test-go test-ts test-install lint generate protocol-check integration-test package doctor
 
 bootstrap:
 	go mod download
@@ -8,13 +8,16 @@ build:
 	go build ./...
 	pnpm -r --if-present build
 
-test: test-go test-ts
+test: test-go test-ts test-install
 
 test-go:
 	go test ./...
 
 test-ts:
 	pnpm -r --if-present test
+
+test-install:
+	bash scripts/configure-agent_test.sh
 
 lint:
 	gofmt -l . | (! grep .)
