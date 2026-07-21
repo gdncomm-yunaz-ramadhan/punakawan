@@ -1,0 +1,27 @@
+cmd/punakawan/main_test.go
+  fd931d7b51a068b5 214-261
+cmd/punakawan/approvals_cmd.go
+  fd931d7b51a068b5 71-73,75,86-88,90,98-104,111-121,123
+internal/mcpserver/server.go
+  fd931d7b51a068b5 38,40-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "1dc7c5d6d693396315310b2eff2ee87697a051b2",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 79,
+      "total_deletions": 15,
+      "accepted_lines": 79,
+      "overriden_lines": 0
+    }
+  }
+}
