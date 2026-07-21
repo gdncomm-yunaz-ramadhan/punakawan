@@ -111,11 +111,11 @@ func TestSyncJiraSubtasksCreatesAndReportsSkipped(t *testing.T) {
 	if _, err := gate.RequestApproval(in.RunId, "atlassian.createJiraSubtask", protocol.ApprovalRecordRequestedByPetruk); err != nil {
 		t.Fatalf("RequestApproval: %v", err)
 	}
-	if err := gate.Approve(in.RunId, "atlassian.createJiraSubtask", "ygrip"); err != nil {
+	if err := gate.Approve(in.RunId, "ygrip"); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 
-	out, err := syncJiraSubtasks(context.Background(), gate, in)
+	out, err := syncJiraSubtasks(context.Background(), nil, gate, in)
 	if err != nil {
 		t.Fatalf("syncJiraSubtasks: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestSyncJiraSubtasksFailsWithoutApproval(t *testing.T) {
 	gate, _ := newJiraClarifyTestGateWithManifest(t, syncSubtaskManifest())
 	in := SyncJiraSubtasksInput{RunId: "run-1", ParentKey: "PAY-1", ProjectKey: "PAY", IssueTypeName: "Subtask", RequestedBy: "petruk"}
 
-	if _, err := syncJiraSubtasks(context.Background(), gate, in); err == nil {
+	if _, err := syncJiraSubtasks(context.Background(), nil, gate, in); err == nil {
 		t.Fatal("expected an error when createJiraSubtask has not been approved")
 	}
 }

@@ -44,6 +44,10 @@ func testManifest() protocol.AdapterManifest {
 				SideEffect: true,
 				Approval:   approvalRequired(),
 			},
+			"atlassian.addWorklog": {
+				SideEffect: true,
+				Approval:   approvalRequired(),
+			},
 		},
 	}
 }
@@ -90,7 +94,7 @@ func TestGateAllowsApprovalRequiredOperationOnceApproved(t *testing.T) {
 		t.Fatal("expected error before approval is granted")
 	}
 
-	if err := g.Approve("run-1", "atlassian.addJiraComment", "ygrip"); err != nil {
+	if err := g.Approve("run-1", "ygrip"); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
@@ -107,7 +111,7 @@ func TestGateDeniedOperationStaysBlocked(t *testing.T) {
 	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
 		t.Fatalf("RequestApproval: %v", err)
 	}
-	if err := g.Deny("run-1", "atlassian.addJiraComment", "ygrip"); err != nil {
+	if err := g.Deny("run-1", "ygrip"); err != nil {
 		t.Fatalf("Deny: %v", err)
 	}
 	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", nil); err == nil {
@@ -115,6 +119,48 @@ func TestGateDeniedOperationStaysBlocked(t *testing.T) {
 	}
 	if len(fc.calls) != 0 {
 		t.Fatalf("expected no adapter call, got %+v", fc.calls)
+	}
+}
+
+func TestGateApprovalCoversEveryWriteInRun(t *testing.T) {
+	g, fc := newTestGate(t)
+
+	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+	if err := g.Approve("run-1", "ygrip"); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	if _, err := g.Call(context.Background(), "run-1", "atlassian.addWorklog", map[string]any{"timeSpentSeconds": 60}); err != nil {
+		t.Fatalf("Call second operation after run approval: %v", err)
+	}
+	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addWorklog" {
+		t.Fatalf("calls = %+v, want addWorklog", fc.calls)
+	}
+}
+
+func TestGateApprovalCoversDifferentAdaptersInSameRun(t *testing.T) {
+	store, err := approvals.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("approvals.Open: %v", err)
+	}
+	firstCaller := &fakeCaller{}
+	secondCaller := &fakeCaller{}
+	first := NewGate("atlassian", testManifest(), firstCaller, store)
+	second := NewGate("another-adapter", testManifest(), secondCaller, store)
+
+	if _, err := first.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+	if err := first.Approve("run-1", "ygrip"); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if _, err := second.Call(context.Background(), "run-1", "atlassian.addWorklog", nil); err != nil {
+		t.Fatalf("Call through second adapter: %v", err)
+	}
+	if len(secondCaller.calls) != 1 {
+		t.Fatalf("second adapter calls = %+v, want one", secondCaller.calls)
 	}
 }
 

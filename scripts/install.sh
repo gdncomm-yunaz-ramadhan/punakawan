@@ -206,8 +206,10 @@ MCP scope:     user (available in every project, no per-project setup needed)
 Open Claude Code in any git-tracked project to connect to the "punakawan"
 MCP server.
 
-Write actions (Jira comments, transitions, subtasks, estimates) require
-human approval first:
+Write actions (Jira comments, transitions, subtasks, estimates) ask for one
+inline human approval per run when the MCP client supports it. For
+clients without elicitation support, use the CLI fallback shown in the tool
+error:
   punakawan approvals list
   punakawan approvals approve <id> --by <your-name>
 EOF

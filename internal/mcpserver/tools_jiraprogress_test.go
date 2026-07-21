@@ -17,13 +17,13 @@ func progressTestManifest() protocol.AdapterManifest {
 
 func approveOp(t *testing.T, gate interface {
 	RequestApproval(runID, op string, by protocol.ApprovalRecordRequestedBy) (protocol.ApprovalRecord, error)
-	Approve(runID, op, approvedBy string) error
+	Approve(runID, approvedBy string) error
 }, runID, op string) {
 	t.Helper()
 	if _, err := gate.RequestApproval(runID, op, protocol.ApprovalRecordRequestedByPetruk); err != nil {
 		t.Fatalf("RequestApproval(%s): %v", op, err)
 	}
-	if err := gate.Approve(runID, op, "ygrip"); err != nil {
+	if err := gate.Approve(runID, "ygrip"); err != nil {
 		t.Fatalf("Approve(%s): %v", op, err)
 	}
 }
@@ -36,7 +36,7 @@ func TestUpdateJiraTaskProgressDerivesEstimateFromStoryPoints(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", StoryPoints: &points, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{Estimation: jiraworkflow.EstimationConfig{PointsToHours: 4}}
 
-	out, err := updateJiraTaskProgress(context.Background(), gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestUpdateJiraTaskProgressExplicitEstimateOverridesPoints(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", StoryPoints: &points, OriginalEstimateHours: &explicit, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{Estimation: jiraworkflow.EstimationConfig{PointsToHours: 4}}
 
-	out, err := updateJiraTaskProgress(context.Background(), gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestUpdateJiraTaskProgressNoEstimateWhenRatioUnconfigured(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", StoryPoints: &points, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{} // points_to_hours not configured
 
-	out, err := updateJiraTaskProgress(context.Background(), gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -101,13 +101,12 @@ func TestUpdateJiraTaskProgressNoEstimateWhenRatioUnconfigured(t *testing.T) {
 func TestUpdateJiraTaskProgressWorklogAndComment(t *testing.T) {
 	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
 	approveOp(t, gate, "run-1", "atlassian.addWorklog")
-	approveOp(t, gate, "run-1", "atlassian.addJiraComment")
 
 	worklog := 1.5
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, Comment: "Done", RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	out, err := updateJiraTaskProgress(context.Background(), gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -147,7 +146,7 @@ func TestUpdateJiraTaskProgressFailsWithoutApproval(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	if _, err := updateJiraTaskProgress(context.Background(), gate, cfg, in); err == nil {
+	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in); err == nil {
 		t.Fatal("expected an error when addWorklog has not been approved")
 	}
 }

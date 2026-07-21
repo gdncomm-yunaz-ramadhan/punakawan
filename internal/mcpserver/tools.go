@@ -121,7 +121,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 	// Jira as source of truth: adapter invocation (§5.1-§5.3).
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "call_adapter_operation",
-		Description: "Invoke any operation an adapter's manifest declares (e.g. Jira/Confluence via the atlassian adapter), starting the adapter process on first use and enforcing its approval requirements.",
+		Description: "Invoke any operation an adapter's manifest declares (e.g. Jira/Confluence via the atlassian adapter). Approval-required writes elicit one human approval covering all adapter writes for the whole run; clients without elicitation support receive the CLI fallback.",
 	}, callAdapterOperationHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -141,6 +141,6 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_jira_task_progress",
-		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment - each independently optional.",
+		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes.",
 	}, updateJiraTaskProgressHandler(a))
 }

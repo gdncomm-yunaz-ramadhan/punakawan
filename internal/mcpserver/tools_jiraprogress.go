@@ -58,7 +58,7 @@ func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, UpdateJiraTaskProgressOutput{}, fmt.Errorf("mcpserver: load jira workflow config: %w", err)
 		}
 
-		out, err := updateJiraTaskProgress(ctx, gate, cfg, in)
+		out, err := updateJiraTaskProgress(ctx, req, gate, cfg, in)
 		return nil, out, err
 	}
 }
@@ -67,24 +67,21 @@ func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallTo
 // split out so it can be tested against a Gate built from a fake caller
 // (mirroring internal/adapters/gate_test.go's pattern) instead of a real
 // spawned adapter process, which would require live Jira credentials.
-func updateJiraTaskProgress(ctx context.Context, gate *adapters.Gate, cfg *jiraworkflow.Config, in UpdateJiraTaskProgressInput) (UpdateJiraTaskProgressOutput, error) {
+func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, cfg *jiraworkflow.Config, in UpdateJiraTaskProgressInput) (UpdateJiraTaskProgressOutput, error) {
 	var out UpdateJiraTaskProgressOutput
 	requestedBy := protocol.ApprovalRecordRequestedBy(in.RequestedBy)
 
 	estimateHours, hasEstimate, estimateSkipReason := resolveEstimateHours(cfg, in)
 	out.EstimateSkipReason = estimateSkipReason
 	if hasEstimate {
-		if _, err := gate.RequestApproval(in.RunId, "atlassian.editJiraIssueFields", requestedBy); err != nil {
-			return out, fmt.Errorf("mcpserver: request approval for editJiraIssueFields: %w", err)
-		}
-		if _, err := gate.Call(ctx, in.RunId, "atlassian.editJiraIssueFields", map[string]any{
+		if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.editJiraIssueFields", map[string]any{
 			"issueIdOrKey": in.IssueIdOrKey,
 			"fields": map[string]any{
 				"timetracking": map[string]any{
 					"originalEstimate": formatJiraDuration(estimateHours),
 				},
 			},
-		}); err != nil {
+		}, requestedBy); err != nil {
 			return out, fmt.Errorf("mcpserver: update original estimate: %w", err)
 		}
 		out.EstimateUpdated = true
@@ -92,26 +89,20 @@ func updateJiraTaskProgress(ctx context.Context, gate *adapters.Gate, cfg *jiraw
 	}
 
 	if in.WorklogHours != nil {
-		if _, err := gate.RequestApproval(in.RunId, "atlassian.addWorklog", requestedBy); err != nil {
-			return out, fmt.Errorf("mcpserver: request approval for addWorklog: %w", err)
-		}
-		if _, err := gate.Call(ctx, in.RunId, "atlassian.addWorklog", map[string]any{
+		if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.addWorklog", map[string]any{
 			"issueIdOrKey":     in.IssueIdOrKey,
 			"timeSpentSeconds": int(math.Round(*in.WorklogHours * 3600)),
-		}); err != nil {
+		}, requestedBy); err != nil {
 			return out, fmt.Errorf("mcpserver: add worklog: %w", err)
 		}
 		out.WorklogAdded = true
 	}
 
 	if in.Comment != "" {
-		if _, err := gate.RequestApproval(in.RunId, "atlassian.addJiraComment", requestedBy); err != nil {
-			return out, fmt.Errorf("mcpserver: request approval for addJiraComment: %w", err)
-		}
-		if _, err := gate.Call(ctx, in.RunId, "atlassian.addJiraComment", map[string]any{
+		if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.addJiraComment", map[string]any{
 			"issueIdOrKey": in.IssueIdOrKey,
 			"commentBody":  in.Comment,
-		}); err != nil {
+		}, requestedBy); err != nil {
 			return out, fmt.Errorf("mcpserver: post comment: %w", err)
 		}
 		out.CommentPosted = true

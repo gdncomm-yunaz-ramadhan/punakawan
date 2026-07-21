@@ -66,7 +66,7 @@ func requestJiraClarificationHandler(a *app.App) func(context.Context, *mcp.Call
 			return nil, RequestJiraClarificationOutput{}, fmt.Errorf("mcpserver: load jira workflow config: %w", err)
 		}
 
-		out, err := requestJiraClarification(ctx, gate, cfg, in)
+		out, err := requestJiraClarification(ctx, req, gate, cfg, in)
 		return nil, out, err
 	}
 }
@@ -75,17 +75,14 @@ func requestJiraClarificationHandler(a *app.App) func(context.Context, *mcp.Call
 // split out so it can be tested against a Gate built from a fake caller
 // (mirroring internal/adapters/gate_test.go's pattern) instead of a real
 // spawned adapter process, which would require live Jira credentials.
-func requestJiraClarification(ctx context.Context, gate *adapters.Gate, cfg *jiraworkflow.Config, in RequestJiraClarificationInput) (RequestJiraClarificationOutput, error) {
+func requestJiraClarification(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, cfg *jiraworkflow.Config, in RequestJiraClarificationInput) (RequestJiraClarificationOutput, error) {
 	var out RequestJiraClarificationOutput
 	requestedBy := protocol.ApprovalRecordRequestedBy(in.RequestedBy)
 
-	if _, err := gate.RequestApproval(in.RunId, "atlassian.addJiraComment", requestedBy); err != nil {
-		return out, fmt.Errorf("mcpserver: request approval for addJiraComment: %w", err)
-	}
-	if _, err := gate.Call(ctx, in.RunId, "atlassian.addJiraComment", map[string]any{
+	if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.addJiraComment", map[string]any{
 		"issueIdOrKey": in.IssueIdOrKey,
 		"commentBody":  in.CommentBody,
-	}); err != nil {
+	}, requestedBy); err != nil {
 		return out, fmt.Errorf("mcpserver: post clarification comment: %w", err)
 	}
 	out.CommentPosted = true
@@ -94,9 +91,9 @@ func requestJiraClarification(ctx context.Context, gate *adapters.Gate, cfg *jir
 		return out, nil
 	}
 
-	raw, err := gate.Call(ctx, in.RunId, "atlassian.getTransitionsForJiraIssue", map[string]any{
+	raw, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.getTransitionsForJiraIssue", map[string]any{
 		"issueIdOrKey": in.IssueIdOrKey,
-	})
+	}, requestedBy)
 	if err != nil {
 		return out, fmt.Errorf("mcpserver: list workflow transitions: %w", err)
 	}
@@ -117,13 +114,10 @@ func requestJiraClarification(ctx context.Context, gate *adapters.Gate, cfg *jir
 		return out, fmt.Errorf("mcpserver: no workflow transition to configured clarification status %q found for issue %q", cfg.ClarificationStatus, in.IssueIdOrKey)
 	}
 
-	if _, err := gate.RequestApproval(in.RunId, "atlassian.transitionJiraIssue", requestedBy); err != nil {
-		return out, fmt.Errorf("mcpserver: request approval for transitionJiraIssue: %w", err)
-	}
-	if _, err := gate.Call(ctx, in.RunId, "atlassian.transitionJiraIssue", map[string]any{
+	if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.transitionJiraIssue", map[string]any{
 		"issueIdOrKey": in.IssueIdOrKey,
 		"transitionId": transitionID,
-	}); err != nil {
+	}, requestedBy); err != nil {
 		return out, fmt.Errorf("mcpserver: transition issue to clarification status: %w", err)
 	}
 	out.TransitionApplied = true

@@ -33,15 +33,9 @@ type CallAdapterOperationOutput struct {
 // adapter's manifest (§5.3), starting the adapter process on first use
 // (adapters.Registry.Gate) and enforcing its approval requirements
 // (adapters.Gate.Call). Callers with a not-yet-approved, approval-required
-// op get a clear error, not a silent bypass or a hang: granting the
-// approval is a separate, human-facing CLI surface by design (`punakawan
-// approvals list`/`approve`/`deny`, cmd/punakawan/approvals_cmd.go) rather
-// than another MCP tool, so the same connected agent that requested a write
-// cannot also approve its own request - this matters for one-off writes
-// called directly (outside a full workflow run's plan/review checkpoints):
-// the call above still creates the pending request, a human still has to
-// approve it out-of-band, and only then does a retry of this same call
-// succeed.
+// op are shown an inline human elicitation when the client supports it. The
+// CLI remains the fallback for clients without elicitation support; approval
+// is deliberately not exposed as another agent-callable MCP tool.
 func callAdapterOperationHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CallAdapterOperationInput) (*mcp.CallToolResult, CallAdapterOperationOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CallAdapterOperationInput) (*mcp.CallToolResult, CallAdapterOperationOutput, error) {
 		gate, err := a.AdapterRegistry.Gate(ctx, in.AdapterId)
@@ -49,16 +43,7 @@ func callAdapterOperationHandler(a *app.App) func(context.Context, *mcp.CallTool
 			return nil, CallAdapterOperationOutput{}, fmt.Errorf("mcpserver: call_adapter_operation: %w", err)
 		}
 
-		// Idempotent, and harmless for operations the manifest does not
-		// require approval for (adapters.Gate.RequestApproval's own
-		// contract): ensures a pending record exists for anything that
-		// does, mirroring start_task_execution's RequestApproval-then-
-		// attempt pattern (tools_execution.go).
-		if _, err := gate.RequestApproval(in.RunId, in.Op, protocol.ApprovalRecordRequestedBy(in.RequestedBy)); err != nil {
-			return nil, CallAdapterOperationOutput{}, fmt.Errorf("mcpserver: request adapter operation approval: %w", err)
-		}
-
-		raw, err := gate.Call(ctx, in.RunId, in.Op, in.Params)
+		raw, err := invokeAdapterOperation(ctx, req, gate, in.RunId, in.Op, in.Params, protocol.ApprovalRecordRequestedBy(in.RequestedBy))
 		if err != nil {
 			return nil, CallAdapterOperationOutput{}, fmt.Errorf("mcpserver: call_adapter_operation: %w", err)
 		}

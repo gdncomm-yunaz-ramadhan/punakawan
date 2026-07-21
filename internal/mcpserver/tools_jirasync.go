@@ -105,7 +105,7 @@ func syncJiraSubtasksHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		if err != nil {
 			return nil, SyncJiraSubtasksOutput{}, fmt.Errorf("mcpserver: sync_jira_subtasks: %w", err)
 		}
-		out, err := syncJiraSubtasks(ctx, gate, in)
+		out, err := syncJiraSubtasks(ctx, req, gate, in)
 		return nil, out, err
 	}
 }
@@ -114,11 +114,7 @@ func syncJiraSubtasksHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 // can be tested against a Gate built from a fake caller (mirroring
 // internal/adapters/gate_test.go's pattern) instead of a real spawned
 // adapter process, which would require live Jira credentials.
-func syncJiraSubtasks(ctx context.Context, gate *adapters.Gate, in SyncJiraSubtasksInput) (SyncJiraSubtasksOutput, error) {
-	if _, err := gate.RequestApproval(in.RunId, "atlassian.createJiraSubtask", protocol.ApprovalRecordRequestedBy(in.RequestedBy)); err != nil {
-		return SyncJiraSubtasksOutput{}, fmt.Errorf("mcpserver: request approval for createJiraSubtask: %w", err)
-	}
-
+func syncJiraSubtasks(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in SyncJiraSubtasksInput) (SyncJiraSubtasksOutput, error) {
 	candidates := make([]map[string]any, len(in.Candidates))
 	for i, c := range in.Candidates {
 		candidate := map[string]any{"summary": c.Summary}
@@ -131,12 +127,12 @@ func syncJiraSubtasks(ctx context.Context, gate *adapters.Gate, in SyncJiraSubta
 		candidates[i] = candidate
 	}
 
-	raw, err := gate.Call(ctx, in.RunId, "atlassian.createJiraSubtask", map[string]any{
+	raw, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.createJiraSubtask", map[string]any{
 		"parentKey":     in.ParentKey,
 		"projectKey":    in.ProjectKey,
 		"issueTypeName": in.IssueTypeName,
 		"candidates":    candidates,
-	})
+	}, protocol.ApprovalRecordRequestedBy(in.RequestedBy))
 	if err != nil {
 		return SyncJiraSubtasksOutput{}, fmt.Errorf("mcpserver: create jira subtasks: %w", err)
 	}

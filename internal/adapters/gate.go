@@ -35,8 +35,12 @@ func NewGate(adapterID string, manifest protocol.AdapterManifest, client caller,
 	return &Gate{adapterID: adapterID, manifest: manifest, client: client, approvals: store}
 }
 
-func approvalID(adapterID, op, runID string) string {
-	return fmt.Sprintf("approval-adapter-%s-%s-%s", adapterID, op, runID)
+// approvalID is scoped only to runID, not the adapter or operation: one human
+// approval covers every approval-required adapter write a run performs. A
+// different run still needs its own approval; the boundary is "this run may
+// write through configured adapters", not "write anything forever".
+func approvalID(runID string) string {
+	return fmt.Sprintf("approval-adapter-run-%s", runID)
 }
 
 // requiresApproval reports whether op is declared approval-required in the
@@ -45,6 +49,13 @@ func approvalID(adapterID, op, runID string) string {
 func (g *Gate) requiresApproval(op string) bool {
 	entry, ok := g.manifest.Operations[op]
 	return ok && entry.Approval != nil && *entry.Approval == protocol.AdapterManifestOperationsValueApprovalRequired
+}
+
+// RequiresApproval reports whether the adapter manifest declares op as an
+// approval-gated operation. MCP-facing orchestration uses this to decide
+// whether it needs to ask the connected client to elicit human approval.
+func (g *Gate) RequiresApproval(op string) bool {
+	return g.requiresApproval(op)
 }
 
 // operationCategory maps an adapter operation name onto the closest
@@ -70,14 +81,21 @@ func operationCategory(op string) protocol.ApprovalRecordOperation {
 	}
 }
 
-// RequestApproval creates a pending approval record for invoking op, or
-// returns the existing record if one was already requested (idempotent).
-// It is a no-op error to call this for an operation the manifest does not
-// require approval for; callers should check requiresApproval-equivalent
-// behavior implicitly by simply calling Call, which only enforces the gate
-// when the manifest asks for it.
+// RequestApproval creates a pending approval record covering every
+// approval-required adapter operation this run performs, or
+// returns the existing record if one was already requested (idempotent) -
+// including when a different adapter or operation in the same run created
+// it, since approval is scoped to the run, not the adapter or individual op
+// (see approvalID). It is a no-op to call this for an operation the
+// manifest does not require approval for; callers should check
+// requiresApproval-equivalent behavior implicitly by simply calling Call,
+// which only enforces the gate when the manifest asks for it.
 func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRecordRequestedBy) (protocol.ApprovalRecord, error) {
-	id := approvalID(g.adapterID, op, runID)
+	if !g.requiresApproval(op) {
+		return protocol.ApprovalRecord{}, nil
+	}
+
+	id := approvalID(runID)
 
 	current, err := g.approvals.Current()
 	if err != nil {
@@ -87,8 +105,8 @@ func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRe
 		return rec, nil
 	}
 
-	target := fmt.Sprintf("%s:%s", g.adapterID, op)
-	reason := fmt.Sprintf("invoke adapter operation %q on %q", op, g.adapterID)
+	target := "all configured adapters"
+	reason := fmt.Sprintf("invoke approval-required adapter operations for run %q (first requested: %q on %q)", runID, op, g.adapterID)
 	rec := protocol.ApprovalRecord{
 		Id:          id,
 		RunId:       runID,
@@ -105,32 +123,15 @@ func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRe
 	return rec, nil
 }
 
-// Approve marks a pending operation request as approved.
-func (g *Gate) Approve(runID, op, approvedBy string) error {
-	return g.resolve(runID, op, protocol.ApprovalRecordStatusApproved, approvedBy)
+// Approve marks a pending adapter-write request as approved, covering every
+// approval-required adapter operation this run performs.
+func (g *Gate) Approve(runID, approvedBy string) error {
+	return g.approvals.Resolve(approvalID(runID), protocol.ApprovalRecordStatusApproved, approvedBy)
 }
 
-// Deny marks a pending operation request as denied.
-func (g *Gate) Deny(runID, op, approvedBy string) error {
-	return g.resolve(runID, op, protocol.ApprovalRecordStatusDenied, approvedBy)
-}
-
-func (g *Gate) resolve(runID, op string, status protocol.ApprovalRecordStatus, approvedBy string) error {
-	id := approvalID(g.adapterID, op, runID)
-	current, err := g.approvals.Current()
-	if err != nil {
-		return err
-	}
-	rec, ok := current[id]
-	if !ok {
-		return fmt.Errorf("adapters: no approval request %q; call RequestApproval first", id)
-	}
-
-	now := time.Now().UTC()
-	rec.Status = status
-	rec.ApprovedBy = &approvedBy
-	rec.ResolvedAt = &now
-	return g.approvals.Append(rec)
+// Deny marks a pending adapter-write request as denied.
+func (g *Gate) Deny(runID, approvedBy string) error {
+	return g.approvals.Resolve(approvalID(runID), protocol.ApprovalRecordStatusDenied, approvedBy)
 }
 
 // Call invokes op via the adapter's "execute" method, first checking that
@@ -144,9 +145,10 @@ func (g *Gate) Call(ctx context.Context, runID, op string, params map[string]any
 		if err != nil {
 			return nil, err
 		}
-		rec, ok := current[approvalID(g.adapterID, op, runID)]
+		rec, ok := current[approvalID(runID)]
 		if !ok || rec.Status != protocol.ApprovalRecordStatusApproved {
-			return nil, fmt.Errorf("adapters: operation %q on %q is not approved for run %q", op, g.adapterID, runID)
+			id := approvalID(runID)
+			return nil, fmt.Errorf("adapters: adapter %q is not approved for run %q (requested op %q, approval id %q); approve with `punakawan approvals approve %s --by <your-name>` and retry", g.adapterID, runID, op, id, id)
 		}
 	}
 

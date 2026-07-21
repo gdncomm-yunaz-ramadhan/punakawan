@@ -84,17 +84,11 @@ func TestRequestJiraClarificationPostsCommentAndTransitions(t *testing.T) {
 	if _, err := gate.RequestApproval(in.RunId, "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
 		t.Fatalf("RequestApproval addJiraComment: %v", err)
 	}
-	if err := gate.Approve(in.RunId, "atlassian.addJiraComment", "ygrip"); err != nil {
+	if err := gate.Approve(in.RunId, "ygrip"); err != nil {
 		t.Fatalf("Approve addJiraComment: %v", err)
 	}
-	if _, err := gate.RequestApproval(in.RunId, "atlassian.transitionJiraIssue", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval transitionJiraIssue: %v", err)
-	}
-	if err := gate.Approve(in.RunId, "atlassian.transitionJiraIssue", "ygrip"); err != nil {
-		t.Fatalf("Approve transitionJiraIssue: %v", err)
-	}
 
-	out, err := requestJiraClarification(context.Background(), gate, cfg, in)
+	out, err := requestJiraClarification(context.Background(), nil, gate, cfg, in)
 	if err != nil {
 		t.Fatalf("requestJiraClarification: %v", err)
 	}
@@ -139,11 +133,11 @@ func TestRequestJiraClarificationSkipsTransitionWhenUnconfigured(t *testing.T) {
 	if _, err := gate.RequestApproval(in.RunId, "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
 		t.Fatalf("RequestApproval: %v", err)
 	}
-	if err := gate.Approve(in.RunId, "atlassian.addJiraComment", "ygrip"); err != nil {
+	if err := gate.Approve(in.RunId, "ygrip"); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 
-	out, err := requestJiraClarification(context.Background(), gate, cfg, in)
+	out, err := requestJiraClarification(context.Background(), nil, gate, cfg, in)
 	if err != nil {
 		t.Fatalf("requestJiraClarification: %v", err)
 	}
@@ -168,11 +162,11 @@ func TestRequestJiraClarificationFailsClearlyWhenNoMatchingTransition(t *testing
 	if _, err := gate.RequestApproval(in.RunId, "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
 		t.Fatalf("RequestApproval: %v", err)
 	}
-	if err := gate.Approve(in.RunId, "atlassian.addJiraComment", "ygrip"); err != nil {
+	if err := gate.Approve(in.RunId, "ygrip"); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 
-	out, err := requestJiraClarification(context.Background(), gate, cfg, in)
+	out, err := requestJiraClarification(context.Background(), nil, gate, cfg, in)
 	if err == nil {
 		t.Fatal("expected an error when no transition matches the configured clarification status")
 	}
@@ -189,7 +183,7 @@ func TestRequestJiraClarificationFailsWithoutApproval(t *testing.T) {
 	cfg := &jiraworkflow.Config{ClarificationStatus: "Sent Back to Product Review"}
 	in := RequestJiraClarificationInput{RunId: "run-1", IssueIdOrKey: "PAY-1", CommentBody: "hi", RequestedBy: "semar"}
 
-	if _, err := requestJiraClarification(context.Background(), gate, cfg, in); err == nil {
+	if _, err := requestJiraClarification(context.Background(), nil, gate, cfg, in); err == nil {
 		t.Fatal("expected an error when addJiraComment has not been approved")
 	}
 }
