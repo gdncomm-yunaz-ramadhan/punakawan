@@ -1,0 +1,27 @@
+internal/mcpserver/tools_jiraprogress_test.go
+  fd931d7b51a068b5 1-164
+internal/mcpserver/tools.go
+  fd931d7b51a068b5 141-145
+internal/mcpserver/tools_jiraprogress.go
+  fd931d7b51a068b5 1-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "fe3a383e45811393010974706e3e908eab444f09",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 318,
+      "total_deletions": 0,
+      "accepted_lines": 318,
+      "overriden_lines": 0
+    }
+  }
+}
