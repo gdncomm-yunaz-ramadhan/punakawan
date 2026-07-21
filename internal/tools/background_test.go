@@ -37,3 +37,26 @@ func TestStartBackgroundDisallowedDir(t *testing.T) {
 		t.Fatal("expected error for a working directory outside the allowlist")
 	}
 }
+
+func TestBackgroundProcessReportsEarlyExit(t *testing.T) {
+	dir := t.TempDir()
+	sup := New(dir)
+	bg, err := sup.StartBackground(Spec{Name: "sh", Args: []string{"-c", "exit 7"}, Dir: dir}, filepath.Join(dir, "proc.log"))
+	if err != nil {
+		t.Fatalf("StartBackground: %v", err)
+	}
+
+	select {
+	case <-bg.Done():
+		if bg.WaitError() == nil {
+			t.Fatal("expected the exit status to be retained")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for background process exit")
+	}
+
+	// Cleanup must remain idempotent after an unexpected early exit.
+	if err := bg.Stop(); err != nil {
+		t.Fatalf("Stop after exit: %v", err)
+	}
+}

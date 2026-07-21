@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -15,6 +16,9 @@ import (
 type BackgroundProcess struct {
 	cmd     *exec.Cmd
 	logFile *os.File
+	done    chan struct{}
+	mu      sync.Mutex
+	waitErr error
 }
 
 // StartBackground starts spec as a long-running process whose stdout and
@@ -43,7 +47,17 @@ func (s *Supervisor) StartBackground(spec Spec, logPath string) (*BackgroundProc
 		return nil, fmt.Errorf("tools: start background process %s: %w", spec.Name, err)
 	}
 
-	return &BackgroundProcess{cmd: cmd, logFile: logFile}, nil
+	p := &BackgroundProcess{cmd: cmd, logFile: logFile, done: make(chan struct{})}
+	go func() {
+		err := cmd.Wait()
+		_ = logFile.Close()
+		p.mu.Lock()
+		p.waitErr = err
+		p.mu.Unlock()
+		close(p.done)
+	}()
+
+	return p, nil
 }
 
 // Pid returns the background process's process id.
@@ -51,21 +65,42 @@ func (p *BackgroundProcess) Pid() int {
 	return p.cmd.Process.Pid
 }
 
+// Done is closed as soon as the background process exits. It lets callers
+// waiting for a service to become ready fail immediately when the service
+// process has already crashed, rather than waiting for a connection timeout.
+func (p *BackgroundProcess) Done() <-chan struct{} {
+	return p.done
+}
+
+// WaitError returns the process's exit error after Done has closed.
+func (p *BackgroundProcess) WaitError() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.waitErr
+}
+
 // Stop sends SIGTERM to the process group and waits up to 5 seconds for a
 // clean exit, escalating to SIGKILL if it does not stop in time.
 func (p *BackgroundProcess) Stop() error {
-	defer p.logFile.Close()
+	select {
+	case <-p.done:
+		return nil
+	default:
+	}
 
 	pid := p.cmd.Process.Pid
 	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
+		select {
+		case <-p.done:
+			return nil
+		default:
+		}
 		return fmt.Errorf("tools: signal process group: %w", err)
 	}
 
-	done := make(chan error, 1)
-	go func() { done <- p.cmd.Wait() }()
-
 	select {
-	case err := <-done:
+	case <-p.done:
+		err := p.WaitError()
 		// The process exiting because of the SIGTERM we just sent is a
 		// successful stop, not a failure - only surface genuinely
 		// unexpected wait errors.
@@ -76,7 +111,7 @@ func (p *BackgroundProcess) Stop() error {
 		return nil
 	case <-time.After(5 * time.Second):
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
-		<-done
+		<-p.done
 		return fmt.Errorf("tools: process did not exit within grace period; force-killed")
 	}
 }

@@ -26,7 +26,26 @@ export interface NormalizedJiraIssue {
   summary: string;
   description: string | undefined;
   status: string | undefined;
-  raw: Record<string, unknown>;
+  issueType?: string;
+  priority?: string;
+  assignee?: string;
+  labels?: string[];
+  parent?: { key: string; summary?: string };
+  subtasks?: { key: string; summary?: string; status?: string }[];
+  timeTracking?: Record<string, unknown>;
+  customFields?: Record<string, string | number | boolean | null | (string | number | boolean)[]>;
+}
+
+export interface NormalizedJiraSearchIssue {
+  key: string;
+  summary: string;
+  status?: string;
+  issueType?: string;
+  priority?: string;
+  assignee?: string;
+  parent?: { key: string; summary?: string };
+  updated?: string;
+  customFields?: NormalizedJiraIssue['customFields'];
 }
 
 export interface NormalizedConfluencePage {
@@ -36,7 +55,6 @@ export interface NormalizedConfluencePage {
   spaceKey: string | undefined;
   contentFormat: string | undefined;
   content: string | undefined;
-  raw: Record<string, unknown>;
 }
 
 function nowIso(): string {
@@ -56,13 +74,62 @@ function asRecord(value: unknown): Record<string, unknown> {
  * description shapes (plain string, or an Atlassian Document Format object)
  * without attempting semantic interpretation.
  */
-function extractDescription(description: unknown): string | undefined {
-  if (typeof description === 'string') return description;
-  if (description && typeof description === 'object') {
-    // Atlassian Document Format: best-effort plain text, not a full renderer.
-    return JSON.stringify(description);
+function compactText(text: string): string | undefined {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  return compact || undefined;
+}
+
+function collectAdfText(value: unknown, text: string[]): void {
+  if (!value || typeof value !== 'object') return;
+  const node = value as Record<string, unknown>;
+  if (typeof node.text === 'string') text.push(node.text);
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) collectAdfText(child, text);
   }
-  return undefined;
+}
+
+function extractDescription(description: unknown): string | undefined {
+  if (typeof description === 'string') return compactText(description);
+  const text: string[] = [];
+  collectAdfText(description, text);
+  return compactText(text.join(' '));
+}
+
+function compactAssignee(value: unknown): string | undefined {
+  const identity = asRecord(value);
+  return asString(identity.displayName) ?? asString(identity.accountId);
+}
+
+function compactParent(value: unknown): { key: string; summary?: string } | undefined {
+  const parent = asRecord(value);
+  const key = asString(parent.key);
+  if (!key) return undefined;
+  return { key, summary: asString(asRecord(parent.fields).summary) };
+}
+
+function compactSubtasks(value: unknown): { key: string; summary?: string; status?: string }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result = value.flatMap((entry) => {
+    const subtask = asRecord(entry);
+    const key = asString(subtask.key);
+    if (!key) return [];
+    const fields = asRecord(subtask.fields);
+    return [{ key, summary: asString(fields.summary), status: asString(asRecord(fields.status).name) }];
+  });
+  return result.length ? result : undefined;
+}
+
+function compactCustomFields(fields: Record<string, unknown>): NormalizedJiraIssue['customFields'] {
+  const result: NonNullable<NormalizedJiraIssue['customFields']> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (!key.startsWith('customfield_')) continue;
+    if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+      result[key] = value as string | number | boolean | null;
+    } else if (Array.isArray(value) && value.length <= 50 && value.every((item) => ['string', 'number', 'boolean'].includes(typeof item))) {
+      result[key] = value as (string | number | boolean)[];
+    }
+  }
+  return Object.keys(result).length ? result : undefined;
 }
 
 /**
@@ -84,6 +151,8 @@ export function normalizeJiraIssue(raw: Record<string, unknown>, cloudId: string
   const status = asString(asRecord(fields.status).name);
   const updated = asString(fields.updated);
   const version = updated ?? (typeof raw.version === 'number' || typeof raw.version === 'string' ? raw.version : undefined);
+  const labels = Array.isArray(fields.labels) ? fields.labels.filter((label): label is string => typeof label === 'string') : undefined;
+  const timeTracking = Object.keys(asRecord(fields.timetracking)).length ? asRecord(fields.timetracking) : undefined;
 
   return {
     source: {
@@ -97,7 +166,32 @@ export function normalizeJiraIssue(raw: Record<string, unknown>, cloudId: string
     summary,
     description,
     status,
-    raw,
+    issueType: asString(asRecord(fields.issuetype).name),
+    priority: asString(asRecord(fields.priority).name),
+    assignee: compactAssignee(fields.assignee),
+    labels: labels?.length ? labels : undefined,
+    parent: compactParent(fields.parent),
+    subtasks: compactSubtasks(fields.subtasks),
+    timeTracking,
+    customFields: compactCustomFields(fields),
+  };
+}
+
+/** Search results omit per-row provenance and descriptions to stay cheap. */
+export function normalizeJiraSearchIssue(raw: Record<string, unknown>): NormalizedJiraSearchIssue {
+  const key = asString(raw.key) ?? asString(raw.id);
+  if (!key) throw new Error('Jira search result is missing both "key" and "id"; cannot normalize.');
+  const fields = asRecord(raw.fields);
+  return {
+    key,
+    summary: asString(fields.summary) ?? '',
+    status: asString(asRecord(fields.status).name),
+    issueType: asString(asRecord(fields.issuetype).name),
+    priority: asString(asRecord(fields.priority).name),
+    assignee: compactAssignee(fields.assignee),
+    parent: compactParent(fields.parent),
+    updated: asString(fields.updated),
+    customFields: compactCustomFields(fields),
   };
 }
 
@@ -134,7 +228,6 @@ export function normalizeConfluencePage(raw: Record<string, unknown>, cloudId: s
     title,
     spaceKey,
     contentFormat,
-    content,
-    raw,
+    content: content ? compactText(content) : undefined,
   };
 }

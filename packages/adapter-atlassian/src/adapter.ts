@@ -56,24 +56,24 @@ export function createHandlers(options?: {
 
       switch (op) {
         case 'atlassian.getJiraIssue': {
-          const { issueIdOrKey } = rest as { issueIdOrKey: string };
+          const { issueIdOrKey, fields, includeRaw } = rest as { issueIdOrKey: string; fields?: string[]; includeRaw?: boolean };
           if (!issueIdOrKey) throw new Error('atlassian.getJiraIssue requires "issueIdOrKey"');
-          return getJiraIssue(getClient(), { issueIdOrKey });
+          return getJiraIssue(getClient(), { issueIdOrKey, fields, includeRaw });
         }
         case 'atlassian.getConfluencePage': {
-          const { pageId, contentFormat } = rest as { pageId: string; contentFormat?: string };
+          const { pageId, contentFormat, includeRaw } = rest as { pageId: string; contentFormat?: string; includeRaw?: boolean };
           if (!pageId) throw new Error('atlassian.getConfluencePage requires "pageId"');
-          return getConfluencePage(getClient(), { pageId, contentFormat });
+          return getConfluencePage(getClient(), { pageId, contentFormat, includeRaw });
         }
         case 'atlassian.searchJira': {
-          const { jql, fields, maxResults } = rest as { jql: string; fields?: string[]; maxResults?: number };
+          const { jql, fields, maxResults, includeRaw } = rest as { jql: string; fields?: string[]; maxResults?: number; includeRaw?: boolean };
           if (!jql) throw new Error('atlassian.searchJira requires "jql"');
-          return searchJira(getClient(), { jql, fields, maxResults });
+          return searchJira(getClient(), { jql, fields, maxResults, includeRaw });
         }
         case 'atlassian.searchConfluence': {
-          const { cql } = rest as { cql: string };
+          const { cql, includeRaw } = rest as { cql: string; includeRaw?: boolean };
           if (!cql) throw new Error('atlassian.searchConfluence requires "cql"');
-          return searchConfluence(getClient(), { cql });
+          return searchConfluence(getClient(), { cql, includeRaw });
         }
         case 'atlassian.addJiraComment': {
           const { issueIdOrKey, commentBody } = rest as { issueIdOrKey: string; commentBody: string };

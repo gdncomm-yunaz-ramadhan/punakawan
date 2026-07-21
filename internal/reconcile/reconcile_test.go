@@ -134,7 +134,15 @@ func TestFetchOpForSourceConfluence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetchOpForSource: %v", err)
 	}
-	if op != "atlassian.getConfluencePage" || params["pageId"] != externalID {
+	if op != "atlassian.getConfluencePage" || params["pageId"] != externalID || params["includeRaw"] != true {
 		t.Fatalf("op=%q params=%+v", op, params)
+	}
+}
+
+func TestStableSourcePayloadIgnoresChangingRetrievalMetadata(t *testing.T) {
+	first := json.RawMessage(`{"normalized":{"source":{"retrieved_at":"2026-07-21T01:00:00Z"}},"raw":{"status":200,"data":{"key":"PAY-1","fields":{"status":{"name":"Open"}}}}}`)
+	second := json.RawMessage(`{"normalized":{"source":{"retrieved_at":"2026-07-21T02:00:00Z"}},"raw":{"status":200,"data":{"key":"PAY-1","fields":{"status":{"name":"Open"}}}}}`)
+	if knowledge.ContentHash(stableSourcePayload(first)) != knowledge.ContentHash(stableSourcePayload(second)) {
+		t.Fatal("retrieval metadata must not change the source content hash")
 	}
 }

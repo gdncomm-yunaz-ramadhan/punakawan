@@ -69,6 +69,13 @@ The connected client can use these MCP surfaces:
 - `sync_jira_subtasks` for deduplicated Jira subtask creation; and
 - `update_jira_task_progress` for estimates, worklogs, and comments.
 
+Jira responses are compact by default: issue reads request only planning
+fields, JQL searches return at most 20 summary rows unless `maxResults` is
+set, ADF descriptions are flattened to plain text, and raw REST envelopes
+are omitted. Pass `fields` when a specific Jira field (such as a site's story
+point custom field) is needed. Pass `includeRaw: true` only for diagnostics;
+it intentionally costs substantially more model context.
+
 The first adapter write in a run asks for inline human approval. One approval
 covers every approval-required adapter write in that run. If the connected
 client cannot show MCP elicitation, Punakawan returns the exact CLI fallback:

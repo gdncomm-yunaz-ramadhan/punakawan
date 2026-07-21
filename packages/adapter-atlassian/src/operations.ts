@@ -1,5 +1,5 @@
 import type { AtlassianRestClient, RestResponse } from './restClient.js';
-import { normalizeConfluencePage, normalizeJiraIssue, type NormalizedJiraIssue } from './normalize.js';
+import { normalizeConfluencePage, normalizeJiraIssue, normalizeJiraSearchIssue, type NormalizedJiraIssue } from './normalize.js';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
@@ -28,17 +28,38 @@ function encodePath(value: string): string {
 
 export interface GetJiraIssueParams {
   issueIdOrKey: string;
+  /** Exact Jira fields to fetch. Defaults to the compact planning-oriented set below. */
+  fields?: string[];
+  /** Raw REST envelopes are expensive; expose one only for diagnostics/reconciliation. */
+  includeRaw?: boolean;
+}
+
+export const DEFAULT_JIRA_ISSUE_FIELDS = [
+  'summary', 'description', 'status', 'issuetype', 'priority', 'assignee',
+  'labels', 'parent', 'subtasks', 'timetracking', 'updated',
+] as const;
+
+export const DEFAULT_JIRA_SEARCH_FIELDS = [
+  'summary', 'status', 'issuetype', 'priority', 'assignee', 'parent', 'updated',
+] as const;
+
+function optionalRaw<T extends Record<string, unknown>>(result: T, raw: RestResponse, includeRaw?: boolean): T & { raw?: RestResponse } {
+  return includeRaw ? { ...result, raw } : result;
 }
 
 export async function getJiraIssue(client: AtlassianRestClient, params: GetJiraIssueParams) {
-  const raw = await client.jira<Record<string, unknown>>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`);
+  const fields = params.fields ?? [...DEFAULT_JIRA_ISSUE_FIELDS];
+  const raw = await client.jira<Record<string, unknown>>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
+    query: { fields: fields.join(',') },
+  });
   const cloudId = await client.getCloudId();
-  return { raw, normalized: normalizeJiraIssue(asRecord(raw.data), cloudId) };
+  return optionalRaw({ normalized: normalizeJiraIssue(asRecord(raw.data), cloudId) }, raw, params.includeRaw);
 }
 
 export interface GetConfluencePageParams {
   pageId: string;
   contentFormat?: string;
+  includeRaw?: boolean;
 }
 
 function confluenceRepresentation(requested: string | undefined): string {
@@ -54,29 +75,35 @@ export async function getConfluencePage(client: AtlassianRestClient, params: Get
     query: { expand: `body.${format},version,space` },
   });
   const payload = { ...asRecord(raw.data), contentFormat: format };
-  return { raw, normalized: normalizeConfluencePage(payload, await client.getCloudId()) };
+  return optionalRaw({ normalized: normalizeConfluencePage(payload, await client.getCloudId()) }, raw, params.includeRaw);
 }
 
 export interface SearchJiraParams {
   jql: string;
   fields?: string[];
   maxResults?: number;
+  includeRaw?: boolean;
 }
 
 export async function searchJira(client: AtlassianRestClient, params: SearchJiraParams) {
   const body: Record<string, unknown> = { jql: params.jql };
-  if (params.fields) body.fields = params.fields;
-  if (params.maxResults !== undefined) body.maxResults = params.maxResults;
+  body.fields = params.fields ?? [...DEFAULT_JIRA_SEARCH_FIELDS];
+  body.maxResults = params.maxResults ?? 20;
 
   const raw = await client.jira<Record<string, unknown>>('/rest/api/3/search/jql', { method: 'POST', body });
   const payload = asRecord(raw.data);
   const issues = Array.isArray(payload.issues) ? payload.issues : [];
-  const cloudId = await client.getCloudId();
-  return { raw, normalized: issues.map((issue) => normalizeJiraIssue(asRecord(issue), cloudId)) };
+  const page = {
+    returned: issues.length,
+    nextPageToken: asString(payload.nextPageToken),
+    isLast: typeof payload.isLast === 'boolean' ? payload.isLast : undefined,
+  };
+  return optionalRaw({ normalized: issues.map((issue) => normalizeJiraSearchIssue(asRecord(issue))), page }, raw, params.includeRaw);
 }
 
 export interface SearchConfluenceParams {
   cql: string;
+  includeRaw?: boolean;
 }
 
 export async function searchConfluence(client: AtlassianRestClient, params: SearchConfluenceParams) {
@@ -86,10 +113,10 @@ export async function searchConfluence(client: AtlassianRestClient, params: Sear
   const payload = asRecord(raw.data);
   const pages = Array.isArray(payload.results) ? payload.results : [];
   const cloudId = await client.getCloudId();
-  return {
-    raw,
+  return optionalRaw({
     normalized: pages.map((page) => normalizeConfluencePage({ ...asRecord(page), contentFormat: 'storage' }, cloudId)),
-  };
+    page: { returned: pages.length },
+  }, raw, params.includeRaw);
 }
 
 export interface AddJiraCommentParams {
@@ -104,14 +131,13 @@ export async function addJiraComment(client: AtlassianRestClient, params: AddJir
   );
   const payload = asRecord(raw.data);
   const id = payload.id;
-  return { raw, commentId: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined };
+  return { ok: true, commentId: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined };
 }
 
 export interface JiraTransition {
   id: string;
   name: string;
   toStatus: { id: string | undefined; name: string | undefined };
-  raw: Record<string, unknown>;
 }
 
 function extractTransitions(payload: Record<string, unknown>): JiraTransition[] {
@@ -123,7 +149,6 @@ function extractTransitions(payload: Record<string, unknown>): JiraTransition[] 
       id: asString(record.id) ?? '',
       name: asString(record.name) ?? '',
       toStatus: { id: asString(to.id), name: asString(to.name) },
-      raw: record,
     };
   });
 }
@@ -136,7 +161,7 @@ export async function getTransitionsForJiraIssue(client: AtlassianRestClient, pa
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/transitions`,
   );
-  return { raw, transitions: extractTransitions(asRecord(raw.data)) };
+  return { transitions: extractTransitions(asRecord(raw.data)) };
 }
 
 export interface TransitionJiraIssueParams {
@@ -149,7 +174,7 @@ export async function transitionJiraIssue(client: AtlassianRestClient, params: T
     method: 'POST',
     body: { transition: { id: params.transitionId } },
   });
-  return { raw, payload: successPayload(raw) };
+  return { ok: true, payload: successPayload(raw) };
 }
 
 export interface EditJiraIssueFieldsParams {
@@ -158,12 +183,11 @@ export interface EditJiraIssueFieldsParams {
 }
 
 export async function editJiraIssueFields(client: AtlassianRestClient, params: EditJiraIssueFieldsParams) {
-  const raw = await client.jira(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
+  await client.jira(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
     method: 'PUT',
-    query: { returnIssue: true },
     body: { fields: params.fields },
   });
-  return { raw, payload: successPayload(raw) };
+  return { ok: true, issueIdOrKey: params.issueIdOrKey, updatedFields: Object.keys(params.fields) };
 }
 
 export interface AddWorklogParams {
@@ -179,7 +203,13 @@ export async function addWorklog(client: AtlassianRestClient, params: AddWorklog
     `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/worklog`,
     { method: 'POST', body },
   );
-  return { raw, payload: asRecord(raw.data) };
+  const payload = asRecord(raw.data);
+  const id = payload.id;
+  return {
+    ok: true,
+    worklogId: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined,
+    timeSpentSeconds: params.timeSpentSeconds,
+  };
 }
 
 export interface GetIssueTypeFieldMetaParams {
@@ -191,7 +221,7 @@ export async function getIssueTypeFieldMeta(client: AtlassianRestClient, params:
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/createmeta/${encodePath(params.projectIdOrKey)}/issuetypes/${encodePath(params.issueTypeId)}`,
   );
-  return { raw, payload: asRecord(raw.data) };
+  return { payload: asRecord(raw.data) };
 }
 
 export interface CreateJiraIssueParams {
@@ -224,7 +254,7 @@ export async function createJiraIssue(client: AtlassianRestClient, params: Creat
   // Jira's create endpoint returns identifiers, not the fields needed by the
   // stable normalized result, so read the newly created issue once.
   const fetched = await getJiraIssue(client, { issueIdOrKey: key });
-  return { raw: { create: createResponse, issue: fetched.raw }, normalized: fetched.normalized };
+  return { normalized: fetched.normalized };
 }
 
 function normalizeSummaryForComparison(summary: string): string {

@@ -13,6 +13,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -32,6 +34,20 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 	if err := ensureInitialized(sup, dataDir); err != nil {
 		return nil, err
 	}
+	dbName := filepath.Base(dataDir)
+
+	// A prior MCP host may have exited without getting a chance to stop its
+	// child Dolt process. Dolt deliberately keeps that healthy server alive
+	// and records its port in sql-server.info, so reuse it instead of starting
+	// a second server that can only fail on the repository's write lock.
+	if db, err := connectExistingServer(dataDir, dbName, 750*time.Millisecond); err == nil {
+		store := &Store{db: db}
+		if err := store.migrate(); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		return store, nil
+	}
 
 	port, err := freePort()
 	if err != nil {
@@ -48,13 +64,23 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("knowledge: start dolt sql-server: %w", err)
 	}
 
-	dbName := filepath.Base(dataDir)
-	dsn := fmt.Sprintf("root@tcp(127.0.0.1:%d)/%s?parseTime=true", port, dbName)
+	dsn := doltDSN(port, dbName)
 
-	db, err := waitForConnection(dsn, 15*time.Second)
+	db, err := waitForConnection(dsn, 15*time.Second, server)
 	if err != nil {
 		_ = server.Stop()
-		return nil, fmt.Errorf("knowledge: connect to dolt sql-server: %w", err)
+		// Two Punakawan processes can race between the reuse check and server
+		// startup. If the other process won the Dolt lock, its info file now
+		// points at the server we should share.
+		if existing, existingErr := connectExistingServer(dataDir, dbName, 2*time.Second); existingErr == nil {
+			store := &Store{db: existing}
+			if migrateErr := store.migrate(); migrateErr != nil {
+				_ = store.Close()
+				return nil, migrateErr
+			}
+			return store, nil
+		}
+		return nil, fmt.Errorf("knowledge: connect to dolt sql-server: %w%s", err, startupLogSuffix(logPath))
 	}
 
 	store := &Store{db: db, server: server}
@@ -63,6 +89,38 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+func doltDSN(port int, dbName string) string {
+	return fmt.Sprintf("root@tcp(127.0.0.1:%d)/%s?parseTime=true&timeout=500ms&readTimeout=500ms&writeTimeout=500ms", port, dbName)
+}
+
+func connectExistingServer(dataDir, dbName string, timeout time.Duration) (*sql.DB, error) {
+	info, err := os.ReadFile(filepath.Join(dataDir, ".dolt", "sql-server.info"))
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(strings.TrimSpace(string(info)), ":")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid dolt sql-server.info")
+	}
+	port, err := strconv.Atoi(parts[1])
+	if err != nil || port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid dolt sql-server port %q", parts[1])
+	}
+	return waitForConnection(doltDSN(port, dbName), timeout, nil)
+}
+
+func startupLogSuffix(logPath string) string {
+	data, err := os.ReadFile(logPath)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	const maxLogBytes = 4096
+	if len(data) > maxLogBytes {
+		data = data[len(data)-maxLogBytes:]
+	}
+	return fmt.Sprintf("; dolt startup log: %s", strings.TrimSpace(string(data)))
 }
 
 func ensureInitialized(sup *tools.Supervisor, dataDir string) error {
@@ -98,10 +156,17 @@ func freePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-func waitForConnection(dsn string, timeout time.Duration) (*sql.DB, error) {
+func waitForConnection(dsn string, timeout time.Duration, server *tools.BackgroundProcess) (*sql.DB, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
+		if server != nil {
+			select {
+			case <-server.Done():
+				return nil, fmt.Errorf("dolt sql-server exited before accepting connections: %w", server.WaitError())
+			default:
+			}
+		}
 		db, err := sql.Open("mysql", dsn)
 		if err != nil {
 			lastErr = err
@@ -151,7 +216,21 @@ CREATE TABLE IF NOT EXISTS knowledge_relations (
 
 // Close disconnects from the database and stops the Dolt sql-server.
 func (s *Store) Close() error {
+	keepSharedServer := false
+	if s.server != nil {
+		var otherConnections int
+		// If another Punakawan process reused this server, leave it running.
+		// Its connection is evidence that stopping our child would break an
+		// otherwise healthy MCP session. An orphan is safe and is reused by the
+		// next Open call through sql-server.info.
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID()`).Scan(&otherConnections); err == nil {
+			keepSharedServer = otherConnections > 0
+		}
+	}
 	dbErr := s.db.Close()
+	if s.server == nil || keepSharedServer {
+		return dbErr
+	}
 	stopErr := s.server.Stop()
 	if dbErr != nil {
 		return dbErr
