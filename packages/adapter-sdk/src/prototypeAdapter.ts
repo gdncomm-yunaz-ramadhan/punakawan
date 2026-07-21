@@ -8,10 +8,37 @@ import { AdapterManifestSchema } from '@punakawan/schema-types';
  * criteria. Not a real adapter — exercised by the Go integration test only.
  */
 
+/**
+ * Fixed manifest returned by `capabilities` (§5.3), independent of whatever
+ * a caller sends `initialize`, matching how real adapters (e.g.
+ * packages/adapter-atlassian) validate their own compiled-in manifest
+ * rather than trusting caller-supplied capability claims.
+ */
+const manifest = {
+  id: 'prototype',
+  name: 'Prototype Adapter',
+  version: '0.1.0',
+  protocol: 'punakawan.adapter/v1',
+  runtime: 'node',
+  provides: ['knowledge-source'],
+  permissions: {
+    network: { hosts: [] },
+    filesystem: { read: [], write: [] },
+    secrets: [],
+  },
+  operations: {
+    sleep: { side_effect: false },
+  },
+};
+
 serveStdio({
   async initialize(params) {
-    const manifest = AdapterManifestSchema.parse(params);
-    return { ok: true, id: manifest.id, version: manifest.version };
+    const parsed = AdapterManifestSchema.parse(params);
+    return { ok: true, id: parsed.id, version: parsed.version };
+  },
+
+  async capabilities() {
+    return AdapterManifestSchema.parse(manifest);
   },
 
   async execute(params, signal) {
