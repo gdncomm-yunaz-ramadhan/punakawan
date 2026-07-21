@@ -1,0 +1,27 @@
+internal/jiraworkflow/jiraworkflow_test.go
+  fd931d7b51a068b5 1-171
+internal/jiraworkflow/config.go
+  fd931d7b51a068b5 1-140
+test/fixtures/jira-workflow.yaml
+  fd931d7b51a068b5 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4bbcbd6c40d22a8132f10fd8426f01882e4c6ed9",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 320,
+      "overriden_lines": 0
+    }
+  }
+}
