@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import { mkdir, open, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { markdownToAdf } from 'marklassian';
 import type { AtlassianRestClient, RestResponse } from './restClient.js';
 import { jiraText, normalizeConfluencePage, normalizeJiraIssue, normalizeJiraSearchIssue, type NormalizedJiraIssue } from './normalize.js';
 
@@ -12,12 +13,18 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-function plainTextAdf(text: string): Record<string, unknown> {
-  return {
-    type: 'doc',
-    version: 1,
-    content: [{ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] }],
-  };
+/**
+ * Renders caller-supplied text (comment bodies, descriptions) as Atlassian
+ * Document Format, parsing it as Markdown first so headings, bold/italic,
+ * lists, and code blocks become real ADF nodes instead of literal "##"/"**"
+ * characters in one plain-text paragraph - Jira's UI renders ADF structure,
+ * not raw Markdown syntax. Plain, syntax-free text still round-trips to a
+ * single paragraph, so this is a strict improvement over wrapping text in
+ * one paragraph unconditionally.
+ */
+function markdownAdf(text: string): Record<string, unknown> {
+  if (!text) return { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [] }] };
+  return markdownToAdf(text) as Record<string, unknown>;
 }
 
 function successPayload(response: RestResponse): Record<string, unknown> {
@@ -347,7 +354,7 @@ export interface AddJiraCommentParams {
 export async function addJiraComment(client: AtlassianRestClient, params: AddJiraCommentParams) {
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/comment`,
-    { method: 'POST', body: { body: plainTextAdf(params.commentBody) } },
+    { method: 'POST', body: { body: markdownAdf(params.commentBody) } },
   );
   const payload = asRecord(raw.data);
   const id = payload.id;
@@ -434,7 +441,7 @@ export async function editJiraIssue(client: AtlassianRestClient, params: EditJir
   const fields: Record<string, unknown> = { ...(params.fields ?? {}) };
   const summary = params.summary ?? params.title;
   if (summary !== undefined) fields.summary = summary;
-  if (params.description !== undefined) fields.description = plainTextAdf(params.description);
+  if (params.description !== undefined) fields.description = markdownAdf(params.description);
 
   if (params.originalEstimate !== undefined || params.remainingEstimate !== undefined) {
     const existing = asRecord(fields.timetracking);
@@ -464,7 +471,7 @@ export interface AddWorklogParams {
 
 export async function addWorklog(client: AtlassianRestClient, params: AddWorklogParams) {
   const body: Record<string, unknown> = { timeSpentSeconds: params.timeSpentSeconds };
-  if (params.comment !== undefined) body.comment = plainTextAdf(params.comment);
+  if (params.comment !== undefined) body.comment = markdownAdf(params.comment);
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/worklog`,
     { method: 'POST', body },
@@ -506,7 +513,7 @@ export async function createJiraIssue(client: AtlassianRestClient, params: Creat
     issuetype: { name: params.issueTypeName },
     summary: params.summary,
   };
-  if (params.description !== undefined) fields.description = plainTextAdf(params.description);
+  if (params.description !== undefined) fields.description = markdownAdf(params.description);
   if (params.parent !== undefined) fields.parent = { key: params.parent };
 
   const createResponse = await client.jira<Record<string, unknown>>('/rest/api/3/issue', {

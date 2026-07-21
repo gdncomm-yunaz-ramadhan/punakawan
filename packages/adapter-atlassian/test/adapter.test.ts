@@ -344,6 +344,36 @@ describe('addJiraComment', () => {
     assert.equal(adfText(rest.addedComments[0]?.body.body), 'Can you clarify the repro steps?');
     await client.close();
   });
+
+  test('parses Markdown structure into real ADF nodes instead of literal syntax characters', async () => {
+    const { client, rest } = fakeClientWithRest();
+    await addJiraComment(client, {
+      issueIdOrKey: 'PROJ-123',
+      commentBody: '## Verdict\n\nNeeds **clarification**.\n\n- item one\n- item two',
+    });
+
+    const body = rest.addedComments[0]?.body.body as { content: Record<string, unknown>[] };
+    const heading = body.content.find((node) => node.type === 'heading');
+    assert.ok(heading, `expected a heading node, got: ${JSON.stringify(body.content)}`);
+    assert.equal((heading?.attrs as { level?: number } | undefined)?.level, 2);
+
+    const paragraph = body.content.find((node) => node.type === 'paragraph');
+    const strongText = (paragraph?.content as { marks?: { type: string }[] }[] | undefined)?.find((n) =>
+      n.marks?.some((m) => m.type === 'strong'),
+    );
+    assert.ok(strongText, 'expected a "strong"-marked text run for **clarification**');
+
+    const bulletList = body.content.find((node) => node.type === 'bulletList');
+    assert.ok(bulletList, 'expected a bulletList node for the "- item" lines');
+
+    // The literal Markdown syntax characters must not survive into the
+    // flattened text - if they did, Jira's UI would render them verbatim.
+    const flattened = adfText(body);
+    assert.equal(flattened?.includes('##'), false);
+    assert.equal(flattened?.includes('**'), false);
+
+    await client.close();
+  });
 });
 
 describe('getTransitionsForJiraIssue', () => {

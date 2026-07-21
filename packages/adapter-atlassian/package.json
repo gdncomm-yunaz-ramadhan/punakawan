@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@punakawan/adapter-sdk": "workspace:*",
-    "@punakawan/schema-types": "workspace:*"
+    "@punakawan/schema-types": "workspace:*",
+    "marklassian": "^1.2.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
