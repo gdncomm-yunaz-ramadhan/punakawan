@@ -14,7 +14,7 @@ func newDoctorCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			ok := true
-			for _, name := range []string{"git", "rg", "node", "pnpm"} {
+			for _, name := range []string{"git", "rg", "node", "pnpm", "bd", "dolt"} {
 				path, err := exec.LookPath(name)
 				if err != nil {
 					fmt.Fprintf(out, "%-6s MISSING\n", name)

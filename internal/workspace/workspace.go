@@ -89,25 +89,68 @@ type Workspace struct {
 }
 
 // Discover walks upward from startDir looking for .punakawan/workspace.yaml,
-// the same way git locates .git. It returns an error if none is found before
-// reaching the filesystem root.
+// the same way git locates .git. An explicit workspace.yaml is only needed
+// for non-default setups (multiple repositories, relations, external/
+// knowledge/tasks/policy/adapter overrides) - if none is found, Discover
+// falls back to an implicit single-repository workspace rooted at the
+// nearest .git, so punakawan can attach to any git-tracked project without
+// per-project scaffolding. An error is returned only if neither a
+// workspace.yaml nor a .git directory is found above startDir.
 func Discover(startDir string) (*Workspace, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return nil, fmt.Errorf("workspace: resolve start dir: %w", err)
 	}
 
-	for {
-		candidate := filepath.Join(dir, dirName, configFile)
+	for d := dir; ; {
+		candidate := filepath.Join(d, dirName, configFile)
 		if _, err := os.Stat(candidate); err == nil {
-			return Load(candidate, dir)
+			return Load(candidate, d)
 		}
 
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return nil, fmt.Errorf("workspace: no %s/%s found above %s", dirName, configFile, startDir)
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
 		}
-		dir = parent
+		d = parent
+	}
+
+	gitRoot, err := findGitRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("workspace: no %s/%s found above %s, and no git repository found either", dirName, configFile, startDir)
+	}
+	return implicitWorkspace(gitRoot), nil
+}
+
+// findGitRoot walks upward from dir looking for .git (a directory for a
+// normal clone, or a file for a worktree/submodule - either way, os.Stat
+// succeeds).
+func findGitRoot(dir string) (string, error) {
+	for d := dir; ; {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+			return d, nil
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "", fmt.Errorf("workspace: no .git found above %s", dir)
+		}
+		d = parent
+	}
+}
+
+// implicitWorkspace builds a zero-config Workspace for a plain git
+// repository with no workspace.yaml: one repository (the git root itself,
+// path "."), named after the root directory.
+func implicitWorkspace(root string) *Workspace {
+	id := filepath.Base(root)
+	return &Workspace{
+		Version: SupportedVersion,
+		ID:      id,
+		Name:    id,
+		Repositories: []Repository{
+			{ID: id, Path: ".", Roles: []string{"implementation"}},
+		},
+		Root: root,
 	}
 }
 
@@ -174,4 +217,72 @@ func (w *Workspace) PolicyPath() string {
 // itself to be configurable too.
 func (w *Workspace) JiraWorkflowPath() string {
 	return filepath.Join(w.Root, dirName, "jira-workflow.yaml")
+}
+
+// GlobalConfig holds user-level configuration that applies across every
+// workspace on this machine - primarily adapter wiring (which adapter
+// processes to spawn and which env vars to pass through to them). This
+// lets adapters like Jira be set up once per machine instead of once per
+// project: a project's own workspace.yaml only needs an `adapters:` entry
+// when it wants to override or add to what's configured globally.
+type GlobalConfig struct {
+	Adapters map[string]AdapterConfig `yaml:"adapters,omitempty"`
+}
+
+// GlobalConfigPath returns the path LoadGlobalConfig reads from:
+// <user config dir>/punakawan/config.yaml (e.g. ~/.config/punakawan on
+// Linux, ~/Library/Application Support/punakawan on macOS, following
+// os.UserConfigDir's platform conventions).
+func GlobalConfigPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("workspace: resolve user config dir: %w", err)
+	}
+	return filepath.Join(dir, "punakawan", "config.yaml"), nil
+}
+
+// LoadGlobalConfig reads the user-level config. A missing file is not an
+// error - it returns an empty GlobalConfig, since global config is
+// optional and every workspace must still function without one.
+func LoadGlobalConfig() (*GlobalConfig, error) {
+	path, err := GlobalConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	return LoadGlobalConfigFrom(path)
+}
+
+// LoadGlobalConfigFrom reads the user-level config from an explicit path,
+// split out from LoadGlobalConfig so tests can exercise the parsing and
+// missing-file-defaulting logic without touching this machine's real
+// os.UserConfigDir().
+func LoadGlobalConfigFrom(path string) (*GlobalConfig, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return &GlobalConfig{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("workspace: read %s: %w", path, err)
+	}
+
+	var cfg GlobalConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("workspace: parse %s: %w", path, err)
+	}
+	return &cfg, nil
+}
+
+// MergeAdapters returns adapter specs with global as the base and the
+// workspace's own Adapters overriding or adding entries by id - a project
+// only needs to declare an adapter when it wants something different from
+// (or in addition to) what is configured globally.
+func (w *Workspace) MergeAdapters(global *GlobalConfig) map[string]AdapterConfig {
+	merged := make(map[string]AdapterConfig, len(global.Adapters)+len(w.Adapters))
+	for id, cfg := range global.Adapters {
+		merged[id] = cfg
+	}
+	for id, cfg := range w.Adapters {
+		merged[id] = cfg
+	}
+	return merged
 }

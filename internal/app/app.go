@@ -72,8 +72,13 @@ func Load(startDir string) (*App, error) {
 		return nil, err
 	}
 
-	specs := make(map[string]adapters.AdapterSpec, len(ws.Adapters))
-	for id, cfg := range ws.Adapters {
+	global, err := workspace.LoadGlobalConfig()
+	if err != nil {
+		return nil, err
+	}
+	mergedAdapters := ws.MergeAdapters(global)
+	specs := make(map[string]adapters.AdapterSpec, len(mergedAdapters))
+	for id, cfg := range mergedAdapters {
 		specs[id] = adapters.AdapterSpec{
 			Command:        cfg.Command,
 			Args:           cfg.Args,
