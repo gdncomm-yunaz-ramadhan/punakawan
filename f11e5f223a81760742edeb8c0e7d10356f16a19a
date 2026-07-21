@@ -1,0 +1,33 @@
+internal/app/app.go
+  fd931d7b51a068b5 16,37-39,123-141
+internal/mcpserver/tools_jiraclarify.go
+  fd931d7b51a068b5 1-134
+internal/workspace/workspace.go
+  fd931d7b51a068b5 169-177
+internal/mcpserver/tools.go
+  fd931d7b51a068b5 126-130
+internal/mcpserver/tools_jiraclarify_test.go
+  fd931d7b51a068b5 1-193
+packages/clarification-comments/src/cli.ts
+  fd931d7b51a068b5 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "f11e5f223a81760742edeb8c0e7d10356f16a19a",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 451,
+      "total_deletions": 55,
+      "accepted_lines": 396,
+      "overriden_lines": 0
+    }
+  }
+}
