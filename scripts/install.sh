@@ -93,7 +93,21 @@ GLOBAL_ENV="$GLOBAL_DIR/.env"
 # --- 4. Atlassian credentials (written once, globally) ----------------------
 
 if [[ -f "$GLOBAL_ENV" ]]; then
-  log "$GLOBAL_ENV already exists, leaving credentials as-is"
+  if grep -q '^ATLASSIAN_MCP_TOKEN=' "$GLOBAL_ENV" && ! grep -q '^ATLASSIAN_API_TOKEN=' "$GLOBAL_ENV"; then
+    cp -f "$GLOBAL_ENV" "$GLOBAL_ENV.before-direct-rest"
+    MIGRATED_ENV="$(mktemp "$GLOBAL_DIR/.env.migrate.XXXXXX")"
+    sed 's/^ATLASSIAN_MCP_TOKEN=/ATLASSIAN_API_TOKEN=/' "$GLOBAL_ENV" > "$MIGRATED_ENV"
+    if grep -q '^ATLASSIAN_EMAIL=' "$GLOBAL_ENV"; then
+      printf '%s\n' 'ATLASSIAN_API_TOKEN_SCOPED=false' >> "$MIGRATED_ENV"
+    else
+      printf '%s\n' 'ATLASSIAN_API_TOKEN_SCOPED=true' >> "$MIGRATED_ENV"
+    fi
+    chmod 600 "$MIGRATED_ENV"
+    mv -f "$MIGRATED_ENV" "$GLOBAL_ENV"
+    log "Migrated legacy token key in $GLOBAL_ENV (backup: $GLOBAL_ENV.before-direct-rest)"
+  else
+    log "$GLOBAL_ENV already exists, leaving credentials as-is"
+  fi
 else
   log "Direct Jira REST connection"
   cat <<'EOF'
@@ -152,7 +166,25 @@ fi
 # --- 5. Global adapter config (workspace.GlobalConfig) ----------------------
 
 if [[ -f "$GLOBAL_CONFIG" ]]; then
-  log "$GLOBAL_CONFIG already exists, leaving it as-is"
+  if grep -q 'ATLASSIAN_MCP_TOKEN' "$GLOBAL_CONFIG"; then
+    cp -f "$GLOBAL_CONFIG" "$GLOBAL_CONFIG.before-direct-rest"
+    MIGRATED_CONFIG="$(mktemp "$GLOBAL_DIR/config.yaml.migrate.XXXXXX")"
+    awk '
+      {
+        gsub(/ATLASSIAN_MCP_TOKEN/, "ATLASSIAN_API_TOKEN")
+        print
+        if ($0 ~ /^[[:space:]]*- ATLASSIAN_API_TOKEN$/) {
+          match($0, /^[[:space:]]*/)
+          indent = substr($0, 1, RLENGTH)
+          print indent "- ATLASSIAN_API_TOKEN_SCOPED"
+        }
+      }
+    ' "$GLOBAL_CONFIG" > "$MIGRATED_CONFIG"
+    mv -f "$MIGRATED_CONFIG" "$GLOBAL_CONFIG"
+    log "Migrated direct REST environment passthrough in $GLOBAL_CONFIG (backup: $GLOBAL_CONFIG.before-direct-rest)"
+  else
+    log "$GLOBAL_CONFIG already exists, leaving it as-is"
+  fi
 else
   cat > "$GLOBAL_CONFIG" <<YAML
 adapters:
