@@ -51,6 +51,12 @@ func TestUpdateJiraTaskProgressDerivesEstimateFromStoryPoints(t *testing.T) {
 	if tt["originalEstimate"] != "20h" {
 		t.Errorf("originalEstimate = %v, want 20h", tt["originalEstimate"])
 	}
+	if tt["remainingEstimate"] != "20h" {
+		t.Errorf("remainingEstimate = %v, want 20h (no worklog given, so remaining = original)", tt["remainingEstimate"])
+	}
+	if out.RemainingEstimateHours != 20 {
+		t.Errorf("RemainingEstimateHours = %v, want 20", out.RemainingEstimateHours)
+	}
 }
 
 func TestUpdateJiraTaskProgressExplicitEstimateOverridesPoints(t *testing.T) {
@@ -95,6 +101,52 @@ func TestUpdateJiraTaskProgressNoEstimateWhenRatioUnconfigured(t *testing.T) {
 	}
 	if len(fc.calls) != 0 {
 		t.Fatalf("calls = %+v, want none", fc.calls)
+	}
+}
+
+func TestUpdateJiraTaskProgressRemainingEstimateSubtractsSameCallWorklog(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
+	approveOp(t, gate, "run-1", "atlassian.editJiraIssueFields")
+
+	explicit := 10.0
+	worklog := 3.0
+	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", OriginalEstimateHours: &explicit, WorklogHours: &worklog, RequestedBy: "petruk"}
+	cfg := &jiraworkflow.Config{}
+
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	if err != nil {
+		t.Fatalf("updateJiraTaskProgress: %v", err)
+	}
+	if out.RemainingEstimateHours != 7 {
+		t.Fatalf("RemainingEstimateHours = %v, want 7 (10h original - 3h worklog logged in this same call)", out.RemainingEstimateHours)
+	}
+	fields, _ := fc.calls[0]["fields"].(map[string]any)
+	tt, _ := fields["timetracking"].(map[string]any)
+	if tt["remainingEstimate"] != "7h" {
+		t.Errorf("remainingEstimate = %v, want 7h", tt["remainingEstimate"])
+	}
+}
+
+func TestUpdateJiraTaskProgressRemainingEstimateClampsAtZeroWhenWorklogExceedsEstimate(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
+	approveOp(t, gate, "run-1", "atlassian.editJiraIssueFields")
+
+	explicit := 2.0
+	worklog := 5.0
+	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", OriginalEstimateHours: &explicit, WorklogHours: &worklog, RequestedBy: "petruk"}
+	cfg := &jiraworkflow.Config{}
+
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	if err != nil {
+		t.Fatalf("updateJiraTaskProgress: %v", err)
+	}
+	if out.RemainingEstimateHours != 0 {
+		t.Fatalf("RemainingEstimateHours = %v, want 0 (worklog exceeds original estimate, clamp instead of going negative)", out.RemainingEstimateHours)
+	}
+	fields, _ := fc.calls[0]["fields"].(map[string]any)
+	tt, _ := fields["timetracking"].(map[string]any)
+	if tt["remainingEstimate"] != "0m" {
+		t.Errorf("remainingEstimate = %v, want 0m", tt["remainingEstimate"])
 	}
 }
 

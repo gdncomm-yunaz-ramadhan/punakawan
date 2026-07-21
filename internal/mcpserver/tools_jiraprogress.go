@@ -43,8 +43,12 @@ type UpdateJiraTaskProgressOutput struct {
 	// so callers can tell "nothing asked for" apart from "asked for but
 	// silently couldn't be fulfilled" instead of both looking identical.
 	EstimateSkipReason string `json:"estimate_skip_reason,omitempty"`
-	WorklogAdded       bool   `json:"worklog_added"`
-	CommentPosted      bool   `json:"comment_posted"`
+	// RemainingEstimateHours is the remaining estimate written alongside
+	// EstimateHours - see remainingEstimateHours for why this is always set
+	// explicitly rather than left for Jira to derive on its own.
+	RemainingEstimateHours float64 `json:"remaining_estimate_hours,omitempty"`
+	WorklogAdded           bool    `json:"worklog_added"`
+	CommentPosted          bool    `json:"comment_posted"`
 }
 
 func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, UpdateJiraTaskProgressInput) (*mcp.CallToolResult, UpdateJiraTaskProgressOutput, error) {
@@ -74,11 +78,13 @@ func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate 
 	estimateHours, hasEstimate, estimateSkipReason := resolveEstimateHours(cfg, in)
 	out.EstimateSkipReason = estimateSkipReason
 	if hasEstimate {
+		remainingHours := remainingEstimateHours(estimateHours, in.WorklogHours)
 		if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.editJiraIssueFields", map[string]any{
 			"issueIdOrKey": in.IssueIdOrKey,
 			"fields": map[string]any{
 				"timetracking": map[string]any{
-					"originalEstimate": formatJiraDuration(estimateHours),
+					"originalEstimate":  formatJiraDuration(estimateHours),
+					"remainingEstimate": formatJiraDuration(remainingHours),
 				},
 			},
 		}, requestedBy); err != nil {
@@ -86,6 +92,7 @@ func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate 
 		}
 		out.EstimateUpdated = true
 		out.EstimateHours = estimateHours
+		out.RemainingEstimateHours = remainingHours
 	}
 
 	if in.WorklogHours != nil {
@@ -132,6 +139,34 @@ func resolveEstimateHours(cfg *jiraworkflow.Config, in UpdateJiraTaskProgressInp
 		return hours, true, ""
 	}
 	return 0, false, ""
+}
+
+// remainingEstimateHours computes the remaining estimate to write alongside
+// a new original estimate. Jira's own behavior when only originalEstimate is
+// set is documented as unreliable (confirmed via the Atlassian developer
+// community: https://community.developer.atlassian.com/t/how-to-update-timeoriginalestimate-using-the-rest-api/96650
+// - "setting originalEstimate updates remainingEstimate automatically [in an
+// inconsistent way]... workaround is to always set both...together") -
+// rather than depend on that, this always computes and writes an explicit
+// value: the new original minus whatever worklog this same call is also
+// adding (that time will not yet be reflected in Jira's own timeSpent at the
+// moment this write happens).
+//
+// This does not account for time logged in earlier update_jira_task_progress
+// calls or logged manually in the Jira UI, since knowing that would require
+// fetching the issue's current timeSpent first - not done here to keep this
+// a single write instead of a read-then-write. If a task accumulates several
+// separate re-estimate calls over its lifetime, only the latest call's own
+// worklog is subtracted.
+func remainingEstimateHours(originalHours float64, worklogHours *float64) float64 {
+	remaining := originalHours
+	if worklogHours != nil {
+		remaining -= *worklogHours
+	}
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
 }
 
 // formatJiraDuration renders hours as a Jira time-tracking duration string
