@@ -4,10 +4,16 @@ import { AtlassianMcpClient, loadConfigFromEnv, type TransportFactory } from './
 import { manifest } from './manifest.js';
 import {
   addJiraComment,
+  addWorklog,
+  createJiraSubtask,
+  editJiraIssueFields,
   getConfluencePage,
+  getIssueTypeFieldMeta,
   getJiraIssue,
+  getTransitionsForJiraIssue,
   searchConfluence,
   searchJira,
+  transitionJiraIssue,
 } from './operations.js';
 
 /**
@@ -41,6 +47,10 @@ export function createHandlers(options?: {
       return { ok: true, id: parsed.id, version: parsed.version };
     },
 
+    async capabilities() {
+      return AdapterManifestSchema.parse(manifest);
+    },
+
     async execute(params) {
       const { op, ...rest } = params as { op: string } & Record<string, unknown>;
 
@@ -71,6 +81,57 @@ export function createHandlers(options?: {
             throw new Error('atlassian.addJiraComment requires "issueIdOrKey" and "commentBody"');
           }
           return addJiraComment(getClient(), { issueIdOrKey, commentBody });
+        }
+        case 'atlassian.getTransitionsForJiraIssue': {
+          const { issueIdOrKey } = rest as { issueIdOrKey: string };
+          if (!issueIdOrKey) throw new Error('atlassian.getTransitionsForJiraIssue requires "issueIdOrKey"');
+          return getTransitionsForJiraIssue(getClient(), { issueIdOrKey });
+        }
+        case 'atlassian.transitionJiraIssue': {
+          const { issueIdOrKey, transitionId } = rest as { issueIdOrKey: string; transitionId: string };
+          if (!issueIdOrKey || !transitionId) {
+            throw new Error('atlassian.transitionJiraIssue requires "issueIdOrKey" and "transitionId"');
+          }
+          return transitionJiraIssue(getClient(), { issueIdOrKey, transitionId });
+        }
+        case 'atlassian.editJiraIssueFields': {
+          const { issueIdOrKey, fields } = rest as { issueIdOrKey: string; fields: Record<string, unknown> };
+          if (!issueIdOrKey || !fields) {
+            throw new Error('atlassian.editJiraIssueFields requires "issueIdOrKey" and "fields"');
+          }
+          return editJiraIssueFields(getClient(), { issueIdOrKey, fields });
+        }
+        case 'atlassian.addWorklog': {
+          const { issueIdOrKey, timeSpentSeconds, comment } = rest as {
+            issueIdOrKey: string;
+            timeSpentSeconds: number;
+            comment?: string;
+          };
+          if (!issueIdOrKey || timeSpentSeconds === undefined) {
+            throw new Error('atlassian.addWorklog requires "issueIdOrKey" and "timeSpentSeconds"');
+          }
+          return addWorklog(getClient(), { issueIdOrKey, timeSpentSeconds, comment });
+        }
+        case 'atlassian.getIssueTypeFieldMeta': {
+          const { projectIdOrKey, issueTypeId } = rest as { projectIdOrKey: string; issueTypeId: string };
+          if (!projectIdOrKey || !issueTypeId) {
+            throw new Error('atlassian.getIssueTypeFieldMeta requires "projectIdOrKey" and "issueTypeId"');
+          }
+          return getIssueTypeFieldMeta(getClient(), { projectIdOrKey, issueTypeId });
+        }
+        case 'atlassian.createJiraSubtask': {
+          const { parentKey, projectKey, issueTypeName, candidates } = rest as {
+            parentKey: string;
+            projectKey: string;
+            issueTypeName: string;
+            candidates: { summary: string; description?: string; additionalFields?: Record<string, unknown> }[];
+          };
+          if (!parentKey || !projectKey || !issueTypeName || !candidates) {
+            throw new Error(
+              'atlassian.createJiraSubtask requires "parentKey", "projectKey", "issueTypeName", and "candidates"',
+            );
+          }
+          return createJiraSubtask(getClient(), { parentKey, projectKey, issueTypeName, candidates });
         }
         default:
           throw new Error(`Unsupported op: ${op}`);

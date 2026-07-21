@@ -28,5 +28,11 @@ export const manifest: AdapterManifest = {
     'atlassian.getJiraIssue': { side_effect: false },
     'atlassian.getConfluencePage': { side_effect: false },
     'atlassian.addJiraComment': { side_effect: true, approval: 'required' },
+    'atlassian.getTransitionsForJiraIssue': { side_effect: false },
+    'atlassian.transitionJiraIssue': { side_effect: true, approval: 'required' },
+    'atlassian.editJiraIssueFields': { side_effect: true, approval: 'required' },
+    'atlassian.addWorklog': { side_effect: true, approval: 'required' },
+    'atlassian.getIssueTypeFieldMeta': { side_effect: false },
+    'atlassian.createJiraSubtask': { side_effect: true, approval: 'required' },
   },
 };

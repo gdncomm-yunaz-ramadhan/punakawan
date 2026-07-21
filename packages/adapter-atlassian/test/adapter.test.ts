@@ -3,10 +3,29 @@ import assert from 'node:assert/strict';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { createHandlers } from '../src/adapter.js';
 import { AtlassianMcpClient, loadConfigFromEnv } from '../src/mcpClient.js';
-import { getJiraIssue, getConfluencePage, addJiraComment } from '../src/operations.js';
+import {
+  getJiraIssue,
+  getConfluencePage,
+  addJiraComment,
+  getTransitionsForJiraIssue,
+  transitionJiraIssue,
+  editJiraIssueFields,
+  addWorklog,
+  getIssueTypeFieldMeta,
+  createJiraIssue,
+  createJiraSubtask,
+} from '../src/operations.js';
 import { manifest } from '../src/manifest.js';
 import { AdapterManifestSchema } from '@punakawan/schema-types';
-import { FIXTURE_CONFLUENCE_PAGE, FIXTURE_JIRA_ISSUE, startFakeAtlassianServer } from './fakeAtlassianServer.js';
+import {
+  FIXTURE_CONFLUENCE_PAGE,
+  FIXTURE_JIRA_ISSUE,
+  FIXTURE_TRANSITIONS,
+  FIXTURE_PARENT_KEY,
+  FIXTURE_EXISTING_SUBTASKS,
+  FIXTURE_ISSUE_TYPE_FIELD_META,
+  startFakeAtlassianServer,
+} from './fakeAtlassianServer.js';
 
 const TEST_ENV = { ATLASSIAN_MCP_TOKEN: 'fake-token', ATLASSIAN_CLOUD_ID: 'fake-cloud-id' };
 
@@ -40,6 +59,24 @@ describe('manifest', () => {
 
   test('declares read operations as side-effect free', () => {
     for (const op of ['atlassian.searchJira', 'atlassian.searchConfluence', 'atlassian.getJiraIssue', 'atlassian.getConfluencePage']) {
+      assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
+      assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
+    }
+  });
+
+  test('declares the new write operations as side-effecting and requiring approval', () => {
+    for (const op of [
+      'atlassian.transitionJiraIssue',
+      'atlassian.editJiraIssueFields',
+      'atlassian.addWorklog',
+      'atlassian.createJiraSubtask',
+    ]) {
+      assert.deepEqual(manifest.operations[op], { side_effect: true, approval: 'required' }, `${op} should require approval`);
+    }
+  });
+
+  test('declares the new read operations as side-effect free', () => {
+    for (const op of ['atlassian.getTransitionsForJiraIssue', 'atlassian.getIssueTypeFieldMeta']) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
       assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
     }
@@ -98,6 +135,150 @@ describe('addJiraComment', () => {
   });
 });
 
+describe('getTransitionsForJiraIssue', () => {
+  test('returns available transitions with id, name, and toStatus', async () => {
+    const client = await fakeClient();
+    const { transitions } = await getTransitionsForJiraIssue(client, { issueIdOrKey: 'PROJ-123' });
+
+    assert.equal(transitions.length, FIXTURE_TRANSITIONS.length);
+    assert.equal(transitions[0]?.id, FIXTURE_TRANSITIONS[0]?.id);
+    assert.equal(transitions[0]?.name, FIXTURE_TRANSITIONS[0]?.name);
+    assert.equal(transitions[0]?.toStatus.id, FIXTURE_TRANSITIONS[0]?.to.id);
+    assert.equal(transitions[0]?.toStatus.name, FIXTURE_TRANSITIONS[0]?.to.name);
+
+    await client.close();
+  });
+
+  test('rejects an unknown issue key with the fake server error', async () => {
+    const client = await fakeClient();
+    await assert.rejects(() => getTransitionsForJiraIssue(client, { issueIdOrKey: 'NOPE-1' }), /Unknown issue/);
+    await client.close();
+  });
+});
+
+describe('transitionJiraIssue', () => {
+  test('performs a transition using a discovered transitionId', async () => {
+    const client = await fakeClient();
+    const { payload } = await transitionJiraIssue(client, { issueIdOrKey: 'PROJ-123', transitionId: '11' });
+
+    assert.equal(payload.ok, true);
+    await client.close();
+  });
+
+  test('rejects an unknown transitionId with the fake server error', async () => {
+    const client = await fakeClient();
+    await assert.rejects(
+      () => transitionJiraIssue(client, { issueIdOrKey: 'PROJ-123', transitionId: 'does-not-exist' }),
+      /Unknown transitionId/,
+    );
+    await client.close();
+  });
+});
+
+describe('editJiraIssueFields', () => {
+  test('passes an arbitrary fields map through to the fake server', async () => {
+    const client = await fakeClient();
+    const { payload } = await editJiraIssueFields(client, {
+      issueIdOrKey: 'PROJ-123',
+      fields: { customfield_10016: 5, timetracking: { originalEstimate: '8h' } },
+    });
+
+    assert.equal(payload.ok, true);
+    await client.close();
+  });
+});
+
+describe('addWorklog', () => {
+  test('adds a worklog with a comment and returns an id', async () => {
+    const client = await fakeClient();
+    const { payload } = await addWorklog(client, {
+      issueIdOrKey: 'PROJ-123',
+      timeSpentSeconds: 3600,
+      comment: 'Investigated root cause',
+    });
+
+    assert.ok(typeof payload.id === 'string' && payload.id.length > 0);
+    assert.equal(payload.timeSpentSeconds, 3600);
+    await client.close();
+  });
+
+  test('adds a worklog without a comment', async () => {
+    const client = await fakeClient();
+    const { payload } = await addWorklog(client, { issueIdOrKey: 'PROJ-123', timeSpentSeconds: 1800 });
+
+    assert.equal(payload.timeSpentSeconds, 1800);
+    await client.close();
+  });
+});
+
+describe('getIssueTypeFieldMeta', () => {
+  test('returns create-field metadata for a project and issue type', async () => {
+    const client = await fakeClient();
+    const { payload } = await getIssueTypeFieldMeta(client, { projectIdOrKey: 'PROJ', issueTypeId: '10001' });
+
+    assert.deepEqual(payload, FIXTURE_ISSUE_TYPE_FIELD_META);
+    await client.close();
+  });
+});
+
+describe('createJiraIssue', () => {
+  test('creates an issue and returns a normalized result', async () => {
+    const client = await fakeClient();
+    const { normalized } = await createJiraIssue(client, {
+      projectKey: 'PROJ',
+      issueTypeName: 'Sub-task',
+      summary: 'A brand new subtask',
+      description: 'Some description',
+      parent: 'PROJ-200',
+    });
+
+    assert.equal(normalized.summary, 'A brand new subtask');
+    assert.equal(normalized.source.provider, 'jira');
+    await client.close();
+  });
+});
+
+describe('createJiraSubtask', () => {
+  test('skips an exact-duplicate candidate and creates a genuinely-new one', async () => {
+    const client = await fakeClient();
+    const result = await createJiraSubtask(client, {
+      parentKey: FIXTURE_PARENT_KEY,
+      projectKey: 'PROJ',
+      issueTypeName: 'Sub-task',
+      candidates: [
+        // Exact duplicate of an existing subtask, modulo case and whitespace.
+        { summary: '  write   UNIT tests  ' },
+        // Genuinely new.
+        { summary: 'Add integration test for login flow' },
+      ],
+    });
+
+    assert.equal(result.created.length, 1);
+    assert.equal(result.created[0]?.summary, 'Add integration test for login flow');
+
+    assert.equal(result.skipped.length, 1);
+    assert.equal(result.skipped[0]?.summary, '  write   UNIT tests  ');
+    assert.equal(result.skipped[0]?.existingKey, FIXTURE_EXISTING_SUBTASKS[0]?.key);
+
+    await client.close();
+  });
+
+  test('creates all candidates when none match existing subtasks', async () => {
+    const client = await fakeClient();
+    const result = await createJiraSubtask(client, {
+      parentKey: FIXTURE_PARENT_KEY,
+      projectKey: 'PROJ',
+      issueTypeName: 'Sub-task',
+      candidates: [{ summary: 'Totally new subtask A' }, { summary: 'Totally new subtask B' }],
+    });
+
+    assert.equal(result.created.length, 2);
+    assert.equal(result.skipped.length, 0);
+
+    await client.close();
+  });
+});
+
 describe('connection reuse', () => {
   test('reuses a single MCP connection across multiple calls', async () => {
     const client = await fakeClient();
@@ -146,6 +327,14 @@ describe('initialize', () => {
   });
 });
 
+describe('capabilities', () => {
+  test("returns this adapter's own manifest, independent of initialize params", async () => {
+    const handlers = createHandlers({ env: TEST_ENV });
+    const result = await handlers.capabilities(undefined, new AbortController().signal);
+    assert.deepEqual(result, manifest);
+  });
+});
+
 describe('execute via handlers', () => {
   test('atlassian.getJiraIssue through the full handler dispatch', async () => {
     let transport: Transport | undefined;
@@ -174,5 +363,141 @@ describe('execute via handlers', () => {
       () => handlers.execute({ op: 'atlassian.doesNotExist' }, new AbortController().signal),
       /Unsupported op/,
     );
+  });
+
+  test('atlassian.getTransitionsForJiraIssue through the full handler dispatch', async () => {
+    let transport: Transport | undefined;
+    const handlers = createHandlers({
+      env: TEST_ENV,
+      transportFactory: () => {
+        if (!transport) throw new Error('transport requested before fake server started');
+        return transport;
+      },
+    });
+    const { clientTransport } = await startFakeAtlassianServer();
+    transport = clientTransport;
+
+    const result = (await handlers.execute(
+      { op: 'atlassian.getTransitionsForJiraIssue', issueIdOrKey: 'PROJ-123' },
+      new AbortController().signal,
+    )) as { transitions: { id: string }[] };
+
+    assert.equal(result.transitions.length, FIXTURE_TRANSITIONS.length);
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.transitionJiraIssue through the full handler dispatch', async () => {
+    let transport: Transport | undefined;
+    const handlers = createHandlers({
+      env: TEST_ENV,
+      transportFactory: () => {
+        if (!transport) throw new Error('transport requested before fake server started');
+        return transport;
+      },
+    });
+    const { clientTransport } = await startFakeAtlassianServer();
+    transport = clientTransport;
+
+    const result = (await handlers.execute(
+      { op: 'atlassian.transitionJiraIssue', issueIdOrKey: 'PROJ-123', transitionId: '11' },
+      new AbortController().signal,
+    )) as { payload: { ok: boolean } };
+
+    assert.equal(result.payload.ok, true);
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.editJiraIssueFields through the full handler dispatch', async () => {
+    let transport: Transport | undefined;
+    const handlers = createHandlers({
+      env: TEST_ENV,
+      transportFactory: () => {
+        if (!transport) throw new Error('transport requested before fake server started');
+        return transport;
+      },
+    });
+    const { clientTransport } = await startFakeAtlassianServer();
+    transport = clientTransport;
+
+    const result = (await handlers.execute(
+      { op: 'atlassian.editJiraIssueFields', issueIdOrKey: 'PROJ-123', fields: { customfield_10016: 8 } },
+      new AbortController().signal,
+    )) as { payload: { ok: boolean } };
+
+    assert.equal(result.payload.ok, true);
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.addWorklog through the full handler dispatch', async () => {
+    let transport: Transport | undefined;
+    const handlers = createHandlers({
+      env: TEST_ENV,
+      transportFactory: () => {
+        if (!transport) throw new Error('transport requested before fake server started');
+        return transport;
+      },
+    });
+    const { clientTransport } = await startFakeAtlassianServer();
+    transport = clientTransport;
+
+    const result = (await handlers.execute(
+      { op: 'atlassian.addWorklog', issueIdOrKey: 'PROJ-123', timeSpentSeconds: 900, comment: 'Quick fix' },
+      new AbortController().signal,
+    )) as { payload: { timeSpentSeconds: number } };
+
+    assert.equal(result.payload.timeSpentSeconds, 900);
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.getIssueTypeFieldMeta through the full handler dispatch', async () => {
+    let transport: Transport | undefined;
+    const handlers = createHandlers({
+      env: TEST_ENV,
+      transportFactory: () => {
+        if (!transport) throw new Error('transport requested before fake server started');
+        return transport;
+      },
+    });
+    const { clientTransport } = await startFakeAtlassianServer();
+    transport = clientTransport;
+
+    const result = (await handlers.execute(
+      { op: 'atlassian.getIssueTypeFieldMeta', projectIdOrKey: 'PROJ', issueTypeId: '10001' },
+      new AbortController().signal,
+    )) as { payload: Record<string, unknown> };
+
+    assert.deepEqual(result.payload, FIXTURE_ISSUE_TYPE_FIELD_META);
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.createJiraSubtask through the full handler dispatch', async () => {
+    let transport: Transport | undefined;
+    const handlers = createHandlers({
+      env: TEST_ENV,
+      transportFactory: () => {
+        if (!transport) throw new Error('transport requested before fake server started');
+        return transport;
+      },
+    });
+    const { clientTransport } = await startFakeAtlassianServer();
+    transport = clientTransport;
+
+    const result = (await handlers.execute(
+      {
+        op: 'atlassian.createJiraSubtask',
+        parentKey: FIXTURE_PARENT_KEY,
+        projectKey: 'PROJ',
+        issueTypeName: 'Sub-task',
+        candidates: [{ summary: 'Update docs' }, { summary: 'Handle edge case for logout' }],
+      },
+      new AbortController().signal,
+    )) as { created: { summary: string }[]; skipped: { summary: string; existingKey: string }[] };
+
+    assert.equal(result.created.length, 1);
+    assert.equal(result.created[0]?.summary, 'Handle edge case for logout');
+    assert.equal(result.skipped.length, 1);
+    assert.equal(result.skipped[0]?.existingKey, FIXTURE_EXISTING_SUBTASKS[1]?.key);
+
+    await handlers.shutdown(undefined, new AbortController().signal);
   });
 });
