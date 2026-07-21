@@ -155,6 +155,33 @@ func AddDependency(ctx context.Context, sup *tools.Supervisor, dir, fromID, toID
 	return nil
 }
 
+// ReopenIssue runs `bd reopen <issueID> --reason <reason>` in dir, per
+// Bagong's reopen-task workflow (M8): a blocking finding against
+// already-completed work reopens the original issue rather than creating a
+// duplicate. Unlike CreateTask/AddDependency, this does not decode a
+// specific JSON field from bd's output - bd reopen's --json output carries
+// nothing this caller needs beyond success/failure, so checking ExitCode is
+// sufficient.
+func ReopenIssue(ctx context.Context, sup *tools.Supervisor, dir, issueID, reason string) error {
+	if issueID == "" {
+		return fmt.Errorf("beads: reopen issue: issueID is required")
+	}
+
+	args := []string{"reopen", issueID, "--json"}
+	if reason != "" {
+		args = append(args, "--reason", reason)
+	}
+
+	res, err := sup.Run(ctx, tools.Spec{Name: "bd", Args: args, Dir: dir, Timeout: 30 * time.Second})
+	if err != nil {
+		return fmt.Errorf("beads: bd reopen: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("beads: bd reopen failed: %s", strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
 // Available reports whether the bd binary is installed and responsive,
 // mirroring tools.Supervisor.RTKAvailable's pattern for rtk.
 func Available(ctx context.Context, sup *tools.Supervisor, dir string) bool {

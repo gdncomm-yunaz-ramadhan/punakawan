@@ -258,6 +258,44 @@ func TestClaimReadyClaimsAndStopsReturningIssue(t *testing.T) {
 	}
 }
 
+func TestReopenIssueRequiresID(t *testing.T) {
+	dir := t.TempDir()
+	sup := tools.New(dir)
+	if err := ReopenIssue(context.Background(), sup, dir, "", "some reason"); err == nil {
+		t.Fatal("expected error for empty issueID")
+	}
+}
+
+func TestReopenIssueReopensClosedIssue(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	taskID, err := CreateTask(ctx, sup, dir, "Task to reopen", "desc", CreateTaskOptions{})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	closeRes, err := sup.Run(ctx, tools.Spec{Name: "bd", Args: []string{"close", taskID, "--json"}, Dir: dir})
+	if err != nil || closeRes.ExitCode != 0 {
+		t.Fatalf("bd close: err=%v exitCode=%d stderr=%s", err, closeRes.ExitCode, closeRes.Stderr)
+	}
+
+	if err := ReopenIssue(ctx, sup, dir, taskID, "Bagong found a blocking regression"); err != nil {
+		t.Fatalf("ReopenIssue: %v", err)
+	}
+
+	issues, err := Ready(ctx, sup, dir, ReadyOptions{})
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if len(issues) != 1 || issues[0].ID != taskID {
+		t.Fatalf("expected the reopened issue to be ready again, got %+v", issues)
+	}
+	if issues[0].Status != "open" {
+		t.Fatalf("expected status %q after reopen, got %q", "open", issues[0].Status)
+	}
+}
+
 func TestClaimReadyNoIssues(t *testing.T) {
 	sup, dir := newTestProject(t)
 	ctx := context.Background()
