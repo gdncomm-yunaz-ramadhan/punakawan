@@ -84,6 +84,54 @@ func TestRegistryGateUnknownAdapterID(t *testing.T) {
 	}
 }
 
+// TestRegistryGateRespawnsAfterCrash guards against the bug reported in
+// practice: once an adapter process crashes, every future call to that
+// adapter used to fail identically ("broken pipe") until the whole
+// punakawan process restarted, since Gate memoized the now-dead Client
+// forever. Gate must instead detect the death and transparently respawn.
+func TestRegistryGateRespawnsAfterCrash(t *testing.T) {
+	r := newTestRegistry(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer r.Close(ctx)
+
+	g1, err := r.Gate(ctx, "prototype")
+	if err != nil {
+		t.Fatalf("Gate: %v", err)
+	}
+	if _, err := g1.Call(ctx, "run-1", "sleep", map[string]any{"ms": 0}); err != nil {
+		t.Fatalf("Call sleep before crash: %v", err)
+	}
+
+	client := r.clients["prototype"]
+	if err := client.Kill(); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	waitUntilDead(t, client)
+
+	g2, err := r.Gate(ctx, "prototype")
+	if err != nil {
+		t.Fatalf("Gate after crash: %v", err)
+	}
+	if g1 == g2 {
+		t.Fatal("expected a fresh Gate after the previous process crashed, got the same memoized instance")
+	}
+	if _, err := g2.Call(ctx, "run-1", "sleep", map[string]any{"ms": 0}); err != nil {
+		t.Fatalf("Call sleep on respawned process: %v", err)
+	}
+}
+
+func waitUntilDead(t *testing.T, c *Client) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !c.Dead() {
+		if time.Now().After(deadline) {
+			t.Fatal("client not marked Dead within 2s of Kill")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestRegistryCloseShutsDownProcess(t *testing.T) {
 	r := newTestRegistry(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

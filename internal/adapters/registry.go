@@ -60,7 +60,14 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 	defer r.mu.Unlock()
 
 	if g, ok := r.gates[adapterID]; ok {
-		return g, nil
+		if !r.clients[adapterID].Dead() {
+			return g, nil
+		}
+		// The previously-spawned process crashed (or otherwise exited): drop
+		// the stale entries and fall through to respawn, rather than handing
+		// back a Gate whose Client can never respond again.
+		delete(r.gates, adapterID)
+		delete(r.clients, adapterID)
 	}
 
 	spec, ok := r.specs[adapterID]

@@ -100,6 +100,20 @@ func start(ctx context.Context, env []string, name string, args ...string) (*Cli
 	return c, nil
 }
 
+// Dead reports whether the adapter process's response stream has closed
+// (readLoop exited, whether from a graceful shutdown or an unexpected
+// crash). Registry uses this to evict and respawn a crashed adapter instead
+// of memoizing a permanently-broken Client/Gate for the rest of this
+// process's lifetime.
+func (c *Client) Dead() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *Client) readLoop(r io.Reader) {
 	defer close(c.done)
 
@@ -159,6 +173,14 @@ func (c *Client) Call(ctx context.Context, method string, params any) (json.RawM
 		delete(c.pending, id)
 		c.mu.Unlock()
 		return nil, ctx.Err()
+	case <-c.done:
+		// The adapter process exited (crash or otherwise) while this call was
+		// in flight: readLoop will never deliver a response for id, so without
+		// this case Call would block forever instead of surfacing the failure.
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+		return nil, fmt.Errorf("adapters: adapter process exited while waiting for a response")
 	}
 }
 
