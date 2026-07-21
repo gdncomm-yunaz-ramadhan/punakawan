@@ -201,6 +201,7 @@
         "verdict": { "type": "string" },
         "requirement_coverage": { "type": "array", "items": { "type": "string" } },
         "findings": { "type": "array", "items": { "type": "string" } },
+        "blocking_findings": { "type": "array", "items": { "type": "string" } },
         "test_gaps": { "type": "array", "items": { "type": "string" } },
         "security_findings": { "type": "array", "items": { "type": "string" } },
         "compatibility_findings": { "type": "array", "items": { "type": "string" } },

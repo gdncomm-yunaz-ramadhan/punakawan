@@ -1100,6 +1100,9 @@ type KnowledgeRecord struct {
 
 // Bagong's independent final review, present on bagong-review records. See §8.4.
 type KnowledgeRecordBagongReview struct {
+	// BlockingFindings corresponds to the JSON schema field "blocking_findings".
+	BlockingFindings []string `json:"blocking_findings,omitempty,omitzero" yaml:"blocking_findings,omitempty" mapstructure:"blocking_findings,omitempty"`
+
 	// CompatibilityFindings corresponds to the JSON schema field
 	// "compatibility_findings".
 	CompatibilityFindings []string `json:"compatibility_findings,omitempty,omitzero" yaml:"compatibility_findings,omitempty" mapstructure:"compatibility_findings,omitempty"`

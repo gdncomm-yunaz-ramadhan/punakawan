@@ -183,6 +183,7 @@ export interface KnowledgeRecord {
     verdict?: string;
     requirement_coverage?: string[];
     findings?: string[];
+    blocking_findings?: string[];
     test_gaps?: string[];
     security_findings?: string[];
     compatibility_findings?: string[];
