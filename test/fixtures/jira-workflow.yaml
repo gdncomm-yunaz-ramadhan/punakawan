@@ -1,0 +1,9 @@
+skip_statuses:
+  - "Won't Do"
+  - "Duplicate"
+
+clarification_status: "Sent Back to Product Review"
+
+estimation:
+  scale: [1, 2, 3, 5, 8, 13, 21]
+  points_to_hours: 4
