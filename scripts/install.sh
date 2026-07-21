@@ -110,9 +110,15 @@ EOF
   read -rp "Which do you have? [1/2, default 1]: " AUTH_CHOICE
   AUTH_CHOICE="${AUTH_CHOICE:-1}"
 
-  echo "Find your Cloud ID by visiting https://<your-site>.atlassian.net/_edge/tenant_info"
-  echo "in a browser while logged in - it returns {\"cloudId\":\"...\"}."
-  read -rp "Atlassian Cloud ID: " CLOUD_ID
+  read -rp "Atlassian site host (e.g. yourteam.atlassian.net): " ATLASSIAN_HOST_INPUT
+  if command -v curl >/dev/null 2>&1; then
+    TENANT_INFO="$(curl -fsS "https://${ATLASSIAN_HOST_INPUT}/_edge/tenant_info" 2>/dev/null || true)"
+    if [[ "$TENANT_INFO" == *cloudId* ]]; then
+      log "Resolved $ATLASSIAN_HOST_INPUT -> $TENANT_INFO"
+    else
+      echo "Warning: could not confirm $ATLASSIAN_HOST_INPUT resolves to a cloud ID - double-check the hostname." >&2
+    fi
+  fi
   read -rsp "Atlassian API token: " API_TOKEN
   echo ""
 
@@ -123,7 +129,7 @@ EOF
 
   {
     echo "ATLASSIAN_MCP_TOKEN=${API_TOKEN}"
-    echo "ATLASSIAN_CLOUD_ID=${CLOUD_ID}"
+    echo "ATLASSIAN_HOST=${ATLASSIAN_HOST_INPUT}"
     if [[ -n "$EMAIL" ]]; then
       echo "ATLASSIAN_EMAIL=${EMAIL}"
     fi
@@ -145,7 +151,7 @@ adapters:
       - ${ADAPTER_ATLASSIAN_ENTRY}
     env_passthrough:
       - ATLASSIAN_MCP_TOKEN
-      - ATLASSIAN_CLOUD_ID
+      - ATLASSIAN_HOST
       - ATLASSIAN_EMAIL
 YAML
   log "Wrote $GLOBAL_CONFIG"

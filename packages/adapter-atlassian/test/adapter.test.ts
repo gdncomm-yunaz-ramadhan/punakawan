@@ -27,16 +27,22 @@ import {
   startFakeAtlassianServer,
 } from './fakeAtlassianServer.js';
 
-const TEST_ENV = { ATLASSIAN_MCP_TOKEN: 'fake-token', ATLASSIAN_CLOUD_ID: 'fake-cloud-id' };
+const TEST_ENV = { ATLASSIAN_MCP_TOKEN: 'fake-token', ATLASSIAN_HOST: 'fake-team.atlassian.net' };
+/** Stands in for resolveCloudId in tests so no real network request is made. */
+const TEST_CLOUD_ID_RESOLVER = async () => 'fake-cloud-id';
 
 /** Builds an AtlassianMcpClient wired to a fresh fake server instance. */
 async function fakeClient(): Promise<AtlassianMcpClient> {
   const config = loadConfigFromEnv(TEST_ENV);
   let transport: Transport | undefined;
-  const client = new AtlassianMcpClient(config, () => {
-    if (!transport) throw new Error('transport requested before fake server started');
-    return transport;
-  });
+  const client = new AtlassianMcpClient(
+    config,
+    () => {
+      if (!transport) throw new Error('transport requested before fake server started');
+      return transport;
+    },
+    TEST_CLOUD_ID_RESOLVER,
+  );
   const { clientTransport } = await startFakeAtlassianServer();
   transport = clientTransport;
   return client;
@@ -49,7 +55,7 @@ describe('manifest', () => {
     assert.equal(parsed.protocol, 'punakawan.adapter/v1');
     assert.equal(parsed.runtime, 'node');
     assert.deepEqual(parsed.provides, ['jira', 'confluence']);
-    assert.deepEqual(parsed.permissions.network.hosts, ['mcp.atlassian.com']);
+    assert.deepEqual(parsed.permissions.network.hosts, ['mcp.atlassian.com', '*.atlassian.net']);
     assert.deepEqual(parsed.permissions.secrets, ['ATLASSIAN_MCP_TOKEN', 'ATLASSIAN_EMAIL']);
   });
 
@@ -285,10 +291,14 @@ describe('connection reuse', () => {
     let connectCount = 0;
     const config = loadConfigFromEnv(TEST_ENV);
     const { clientTransport } = await startFakeAtlassianServer();
-    const countingClient = new AtlassianMcpClient(config, () => {
-      connectCount += 1;
-      return clientTransport;
-    });
+    const countingClient = new AtlassianMcpClient(
+      config,
+      () => {
+        connectCount += 1;
+        return clientTransport;
+      },
+      TEST_CLOUD_ID_RESOLVER,
+    );
 
     await getJiraIssue(countingClient, { issueIdOrKey: 'PROJ-123' });
     await getJiraIssue(countingClient, { issueIdOrKey: 'PROJ-123' });
@@ -303,11 +313,11 @@ describe('connection reuse', () => {
 
 describe('missing configuration fails fast', () => {
   test('missing ATLASSIAN_MCP_TOKEN throws before any network attempt', () => {
-    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_CLOUD_ID: 'x' }), /ATLASSIAN_MCP_TOKEN/);
+    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_HOST: 'x.atlassian.net' }), /ATLASSIAN_MCP_TOKEN/);
   });
 
-  test('missing ATLASSIAN_CLOUD_ID throws before any network attempt', () => {
-    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_MCP_TOKEN: 'x' }), /ATLASSIAN_CLOUD_ID/);
+  test('missing ATLASSIAN_HOST throws before any network attempt', () => {
+    assert.throws(() => loadConfigFromEnv({ ATLASSIAN_MCP_TOKEN: 'x' }), /ATLASSIAN_HOST/);
   });
 
   test('execute() surfaces the config error immediately instead of hanging on a real connection attempt', async () => {
@@ -344,6 +354,7 @@ describe('execute via handlers', () => {
         if (!transport) throw new Error('transport requested before fake server started');
         return transport;
       },
+      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
     });
     const { clientTransport } = await startFakeAtlassianServer();
     transport = clientTransport;
@@ -373,6 +384,7 @@ describe('execute via handlers', () => {
         if (!transport) throw new Error('transport requested before fake server started');
         return transport;
       },
+      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
     });
     const { clientTransport } = await startFakeAtlassianServer();
     transport = clientTransport;
@@ -394,6 +406,7 @@ describe('execute via handlers', () => {
         if (!transport) throw new Error('transport requested before fake server started');
         return transport;
       },
+      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
     });
     const { clientTransport } = await startFakeAtlassianServer();
     transport = clientTransport;
@@ -415,6 +428,7 @@ describe('execute via handlers', () => {
         if (!transport) throw new Error('transport requested before fake server started');
         return transport;
       },
+      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
     });
     const { clientTransport } = await startFakeAtlassianServer();
     transport = clientTransport;
@@ -436,6 +450,7 @@ describe('execute via handlers', () => {
         if (!transport) throw new Error('transport requested before fake server started');
         return transport;
       },
+      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
     });
     const { clientTransport } = await startFakeAtlassianServer();
     transport = clientTransport;
@@ -457,6 +472,7 @@ describe('execute via handlers', () => {
         if (!transport) throw new Error('transport requested before fake server started');
         return transport;
       },
+      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
     });
     const { clientTransport } = await startFakeAtlassianServer();
     transport = clientTransport;
@@ -478,6 +494,7 @@ describe('execute via handlers', () => {
         if (!transport) throw new Error('transport requested before fake server started');
         return transport;
       },
+      cloudIdResolver: TEST_CLOUD_ID_RESOLVER,
     });
     const { clientTransport } = await startFakeAtlassianServer();
     transport = clientTransport;

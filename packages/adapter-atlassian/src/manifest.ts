@@ -18,7 +18,12 @@ export const manifest: AdapterManifest = {
   runtime: 'node',
   provides: ['jira', 'confluence'],
   permissions: {
-    network: { hosts: ['mcp.atlassian.com'] },
+    // '*.atlassian.net' covers the one-time, unauthenticated cloudId lookup
+    // (resolveCloudId in mcpClient.ts) against the operator-configured
+    // ATLASSIAN_HOST - the real hostname varies per Atlassian site, so it
+    // cannot be declared as a single literal value the way mcp.atlassian.com
+    // can.
+    network: { hosts: ['mcp.atlassian.com', '*.atlassian.net'] },
     filesystem: { read: [], write: [] },
     secrets: ['ATLASSIAN_MCP_TOKEN', 'ATLASSIAN_EMAIL'],
   },

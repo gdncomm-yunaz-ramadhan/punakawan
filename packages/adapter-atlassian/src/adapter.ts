@@ -25,6 +25,7 @@ import {
  */
 export function createHandlers(options?: {
   transportFactory?: TransportFactory;
+  cloudIdResolver?: (host: string) => Promise<string>;
   env?: NodeJS.ProcessEnv;
 }): Record<string, Handler> {
   let client: AtlassianMcpClient | undefined;
@@ -32,7 +33,7 @@ export function createHandlers(options?: {
   function getClient(): AtlassianMcpClient {
     if (!client) {
       const config = loadConfigFromEnv(options?.env ?? process.env);
-      client = new AtlassianMcpClient(config, options?.transportFactory);
+      client = new AtlassianMcpClient(config, options?.transportFactory, options?.cloudIdResolver);
     }
     return client;
   }

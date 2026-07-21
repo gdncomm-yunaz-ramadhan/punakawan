@@ -38,9 +38,10 @@ export interface GetJiraIssueParams {
 }
 
 export async function getJiraIssue(client: AtlassianMcpClient, params: GetJiraIssueParams) {
-  const result = await client.callTool('getJiraIssue', { cloudId: client.cloudId, issueIdOrKey: params.issueIdOrKey });
+  const cloudId = await client.getCloudId();
+  const result = await client.callTool('getJiraIssue', { cloudId, issueIdOrKey: params.issueIdOrKey });
   const payload = extractPayload(result);
-  return { raw: result, normalized: normalizeJiraIssue(payload, client.cloudId) };
+  return { raw: result, normalized: normalizeJiraIssue(payload, cloudId) };
 }
 
 export interface GetConfluencePageParams {
@@ -49,12 +50,13 @@ export interface GetConfluencePageParams {
 }
 
 export async function getConfluencePage(client: AtlassianMcpClient, params: GetConfluencePageParams) {
-  const args: Record<string, unknown> = { cloudId: client.cloudId, pageId: params.pageId };
+  const cloudId = await client.getCloudId();
+  const args: Record<string, unknown> = { cloudId, pageId: params.pageId };
   if (params.contentFormat) args.contentFormat = params.contentFormat;
 
   const result = await client.callTool('getConfluencePage', args);
   const payload = extractPayload(result);
-  return { raw: result, normalized: normalizeConfluencePage(payload, client.cloudId) };
+  return { raw: result, normalized: normalizeConfluencePage(payload, cloudId) };
 }
 
 export interface SearchJiraParams {
@@ -64,7 +66,8 @@ export interface SearchJiraParams {
 }
 
 export async function searchJira(client: AtlassianMcpClient, params: SearchJiraParams) {
-  const args: Record<string, unknown> = { cloudId: client.cloudId, jql: params.jql };
+  const cloudId = await client.getCloudId();
+  const args: Record<string, unknown> = { cloudId, jql: params.jql };
   if (params.fields) args.fields = params.fields;
   if (params.maxResults !== undefined) args.maxResults = params.maxResults;
 
@@ -73,7 +76,7 @@ export async function searchJira(client: AtlassianMcpClient, params: SearchJiraP
   const issues = Array.isArray(payload.issues) ? payload.issues : [];
   return {
     raw: result,
-    normalized: issues.map((issue) => normalizeJiraIssue(asRecord(issue), client.cloudId)),
+    normalized: issues.map((issue) => normalizeJiraIssue(asRecord(issue), cloudId)),
   };
 }
 
@@ -82,12 +85,13 @@ export interface SearchConfluenceParams {
 }
 
 export async function searchConfluence(client: AtlassianMcpClient, params: SearchConfluenceParams) {
-  const result = await client.callTool('searchConfluenceUsingCql', { cloudId: client.cloudId, cql: params.cql });
+  const cloudId = await client.getCloudId();
+  const result = await client.callTool('searchConfluenceUsingCql', { cloudId, cql: params.cql });
   const payload = extractPayload(result);
   const pages = Array.isArray(payload.results) ? payload.results : [];
   return {
     raw: result,
-    normalized: pages.map((page) => normalizeConfluencePage(asRecord(page), client.cloudId)),
+    normalized: pages.map((page) => normalizeConfluencePage(asRecord(page), cloudId)),
   };
 }
 
@@ -98,7 +102,7 @@ export interface AddJiraCommentParams {
 
 export async function addJiraComment(client: AtlassianMcpClient, params: AddJiraCommentParams) {
   const result = await client.callTool('addCommentToJiraIssue', {
-    cloudId: client.cloudId,
+    cloudId: await client.getCloudId(),
     issueIdOrKey: params.issueIdOrKey,
     commentBody: params.commentBody,
   });
@@ -152,7 +156,7 @@ export interface GetTransitionsForJiraIssueParams {
 
 export async function getTransitionsForJiraIssue(client: AtlassianMcpClient, params: GetTransitionsForJiraIssueParams) {
   const result = await client.callTool('getTransitionsForJiraIssue', {
-    cloudId: client.cloudId,
+    cloudId: await client.getCloudId(),
     issueIdOrKey: params.issueIdOrKey,
   });
   const payload = extractPayload(result);
@@ -172,7 +176,7 @@ export interface TransitionJiraIssueParams {
  */
 export async function transitionJiraIssue(client: AtlassianMcpClient, params: TransitionJiraIssueParams) {
   const result = await client.callTool('transitionJiraIssue', {
-    cloudId: client.cloudId,
+    cloudId: await client.getCloudId(),
     issueIdOrKey: params.issueIdOrKey,
     transitionId: params.transitionId,
   });
@@ -196,7 +200,7 @@ export interface EditJiraIssueFieldsParams {
 
 export async function editJiraIssueFields(client: AtlassianMcpClient, params: EditJiraIssueFieldsParams) {
   const result = await client.callTool('editJiraIssue', {
-    cloudId: client.cloudId,
+    cloudId: await client.getCloudId(),
     issueIdOrKey: params.issueIdOrKey,
     fields: params.fields,
   });
@@ -212,7 +216,7 @@ export interface AddWorklogParams {
 
 export async function addWorklog(client: AtlassianMcpClient, params: AddWorklogParams) {
   const args: Record<string, unknown> = {
-    cloudId: client.cloudId,
+    cloudId: await client.getCloudId(),
     issueIdOrKey: params.issueIdOrKey,
     timeSpentSeconds: params.timeSpentSeconds,
   };
@@ -235,7 +239,7 @@ export interface GetIssueTypeFieldMetaParams {
  */
 export async function getIssueTypeFieldMeta(client: AtlassianMcpClient, params: GetIssueTypeFieldMetaParams) {
   const result = await client.callTool('getJiraIssueTypeMetaWithFields', {
-    cloudId: client.cloudId,
+    cloudId: await client.getCloudId(),
     projectIdOrKey: params.projectIdOrKey,
     issueTypeId: params.issueTypeId,
   });
@@ -261,8 +265,9 @@ export interface CreateJiraIssueParams {
  * candidates.
  */
 export async function createJiraIssue(client: AtlassianMcpClient, params: CreateJiraIssueParams) {
+  const cloudId = await client.getCloudId();
   const args: Record<string, unknown> = {
-    cloudId: client.cloudId,
+    cloudId,
     projectKey: params.projectKey,
     issueTypeName: params.issueTypeName,
     summary: params.summary,
@@ -273,7 +278,7 @@ export async function createJiraIssue(client: AtlassianMcpClient, params: Create
 
   const result = await client.callTool('createJiraIssue', args);
   const payload = extractPayload(result);
-  return { raw: result, normalized: normalizeJiraIssue(payload, client.cloudId) };
+  return { raw: result, normalized: normalizeJiraIssue(payload, cloudId) };
 }
 
 /** Trims, collapses internal whitespace, and lowercases a summary for exact (non-fuzzy) comparison. */

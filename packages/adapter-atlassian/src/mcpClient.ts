@@ -29,8 +29,14 @@ export interface AtlassianConfig {
    * formats (see buildAuthorizationHeader).
    */
   token: string;
-  /** Atlassian Cloud ID, required by every tool call. Read from ATLASSIAN_CLOUD_ID. */
-  cloudId: string;
+  /**
+   * Atlassian site hostname (e.g. "yourteam.atlassian.net"), read from
+   * ATLASSIAN_HOST. The cloudId every tool call actually needs is derived
+   * from this via resolveCloudId rather than configured directly - operators
+   * already know their site's hostname, unlike its cloud ID, which otherwise
+   * has to be looked up separately.
+   */
+  host: string;
   /**
    * Email of the personal-API-token owner. Read from ATLASSIAN_EMAIL.
    * Optional: a service-account API key has no associated email. When set,
@@ -54,16 +60,43 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Atlassi
     );
   }
 
-  const cloudId = env.ATLASSIAN_CLOUD_ID;
-  if (!cloudId) {
+  const host = env.ATLASSIAN_HOST;
+  if (!host) {
     throw new Error(
-      'Missing required environment variable ATLASSIAN_CLOUD_ID: every Atlassian MCP tool call requires a cloudId, and this adapter does not implement site enumeration (no confirmed tool for it) — supply it as operator configuration.',
+      'Missing required environment variable ATLASSIAN_HOST: the Atlassian adapter derives the cloudId every tool call needs from this site hostname (e.g. "yourteam.atlassian.net") — supply it as operator configuration.',
     );
   }
 
   const email = env.ATLASSIAN_EMAIL || undefined;
 
-  return { token, cloudId, email };
+  return { token, host, email };
+}
+
+/**
+ * Resolves a site hostname (e.g. "yourteam.atlassian.net") to its Atlassian
+ * Cloud ID via the unauthenticated tenant-info endpoint, per
+ * https://support.atlassian.com/jira/kb/retrieve-my-atlassian-sites-cloud-id/
+ * (the "Tenant Info Endpoint" method documented there - no login required).
+ * This lets an operator configure just the host they already know instead of
+ * separately looking up and pasting a cloud ID.
+ */
+export async function resolveCloudId(host: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+  const url = `https://${host}/_edge/tenant_info`;
+  let response: Response;
+  try {
+    response = await fetchImpl(url);
+  } catch (err) {
+    throw new Error(`Failed to resolve Atlassian cloudId from host "${host}" (${url}): ${(err as Error).message}`);
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to resolve Atlassian cloudId from host "${host}": ${url} returned HTTP ${response.status}`);
+  }
+
+  const body = (await response.json()) as { cloudId?: unknown };
+  if (typeof body.cloudId !== 'string' || !body.cloudId) {
+    throw new Error(`Failed to resolve Atlassian cloudId from host "${host}": ${url} did not return a cloudId`);
+  }
+  return body.cloudId;
 }
 
 /**
@@ -104,16 +137,32 @@ export function defaultTransportFactory(config: Pick<AtlassianConfig, 'token' | 
 export class AtlassianMcpClient {
   private readonly config: AtlassianConfig;
   private readonly transportFactory: TransportFactory;
+  private readonly cloudIdResolver: (host: string) => Promise<string>;
   private client: Client | undefined;
   private connecting: Promise<Client> | undefined;
+  private cloudIdPromise: Promise<string> | undefined;
 
-  constructor(config: AtlassianConfig, transportFactory: TransportFactory = defaultTransportFactory) {
+  constructor(
+    config: AtlassianConfig,
+    transportFactory: TransportFactory = defaultTransportFactory,
+    cloudIdResolver: (host: string) => Promise<string> = resolveCloudId,
+  ) {
     this.config = config;
     this.transportFactory = transportFactory;
+    this.cloudIdResolver = cloudIdResolver;
   }
 
-  get cloudId(): string {
-    return this.config.cloudId;
+  /**
+   * Resolves and memoizes the cloudId for this client's configured host - a
+   * site's cloudId never changes within a process's lifetime, so this
+   * mirrors how connect() below memoizes the MCP connection itself rather
+   * than reconnecting per call.
+   */
+  getCloudId(): Promise<string> {
+    if (!this.cloudIdPromise) {
+      this.cloudIdPromise = this.cloudIdResolver(this.config.host);
+    }
+    return this.cloudIdPromise;
   }
 
   private async connect(): Promise<Client> {
