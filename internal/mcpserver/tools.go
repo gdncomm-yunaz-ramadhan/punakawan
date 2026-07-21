@@ -128,4 +128,14 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "request_jira_clarification",
 		Description: "Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it.",
 	}, requestJiraClarificationHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "check_jira_skippable",
+		Description: "Check whether a Jira-sourced requirement's current status is in the configured skip-status list, so a caller can exclude it before submitting a task graph.",
+	}, checkJiraSkippableHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "sync_jira_subtasks",
+		Description: "Create Jira subtasks under a parent issue for candidates that don't already exist, deduplicating by normalized summary.",
+	}, syncJiraSubtasksHandler(a))
 }

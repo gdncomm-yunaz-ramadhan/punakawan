@@ -15,15 +15,17 @@ import (
 // process, mirroring internal/adapters/gate_test.go's fakeCaller pattern -
 // exercising this handler's logic does not require live Jira credentials.
 type fakeAtlassianCaller struct {
-	calls       []map[string]any
-	transitions string // raw JSON returned for getTransitionsForJiraIssue
+	calls     []map[string]any
+	responses map[string]string // raw JSON per op name, defaulting to {"ok":true}
 }
 
 func (f *fakeAtlassianCaller) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	args, _ := params.(map[string]any)
 	f.calls = append(f.calls, args)
-	if args["op"] == "atlassian.getTransitionsForJiraIssue" {
-		return json.RawMessage(f.transitions), nil
+	if op, _ := args["op"].(string); op != "" {
+		if resp, ok := f.responses[op]; ok {
+			return json.RawMessage(resp), nil
+		}
 	}
 	return json.RawMessage(`{"ok":true}`), nil
 }
@@ -60,7 +62,7 @@ func newJiraClarifyTestGate(t *testing.T, transitionsJSON string) (*adapters.Gat
 	if err != nil {
 		t.Fatalf("approvals.Open: %v", err)
 	}
-	fc := &fakeAtlassianCaller{transitions: transitionsJSON}
+	fc := &fakeAtlassianCaller{responses: map[string]string{"atlassian.getTransitionsForJiraIssue": transitionsJSON}}
 	return adapters.NewGate("atlassian", atlassianTestManifest(), fc, store), fc
 }
 
