@@ -6,8 +6,22 @@ export const FIXTURE_JIRA_ISSUE = {
     description: 'Steps to reproduce: click the login button on Safari 17. Nothing happens.',
     status: { name: 'In Progress' },
     updated: '2026-07-15T09:30:00.000+0000',
+    issuelinks: [{
+      id: '9001',
+      type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' },
+      outwardIssue: { key: 'PROJ-124', fields: { summary: 'Dependent rollout', status: { name: 'To Do' }, issuetype: { name: 'Task' } } },
+    }],
+    attachment: [{ id: '7001', filename: 'design.txt', mimeType: 'text/plain', size: 12, created: '2026-07-15T10:00:00Z', author: { displayName: 'Test User' } }],
   },
 };
+
+export const FIXTURE_COMMENTS = [
+  { id: '8001', author: { displayName: 'Product Owner' }, body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Please cover Safari.' }] }] }, created: '2026-07-15T10:00:00Z', updated: '2026-07-15T10:00:00Z' },
+];
+
+export const FIXTURE_REMOTE_LINKS = [
+  { id: 42, globalId: 'spec-42', relationship: 'specification', object: { title: 'Login design', summary: 'Auth flow', url: 'https://docs.example.test/login' } },
+];
 
 export const FIXTURE_CONFLUENCE_PAGE = {
   id: '987654',
@@ -46,6 +60,7 @@ export interface RecordedRestRequest {
   url: string;
   path: string;
   authorization: string | undefined;
+  xAtlassianToken: string | undefined;
   body: Record<string, unknown>;
 }
 
@@ -57,6 +72,8 @@ export interface FakeAtlassianRest {
   editedFields: { issueIdOrKey: string; fields: Record<string, unknown> }[];
   addedWorklogs: { issueIdOrKey: string; body: Record<string, unknown> }[];
   createdIssues: { key: string; fields: Record<string, unknown> }[];
+  uploadedAttachments: { issueIdOrKey: string; filename: string }[];
+  deletedAttachments: string[];
 }
 
 function json(data: unknown, status = 200): Response {
@@ -80,6 +97,8 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
   const editedFields: FakeAtlassianRest['editedFields'] = [];
   const addedWorklogs: FakeAtlassianRest['addedWorklogs'] = [];
   const createdIssues: FakeAtlassianRest['createdIssues'] = [];
+  const uploadedAttachments: FakeAtlassianRest['uploadedAttachments'] = [];
+  const deletedAttachments: string[] = [];
 
   const fakeFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
@@ -87,7 +106,14 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
     const parsedBody = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
     const headers = new Headers(init?.headers);
     const path = url.pathname.replace(/^\/ex\/(?:jira|confluence)\/[^/]+/, '');
-    requests.push({ method, url: url.toString(), path, authorization: headers.get('Authorization') ?? undefined, body: parsedBody });
+    requests.push({
+      method,
+      url: url.toString(),
+      path,
+      authorization: headers.get('Authorization') ?? undefined,
+      xAtlassianToken: headers.get('X-Atlassian-Token') ?? undefined,
+      body: parsedBody,
+    });
 
     if (path === '/_edge/tenant_info' && method === 'GET') return json({ cloudId: 'fake-cloud-id' });
 
@@ -100,6 +126,10 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
     if (issueMatch && method === 'GET') {
       const key = decodeURIComponent(issueMatch[1] ?? '');
       if (key === FIXTURE_JIRA_ISSUE.key) return json(FIXTURE_JIRA_ISSUE);
+      if (key === FIXTURE_PARENT_KEY) return json({
+        id: '10200', key: FIXTURE_PARENT_KEY,
+        fields: { summary: 'Authentication epic', status: { name: 'In Progress' }, issuetype: { name: 'Epic' }, updated: '2026-07-10T00:00:00.000+0000' },
+      });
       const created = createdIssues.find((issue) => issue.key === key);
       if (created) {
         return json({
@@ -117,9 +147,36 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
     }
 
     const commentMatch = path.match(/^\/rest\/api\/3\/issue\/([^/]+)\/comment$/);
+    if (commentMatch && method === 'GET') {
+      return json({ startAt: 0, maxResults: 20, total: FIXTURE_COMMENTS.length, comments: FIXTURE_COMMENTS });
+    }
     if (commentMatch && method === 'POST') {
       addedComments.push({ issueIdOrKey: decodeURIComponent(commentMatch[1] ?? ''), body: parsedBody });
       return json({ id: String(5000 + addedComments.length), body: parsedBody.body }, 201);
+    }
+
+    const remoteLinkMatch = path.match(/^\/rest\/api\/3\/issue\/([^/]+)\/remotelink$/);
+    if (remoteLinkMatch && method === 'GET') return json(FIXTURE_REMOTE_LINKS);
+
+    const attachmentContentMatch = path.match(/^\/rest\/api\/3\/attachment\/content\/([^/]+)$/);
+    if (attachmentContentMatch && method === 'GET') {
+      return new Response('fixture attachment', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+    }
+
+    const attachmentDeleteMatch = path.match(/^\/rest\/api\/3\/attachment\/([^/]+)$/);
+    if (attachmentDeleteMatch && method === 'DELETE') {
+      deletedAttachments.push(decodeURIComponent(attachmentDeleteMatch[1] ?? ''));
+      return new Response(null, { status: 204 });
+    }
+
+    const attachmentUploadMatch = path.match(/^\/rest\/api\/3\/issue\/([^/]+)\/attachments$/);
+    if (attachmentUploadMatch && method === 'POST') {
+      const form = init?.body instanceof FormData ? init.body : undefined;
+      const file = form?.get('file');
+      const filename = file instanceof File ? file.name : 'unknown';
+      const issueIdOrKey = decodeURIComponent(attachmentUploadMatch[1] ?? '');
+      uploadedAttachments.push({ issueIdOrKey, filename });
+      return json([{ id: '7002', filename, mimeType: file instanceof File ? file.type : undefined, size: file instanceof File ? file.size : undefined }], 200);
     }
 
     const transitionMatch = path.match(/^\/rest\/api\/3\/issue\/([^/]+)\/transitions$/);
@@ -188,6 +245,8 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
     editedFields,
     addedWorklogs,
     createdIssues,
+    uploadedAttachments,
+    deletedAttachments,
   };
 }
 

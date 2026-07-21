@@ -69,6 +69,21 @@ The connected client can use these MCP surfaces:
 - `sync_jira_subtasks` for deduplicated Jira subtask creation; and
 - `update_jira_task_progress` for estimates, worklogs, and comments.
 
+Useful direct Jira operations include:
+
+- `atlassian.getJiraIssue` (including compact parent, subtask, and linked-issue metadata),
+  `atlassian.getJiraComments`, `atlassian.getJiraRemoteLinks`, and
+  `atlassian.getJiraEpic` for richer planning context;
+- `atlassian.listJiraAttachments`, `atlassian.downloadJiraAttachment`,
+  `atlassian.uploadJiraAttachment`, and `atlassian.deleteJiraAttachment`;
+- `atlassian.editJiraIssue` for summary/title, plain-text description,
+  original or remaining estimate, story points, and arbitrary Jira fields.
+  `atlassian.editJiraIssueFields` remains a compatible low-level alias.
+
+Attachment uploads read from, and downloads write to, paths confined to the
+current workspace. Download, upload, delete, and every other write use the
+same one-approval-per-run gate.
+
 Jira responses are compact by default: issue reads request only planning
 fields, JQL searches return at most 20 summary rows unless `maxResults` is
 set, ADF descriptions are flattened to plain text, and raw REST envelopes
@@ -78,11 +93,15 @@ it intentionally costs substantially more model context.
 
 The first adapter write in a run asks for inline human approval. One approval
 covers every approval-required adapter write in that run. If the connected
-client cannot show MCP elicitation, Punakawan returns the exact CLI fallback:
+client cannot show MCP elicitation, Punakawan tells the agent to show explicit
+**Approve** and **Deny** options. Only after the human chooses may the agent
+call `respond_to_adapter_approval` and retry an approved write. The CLI remains
+available:
 
 ```bash
 punakawan approvals list
 punakawan approvals approve <id> --by <your-name>
+punakawan approvals deny <id> --by <your-name>
 ```
 
 ### Jira authentication

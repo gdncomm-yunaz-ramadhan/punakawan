@@ -102,7 +102,7 @@ func TestApprovalFallsBackToCLIWhenClientCannotElicit(t *testing.T) {
 			message += fmt.Sprint(content)
 		}
 	}
-	for _, want := range []string{"does not support form elicitation", "punakawan approvals approve", "approval-adapter-run-run-cli"} {
+	for _, want := range []string{"ACTION REQUIRED", "[Approve]", "[Deny]", "respond_to_adapter_approval", "punakawan approvals approve", "approval-adapter-run-run-cli"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("error %q does not contain %q", message, want)
 		}

@@ -1,5 +1,8 @@
+import { constants } from 'node:fs';
+import { mkdir, open, readFile, realpath, stat } from 'node:fs/promises';
+import path from 'node:path';
 import type { AtlassianRestClient, RestResponse } from './restClient.js';
-import { normalizeConfluencePage, normalizeJiraIssue, normalizeJiraSearchIssue, type NormalizedJiraIssue } from './normalize.js';
+import { jiraText, normalizeConfluencePage, normalizeJiraIssue, normalizeJiraSearchIssue, type NormalizedJiraIssue } from './normalize.js';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
@@ -36,7 +39,7 @@ export interface GetJiraIssueParams {
 
 export const DEFAULT_JIRA_ISSUE_FIELDS = [
   'summary', 'description', 'status', 'issuetype', 'priority', 'assignee',
-  'labels', 'parent', 'subtasks', 'timetracking', 'updated',
+  'labels', 'parent', 'subtasks', 'issuelinks', 'timetracking', 'updated',
 ] as const;
 
 export const DEFAULT_JIRA_SEARCH_FIELDS = [
@@ -99,6 +102,223 @@ export async function searchJira(client: AtlassianRestClient, params: SearchJira
     isLast: typeof payload.isLast === 'boolean' ? payload.isLast : undefined,
   };
   return optionalRaw({ normalized: issues.map((issue) => normalizeJiraSearchIssue(asRecord(issue))), page }, raw, params.includeRaw);
+}
+
+export interface GetJiraCommentsParams {
+  issueIdOrKey: string;
+  startAt?: number;
+  maxResults?: number;
+}
+
+export async function getJiraComments(client: AtlassianRestClient, params: GetJiraCommentsParams) {
+  const startAt = Math.max(0, params.startAt ?? 0);
+  const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 20));
+  const raw = await client.jira<Record<string, unknown>>(
+    `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/comment`,
+    { query: { startAt, maxResults, orderBy: 'created' } },
+  );
+  const payload = asRecord(raw.data);
+  const comments = Array.isArray(payload.comments) ? payload.comments : [];
+  return {
+    comments: comments.map((entry) => {
+      const comment = asRecord(entry);
+      const author = asRecord(comment.author);
+      return {
+        id: asString(comment.id),
+        author: asString(author.displayName) ?? asString(author.accountId),
+        body: jiraText(comment.body),
+        created: asString(comment.created),
+        updated: asString(comment.updated),
+      };
+    }),
+    page: {
+      startAt,
+      returned: comments.length,
+      total: typeof payload.total === 'number' ? payload.total : undefined,
+    },
+  };
+}
+
+export interface GetJiraRemoteLinksParams {
+  issueIdOrKey: string;
+  maxResults?: number;
+}
+
+export async function getJiraRemoteLinks(client: AtlassianRestClient, params: GetJiraRemoteLinksParams) {
+  const raw = await client.jira<unknown[]>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/remotelink`);
+  const all = Array.isArray(raw.data) ? raw.data : [];
+  const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 20));
+  const links = all.slice(0, maxResults).map((entry) => {
+    const link = asRecord(entry);
+    const object = asRecord(link.object);
+    return {
+      id: typeof link.id === 'string' || typeof link.id === 'number' ? String(link.id) : undefined,
+      globalId: asString(link.globalId),
+      relationship: asString(link.relationship),
+      title: asString(object.title),
+      summary: asString(object.summary),
+      url: asString(object.url),
+    };
+  });
+  return { links, page: { returned: links.length, total: all.length, truncated: all.length > links.length } };
+}
+
+export interface GetJiraEpicParams {
+  epicIdOrKey: string;
+  maxChildren?: number;
+}
+
+function quoteJql(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+export async function getJiraEpic(client: AtlassianRestClient, params: GetJiraEpicParams) {
+  const maxChildren = Math.min(100, Math.max(1, params.maxChildren ?? 50));
+  const [epic, children] = await Promise.all([
+    getJiraIssue(client, { issueIdOrKey: params.epicIdOrKey }),
+    searchJira(client, { jql: `parent = "${quoteJql(params.epicIdOrKey)}" ORDER BY key`, maxResults: maxChildren }),
+  ]);
+  return { epic: epic.normalized, children: children.normalized, page: children.page };
+}
+
+export interface JiraAttachment {
+  id: string;
+  filename?: string;
+  mediaType?: string;
+  size?: number;
+  created?: string;
+  author?: string;
+}
+
+function compactAttachment(value: unknown): JiraAttachment | undefined {
+  const attachment = asRecord(value);
+  const id = typeof attachment.id === 'string' || typeof attachment.id === 'number' ? String(attachment.id) : undefined;
+  if (!id) return undefined;
+  const author = asRecord(attachment.author);
+  return {
+    id,
+    filename: asString(attachment.filename),
+    mediaType: asString(attachment.mimeType),
+    size: typeof attachment.size === 'number' ? attachment.size : undefined,
+    created: asString(attachment.created),
+    author: asString(author.displayName) ?? asString(author.accountId),
+  };
+}
+
+export interface ListJiraAttachmentsParams {
+  issueIdOrKey: string;
+  maxResults?: number;
+}
+
+export async function listJiraAttachments(client: AtlassianRestClient, params: ListJiraAttachmentsParams) {
+  const raw = await client.jira<Record<string, unknown>>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
+    query: { fields: 'attachment' },
+  });
+  const values = asRecord(raw.data).fields;
+  const all = Array.isArray(asRecord(values).attachment) ? asRecord(values).attachment as unknown[] : [];
+  const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 20));
+  const attachments = all.slice(0, maxResults).flatMap((entry) => {
+    const compact = compactAttachment(entry);
+    return compact ? [compact] : [];
+  });
+  return { attachments, page: { returned: attachments.length, total: all.length, truncated: all.length > attachments.length } };
+}
+
+function workspacePath(workspaceRoot: string, requestedPath: string): { absolute: string; relative: string } {
+  if (!workspaceRoot) throw new Error('PUNAKAWAN_WORKSPACE_ROOT is required for attachment file access.');
+  if (!requestedPath) throw new Error('Attachment file path must not be empty.');
+  const root = path.resolve(workspaceRoot);
+  const absolute = path.resolve(root, requestedPath);
+  const relative = path.relative(root, absolute);
+  if (!relative || relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative)) {
+    throw new Error(`Attachment path must resolve to a file inside the Punakawan workspace: ${requestedPath}`);
+  }
+  return { absolute, relative };
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+export interface DownloadJiraAttachmentParams {
+  attachmentId: string;
+  outputPath: string;
+}
+
+export async function downloadJiraAttachment(
+  client: AtlassianRestClient,
+  params: DownloadJiraAttachmentParams,
+  workspaceRoot: string,
+) {
+  const target = workspacePath(workspaceRoot, params.outputPath);
+  const response = await client.jiraBytes(`/rest/api/3/attachment/content/${encodePath(params.attachmentId)}`);
+  await mkdir(path.dirname(target.absolute), { recursive: true });
+  const [realRoot, realParent] = await Promise.all([realpath(workspaceRoot), realpath(path.dirname(target.absolute))]);
+  if (realParent !== realRoot && !isInside(realRoot, realParent)) {
+    throw new Error(`Attachment output parent escapes the Punakawan workspace through a symlink: ${target.relative}`);
+  }
+  const safeTarget = path.join(realParent, path.basename(target.absolute));
+  const handle = await open(
+    safeTarget,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    await handle.writeFile(response.data);
+  } finally {
+    await handle.close();
+  }
+  return {
+    ok: true,
+    attachmentId: params.attachmentId,
+    path: target.relative,
+    bytes: response.data.byteLength,
+    mediaType: response.contentType,
+  };
+}
+
+export interface UploadJiraAttachmentParams {
+  issueIdOrKey: string;
+  filePath: string;
+}
+
+export async function uploadJiraAttachment(
+  client: AtlassianRestClient,
+  params: UploadJiraAttachmentParams,
+  workspaceRoot: string,
+) {
+  const source = workspacePath(workspaceRoot, params.filePath);
+  const [realRoot, realSource] = await Promise.all([realpath(workspaceRoot), realpath(source.absolute)]);
+  if (!isInside(realRoot, realSource)) {
+    throw new Error(`Attachment source escapes the Punakawan workspace through a symlink: ${source.relative}`);
+  }
+  const info = await stat(realSource);
+  if (!info.isFile()) throw new Error(`Attachment source is not a regular file: ${source.relative}`);
+  const maxBytes = 100 * 1024 * 1024;
+  if (info.size > maxBytes) throw new Error(`Attachment exceeds Punakawan's 100 MiB in-memory upload limit: ${source.relative}`);
+  const data = await readFile(realSource);
+  const form = new FormData();
+  form.append('file', new Blob([data]), path.basename(realSource));
+  const raw = await client.jira<unknown[]>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/attachments`, {
+    method: 'POST',
+    multipart: form,
+    headers: { 'X-Atlassian-Token': 'no-check' },
+  });
+  const uploaded = (Array.isArray(raw.data) ? raw.data : []).flatMap((entry) => {
+    const compact = compactAttachment(entry);
+    return compact ? [compact] : [];
+  });
+  return { ok: true, issueIdOrKey: params.issueIdOrKey, uploaded };
+}
+
+export interface DeleteJiraAttachmentParams {
+  attachmentId: string;
+}
+
+export async function deleteJiraAttachment(client: AtlassianRestClient, params: DeleteJiraAttachmentParams) {
+  await client.jira(`/rest/api/3/attachment/${encodePath(params.attachmentId)}`, { method: 'DELETE' });
+  return { ok: true, attachmentId: params.attachmentId, deleted: true };
 }
 
 export interface SearchConfluenceParams {
@@ -188,6 +408,52 @@ export async function editJiraIssueFields(client: AtlassianRestClient, params: E
     body: { fields: params.fields },
   });
   return { ok: true, issueIdOrKey: params.issueIdOrKey, updatedFields: Object.keys(params.fields) };
+}
+
+export interface EditJiraIssueParams {
+  issueIdOrKey: string;
+  /** Jira calls its title field "summary"; title is accepted as a convenience alias. */
+  summary?: string;
+  title?: string;
+  /** Plain text converted to Atlassian Document Format. */
+  description?: string;
+  /** Jira duration strings such as "8h" or "2d". */
+  originalEstimate?: string;
+  remainingEstimate?: string;
+  /** Story points require the site's field id, discoverable through getIssueTypeFieldMeta. */
+  storyPoints?: number;
+  storyPointsFieldId?: string;
+  /** Escape hatch for arbitrary Jira fields. Convenience fields above override matching keys. */
+  fields?: Record<string, unknown>;
+}
+
+export async function editJiraIssue(client: AtlassianRestClient, params: EditJiraIssueParams) {
+  if (params.summary !== undefined && params.title !== undefined && params.summary !== params.title) {
+    throw new Error('atlassian.editJiraIssue received conflicting "summary" and "title" values.');
+  }
+  const fields: Record<string, unknown> = { ...(params.fields ?? {}) };
+  const summary = params.summary ?? params.title;
+  if (summary !== undefined) fields.summary = summary;
+  if (params.description !== undefined) fields.description = plainTextAdf(params.description);
+
+  if (params.originalEstimate !== undefined || params.remainingEstimate !== undefined) {
+    const existing = asRecord(fields.timetracking);
+    fields.timetracking = {
+      ...existing,
+      ...(params.originalEstimate !== undefined ? { originalEstimate: params.originalEstimate } : {}),
+      ...(params.remainingEstimate !== undefined ? { remainingEstimate: params.remainingEstimate } : {}),
+    };
+  }
+  if (params.storyPoints !== undefined) {
+    if (!params.storyPointsFieldId?.startsWith('customfield_')) {
+      throw new Error('atlassian.editJiraIssue requires "storyPointsFieldId" (customfield_...) when "storyPoints" is set.');
+    }
+    fields[params.storyPointsFieldId] = params.storyPoints;
+  }
+  if (Object.keys(fields).length === 0) {
+    throw new Error('atlassian.editJiraIssue requires at least one editable field.');
+  }
+  return editJiraIssueFields(client, { issueIdOrKey: params.issueIdOrKey, fields });
 }
 
 export interface AddWorklogParams {

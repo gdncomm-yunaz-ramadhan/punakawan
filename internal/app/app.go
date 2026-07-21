@@ -82,6 +82,7 @@ func Load(startDir string) (*App, error) {
 		specs[id] = adapters.AdapterSpec{
 			Command:        cfg.Command,
 			Args:           cfg.Args,
+			Env:            []string{"PUNAKAWAN_WORKSPACE_ROOT=" + ws.Root},
 			EnvPassthrough: cfg.EnvPassthrough,
 		}
 	}

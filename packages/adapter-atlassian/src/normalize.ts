@@ -34,6 +34,14 @@ export interface NormalizedJiraIssue {
   subtasks?: { key: string; summary?: string; status?: string }[];
   timeTracking?: Record<string, unknown>;
   customFields?: Record<string, string | number | boolean | null | (string | number | boolean)[]>;
+  links?: NormalizedJiraIssueLink[];
+}
+
+export interface NormalizedJiraIssueLink {
+  id?: string;
+  direction: 'inward' | 'outward';
+  relationship: string;
+  issue: { key: string; summary?: string; status?: string; issueType?: string };
 }
 
 export interface NormalizedJiraSearchIssue {
@@ -95,6 +103,11 @@ function extractDescription(description: unknown): string | undefined {
   return compactText(text.join(' '));
 }
 
+/** Converts Jira ADF or plain text into compact model-facing text. */
+export function jiraText(value: unknown): string | undefined {
+  return extractDescription(value);
+}
+
 function compactAssignee(value: unknown): string | undefined {
   const identity = asRecord(value);
   return asString(identity.displayName) ?? asString(identity.accountId);
@@ -130,6 +143,33 @@ function compactCustomFields(fields: Record<string, unknown>): NormalizedJiraIss
     }
   }
   return Object.keys(result).length ? result : undefined;
+}
+
+function compactIssueLinks(value: unknown): NormalizedJiraIssueLink[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const links = value.flatMap((entry): NormalizedJiraIssueLink[] => {
+    const link = asRecord(entry);
+    const type = asRecord(link.type);
+    const inward = asRecord(link.inwardIssue);
+    const outward = asRecord(link.outwardIssue);
+    const direction = Object.keys(inward).length ? 'inward' : 'outward';
+    const linked = direction === 'inward' ? inward : outward;
+    const key = asString(linked.key);
+    if (!key) return [];
+    const fields = asRecord(linked.fields);
+    return [{
+      id: asString(link.id),
+      direction,
+      relationship: asString(type[direction]) ?? asString(type.name) ?? 'related to',
+      issue: {
+        key,
+        summary: asString(fields.summary),
+        status: asString(asRecord(fields.status).name),
+        issueType: asString(asRecord(fields.issuetype).name),
+      },
+    }];
+  });
+  return links.length ? links : undefined;
 }
 
 /**
@@ -174,6 +214,7 @@ export function normalizeJiraIssue(raw: Record<string, unknown>, cloudId: string
     subtasks: compactSubtasks(fields.subtasks),
     timeTracking,
     customFields: compactCustomFields(fields),
+    links: compactIssueLinks(fields.issuelinks),
   };
 }
 

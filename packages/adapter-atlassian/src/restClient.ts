@@ -10,12 +10,21 @@ export interface RestRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
+  multipart?: FormData;
+  headers?: Record<string, string>;
 }
 
 export interface RestResponse<T = unknown> {
   status: number;
   data: T;
   url: string;
+}
+
+export interface BinaryRestResponse {
+  status: number;
+  data: Uint8Array;
+  url: string;
+  contentType?: string;
 }
 
 function parseBoolean(value: string | undefined): boolean | undefined {
@@ -125,16 +134,46 @@ export class AtlassianRestClient {
     return this.request<T>('confluence', path, options);
   }
 
+  /** Downloads binary Jira content without converting it to model-facing text. */
+  async jiraBytes(path: string): Promise<BinaryRestResponse> {
+    const url = await this.buildURL('jira', path);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(url, {
+        headers: {
+          Accept: '*/*',
+          Authorization: buildAuthorizationHeader(this.config),
+        },
+      });
+    } catch (error) {
+      throw new Error(`Direct Atlassian REST request failed for ${url}: ${(error as Error).message}`);
+    }
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`Atlassian REST GET ${url.pathname} failed with HTTP ${response.status}: ${detail}`);
+    }
+    return {
+      status: response.status,
+      data: new Uint8Array(await response.arrayBuffer()),
+      url: response.url || url.toString(),
+      contentType: response.headers.get('content-type') ?? undefined,
+    };
+  }
+
+  private async buildURL(product: 'jira' | 'confluence', path: string): Promise<URL> {
+    const baseUrl = this.config.scoped
+      ? `https://api.atlassian.com/ex/${product}/${await this.getCloudId()}`
+      : `https://${this.config.host}`;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return new URL(`${baseUrl}${normalizedPath}`);
+  }
+
   private async request<T>(
     product: 'jira' | 'confluence',
     path: string,
     options: RestRequestOptions,
   ): Promise<RestResponse<T>> {
-    const baseUrl = this.config.scoped
-      ? `https://api.atlassian.com/ex/${product}/${await this.getCloudId()}`
-      : `https://${this.config.host}`;
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    const url = new URL(`${baseUrl}${normalizedPath}`);
+    const url = await this.buildURL(product, path);
     for (const [key, value] of Object.entries(options.query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
@@ -142,9 +181,12 @@ export class AtlassianRestClient {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       Authorization: buildAuthorizationHeader(this.config),
+      ...options.headers,
     };
-    let body: string | undefined;
-    if (options.body !== undefined) {
+    let body: BodyInit | undefined;
+    if (options.multipart !== undefined) {
+      body = options.multipart;
+    } else if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(options.body);
     }

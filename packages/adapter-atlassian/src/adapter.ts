@@ -6,14 +6,22 @@ import {
   addJiraComment,
   addWorklog,
   createJiraSubtask,
+  deleteJiraAttachment,
+  downloadJiraAttachment,
+  editJiraIssue,
   editJiraIssueFields,
   getConfluencePage,
   getIssueTypeFieldMeta,
+  getJiraComments,
+  getJiraEpic,
   getJiraIssue,
+  getJiraRemoteLinks,
   getTransitionsForJiraIssue,
+  listJiraAttachments,
   searchConfluence,
   searchJira,
   transitionJiraIssue,
+  uploadJiraAttachment,
 } from './operations.js';
 
 /**
@@ -28,10 +36,11 @@ export function createHandlers(options?: {
   env?: NodeJS.ProcessEnv;
 }): Record<string, Handler> {
   let client: AtlassianRestClient | undefined;
+  const env = options?.env ?? process.env;
 
   function getClient(): AtlassianRestClient {
     if (!client) {
-      const config = loadConfigFromEnv(options?.env ?? process.env);
+      const config = loadConfigFromEnv(env);
       client = new AtlassianRestClient(config, options?.fetchImpl, options?.cloudIdResolver);
     }
     return client;
@@ -59,6 +68,41 @@ export function createHandlers(options?: {
           const { issueIdOrKey, fields, includeRaw } = rest as { issueIdOrKey: string; fields?: string[]; includeRaw?: boolean };
           if (!issueIdOrKey) throw new Error('atlassian.getJiraIssue requires "issueIdOrKey"');
           return getJiraIssue(getClient(), { issueIdOrKey, fields, includeRaw });
+        }
+        case 'atlassian.getJiraComments': {
+          const { issueIdOrKey, startAt, maxResults } = rest as { issueIdOrKey: string; startAt?: number; maxResults?: number };
+          if (!issueIdOrKey) throw new Error('atlassian.getJiraComments requires "issueIdOrKey"');
+          return getJiraComments(getClient(), { issueIdOrKey, startAt, maxResults });
+        }
+        case 'atlassian.getJiraRemoteLinks': {
+          const { issueIdOrKey, maxResults } = rest as { issueIdOrKey: string; maxResults?: number };
+          if (!issueIdOrKey) throw new Error('atlassian.getJiraRemoteLinks requires "issueIdOrKey"');
+          return getJiraRemoteLinks(getClient(), { issueIdOrKey, maxResults });
+        }
+        case 'atlassian.getJiraEpic': {
+          const { epicIdOrKey, maxChildren } = rest as { epicIdOrKey: string; maxChildren?: number };
+          if (!epicIdOrKey) throw new Error('atlassian.getJiraEpic requires "epicIdOrKey"');
+          return getJiraEpic(getClient(), { epicIdOrKey, maxChildren });
+        }
+        case 'atlassian.listJiraAttachments': {
+          const { issueIdOrKey, maxResults } = rest as { issueIdOrKey: string; maxResults?: number };
+          if (!issueIdOrKey) throw new Error('atlassian.listJiraAttachments requires "issueIdOrKey"');
+          return listJiraAttachments(getClient(), { issueIdOrKey, maxResults });
+        }
+        case 'atlassian.downloadJiraAttachment': {
+          const { attachmentId, outputPath } = rest as { attachmentId: string; outputPath: string };
+          if (!attachmentId || !outputPath) throw new Error('atlassian.downloadJiraAttachment requires "attachmentId" and "outputPath"');
+          return downloadJiraAttachment(getClient(), { attachmentId, outputPath }, env.PUNAKAWAN_WORKSPACE_ROOT ?? '');
+        }
+        case 'atlassian.uploadJiraAttachment': {
+          const { issueIdOrKey, filePath } = rest as { issueIdOrKey: string; filePath: string };
+          if (!issueIdOrKey || !filePath) throw new Error('atlassian.uploadJiraAttachment requires "issueIdOrKey" and "filePath"');
+          return uploadJiraAttachment(getClient(), { issueIdOrKey, filePath }, env.PUNAKAWAN_WORKSPACE_ROOT ?? '');
+        }
+        case 'atlassian.deleteJiraAttachment': {
+          const { attachmentId } = rest as { attachmentId: string };
+          if (!attachmentId) throw new Error('atlassian.deleteJiraAttachment requires "attachmentId"');
+          return deleteJiraAttachment(getClient(), { attachmentId });
         }
         case 'atlassian.getConfluencePage': {
           const { pageId, contentFormat, includeRaw } = rest as { pageId: string; contentFormat?: string; includeRaw?: boolean };
@@ -94,11 +138,14 @@ export function createHandlers(options?: {
           }
           return transitionJiraIssue(getClient(), { issueIdOrKey, transitionId });
         }
+        case 'atlassian.editJiraIssue': {
+          const edit = rest as unknown as Parameters<typeof editJiraIssue>[1];
+          if (!edit.issueIdOrKey) throw new Error('atlassian.editJiraIssue requires "issueIdOrKey"');
+          return editJiraIssue(getClient(), edit);
+        }
         case 'atlassian.editJiraIssueFields': {
           const { issueIdOrKey, fields } = rest as { issueIdOrKey: string; fields: Record<string, unknown> };
-          if (!issueIdOrKey || !fields) {
-            throw new Error('atlassian.editJiraIssueFields requires "issueIdOrKey" and "fields"');
-          }
+          if (!issueIdOrKey || !fields) throw new Error('atlassian.editJiraIssueFields requires "issueIdOrKey" and "fields"');
           return editJiraIssueFields(getClient(), { issueIdOrKey, fields });
         }
         case 'atlassian.addWorklog': {

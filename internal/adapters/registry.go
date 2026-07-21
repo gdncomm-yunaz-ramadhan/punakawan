@@ -19,6 +19,10 @@ var defaultEnvAllowlist = []string{"PATH", "HOME", "LANG", "TMPDIR"}
 type AdapterSpec struct {
 	Command string
 	Args    []string
+	// Env contains trusted fixed NAME=value entries supplied by Punakawan
+	// itself (for example the discovered workspace root). User secrets remain
+	// governed by EnvPassthrough below.
+	Env []string
 	// EnvPassthrough lists additional environment variable names (beyond
 	// defaultEnvAllowlist) to copy from this process's environment into the
 	// spawned adapter's environment, if set - e.g. secrets like
@@ -75,7 +79,7 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 		return nil, fmt.Errorf("adapters: unknown adapter id %q", adapterID)
 	}
 
-	env := buildEnv(spec.EnvPassthrough)
+	env := append(buildEnv(spec.EnvPassthrough), spec.Env...)
 	client, err := StartWithEnv(ctx, env, spec.Command, spec.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("adapters: start %q: %w", adapterID, err)

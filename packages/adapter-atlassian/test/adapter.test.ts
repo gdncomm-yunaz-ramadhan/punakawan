@@ -1,5 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { createHandlers } from '../src/adapter.js';
 import { AtlassianRestClient, loadConfigFromEnv } from '../src/restClient.js';
 import {
@@ -15,6 +18,14 @@ import {
   getIssueTypeFieldMeta,
   createJiraIssue,
   createJiraSubtask,
+  deleteJiraAttachment,
+  downloadJiraAttachment,
+  editJiraIssue,
+  getJiraComments,
+  getJiraEpic,
+  getJiraRemoteLinks,
+  listJiraAttachments,
+  uploadJiraAttachment,
 } from '../src/operations.js';
 import { manifest } from '../src/manifest.js';
 import { normalizeJiraIssue } from '../src/normalize.js';
@@ -26,6 +37,8 @@ import {
   FIXTURE_PARENT_KEY,
   FIXTURE_EXISTING_SUBTASKS,
   FIXTURE_ISSUE_TYPE_FIELD_META,
+  FIXTURE_COMMENTS,
+  FIXTURE_REMOTE_LINKS,
   adfText,
   createFakeAtlassianRest,
   type FakeAtlassianRest,
@@ -83,13 +96,24 @@ describe('manifest', () => {
       'atlassian.editJiraIssueFields',
       'atlassian.addWorklog',
       'atlassian.createJiraSubtask',
+      'atlassian.editJiraIssue',
+      'atlassian.downloadJiraAttachment',
+      'atlassian.uploadJiraAttachment',
+      'atlassian.deleteJiraAttachment',
     ]) {
       assert.deepEqual(manifest.operations[op], { side_effect: true, approval: 'required' }, `${op} should require approval`);
     }
   });
 
   test('declares the new read operations as side-effect free', () => {
-    for (const op of ['atlassian.getTransitionsForJiraIssue', 'atlassian.getIssueTypeFieldMeta']) {
+    for (const op of [
+      'atlassian.getTransitionsForJiraIssue',
+      'atlassian.getIssueTypeFieldMeta',
+      'atlassian.getJiraComments',
+      'atlassian.getJiraRemoteLinks',
+      'atlassian.getJiraEpic',
+      'atlassian.listJiraAttachments',
+    ]) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
       assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
     }
@@ -110,6 +134,12 @@ describe('getJiraIssue', () => {
     assert.equal(normalized.summary, FIXTURE_JIRA_ISSUE.fields.summary);
     assert.equal(normalized.status, 'In Progress');
     assert.equal(normalized.description, FIXTURE_JIRA_ISSUE.fields.description);
+    assert.deepEqual(normalized.links, [{
+      id: '9001',
+      direction: 'outward',
+      relationship: 'blocks',
+      issue: { key: 'PROJ-124', summary: 'Dependent rollout', status: 'To Do', issueType: 'Task' },
+    }]);
     assert.equal('raw' in result, false);
 
     await client.close();
@@ -150,6 +180,103 @@ describe('getJiraIssue', () => {
     await client.close();
   });
 
+});
+
+describe('Jira context expansion', () => {
+  test('returns compact paginated comments', async () => {
+    const client = await fakeClient();
+    const result = await getJiraComments(client, { issueIdOrKey: 'PROJ-123' });
+    assert.equal(result.comments[0]?.id, FIXTURE_COMMENTS[0]?.id);
+    assert.equal(result.comments[0]?.body, 'Please cover Safari.');
+    assert.equal(result.page.total, 1);
+    await client.close();
+  });
+
+  test('returns bounded remote links', async () => {
+    const client = await fakeClient();
+    const result = await getJiraRemoteLinks(client, { issueIdOrKey: 'PROJ-123' });
+    assert.equal(result.links[0]?.url, FIXTURE_REMOTE_LINKS[0]?.object.url);
+    assert.equal(result.links[0]?.relationship, 'specification');
+    await client.close();
+  });
+
+  test('loads an epic and compact child issues', async () => {
+    const client = await fakeClient();
+    const result = await getJiraEpic(client, { epicIdOrKey: FIXTURE_PARENT_KEY, maxChildren: 10 });
+    assert.equal(result.epic.key, FIXTURE_PARENT_KEY);
+    assert.equal(result.children.length, FIXTURE_EXISTING_SUBTASKS.length);
+    assert.ok(result.children.every((child) => !('source' in child)));
+    await client.close();
+  });
+});
+
+describe('Jira attachments', () => {
+  test('lists compact attachment metadata', async () => {
+    const client = await fakeClient();
+    const result = await listJiraAttachments(client, { issueIdOrKey: 'PROJ-123' });
+    assert.deepEqual(result.attachments[0], {
+      id: '7001', filename: 'design.txt', mediaType: 'text/plain', size: 12,
+      created: '2026-07-15T10:00:00Z', author: 'Test User',
+    });
+    await client.close();
+  });
+
+  test('downloads only inside the workspace', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'punakawan-attachment-'));
+    try {
+      const client = await fakeClient();
+      const result = await downloadJiraAttachment(client, { attachmentId: '7001', outputPath: 'artifacts/design.txt' }, root);
+      assert.equal(await readFile(path.join(root, 'artifacts/design.txt'), 'utf8'), 'fixture attachment');
+      assert.equal(result.path, path.join('artifacts', 'design.txt'));
+      await assert.rejects(
+        () => downloadJiraAttachment(client, { attachmentId: '7001', outputPath: '../escape.txt' }, root),
+        /inside the Punakawan workspace/,
+      );
+      await client.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('uploads a workspace file as multipart and deletes by attachment id', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'punakawan-attachment-'));
+    try {
+      await writeFile(path.join(root, 'evidence.txt'), 'evidence');
+      const { client, rest } = fakeClientWithRest();
+      const uploaded = await uploadJiraAttachment(client, { issueIdOrKey: 'PROJ-123', filePath: 'evidence.txt' }, root);
+      assert.equal(uploaded.uploaded[0]?.filename, 'evidence.txt');
+      assert.deepEqual(rest.uploadedAttachments, [{ issueIdOrKey: 'PROJ-123', filename: 'evidence.txt' }]);
+      assert.equal(rest.requests.find((request) => request.path.endsWith('/attachments'))?.xAtlassianToken, 'no-check');
+      const deleted = await deleteJiraAttachment(client, { attachmentId: '7002' });
+      assert.equal(deleted.deleted, true);
+      assert.deepEqual(rest.deletedAttachments, ['7002']);
+      await client.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects attachment paths that escape through symlinks', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'punakawan-attachment-root-'));
+    const outside = await mkdtemp(path.join(os.tmpdir(), 'punakawan-attachment-outside-'));
+    try {
+      await writeFile(path.join(outside, 'secret.txt'), 'secret');
+      await symlink(outside, path.join(root, 'escape'));
+      const client = await fakeClient();
+      await assert.rejects(
+        () => uploadJiraAttachment(client, { issueIdOrKey: 'PROJ-123', filePath: 'escape/secret.txt' }, root),
+        /escapes the Punakawan workspace through a symlink/,
+      );
+      await assert.rejects(
+        () => downloadJiraAttachment(client, { attachmentId: '7001', outputPath: 'escape/written.txt' }, root),
+        /escapes the Punakawan workspace through a symlink/,
+      );
+      await client.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('getConfluencePage', () => {
@@ -271,6 +398,40 @@ describe('editJiraIssueFields', () => {
 
     assert.deepEqual(rest.editedFields, [{ issueIdOrKey: 'PROJ-123', fields }]);
     assert.deepEqual(result, { ok: true, issueIdOrKey: 'PROJ-123', updatedFields: ['customfield_10016', 'timetracking'] });
+    await client.close();
+  });
+});
+
+describe('editJiraIssue', () => {
+  test('updates title, plain-text description, estimates, story points, and arbitrary fields', async () => {
+    const { client, rest } = fakeClientWithRest();
+    const result = await editJiraIssue(client, {
+      issueIdOrKey: 'PROJ-123',
+      title: 'Updated title',
+      description: 'Updated description',
+      originalEstimate: '8h',
+      remainingEstimate: '2h',
+      storyPoints: 5,
+      storyPointsFieldId: 'customfield_10016',
+      fields: { priority: { name: 'High' } },
+    });
+
+    const fields = rest.editedFields[0]?.fields ?? {};
+    assert.equal(fields.summary, 'Updated title');
+    assert.equal(adfText(fields.description), 'Updated description');
+    assert.deepEqual(fields.timetracking, { originalEstimate: '8h', remainingEstimate: '2h' });
+    assert.equal(fields.customfield_10016, 5);
+    assert.deepEqual(fields.priority, { name: 'High' });
+    assert.equal(result.ok, true);
+    await client.close();
+  });
+
+  test('requires the story points custom-field id', async () => {
+    const client = await fakeClient();
+    await assert.rejects(
+      () => editJiraIssue(client, { issueIdOrKey: 'PROJ-123', storyPoints: 3 }),
+      /storyPointsFieldId/,
+    );
     await client.close();
   });
 });
@@ -431,6 +592,20 @@ describe('execute via handlers', () => {
     await handlers.shutdown(undefined, new AbortController().signal);
   });
 
+  test('context and attachment read operations dispatch by their public names', async () => {
+    const { handlers } = fakeHandlers();
+    for (const [op, params] of [
+      ['atlassian.getJiraComments', { issueIdOrKey: 'PROJ-123' }],
+      ['atlassian.getJiraRemoteLinks', { issueIdOrKey: 'PROJ-123' }],
+      ['atlassian.getJiraEpic', { epicIdOrKey: FIXTURE_PARENT_KEY }],
+      ['atlassian.listJiraAttachments', { issueIdOrKey: 'PROJ-123' }],
+    ] as const) {
+      const result = await handlers.execute({ op, ...params }, new AbortController().signal);
+      assert.ok(result && typeof result === 'object', `${op} should return an object`);
+    }
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
   test('rejects unsupported ops', async () => {
     const handlers = createHandlers({ env: TEST_ENV });
     await assert.rejects(
@@ -473,6 +648,19 @@ describe('execute via handlers', () => {
 
     assert.equal(result.ok, true);
     assert.deepEqual(result.updatedFields, ['customfield_10016']);
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.editJiraIssue supports the canonical high-level edit name', async () => {
+    const { handlers, rest } = fakeHandlers();
+    const result = (await handlers.execute(
+      { op: 'atlassian.editJiraIssue', issueIdOrKey: 'PROJ-123', title: 'Canonical edit', originalEstimate: '8h' },
+      new AbortController().signal,
+    )) as { ok: boolean };
+
+    assert.equal(result.ok, true);
+    assert.equal(rest.editedFields[0]?.fields.summary, 'Canonical edit');
+    assert.deepEqual(rest.editedFields[0]?.fields.timetracking, { originalEstimate: '8h' });
     await handlers.shutdown(undefined, new AbortController().signal);
   });
 

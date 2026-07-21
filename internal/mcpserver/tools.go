@@ -121,8 +121,13 @@ func registerTools(server *mcp.Server, a *app.App) {
 	// Jira as source of truth: adapter invocation (§5.1-§5.3).
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "call_adapter_operation",
-		Description: "Invoke any operation an adapter's manifest declares (e.g. Jira/Confluence via the atlassian adapter). Approval-required writes elicit one human approval covering all adapter writes for the whole run; clients without elicitation support receive the CLI fallback.",
+		Description: "Invoke a declared adapter operation. Atlassian reads include getJiraIssue, getJiraComments, getJiraRemoteLinks, getJiraEpic, listJiraAttachments, and searchJira. Writes include editJiraIssue, addJiraComment, download/upload/deleteJiraAttachment, estimates, worklogs, and transitions. Writes elicit one human approval for the whole run; unsupported clients must show the user Approve/Deny and then use respond_to_adapter_approval.",
 	}, callAdapterOperationHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "respond_to_adapter_approval",
+		Description: "Record approve or deny only after the human user explicitly chose in the conversation. Never call this tool autonomously or infer consent. After approval, retry the original write; denial blocks the run.",
+	}, respondToAdapterApprovalHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "request_jira_clarification",

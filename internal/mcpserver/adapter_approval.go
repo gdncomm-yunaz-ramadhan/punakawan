@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -14,8 +15,8 @@ import (
 // invokeAdapterOperation is the single MCP-facing path for adapter calls.
 // Reads pass through immediately. For approval-required writes it first asks
 // the connected MCP client to elicit a human decision for the whole run, then
-// falls back to the approvals CLI only when that client does not advertise
-// form elicitation.
+// falls back to a conversational Approve/Deny choice (or the approvals CLI)
+// when that client cannot perform form elicitation.
 func invokeAdapterOperation(
 	ctx context.Context,
 	req *mcp.CallToolRequest,
@@ -54,21 +55,30 @@ func ensureAdapterApproval(
 		return fmt.Errorf("adapter write approval %q was denied for run %q", rec.Id, runID)
 	}
 
-	if !supportsFormElicitation(req) {
-		return fmt.Errorf("adapter write approval %q is pending for run %q; the connected MCP client does not support form elicitation, so approve with `punakawan approvals approve %s --by <your-name>` and retry", rec.Id, runID, rec.Id)
+	// Always attempt MCP form elicitation first. Some clients have historically
+	// implemented the request before advertising the capability correctly; the
+	// SDK itself returns an unsupported error without sending when it truly
+	// cannot elicit.
+	var result *mcp.ElicitResult
+	if req != nil && req.Session != nil {
+		result, err = req.Session.Elicit(ctx, &mcp.ElicitParams{
+			Mode: "form",
+			Message: fmt.Sprintf(
+				"Punakawan requests permission to write for run %q. Choose Approve to allow all configured adapter writes in this run, or Deny to block them. First target: %q; operation: %q.",
+				runID, recTarget(rec), op,
+			),
+		})
+	} else {
+		err = fmt.Errorf("client does not support elicitation")
 	}
-
-	result, err := req.Session.Elicit(ctx, &mcp.ElicitParams{
-		Mode: "form",
-		Message: fmt.Sprintf(
-			"Approve Punakawan to perform approval-required adapter writes for run %q? This one approval covers writes through all configured adapters during this run (first requested target: %q, operation: %q).",
-			runID, recTarget(rec), op,
-		),
-	})
 	if err != nil {
-		// The capability was advertised, so this is a real elicitation failure,
-		// not a reason to silently switch channels and surprise the user.
+		if elicitationUnavailable(err) {
+			return fmt.Errorf("adapter write approval %q is pending for run %q. ACTION REQUIRED: ask the user to choose one option, and do not choose for them: [Approve] allow all configured adapter writes for this run; [Deny] block adapter writes for this run. After the user explicitly chooses, call respond_to_adapter_approval with approval_id=%q, decision=approve|deny, and confirmed_by=<user>, then retry the original operation only if approved. CLI alternative: `punakawan approvals approve %s --by <your-name>` or `punakawan approvals deny %s --by <your-name>`", rec.Id, runID, rec.Id, rec.Id, rec.Id)
+		}
 		return fmt.Errorf("elicit adapter write approval %q: %w", rec.Id, err)
+	}
+	if result == nil {
+		return fmt.Errorf("elicit adapter write approval %q: client returned no result", rec.Id)
 	}
 
 	switch result.Action {
@@ -89,18 +99,12 @@ func ensureAdapterApproval(
 	}
 }
 
-func supportsFormElicitation(req *mcp.CallToolRequest) bool {
-	if req == nil || req.Session == nil {
-		return false
-	}
-	init := req.Session.InitializeParams()
-	if init == nil || init.Capabilities == nil || init.Capabilities.Elicitation == nil {
-		return false
-	}
-	caps := init.Capabilities.Elicitation
-	// The MCP SDK treats an elicitation capability with neither subtype set
-	// as form support for backward compatibility.
-	return caps.Form != nil || caps.URL == nil
+func elicitationUnavailable(err error) bool {
+	detail := strings.ToLower(err.Error())
+	return strings.Contains(detail, "does not support elicitation") ||
+		strings.Contains(detail, "does not support \"form\" elicitation") ||
+		strings.Contains(detail, "method not found") ||
+		strings.Contains(detail, "unsupported method")
 }
 
 func elicitationApprover(req *mcp.CallToolRequest) string {
