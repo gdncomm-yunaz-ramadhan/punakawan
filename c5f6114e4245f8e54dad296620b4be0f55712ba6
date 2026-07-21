@@ -1,0 +1,31 @@
+internal/approvals/approvals.go
+  fd931d7b51a068b5 12,114-144
+cmd/punakawan/main_test.go
+  fd931d7b51a068b5 10-13,158-213
+cmd/punakawan/main.go
+  fd931d7b51a068b5 31
+cmd/punakawan/approvals_cmd.go
+  fd931d7b51a068b5 1-110
+internal/approvals/approvals_test.go
+  fd931d7b51a068b5 73-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "c5f6114e4245f8e54dad296620b4be0f55712ba6",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 281,
+      "total_deletions": 7,
+      "accepted_lines": 274,
+      "overriden_lines": 0
+    }
+  }
+}
