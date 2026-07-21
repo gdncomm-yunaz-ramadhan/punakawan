@@ -1,0 +1,25 @@
+internal/reconcile/reconcile.go
+  fd931d7b51a068b5 85,87,89
+internal/reconcile/reconcile_test.go
+  fd931d7b51a068b5 123-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "f832e9def8c8bf43bc60c0f349db57a22376b7fb",
+  "prompts": {
+    "fd931d7b51a068b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004a04b6-71ec-438f-9d77-04ccea3a0ebd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 32,
+      "total_deletions": 21,
+      "accepted_lines": 8,
+      "overriden_lines": 8
+    }
+  }
+}
