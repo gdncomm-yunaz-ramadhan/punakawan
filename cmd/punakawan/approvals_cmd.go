@@ -68,11 +68,11 @@ func newApprovalsListCmd() *cobra.Command {
 func newApprovalsApproveCmd() *cobra.Command {
 	var approvedBy string
 	cmd := &cobra.Command{
-		Use:   "approve <id>",
-		Short: "Approve a pending approval request",
-		Args:  cobra.ExactArgs(1),
+		Use:   "approve <id> [id...]",
+		Short: "Approve one or more pending approval requests",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return resolveApproval(cmd, args[0], protocol.ApprovalRecordStatusApproved, approvedBy)
+			return resolveApprovals(cmd, args, protocol.ApprovalRecordStatusApproved, approvedBy)
 		},
 	}
 	cmd.Flags().StringVar(&approvedBy, "by", "", "identifier of the human granting approval (required)")
@@ -83,11 +83,11 @@ func newApprovalsApproveCmd() *cobra.Command {
 func newApprovalsDenyCmd() *cobra.Command {
 	var approvedBy string
 	cmd := &cobra.Command{
-		Use:   "deny <id>",
-		Short: "Deny a pending approval request",
-		Args:  cobra.ExactArgs(1),
+		Use:   "deny <id> [id...]",
+		Short: "Deny one or more pending approval requests",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return resolveApproval(cmd, args[0], protocol.ApprovalRecordStatusDenied, approvedBy)
+			return resolveApprovals(cmd, args, protocol.ApprovalRecordStatusDenied, approvedBy)
 		},
 	}
 	cmd.Flags().StringVar(&approvedBy, "by", "", "identifier of the human denying the request (required)")
@@ -95,16 +95,30 @@ func newApprovalsDenyCmd() *cobra.Command {
 	return cmd
 }
 
-func resolveApproval(cmd *cobra.Command, id string, status protocol.ApprovalRecordStatus, approvedBy string) error {
+// resolveApprovals resolves every id, continuing past a failure on one id so
+// a single typo or already-resolved id in a batch (e.g. approving every
+// pending request update_jira_task_progress created for one call: an
+// editJiraIssueFields id and a addWorklog id together) doesn't block the
+// rest. It returns the first error encountered, after attempting them all,
+// so the command's exit code still reflects that something went wrong.
+func resolveApprovals(cmd *cobra.Command, ids []string, status protocol.ApprovalRecordStatus, approvedBy string) error {
 	a, err := loadApp()
 	if err != nil {
 		return err
 	}
 	defer a.Close()
 
-	if err := a.Approvals.Resolve(id, status, approvedBy); err != nil {
-		return err
+	out := cmd.OutOrStdout()
+	var firstErr error
+	for _, id := range ids {
+		if err := a.Approvals.Resolve(id, status, approvedBy); err != nil {
+			fmt.Fprintf(out, "%s: error: %v\n", id, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		fmt.Fprintf(out, "%s: %s\n", id, status)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", id, status)
-	return nil
+	return firstErr
 }

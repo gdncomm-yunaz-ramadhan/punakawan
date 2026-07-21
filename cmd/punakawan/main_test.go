@@ -211,3 +211,51 @@ func TestApprovalsListApproveDeny(t *testing.T) {
 		t.Fatalf("approvals deny: %v", err)
 	}
 }
+
+// TestApprovalsApproveMultipleIDsInOneCall covers the batch case a caller
+// hits after update_jira_task_progress requests approval for more than one
+// op (e.g. editJiraIssueFields and addWorklog) in a single call - approving
+// both should not require two separate commands, and one bad id should not
+// block resolving the others.
+func TestApprovalsApproveMultipleIDsInOneCall(t *testing.T) {
+	dir := newSmokeWorkspace(t)
+
+	a, err := app.Load(dir)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	defer a.Close()
+
+	recA := protocol.ApprovalRecord{
+		Id:          "approval-adapter-atlassian-atlassian.editJiraIssueFields-run-1",
+		RunId:       "run-1",
+		Operation:   protocol.ApprovalRecordOperationExternalWrite,
+		RequestedBy: protocol.ApprovalRecordRequestedByPetruk,
+		Status:      protocol.ApprovalRecordStatusPending,
+		CreatedAt:   time.Now().UTC(),
+	}
+	recB := recA
+	recB.Id = "approval-adapter-atlassian-atlassian.addWorklog-run-1"
+	if err := a.Approvals.Append(recA); err != nil {
+		t.Fatalf("seed recA: %v", err)
+	}
+	if err := a.Approvals.Append(recB); err != nil {
+		t.Fatalf("seed recB: %v", err)
+	}
+
+	out, err := runCLI(t, dir, "approvals", "approve", recA.Id, "does-not-exist", recB.Id, "--by", "ygrip")
+	if err == nil {
+		t.Fatal("expected an error since one of the three ids does not exist")
+	}
+	if !strings.Contains(out, recA.Id+": approved") || !strings.Contains(out, recB.Id+": approved") {
+		t.Fatalf("expected both real ids to be approved despite the bad id, got: %s", out)
+	}
+
+	list, err := runCLI(t, dir, "approvals", "list")
+	if err != nil {
+		t.Fatalf("approvals list: %v\n%s", err, list)
+	}
+	if strings.Contains(list, recA.Id) || strings.Contains(list, recB.Id) {
+		t.Fatalf("expected both to be resolved (no longer pending), got: %s", list)
+	}
+}
