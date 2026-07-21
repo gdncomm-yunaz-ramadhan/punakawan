@@ -34,8 +34,14 @@ type CallAdapterOperationOutput struct {
 // (adapters.Registry.Gate) and enforcing its approval requirements
 // (adapters.Gate.Call). Callers with a not-yet-approved, approval-required
 // op get a clear error, not a silent bypass or a hang: granting the
-// approval itself is a separate, not-yet-built surface (tracked
-// separately), matching start_task_execution's identical trust boundary.
+// approval is a separate, human-facing CLI surface by design (`punakawan
+// approvals list`/`approve`/`deny`, cmd/punakawan/approvals_cmd.go) rather
+// than another MCP tool, so the same connected agent that requested a write
+// cannot also approve its own request - this matters for one-off writes
+// called directly (outside a full workflow run's plan/review checkpoints):
+// the call above still creates the pending request, a human still has to
+// approve it out-of-band, and only then does a retry of this same call
+// succeed.
 func callAdapterOperationHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CallAdapterOperationInput) (*mcp.CallToolResult, CallAdapterOperationOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CallAdapterOperationInput) (*mcp.CallToolResult, CallAdapterOperationOutput, error) {
 		gate, err := a.AdapterRegistry.Gate(ctx, in.AdapterId)
