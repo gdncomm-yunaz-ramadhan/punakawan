@@ -1,0 +1,45 @@
+pkg/protocol/doc.go
+  6c4a5633395342b7 6
+internal/prreview/prreview.go
+  6c4a5633395342b7 1-111
+internal/app/app.go
+  6c4a5633395342b7 20,39,106-110,126
+internal/mcpserver/tools.go
+  6c4a5633395342b7 149-167
+internal/mcpserver/tools_fixprreview_test.go
+  6c4a5633395342b7 1-92
+internal/mcpserver/tools_reviewpr.go
+  6c4a5633395342b7 1-238
+internal/mcpserver/tools_createpr_test.go
+  6c4a5633395342b7 20-24,27-28,34-36,38-39,45-48,73-74
+internal/mcpserver/tools_github.go
+  6c4a5633395342b7 1-44
+internal/prreview/prreview_test.go
+  6c4a5633395342b7 1-77
+protocol/reviewfinding.schema.json
+  6c4a5633395342b7 1-43
+internal/mcpserver/tools_reviewpr_test.go
+  6c4a5633395342b7 1-140
+internal/mcpserver/tools_fixprreview.go
+  6c4a5633395342b7 1-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "835c581a997f341845f89f6ad83a67974fe2d4a3",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 972,
+      "total_deletions": 46,
+      "accepted_lines": 935,
+      "overriden_lines": 0
+    }
+  }
+}
