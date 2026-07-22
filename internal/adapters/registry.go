@@ -41,18 +41,34 @@ type Registry struct {
 	specs     map[string]AdapterSpec
 	approvals *approvals.Store
 
-	mu      sync.Mutex
-	clients map[string]*Client
-	gates   map[string]*Gate
+	mu            sync.Mutex
+	clients       map[string]*Client
+	gates         map[string]*Gate
+	approvalScope string
 }
 
-// NewRegistry constructs a Registry for the given adapter specs.
+// NewRegistry constructs a Registry for the given adapter specs. Every Gate
+// it creates defaults to per-run_id approval scope; call SetApprovalScope
+// to widen it for every adapter this Registry serves.
 func NewRegistry(specs map[string]AdapterSpec, store *approvals.Store) *Registry {
 	return &Registry{
 		specs:     specs,
 		approvals: store,
 		clients:   make(map[string]*Client),
 		gates:     make(map[string]*Gate),
+	}
+}
+
+// SetApprovalScope sets the approval scope (policy.ApprovalsPolicy.Scope)
+// applied to every Gate this Registry creates from this point on, and to
+// every Gate already memoized (punokawan-cy8). Call once, before the first
+// Gate(ctx, ...) call, e.g. right after NewRegistry in internal/app.
+func (r *Registry) SetApprovalScope(mode string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.approvalScope = mode
+	for _, g := range r.gates {
+		g.SetApprovalScope(mode)
 	}
 }
 
@@ -97,6 +113,7 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 	}
 
 	gate := NewGate(adapterID, manifest, client, r.approvals)
+	gate.SetApprovalScope(r.approvalScope)
 	r.clients[adapterID] = client
 	r.gates[adapterID] = gate
 	return gate, nil

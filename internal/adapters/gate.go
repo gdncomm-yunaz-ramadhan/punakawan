@@ -27,20 +27,45 @@ type Gate struct {
 	manifest  protocol.AdapterManifest
 	client    caller
 	approvals *approvals.Store
+	// scopeMode is the workspace's policy.Approvals.Scope ("run" or "day");
+	// empty behaves as "run", so a Gate built without calling
+	// SetApprovalScope (every existing test does) keeps the original
+	// per-run_id behavior unchanged.
+	scopeMode string
 }
 
 // NewGate constructs a Gate for an already-started adapter client and its
-// manifest (as returned by the adapter's "initialize" call).
+// manifest (as returned by the adapter's "initialize" call). Approval scope
+// defaults to per-run_id; call SetApprovalScope to widen it.
 func NewGate(adapterID string, manifest protocol.AdapterManifest, client caller, store *approvals.Store) *Gate {
 	return &Gate{adapterID: adapterID, manifest: manifest, client: client, approvals: store}
 }
 
-// approvalID is scoped only to runID, not the adapter or operation: one human
-// approval covers every approval-required adapter write a run performs. A
-// different run still needs its own approval; the boundary is "this run may
-// write through configured adapters", not "write anything forever".
-func approvalID(runID string) string {
-	return fmt.Sprintf("approval-adapter-run-%s", runID)
+// SetApprovalScope sets how broad one human approval is for this Gate's
+// adapter-write requests (policy.ApprovalsPolicy.Scope; punokawan-cy8).
+func (g *Gate) SetApprovalScope(mode string) {
+	g.scopeMode = mode
+}
+
+// approvalID is scoped to a key, not the adapter or operation: one human
+// approval covers every approval-required adapter write sharing that key. A
+// different key still needs its own approval; the boundary is "whatever
+// this key identifies may write through configured adapters", not "write
+// anything forever".
+func approvalID(key string) string {
+	return fmt.Sprintf("approval-adapter-run-%s", key)
+}
+
+// scopeKey resolves runID to the actual key approvalID uses, honoring
+// g.scopeMode. "day" shares one approval across every run against this
+// adapter within a calendar UTC day (punokawan-cy8); anything else
+// (including the zero value) keeps the original per-run_id behavior, so a
+// Gate that never calls SetApprovalScope is unaffected.
+func (g *Gate) scopeKey(runID string) string {
+	if g.scopeMode == "day" {
+		return fmt.Sprintf("%s-day-%s", g.adapterID, time.Now().UTC().Format("2006-01-02"))
+	}
+	return runID
 }
 
 // requiresApproval reports whether op is declared approval-required in the
@@ -95,7 +120,7 @@ func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRe
 		return protocol.ApprovalRecord{}, nil
 	}
 
-	id := approvalID(runID)
+	id := approvalID(g.scopeKey(runID))
 
 	current, err := g.approvals.Current()
 	if err != nil {
@@ -126,12 +151,12 @@ func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRe
 // Approve marks a pending adapter-write request as approved, covering every
 // approval-required adapter operation this run performs.
 func (g *Gate) Approve(runID, approvedBy string) error {
-	return g.approvals.Resolve(approvalID(runID), protocol.ApprovalRecordStatusApproved, approvedBy)
+	return g.approvals.Resolve(approvalID(g.scopeKey(runID)), protocol.ApprovalRecordStatusApproved, approvedBy)
 }
 
 // Deny marks a pending adapter-write request as denied.
 func (g *Gate) Deny(runID, approvedBy string) error {
-	return g.approvals.Resolve(approvalID(runID), protocol.ApprovalRecordStatusDenied, approvedBy)
+	return g.approvals.Resolve(approvalID(g.scopeKey(runID)), protocol.ApprovalRecordStatusDenied, approvedBy)
 }
 
 // Call invokes op via the adapter's "execute" method, first checking that
@@ -141,13 +166,13 @@ func (g *Gate) Deny(runID, approvedBy string) error {
 // level "op" field (see packages/adapter-sdk/src/prototypeAdapter.ts).
 func (g *Gate) Call(ctx context.Context, runID, op string, params map[string]any) (json.RawMessage, error) {
 	if g.requiresApproval(op) {
+		id := approvalID(g.scopeKey(runID))
 		current, err := g.approvals.Current()
 		if err != nil {
 			return nil, err
 		}
-		rec, ok := current[approvalID(runID)]
+		rec, ok := current[id]
 		if !ok || rec.Status != protocol.ApprovalRecordStatusApproved {
-			id := approvalID(runID)
 			return nil, fmt.Errorf("adapters: adapter %q is not approved for run %q (requested op %q, approval id %q); approve with `punakawan approvals approve %s --by <your-name>` and retry", g.adapterID, runID, op, id, id)
 		}
 	}

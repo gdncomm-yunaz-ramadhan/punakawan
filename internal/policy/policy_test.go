@@ -1,6 +1,10 @@
 package policy
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 const fixturePolicyPath = "../../test/fixtures/policy.yaml"
 
@@ -24,6 +28,27 @@ func TestLoadFromFixture(t *testing.T) {
 	}
 	if p.Capabilities.Execution.TimeoutSeconds != 600 {
 		t.Errorf("execution.timeout_seconds: got %d, want 600", p.Capabilities.Execution.TimeoutSeconds)
+	}
+	if p.Approvals.Scope != "run" {
+		t.Errorf("approvals.scope: got %q, want the Default() value \"run\" to survive a fixture that doesn't override it", p.Approvals.Scope)
+	}
+}
+
+func TestLoadApprovalsScopeOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(path, []byte("approvals:\n  scope: day\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	p, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if p.Approvals.Scope != "day" {
+		t.Errorf("approvals.scope: got %q, want day", p.Approvals.Scope)
+	}
+	// Everything else must still fall back to Default(), not zero out.
+	if p.Capabilities.Git.ForcePush != LevelDeny {
+		t.Errorf("git.force_push: got %q, want the Default() value to survive an unrelated override", p.Capabilities.Git.ForcePush)
 	}
 }
 

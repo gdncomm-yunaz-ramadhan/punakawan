@@ -132,6 +132,30 @@ func waitUntilDead(t *testing.T, c *Client) {
 	}
 }
 
+func TestRegistrySetApprovalScopePropagatesToGates(t *testing.T) {
+	r := newTestRegistry(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer r.Close(ctx)
+
+	// Set before the Gate exists: newly created Gates must pick it up.
+	r.SetApprovalScope("day")
+	g, err := r.Gate(ctx, "prototype")
+	if err != nil {
+		t.Fatalf("Gate: %v", err)
+	}
+	if g.scopeMode != "day" {
+		t.Fatalf("scopeMode = %q, want day (set before Gate creation)", g.scopeMode)
+	}
+
+	// Set after the Gate already exists: the memoized instance must also
+	// pick it up, not just future Gate(...) callers.
+	r.SetApprovalScope("run")
+	if g.scopeMode != "run" {
+		t.Fatalf("scopeMode = %q, want run (set after Gate creation)", g.scopeMode)
+	}
+}
+
 func TestRegistryCloseShutsDownProcess(t *testing.T) {
 	r := newTestRegistry(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

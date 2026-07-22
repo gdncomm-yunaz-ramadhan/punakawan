@@ -84,9 +84,21 @@ type Capabilities struct {
 	Execution  ExecutionPolicy  `yaml:"execution"`
 }
 
+// ApprovalsPolicy controls how broad one human approval is, independent of
+// which operations require one (that's Capabilities' job). "run" (default)
+// scopes an adapter-write approval to a single run_id, as before. "day"
+// shares one approval across every run against the same adapter within a
+// calendar UTC day, so resuming the same ticket/task across multiple runs
+// on the same day doesn't re-prompt for an approval that was, in practice,
+// already granted for the same unit of work (punokawan-cy8).
+type ApprovalsPolicy struct {
+	Scope string `yaml:"scope"`
+}
+
 // Policy is a workspace's loaded capability policy.
 type Policy struct {
-	Capabilities Capabilities `yaml:"capabilities"`
+	Capabilities Capabilities    `yaml:"capabilities"`
+	Approvals    ApprovalsPolicy `yaml:"approvals"`
 }
 
 // Default returns a conservative built-in policy used when no policy.yaml
@@ -94,6 +106,7 @@ type Policy struct {
 // writes require approval, execution is network-restricted.
 func Default() *Policy {
 	return &Policy{
+		Approvals: ApprovalsPolicy{Scope: "run"},
 		Capabilities: Capabilities{
 			Git: GitPolicy{
 				Commit:             LevelAllow,

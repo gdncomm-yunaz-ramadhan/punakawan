@@ -87,6 +87,9 @@ func Load(startDir string) (*App, error) {
 		}
 	}
 
+	registry := adapters.NewRegistry(specs, store)
+	registry.SetApprovalScope(pol.Approvals.Scope)
+
 	return &App{
 		Workspace:       ws,
 		Policy:          pol,
@@ -95,7 +98,7 @@ func Load(startDir string) (*App, error) {
 		Inspector:       gitops.NewInspector(sup),
 		Worktrees:       gitops.NewWorktreeManager(sup, store, pol),
 		Workflow:        wf,
-		AdapterRegistry: adapters.NewRegistry(specs, store),
+		AdapterRegistry: registry,
 	}, nil
 }
 

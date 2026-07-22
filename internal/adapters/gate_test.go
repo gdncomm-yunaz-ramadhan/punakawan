@@ -164,6 +164,45 @@ func TestGateApprovalCoversDifferentAdaptersInSameRun(t *testing.T) {
 	}
 }
 
+func TestGateDayScopeSharesApprovalAcrossRunIDs(t *testing.T) {
+	g, fc := newTestGate(t)
+	g.SetApprovalScope("day")
+
+	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
+		t.Fatalf("RequestApproval run-1: %v", err)
+	}
+	if err := g.Approve("run-1", "ygrip"); err != nil {
+		t.Fatalf("Approve run-1: %v", err)
+	}
+
+	// A different run_id, same adapter, same day: punokawan-cy8's whole
+	// point is that resuming the same task across runs should not re-prompt.
+	if _, err := g.RequestApproval("run-2", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
+		t.Fatalf("RequestApproval run-2: %v", err)
+	}
+	if _, err := g.Call(context.Background(), "run-2", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
+		t.Fatalf("Call for run-2 without a separate approval: %v", err)
+	}
+	if len(fc.calls) != 1 {
+		t.Fatalf("calls = %+v, want one", fc.calls)
+	}
+}
+
+func TestGateRunScopeIsTheDefaultAndDoesNotShareAcrossRunIDs(t *testing.T) {
+	g, _ := newTestGate(t)
+
+	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
+		t.Fatalf("RequestApproval run-1: %v", err)
+	}
+	if err := g.Approve("run-1", "ygrip"); err != nil {
+		t.Fatalf("Approve run-1: %v", err)
+	}
+
+	if _, err := g.Call(context.Background(), "run-2", "atlassian.addJiraComment", nil); err == nil {
+		t.Fatal("expected run-2 to still need its own approval under the default run scope")
+	}
+}
+
 func TestOperationCategoryMapping(t *testing.T) {
 	cases := map[string]protocol.ApprovalRecordOperation{
 		"atlassian.updateConfluencePage": protocol.ApprovalRecordOperationConfluenceUpdate,
