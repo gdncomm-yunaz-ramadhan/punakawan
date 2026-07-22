@@ -6,6 +6,13 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 )
 
+// approvalGateNote is appended to every tool description whose handler can
+// trigger a write-approval gate (punokawan-7wv: gate mechanics were only
+// documented in the server's Instructions blob, not on the specific tool
+// that hits the gate). Kept short and shared rather than repeating
+// call_adapter_operation's full explanation on each one.
+const approvalGateNote = " Writes elicit one human approval for the whole run (see call_adapter_operation); unsupported clients must show the user Approve/Deny and call respond_to_adapter_approval."
+
 // registerTools adds the data-operation tools defined in §28.4, plus
 // create_workflow_run: §28.4 lists get_workflow_state/advance_workflow but
 // not a way to start a run in the first place, and the server cannot
@@ -49,7 +56,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "advance_workflow",
-		Description: "Transition a workflow run to a new state, appending a checkpoint (§18.1).",
+		Description: "Transition a workflow run to a new state, appending a checkpoint (§18.1). Valid next_state values: created, context-building, awaiting-clarification, planning, awaiting-approval, executing, reviewing, blocked, completed, failed, cancelled. Only §9's transition graph is accepted from the current state (e.g. created cannot jump straight to completed); blocked/failed/cancelled are reachable from any non-terminal state. Call get_workflow_state first if the valid next states from the current one aren't obvious.",
 	}, advanceWorkflowHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -80,7 +87,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "start_task_execution",
-		Description: "Create this task's isolated worktree and open its evidence bundle/journal (§11.1 steps 1-4). Requires a prior approved worktree-creation request.",
+		Description: "Create this task's isolated worktree and open its evidence bundle/journal (§11.1 steps 1-4). Requires a prior approved worktree-creation request: this is a human-run CLI step, not another MCP tool - ask the user to run `punakawan worktree approve <repo-id> <task-id>` in their own terminal, then retry this call.",
 	}, startTaskExecutionHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -136,7 +143,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "request_jira_clarification",
-		Description: "Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it.",
+		Description: "Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + approvalGateNote,
 	}, requestJiraClarificationHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -146,17 +153,17 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "sync_jira_subtasks",
-		Description: "Create Jira subtasks under a parent issue for candidates that don't already exist, deduplicating by normalized summary.",
+		Description: "Create Jira subtasks under a parent issue for candidates that don't already exist, deduplicating by normalized summary." + approvalGateNote,
 	}, syncJiraSubtasksHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_jira_task_progress",
-		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes.",
+		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes." + approvalGateNote,
 	}, updateJiraTaskProgressHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_jira_assessment",
-		Description: "Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result.",
+		Description: "Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result." + approvalGateNote,
 	}, submitJiraAssessmentHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
