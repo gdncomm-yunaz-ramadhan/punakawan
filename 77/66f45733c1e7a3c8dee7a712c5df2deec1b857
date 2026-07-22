@@ -1,0 +1,39 @@
+internal/gitops/commit_test.go
+  6c4a5633395342b7 8-9,68-118
+internal/gitops/capabilities.go
+  6c4a5633395342b7 93-137
+internal/gitops/commit.go
+  6c4a5633395342b7 70-95
+internal/mcpserver/tools_createpr.go
+  6c4a5633395342b7 1-226
+internal/mcpserver/tools.go
+  6c4a5633395342b7 139-147
+internal/mcpserver/tools_createpr_test.go
+  6c4a5633395342b7 1-196
+internal/gitops/capabilities_test.go
+  6c4a5633395342b7 52-81
+internal/mcpserver/tools_pushbranch_test.go
+  6c4a5633395342b7 1-89
+internal/mcpserver/tools_pushbranch.go
+  6c4a5633395342b7 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "7766f45733c1e7a3c8dee7a712c5df2deec1b857",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 841,
+      "total_deletions": 91,
+      "accepted_lines": 750,
+      "overriden_lines": 0
+    }
+  }
+}
