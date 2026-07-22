@@ -126,6 +126,11 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, checkOpenAPICompatibilityHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_task_evidence",
+		Description: "List every structured EvidenceRecord check_diff/run_tests/check_openapi_compatibility have recorded for a task (punokawan-s12), so a reviewer can enumerate its evidence without knowing the bundle's file-naming convention.",
+	}, listTaskEvidenceHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "commit_task",
 		Description: "Stage and commit a task's pending changes, refusing to do so unless a prior check_diff passed and the worktree is on a task branch (§15.4).",
 	}, commitTaskHandler(a))

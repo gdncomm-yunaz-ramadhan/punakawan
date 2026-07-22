@@ -3,12 +3,15 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/diffcheck"
+	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/gitops"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // CheckDiffInput is check_diff's input.
@@ -37,6 +40,14 @@ func checkDiffHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, Ch
 		report, err := diffcheck.Check(ctx, a.Supervisor, worktreePath, a.Policy, bundle)
 		if err != nil {
 			return nil, CheckDiffOutput{}, fmt.Errorf("mcpserver: check_diff: %w", err)
+		}
+
+		ledger, err := newEvidenceLedger(a, in.RunId)
+		if err != nil {
+			return nil, CheckDiffOutput{}, err
+		}
+		if _, err := evidence.RecordArtifact(ledger, in.RunId, in.TaskId, protocol.EvidenceRecordTypeGitDiff, bundle, "diff.patch", time.Now().UTC()); err != nil {
+			return nil, CheckDiffOutput{}, fmt.Errorf("mcpserver: record diff.patch evidence: %w", err)
 		}
 
 		return nil, CheckDiffOutput{

@@ -3,11 +3,14 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/openapicheck"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // CheckOpenAPICompatibilityInput is check_openapi_compatibility's input.
@@ -31,6 +34,14 @@ func checkOpenAPICompatibilityHandler(a *app.App) func(context.Context, *mcp.Cal
 		}
 		if err := openapicheck.WriteEvidence(bundle, result); err != nil {
 			return nil, openapicheck.Result{}, fmt.Errorf("mcpserver: write api-diff.json: %w", err)
+		}
+
+		ledger, err := newEvidenceLedger(a, in.RunId)
+		if err != nil {
+			return nil, openapicheck.Result{}, err
+		}
+		if _, err := evidence.RecordArtifact(ledger, in.RunId, in.TaskId, protocol.EvidenceRecordTypeApiDiff, bundle, "api-diff.json", time.Now().UTC()); err != nil {
+			return nil, openapicheck.Result{}, fmt.Errorf("mcpserver: record api-diff.json evidence: %w", err)
 		}
 
 		return nil, result, nil

@@ -20,3 +20,14 @@ func newEvidenceBundle(a *app.App, runID, taskID string) (*evidence.Bundle, erro
 	}
 	return bundle, nil
 }
+
+// newEvidenceLedger opens (creating if necessary) the structured evidence
+// ledger for runID under the workspace root (punokawan-s12). Like
+// newEvidenceBundle, it is re-derived per call from a deterministic path.
+func newEvidenceLedger(a *app.App, runID string) (*evidence.Ledger, error) {
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, runID)
+	if err != nil {
+		return nil, fmt.Errorf("mcpserver: open evidence ledger for run %q: %w", runID, err)
+	}
+	return ledger, nil
+}

@@ -3,11 +3,14 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/testrun"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // RunTestsInputCommand is one command to run in a run_tests call.
@@ -59,6 +62,14 @@ func runTestsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, Run
 		}
 		if err := testrun.WriteBundle(report, bundle); err != nil {
 			return nil, RunTestsOutput{}, fmt.Errorf("mcpserver: write tests.json: %w", err)
+		}
+
+		ledger, err := newEvidenceLedger(a, in.RunId)
+		if err != nil {
+			return nil, RunTestsOutput{}, err
+		}
+		if _, err := evidence.RecordArtifact(ledger, in.RunId, in.TaskId, protocol.EvidenceRecordTypeTestReport, bundle, "tests.json", time.Now().UTC()); err != nil {
+			return nil, RunTestsOutput{}, fmt.Errorf("mcpserver: record tests.json evidence: %w", err)
 		}
 
 		out := RunTestsOutput{Results: make([]RunTestsOutputResult, len(report.Results)), AllPassed: report.AllPassed}

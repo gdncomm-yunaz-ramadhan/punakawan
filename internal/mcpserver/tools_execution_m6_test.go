@@ -176,6 +176,15 @@ func TestTaskExecutionLifecycle(t *testing.T) {
 		t.Fatalf("expected diff check to pass, violations: %v", diffOut.Violations)
 	}
 
+	var evidenceOut ListTaskEvidenceOutput
+	callTool(t, cs, "list_task_evidence", map[string]any{
+		"run_id":  runID,
+		"task_id": taskID,
+	}, &evidenceOut)
+	if len(evidenceOut.Records) != 1 || evidenceOut.Records[0].Type != protocol.EvidenceRecordTypeGitDiff {
+		t.Fatalf("expected one git-diff evidence record after check_diff, got %+v", evidenceOut.Records)
+	}
+
 	commitArgs := map[string]any{
 		"repo_id":      repoID,
 		"task_id":      taskID,
