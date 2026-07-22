@@ -1,0 +1,39 @@
+internal/mcpserver/tools_evidence.go
+  6c4a5633395342b7 23-33
+internal/mcpserver/tools_openapicheck.go
+  6c4a5633395342b7 6,11,13,39-46
+internal/mcpserver/tools.go
+  6c4a5633395342b7 129-132
+internal/evidence/ledger.go
+  6c4a5633395342b7 1-125
+internal/mcpserver/tools_execution_m6_test.go
+  6c4a5633395342b7 179-187
+internal/mcpserver/tools_diffcheck.go
+  6c4a5633395342b7 6,12,14,45-52
+internal/mcpserver/tools_testrun.go
+  6c4a5633395342b7 6,11,13,67-74
+internal/mcpserver/tools_taskevidence.go
+  6c4a5633395342b7 1-44
+internal/evidence/ledger_test.go
+  6c4a5633395342b7 1-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "3d0b26ff2748dac02d31f2518650e06dd22fa4c3",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 331,
+      "total_deletions": 2,
+      "accepted_lines": 329,
+      "overriden_lines": 0
+    }
+  }
+}
