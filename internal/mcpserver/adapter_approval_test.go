@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -103,6 +104,47 @@ func TestApprovalFallsBackToCLIWhenClientCannotElicit(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"ACTION REQUIRED", "[Approve]", "[Deny]", "respond_to_adapter_approval", "punakawan approvals approve", "approval-adapter-run-run-cli"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("error %q does not contain %q", message, want)
+		}
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("adapter calls = %+v, want none", fc.calls)
+	}
+}
+
+// TestApprovalFallsBackToCLIOnElicitationError covers punokawan-c1x: a real
+// client that attempts elicitation (unlike the no-handler case above) but
+// fails with its own client-side error - observed in practice as a raw zod
+// schema-validation error from a TypeScript MCP client, not one of the
+// specific "unsupported" strings this code used to allowlist. The surfaced
+// error must still be punakawan's own clean, actionable message, not that
+// raw client error text.
+func TestApprovalFallsBackToCLIOnElicitationError(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
+	rawClientError := `Invalid params: [{"code":"invalid_type","expected":"string","received":"undefined","path":["params","mode"],"message":"Required"}]`
+	cs := connectApprovalServer(t, gate, &mcp.ClientOptions{
+		ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			return nil, errors.New(rawClientError)
+		},
+	})
+
+	res := callApprovalWrite(t, cs, "run-zod", "atlassian.addWorklog")
+	if !res.IsError {
+		t.Fatal("write succeeded despite an elicitation error")
+	}
+	message := ""
+	for _, content := range res.Content {
+		if text, ok := content.(*mcp.TextContent); ok {
+			message += text.Text
+		} else {
+			message += fmt.Sprint(content)
+		}
+	}
+	if strings.Contains(message, "invalid_type") || strings.Contains(message, rawClientError) {
+		t.Errorf("error %q leaks the raw client-side elicitation error", message)
+	}
+	for _, want := range []string{"ACTION REQUIRED", "[Approve]", "[Deny]", "punakawan approvals approve"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("error %q does not contain %q", message, want)
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -58,7 +57,12 @@ func ensureAdapterApproval(
 	// Always attempt MCP form elicitation first. Some clients have historically
 	// implemented the request before advertising the capability correctly; the
 	// SDK itself returns an unsupported error without sending when it truly
-	// cannot elicit.
+	// cannot elicit. Any error here - a clean "unsupported" error, a "method
+	// not found", or a client-side schema-validation error a real client's own
+	// SDK raises against ElicitParams (observed in practice as a raw zod
+	// error, punokawan-c1x) - means elicitation did not get a decision either
+	// way, so every case falls back to the same clean, actionable message
+	// rather than leaking whatever error text the client happened to return.
 	var result *mcp.ElicitResult
 	if req != nil && req.Session != nil {
 		result, err = req.Session.Elicit(ctx, &mcp.ElicitParams{
@@ -72,10 +76,7 @@ func ensureAdapterApproval(
 		err = fmt.Errorf("client does not support elicitation")
 	}
 	if err != nil {
-		if elicitationUnavailable(err) {
-			return fmt.Errorf("adapter write approval %q is pending for run %q. ACTION REQUIRED: ask the user to choose one option, and do not choose for them: [Approve] allow all configured adapter writes for this run; [Deny] block adapter writes for this run. After the user explicitly chooses, call respond_to_adapter_approval with approval_id=%q, decision=approve|deny, and confirmed_by=<user>, then retry the original operation only if approved. CLI alternative: `punakawan approvals approve %s --by <your-name>` or `punakawan approvals deny %s --by <your-name>`", rec.Id, runID, rec.Id, rec.Id, rec.Id)
-		}
-		return fmt.Errorf("elicit adapter write approval %q: %w", rec.Id, err)
+		return fmt.Errorf("adapter write approval %q is pending for run %q. ACTION REQUIRED: ask the user to choose one option, and do not choose for them: [Approve] allow all configured adapter writes for this run; [Deny] block adapter writes for this run. After the user explicitly chooses, call respond_to_adapter_approval with approval_id=%q, decision=approve|deny, and confirmed_by=<user>, then retry the original operation only if approved. CLI alternative: `punakawan approvals approve %s --by <your-name>` or `punakawan approvals deny %s --by <your-name>`", rec.Id, runID, rec.Id, rec.Id, rec.Id)
 	}
 	if result == nil {
 		return fmt.Errorf("elicit adapter write approval %q: client returned no result", rec.Id)
@@ -97,14 +98,6 @@ func ensureAdapterApproval(
 	default:
 		return fmt.Errorf("adapter write approval %q returned unknown elicitation action %q", rec.Id, result.Action)
 	}
-}
-
-func elicitationUnavailable(err error) bool {
-	detail := strings.ToLower(err.Error())
-	return strings.Contains(detail, "does not support elicitation") ||
-		strings.Contains(detail, "does not support \"form\" elicitation") ||
-		strings.Contains(detail, "method not found") ||
-		strings.Contains(detail, "unsupported method")
 }
 
 func elicitationApprover(req *mcp.CallToolRequest) string {
