@@ -1,0 +1,33 @@
+internal/gitops/capabilities_test.go
+  6c4a5633395342b7 1-256
+protocol/gitexecutionpolicy.schema.json
+  6c4a5633395342b7 1-24
+protocol/gitcapabilities.schema.json
+  6c4a5633395342b7 1-58
+pkg/protocol/doc.go
+  6c4a5633395342b7 6
+internal/gitops/capabilities.go
+  6c4a5633395342b7 1-344
+internal/gitops/inspect.go
+  6c4a5633395342b7 29-34,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "d74786336172cfa421052f99d28cb261a978545c",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 696,
+      "total_deletions": 7,
+      "accepted_lines": 690,
+      "overriden_lines": 0
+    }
+  }
+}
