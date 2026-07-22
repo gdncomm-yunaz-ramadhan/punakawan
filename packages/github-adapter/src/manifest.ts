@@ -28,6 +28,7 @@ export const manifest: AdapterManifest = {
     'github.getPullRequestFiles': { side_effect: false },
     'github.getPullRequestChecks': { side_effect: false },
     'github.listPullRequestComments': { side_effect: false },
+    'github.listUnresolvedReviewThreads': { side_effect: false },
     'github.createPullRequest': { side_effect: true, approval: 'required' },
     'github.addLabels': { side_effect: true, approval: 'required' },
     'github.requestReviewers': { side_effect: true, approval: 'required' },

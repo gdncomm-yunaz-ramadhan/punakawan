@@ -25,7 +25,7 @@ describe('manifest', () => {
   });
 
   test('declares every read operation as side-effect free', () => {
-    const readOps = ['github.getPullRequest', 'github.getPullRequestFiles', 'github.getPullRequestChecks', 'github.listPullRequestComments'];
+    const readOps = ['github.getPullRequest', 'github.getPullRequestFiles', 'github.getPullRequestChecks', 'github.listPullRequestComments', 'github.listUnresolvedReviewThreads'];
     for (const op of readOps) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
     }
@@ -67,6 +67,16 @@ describe('createHandlers().execute', () => {
     assert.equal(result.normalized.length, 2);
     assert.equal(result.normalized[0]?.kind, 'review');
     assert.equal(result.normalized[1]?.kind, 'issue');
+  });
+
+  test('github.listUnresolvedReviewThreads filters out resolved threads', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!({ op: 'github.listUnresolvedReviewThreads', repository: FIXTURE_REPO, pullRequestNumber: FIXTURE_PR_NUMBER }, new AbortController().signal)) as {
+      normalized: { id: string; comments: { body: string }[] }[];
+    };
+    assert.equal(result.normalized.length, 1);
+    assert.equal(result.normalized[0]?.id, 'thread-unresolved-1');
+    assert.equal(result.normalized[0]?.comments[0]?.body, 'This rounds down, should round to nearest cent.');
   });
 
   test('github.createPullRequest posts to the pulls endpoint', async () => {

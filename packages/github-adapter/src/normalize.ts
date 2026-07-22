@@ -118,6 +118,27 @@ export function normalizeReviewComment(payload: Record<string, unknown>): Normal
   };
 }
 
+export interface NormalizedReviewThread {
+  /** GraphQL node id - pass this to github.resolveReviewThread's threadId, not any REST comment id. */
+  id: string;
+  comments: NormalizedComment[];
+}
+
+export function normalizeGraphQLReviewComment(payload: Record<string, unknown>): NormalizedComment {
+  const author = asRecord(payload.author);
+  return {
+    id: String(payload.id ?? ''),
+    kind: 'review',
+    author: asString(author.login),
+    body: asString(payload.body) ?? '',
+    path: asString(payload.path),
+    line: asNumber(payload.line),
+    inReplyToId: undefined,
+    createdAt: asString(payload.createdAt),
+    updatedAt: asString(payload.updatedAt),
+  };
+}
+
 export function normalizeIssueComment(payload: Record<string, unknown>): NormalizedComment {
   const user = asRecord(payload.user);
   return {

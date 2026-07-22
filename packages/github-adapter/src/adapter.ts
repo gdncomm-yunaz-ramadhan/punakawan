@@ -9,6 +9,7 @@ import {
   getPullRequestChecks,
   getPullRequestFiles,
   listPullRequestComments,
+  listUnresolvedReviewThreads,
   replyToReviewComment,
   requestReviewers,
   resolveReviewThread,
@@ -72,6 +73,13 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
             throw new Error('github.listPullRequestComments requires "repository" and "pullRequestNumber"');
           }
           return listPullRequestComments(getClient(), { repository, pullRequestNumber });
+        }
+        case 'github.listUnresolvedReviewThreads': {
+          const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };
+          if (!repository || pullRequestNumber === undefined) {
+            throw new Error('github.listUnresolvedReviewThreads requires "repository" and "pullRequestNumber"');
+          }
+          return listUnresolvedReviewThreads(getClient(), { repository, pullRequestNumber });
         }
         case 'github.createPullRequest': {
           const { repository, baseBranch, headBranch, title, body, draft } = rest as {

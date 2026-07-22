@@ -34,6 +34,19 @@ export const FIXTURE_ISSUE_COMMENTS = [
   { id: 601, user: { login: 'reviewer2' }, body: 'LGTM once the rounding is fixed.', created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:00:00Z' },
 ];
 
+export const FIXTURE_REVIEW_THREADS = [
+  {
+    id: 'thread-unresolved-1',
+    isResolved: false,
+    comments: { nodes: [{ id: '501', body: 'This rounds down, should round to nearest cent.', path: 'src/refund.ts', line: 12, createdAt: '2026-07-20T01:00:00Z', author: { login: 'reviewer1' } }] },
+  },
+  {
+    id: 'thread-resolved-1',
+    isResolved: true,
+    comments: { nodes: [{ id: '502', body: 'Nevermind, this is fine.', path: 'src/refund.ts', line: 20, createdAt: '2026-07-20T01:30:00Z', author: { login: 'reviewer1' } }] },
+  },
+];
+
 export interface RecordedRestRequest {
   method: string;
   path: string;
@@ -73,6 +86,10 @@ export function createFakeGitHubRest(): FakeGitHubRest {
 
     if (url.pathname === '/graphql' && method === 'POST') {
       const variables = (parsedBody.variables ?? {}) as Record<string, unknown>;
+      const query = typeof parsedBody.query === 'string' ? parsedBody.query : '';
+      if (query.includes('UnresolvedReviewThreads')) {
+        return json({ data: { repository: { pullRequest: { reviewThreads: { nodes: FIXTURE_REVIEW_THREADS } } } } });
+      }
       const threadId = typeof variables.threadId === 'string' ? variables.threadId : '';
       resolvedThreadIds.push(threadId);
       return json({ data: { resolveReviewThread: { thread: { id: threadId, isResolved: true } } } });

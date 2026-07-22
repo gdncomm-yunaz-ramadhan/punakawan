@@ -1,10 +1,12 @@
 import type { GitHubRestClient } from './restClient.js';
 import {
   normalizeCheckRun,
+  normalizeGraphQLReviewComment,
   normalizeIssueComment,
   normalizePullRequest,
   normalizePullRequestFile,
   normalizeReviewComment,
+  type NormalizedReviewThread,
 } from './normalize.js';
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -138,6 +140,58 @@ export async function replyToReviewComment(client: GitHubRestClient, params: Rep
     { method: 'POST', body: { body: params.body } },
   );
   return { normalized: normalizeReviewComment(raw.data) };
+}
+
+const UNRESOLVED_REVIEW_THREADS_QUERY = `
+  query UnresolvedReviewThreads($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100) {
+          nodes {
+            id
+            isResolved
+            comments(first: 50) {
+              nodes { id body path line createdAt author { login } }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export interface ListUnresolvedReviewThreadsParams extends RepoRef {
+  pullRequestNumber: number;
+}
+
+interface GraphQLReviewThreadsResponse {
+  repository: {
+    pullRequest: {
+      reviewThreads: {
+        nodes: { id: string; isResolved: boolean; comments: { nodes: Record<string, unknown>[] } }[];
+      };
+    };
+  };
+}
+
+/**
+ * Fetches a PR's still-open review threads via GraphQL - REST's pulls
+ * comments endpoint has no per-comment resolution state at all, so
+ * filtering to "unresolved" is only possible through GraphQL's
+ * reviewThreads.isResolved field (docs.github.com/en/graphql/reference/objects#pullrequestreviewthread).
+ */
+export async function listUnresolvedReviewThreads(client: GitHubRestClient, params: ListUnresolvedReviewThreadsParams) {
+  const { owner, repo } = splitRepo(params.repository);
+  const data = await client.graphql<GraphQLReviewThreadsResponse>(UNRESOLVED_REVIEW_THREADS_QUERY, {
+    owner, name: repo, number: params.pullRequestNumber,
+  });
+  const threads = data.repository.pullRequest.reviewThreads.nodes
+    .filter((thread) => !thread.isResolved)
+    .map((thread): NormalizedReviewThread => ({
+      id: thread.id,
+      comments: asArray(thread.comments.nodes).map((entry) => normalizeGraphQLReviewComment(asRecord(entry))),
+    }));
+  return { normalized: threads };
 }
 
 const RESOLVE_REVIEW_THREAD_MUTATION = `
