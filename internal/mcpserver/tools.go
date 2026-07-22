@@ -82,7 +82,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "build_task_context",
-		Description: "Assemble the fresh, bounded per-task execution context (§11.2) and write it as this task's task.yaml evidence (§17.2). Read-only against the knowledge store. requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested.",
+		Description: "Assemble the fresh, bounded per-task execution context (§11.2) and write it as this task's task.yaml evidence (§17.2). Read-only against the knowledge store. requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested. Resuming the same task_id (e.g. impl -> tests -> review): task_scope, task_acceptance_criteria, task_definition_of_done, task_expected_files_or_components, affected_symbols_and_files, and required_tests each default to the value from that task_id's last call when omitted - pass only the fields that actually changed, not the full payload every time.",
 	}, buildTaskContextHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{

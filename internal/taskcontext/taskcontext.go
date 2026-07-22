@@ -89,6 +89,25 @@ type BuildInput struct {
 	// contract, not yet captured as knowledge.
 	KnownConstraints []string
 
+	// Previous is the Context this same TaskID's last build_task_context
+	// call produced (loaded from its task.yaml evidence, if one exists),
+	// used to fill in whichever of TaskScope, TaskAcceptanceCriteria,
+	// TaskDefinitionOfDone, TaskExpectedFilesOrComponents,
+	// AffectedSymbolsAndFiles, and RequiredTests the caller leaves at their
+	// zero value on a resume call. This is punokawan-d87's fix: a task
+	// commonly resumes across more than one build_task_context/
+	// start_task_execution round (impl -> tests -> review), and without
+	// this, each round had to resend the full scope/AC/constraints text
+	// verbatim even when only one field actually changed. RelatedDecisions,
+	// RelevantSourceExcerpts, KnownConstraints, and PreviousTaskOutputs are
+	// deliberately NOT inherited from Previous - Build already re-derives
+	// those fresh from the live knowledge store every call, which is
+	// strictly more current than replaying Previous's already-merged copy
+	// (and, for KnownConstraints/PreviousTaskOutputs specifically, would
+	// double-append the store-derived portion on every resume). nil is the
+	// normal value for a task's first build_task_context call.
+	Previous *Context
+
 	// PreviousTaskOutputs are short caller-supplied summaries of what
 	// earlier tasks in this run produced (e.g. "task bd-a1: added
 	// RefundService.Settle"). Per §11.2, later tasks should not receive the
@@ -181,6 +200,8 @@ func Build(ctx context.Context, store *knowledge.Store, in BuildInput) (Context,
 		return Context{}, fmt.Errorf("taskcontext: requirement id is required")
 	}
 
+	in = applyPrevious(in)
+
 	req, err := store.Get(in.RequirementID)
 	if errors.Is(err, knowledge.ErrNotFound) {
 		return Context{}, fmt.Errorf("taskcontext: no requirement record %q exists yet; for a Jira-sourced requirement, call ingest_jira_requirement first: %w", in.RequirementID, err)
@@ -254,6 +275,60 @@ func Build(ctx context.Context, store *knowledge.Store, in BuildInput) (Context,
 		PreviousTaskOutputs:     previousTaskOutputs,
 		KnownConstraints:        knownConstraints,
 	}, nil
+}
+
+// applyPrevious fills in whichever of in's inheritable fields are at their
+// zero value from in.Previous, per BuildInput.Previous's doc comment. It
+// leaves in unchanged when Previous is nil (a task's first
+// build_task_context call) or when a field was already supplied.
+func applyPrevious(in BuildInput) BuildInput {
+	if in.Previous == nil {
+		return in
+	}
+	prev := in.Previous.TaskDefinition
+	if in.TaskScope == "" {
+		in.TaskScope = prev.Scope
+	}
+	if len(in.TaskAcceptanceCriteria) == 0 {
+		in.TaskAcceptanceCriteria = prev.AcceptanceCriteria
+	}
+	if in.TaskDefinitionOfDone == "" {
+		in.TaskDefinitionOfDone = prev.DefinitionOfDone
+	}
+	if len(in.TaskExpectedFilesOrComponents) == 0 {
+		in.TaskExpectedFilesOrComponents = prev.ExpectedFilesOrComponents
+	}
+	if len(in.AffectedSymbolsAndFiles) == 0 {
+		in.AffectedSymbolsAndFiles = in.Previous.AffectedSymbolsAndFiles
+	}
+	if len(in.RequiredTests) == 0 {
+		in.RequiredTests = in.Previous.RequiredTests
+	}
+	return in
+}
+
+// ReadYAML loads a Context previously written by WriteYAML/WriteToBundle
+// from path, for a resuming build_task_context call to pass as
+// BuildInput.Previous. found is false (with a nil error) when path does not
+// exist yet, e.g. a task's first call.
+func ReadYAML(path string) (c Context, found bool, err error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return Context{}, false, nil
+	}
+	if err != nil {
+		return Context{}, false, fmt.Errorf("taskcontext: read %s: %w", path, err)
+	}
+	if err := yaml.Unmarshal(data, &c); err != nil {
+		return Context{}, false, fmt.Errorf("taskcontext: decode %s: %w", path, err)
+	}
+	return c, true, nil
+}
+
+// ReadFromBundle is ReadYAML for a task's task.yaml evidence file within
+// bundle, mirroring WriteToBundle.
+func ReadFromBundle(bundle *evidence.Bundle) (Context, bool, error) {
+	return ReadYAML(bundle.Path("task.yaml"))
 }
 
 // WriteYAML marshals c to YAML and writes it to path.

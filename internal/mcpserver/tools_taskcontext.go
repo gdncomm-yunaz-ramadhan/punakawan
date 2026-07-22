@@ -32,7 +32,20 @@ func buildTaskContextHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 			return nil, taskcontext.Context{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
 
-		built, err := taskcontext.Build(ctx, store, taskcontext.BuildInput{
+		// The evidence bundle path is deterministic per (run_id, task_id) and
+		// NewBundle only ensures the directory exists, so opening it before
+		// Build - to check for a prior task.yaml - is safe even on a task's
+		// very first call (nothing to find yet).
+		bundle, err := newEvidenceBundle(a, in.RunId, in.TaskId)
+		if err != nil {
+			return nil, taskcontext.Context{}, err
+		}
+		previous, found, err := taskcontext.ReadFromBundle(bundle)
+		if err != nil {
+			return nil, taskcontext.Context{}, fmt.Errorf("mcpserver: read prior task context: %w", err)
+		}
+
+		buildInput := taskcontext.BuildInput{
 			TaskID:                        in.TaskId,
 			RequirementID:                 in.RequirementId,
 			TaskScope:                     in.TaskScope,
@@ -43,15 +56,16 @@ func buildTaskContextHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 			RequiredTests:                 in.RequiredTests,
 			KnownConstraints:              in.KnownConstraints,
 			PreviousTaskOutputs:           in.PreviousTaskOutputs,
-		})
+		}
+		if found {
+			buildInput.Previous = &previous
+		}
+
+		built, err := taskcontext.Build(ctx, store, buildInput)
 		if err != nil {
 			return nil, taskcontext.Context{}, fmt.Errorf("mcpserver: build task context: %w", err)
 		}
 
-		bundle, err := newEvidenceBundle(a, in.RunId, in.TaskId)
-		if err != nil {
-			return nil, taskcontext.Context{}, err
-		}
 		if err := taskcontext.WriteToBundle(built, bundle); err != nil {
 			return nil, taskcontext.Context{}, fmt.Errorf("mcpserver: write task.yaml: %w", err)
 		}

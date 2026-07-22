@@ -258,6 +258,142 @@ func TestWriteToBundleWritesYAML(t *testing.T) {
 	}
 }
 
+func TestBuildInheritsOmittedFieldsFromPrevious(t *testing.T) {
+	store := newTestStore(t)
+	req := baseRecord("pkw:requirement/test-ws/REQ-3", protocol.KnowledgeRecordTypeRequirement, "Resume across rounds")
+	if err := store.Put(req); err != nil {
+		t.Fatalf("seed requirement Put: %v", err)
+	}
+
+	first, err := Build(context.Background(), store, BuildInput{
+		TaskID:                        "bd-task-3",
+		RequirementID:                 req.Id,
+		TaskScope:                     "Implement the thing",
+		TaskAcceptanceCriteria:        []string{"It works"},
+		TaskDefinitionOfDone:          "Merged",
+		TaskExpectedFilesOrComponents: []string{"internal/thing/thing.go"},
+		AffectedSymbolsAndFiles:       []string{"Thing.Do"},
+		RequiredTests:                 []string{"TestThing_Do"},
+	})
+	if err != nil {
+		t.Fatalf("first Build: %v", err)
+	}
+
+	// Resume: only RequiredTests actually changed for this round. Every
+	// other field is omitted (zero value) and must be inherited from
+	// Previous rather than coming back empty.
+	second, err := Build(context.Background(), store, BuildInput{
+		TaskID:        "bd-task-3",
+		RequirementID: req.Id,
+		RequiredTests: []string{"TestThing_Do", "TestThing_DoTwice"},
+		Previous:      &first,
+	})
+	if err != nil {
+		t.Fatalf("second Build: %v", err)
+	}
+
+	if second.TaskDefinition.Scope != first.TaskDefinition.Scope {
+		t.Errorf("Scope: got %q, want inherited %q", second.TaskDefinition.Scope, first.TaskDefinition.Scope)
+	}
+	if !equalStrings(second.TaskDefinition.AcceptanceCriteria, first.TaskDefinition.AcceptanceCriteria) {
+		t.Errorf("AcceptanceCriteria: got %v, want inherited %v", second.TaskDefinition.AcceptanceCriteria, first.TaskDefinition.AcceptanceCriteria)
+	}
+	if second.TaskDefinition.DefinitionOfDone != first.TaskDefinition.DefinitionOfDone {
+		t.Errorf("DefinitionOfDone: got %q, want inherited %q", second.TaskDefinition.DefinitionOfDone, first.TaskDefinition.DefinitionOfDone)
+	}
+	if !equalStrings(second.TaskDefinition.ExpectedFilesOrComponents, first.TaskDefinition.ExpectedFilesOrComponents) {
+		t.Errorf("ExpectedFilesOrComponents: got %v, want inherited %v", second.TaskDefinition.ExpectedFilesOrComponents, first.TaskDefinition.ExpectedFilesOrComponents)
+	}
+	if !equalStrings(second.AffectedSymbolsAndFiles, first.AffectedSymbolsAndFiles) {
+		t.Errorf("AffectedSymbolsAndFiles: got %v, want inherited %v", second.AffectedSymbolsAndFiles, first.AffectedSymbolsAndFiles)
+	}
+	if !equalStrings(second.RequiredTests, []string{"TestThing_Do", "TestThing_DoTwice"}) {
+		t.Errorf("RequiredTests: got %v, want the explicitly-supplied value, not inherited", second.RequiredTests)
+	}
+}
+
+func TestBuildExplicitFieldsOverridePrevious(t *testing.T) {
+	store := newTestStore(t)
+	req := baseRecord("pkw:requirement/test-ws/REQ-4", protocol.KnowledgeRecordTypeRequirement, "Override on resume")
+	if err := store.Put(req); err != nil {
+		t.Fatalf("seed requirement Put: %v", err)
+	}
+
+	first, err := Build(context.Background(), store, BuildInput{
+		TaskID:        "bd-task-4",
+		RequirementID: req.Id,
+		TaskScope:     "Original scope",
+	})
+	if err != nil {
+		t.Fatalf("first Build: %v", err)
+	}
+
+	second, err := Build(context.Background(), store, BuildInput{
+		TaskID:        "bd-task-4",
+		RequirementID: req.Id,
+		TaskScope:     "Narrowed scope",
+		Previous:      &first,
+	})
+	if err != nil {
+		t.Fatalf("second Build: %v", err)
+	}
+	if second.TaskDefinition.Scope != "Narrowed scope" {
+		t.Fatalf("Scope: got %q, want the explicitly-supplied value to win over Previous", second.TaskDefinition.Scope)
+	}
+}
+
+func TestReadYAMLMissingFileReturnsNotFound(t *testing.T) {
+	root := t.TempDir()
+	_, found, err := ReadYAML(filepath.Join(root, "does-not-exist.yaml"))
+	if err != nil {
+		t.Fatalf("ReadYAML: %v", err)
+	}
+	if found {
+		t.Fatal("found = true for a nonexistent file, want false")
+	}
+}
+
+func TestReadFromBundleRoundTripsWriteToBundle(t *testing.T) {
+	store := newTestStore(t)
+	req := baseRecord("pkw:requirement/test-ws/REQ-5", protocol.KnowledgeRecordTypeRequirement, "Round trip via bundle")
+	if err := store.Put(req); err != nil {
+		t.Fatalf("seed requirement Put: %v", err)
+	}
+
+	built, err := Build(context.Background(), store, BuildInput{
+		TaskID:        "bd-task-5",
+		RequirementID: req.Id,
+		TaskScope:     "Round trip scope",
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	bundle, err := evidence.NewBundle(t.TempDir(), "run-1", "bd-task-5")
+	if err != nil {
+		t.Fatalf("NewBundle: %v", err)
+	}
+
+	if _, found, err := ReadFromBundle(bundle); err != nil || found {
+		t.Fatalf("ReadFromBundle before any write: found=%v err=%v, want found=false err=nil", found, err)
+	}
+
+	if err := WriteToBundle(built, bundle); err != nil {
+		t.Fatalf("WriteToBundle: %v", err)
+	}
+
+	got, found, err := ReadFromBundle(bundle)
+	if err != nil {
+		t.Fatalf("ReadFromBundle: %v", err)
+	}
+	if !found {
+		t.Fatal("found = false after WriteToBundle, want true")
+	}
+	if got.TaskDefinition.Scope != "Round trip scope" {
+		t.Fatalf("Scope: got %q, want %q", got.TaskDefinition.Scope, "Round trip scope")
+	}
+}
+
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
