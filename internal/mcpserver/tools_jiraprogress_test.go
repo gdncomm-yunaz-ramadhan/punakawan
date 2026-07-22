@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
+	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -200,6 +201,34 @@ func TestUpdateJiraTaskProgressFailsWithoutApproval(t *testing.T) {
 
 	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in); err == nil {
 		t.Fatal("expected an error when addWorklog has not been approved")
+	}
+}
+
+func TestUpdateJiraTaskProgressEnqueuesFailureForRetry(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
+	approveOp(t, gate, "run-1", "atlassian.addWorklog")
+	fc.failOps = map[string]bool{"atlassian.addWorklog": true}
+
+	queue, err := syncqueue.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("syncqueue.Open: %v", err)
+	}
+	gate.SetSyncQueue(queue)
+
+	worklog := 1.0
+	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, RequestedBy: "petruk"}
+	cfg := &jiraworkflow.Config{}
+
+	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in); err == nil {
+		t.Fatal("expected the simulated adapter failure to surface")
+	}
+
+	pending, err := queue.Pending()
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if len(pending) != 1 || pending[0].Op != "atlassian.addWorklog" || pending[0].IssueIdOrKey != "PAY-1" {
+		t.Fatalf("Pending = %+v, want one queued atlassian.addWorklog failure for PAY-1", pending)
 	}
 }
 

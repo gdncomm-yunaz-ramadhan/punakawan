@@ -3,20 +3,30 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // fakeCaller records every "execute" call it receives instead of talking to
 // a real subprocess, so Gate's approval logic can be tested in isolation.
+// failOps, if set, makes Call return an error instead of a canned success
+// for any op named in it, so Gate's sync-queue-on-failure behavior
+// (punokawan-nbz) can be exercised without a real adapter failure.
 type fakeCaller struct {
-	calls []map[string]any
+	calls   []map[string]any
+	failOps map[string]bool
 }
 
 func (f *fakeCaller) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	f.calls = append(f.calls, params.(map[string]any))
+	args := params.(map[string]any)
+	f.calls = append(f.calls, args)
+	if op, _ := args["op"].(string); f.failOps[op] {
+		return nil, fmt.Errorf("simulated adapter failure for %q", op)
+	}
 	return json.RawMessage(`{"ok":true}`), nil
 }
 
@@ -200,6 +210,45 @@ func TestGateRunScopeIsTheDefaultAndDoesNotShareAcrossRunIDs(t *testing.T) {
 
 	if _, err := g.Call(context.Background(), "run-2", "atlassian.addJiraComment", nil); err == nil {
 		t.Fatal("expected run-2 to still need its own approval under the default run scope")
+	}
+}
+
+func TestCallEnqueuesFailureWhenSyncQueueIsSet(t *testing.T) {
+	store, err := approvals.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("approvals.Open: %v", err)
+	}
+	fc := &fakeCaller{failOps: map[string]bool{"atlassian.getJiraIssue": true}}
+	g := NewGate("atlassian", testManifest(), fc, store)
+
+	queue, err := syncqueue.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("syncqueue.Open: %v", err)
+	}
+	g.SetSyncQueue(queue)
+
+	if _, err := g.Call(context.Background(), "run-1", "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
+		t.Fatal("expected the simulated adapter failure to surface")
+	}
+
+	pending, err := queue.Pending()
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("Pending = %+v, want exactly one queued failure", pending)
+	}
+	if pending[0].Adapter != "atlassian" || pending[0].Op != "atlassian.getJiraIssue" || pending[0].IssueIdOrKey != "PAY-1" {
+		t.Fatalf("queued entry = %+v, want adapter/op/issue_id_or_key set from the failed call", pending[0])
+	}
+}
+
+func TestCallWithoutSyncQueueJustReturnsTheError(t *testing.T) {
+	g, fc := newTestGate(t)
+	fc.failOps = map[string]bool{"atlassian.getJiraIssue": true}
+
+	if _, err := g.Call(context.Background(), "run-1", "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
+		t.Fatal("expected the simulated adapter failure to surface")
 	}
 }
 

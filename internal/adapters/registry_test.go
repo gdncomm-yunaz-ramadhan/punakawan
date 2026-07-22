@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/syncqueue"
 )
 
 const prototypeAdapterPath = "../../packages/adapter-sdk/dist/prototypeAdapter.js"
@@ -153,6 +154,39 @@ func TestRegistrySetApprovalScopePropagatesToGates(t *testing.T) {
 	r.SetApprovalScope("run")
 	if g.scopeMode != "run" {
 		t.Fatalf("scopeMode = %q, want run (set after Gate creation)", g.scopeMode)
+	}
+}
+
+func TestRegistrySetSyncQueuePropagatesToGates(t *testing.T) {
+	r := newTestRegistry(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer r.Close(ctx)
+
+	queue, err := syncqueue.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("syncqueue.Open: %v", err)
+	}
+
+	// Set before the Gate exists: newly created Gates must pick it up.
+	r.SetSyncQueue(queue)
+	g, err := r.Gate(ctx, "prototype")
+	if err != nil {
+		t.Fatalf("Gate: %v", err)
+	}
+	if g.syncQueue != queue {
+		t.Fatal("syncQueue not set on a Gate created after SetSyncQueue")
+	}
+
+	// Set after the Gate already exists: the memoized instance must also
+	// pick it up, not just future Gate(...) callers.
+	other, err := syncqueue.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("syncqueue.Open: %v", err)
+	}
+	r.SetSyncQueue(other)
+	if g.syncQueue != other {
+		t.Fatal("syncQueue not updated on an already-memoized Gate")
 	}
 }
 

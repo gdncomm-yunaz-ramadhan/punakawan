@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -45,6 +46,7 @@ type Registry struct {
 	clients       map[string]*Client
 	gates         map[string]*Gate
 	approvalScope string
+	syncQueue     *syncqueue.Queue
 }
 
 // NewRegistry constructs a Registry for the given adapter specs. Every Gate
@@ -69,6 +71,18 @@ func (r *Registry) SetApprovalScope(mode string) {
 	r.approvalScope = mode
 	for _, g := range r.gates {
 		g.SetApprovalScope(mode)
+	}
+}
+
+// SetSyncQueue configures q on every Gate this Registry creates from this
+// point on, and on every Gate already memoized (punokawan-nbz), mirroring
+// SetApprovalScope.
+func (r *Registry) SetSyncQueue(q *syncqueue.Queue) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.syncQueue = q
+	for _, g := range r.gates {
+		g.SetSyncQueue(q)
 	}
 }
 
@@ -114,6 +128,7 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 
 	gate := NewGate(adapterID, manifest, client, r.approvals)
 	gate.SetApprovalScope(r.approvalScope)
+	gate.SetSyncQueue(r.syncQueue)
 	r.clients[adapterID] = client
 	r.gates[adapterID] = gate
 	return gate, nil

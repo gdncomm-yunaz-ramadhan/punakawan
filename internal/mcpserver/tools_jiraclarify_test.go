@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/adapters"
@@ -14,15 +15,21 @@ import (
 // fakeAtlassianCaller stands in for a real spawned adapter-atlassian
 // process, mirroring internal/adapters/gate_test.go's fakeCaller pattern -
 // exercising this handler's logic does not require live Jira credentials.
+// failOps, if set, makes Call return an error instead of a canned response
+// for any op named in it (punokawan-nbz's sync-queue-on-failure tests).
 type fakeAtlassianCaller struct {
 	calls     []map[string]any
 	responses map[string]string // raw JSON per op name, defaulting to {"ok":true}
+	failOps   map[string]bool
 }
 
 func (f *fakeAtlassianCaller) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	args, _ := params.(map[string]any)
 	f.calls = append(f.calls, args)
 	if op, _ := args["op"].(string); op != "" {
+		if f.failOps[op] {
+			return nil, fmt.Errorf("simulated adapter failure for %q", op)
+		}
 		if resp, ok := f.responses[op]; ok {
 			return json.RawMessage(resp), nil
 		}

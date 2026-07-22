@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -32,6 +33,11 @@ type Gate struct {
 	// SetApprovalScope (every existing test does) keeps the original
 	// per-run_id behavior unchanged.
 	scopeMode string
+	// syncQueue records a write that reaches the adapter (i.e. passed the
+	// approval check) but fails, for later retry (punokawan-nbz). nil by
+	// default, so a Gate built without calling SetSyncQueue (every existing
+	// test does) keeps the original behavior of simply returning the error.
+	syncQueue *syncqueue.Queue
 }
 
 // NewGate constructs a Gate for an already-started adapter client and its
@@ -45,6 +51,14 @@ func NewGate(adapterID string, manifest protocol.AdapterManifest, client caller,
 // adapter-write requests (policy.ApprovalsPolicy.Scope; punokawan-cy8).
 func (g *Gate) SetApprovalScope(mode string) {
 	g.scopeMode = mode
+}
+
+// SetSyncQueue configures q to record any write this Gate makes that fails
+// after passing its approval check, so it can be found and retried later
+// (punokawan-nbz) instead of the failure only ever existing as the error
+// returned from that one Call.
+func (g *Gate) SetSyncQueue(q *syncqueue.Queue) {
+	g.syncQueue = q
 }
 
 // approvalID is scoped to a key, not the adapter or operation: one human
@@ -183,5 +197,33 @@ func (g *Gate) Call(ctx context.Context, runID, op string, params map[string]any
 	}
 	merged["op"] = op
 
-	return g.client.Call(ctx, "execute", merged)
+	raw, err := g.client.Call(ctx, "execute", merged)
+	if err != nil && g.syncQueue != nil {
+		entryID := fmt.Sprintf("sync-%s-%s-%s", g.adapterID, op, issueKey(params))
+		entry, qerr := g.syncQueue.Enqueue(syncqueue.Entry{
+			Id:           entryID,
+			RunId:        runID,
+			Adapter:      g.adapterID,
+			Op:           op,
+			Params:       params,
+			IssueIdOrKey: issueKey(params),
+			Error:        err.Error(),
+			CreatedAt:    time.Now().UTC(),
+		})
+		if qerr != nil {
+			return nil, fmt.Errorf("adapters: call %q failed (%w), and recording it for retry also failed: %v", op, err, qerr)
+		}
+		return nil, fmt.Errorf("adapters: call %q failed: %w (recorded for retry as %q, attempt %d; use list_jira_sync_queue/retry_jira_sync_entry)", op, err, entry.Id, entry.Attempts)
+	}
+	return raw, err
+}
+
+// issueKey extracts the conventional "issueIdOrKey" parameter most Jira
+// adapter operations take, for sync-queue conflict detection. Operations
+// with no such parameter (or a non-string value) get an empty key, which
+// still lets Enqueue detect a conflict against another entry that also has
+// no issue key, just not one scoped to a specific issue.
+func issueKey(params map[string]any) string {
+	key, _ := params["issueIdOrKey"].(string)
+	return key
 }

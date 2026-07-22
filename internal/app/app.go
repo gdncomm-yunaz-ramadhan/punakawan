@@ -17,6 +17,7 @@ import (
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/policy"
+	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workspace"
@@ -33,6 +34,7 @@ type App struct {
 	Worktrees       *gitops.WorktreeManager
 	Workflow        *workflow.Store
 	AdapterRegistry *adapters.Registry
+	SyncQueue       *syncqueue.Queue
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
@@ -94,8 +96,14 @@ func Load(startDir string) (*App, error) {
 		}
 	}
 
+	syncQueue, err := syncqueue.Open(ws.Root)
+	if err != nil {
+		return nil, err
+	}
+
 	registry := adapters.NewRegistry(specs, store)
 	registry.SetApprovalScope(pol.Approvals.Scope)
+	registry.SetSyncQueue(syncQueue)
 
 	return &App{
 		Workspace:       ws,
@@ -107,6 +115,7 @@ func Load(startDir string) (*App, error) {
 		Worktrees:       gitops.NewWorktreeManager(sup, store, pol),
 		Workflow:        wf,
 		AdapterRegistry: registry,
+		SyncQueue:       syncQueue,
 	}, nil
 }
 

@@ -172,6 +172,16 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, updateJiraTaskProgressHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_jira_sync_queue",
+		Description: "List outbound adapter writes (Jira syncs) that reached the adapter but failed after passing their approval check, recorded for retry (punokawan-nbz). Defaults to pending entries only.",
+	}, listJiraSyncQueueHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "retry_jira_sync_entry",
+		Description: "Replay a list_jira_sync_queue entry's failed write through its original adapter. Marks it resolved on success; on failure it stays queued with an incremented attempt count.",
+	}, retryJiraSyncEntryHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_jira_assessment",
 		Description: "Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result." + approvalGateNote,
 	}, submitJiraAssessmentHandler(a))
