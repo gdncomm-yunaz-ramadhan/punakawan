@@ -8,11 +8,40 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// agentRoleIdentifiers are the four caller roles protocol.ApprovalRecord's
+// requested_by enum allows. §16.2 documents approved_by as "user", never a
+// requesting role - an approved_by value that matches one of these is the
+// concrete self-approval pattern reported in punakawan-d3s ("I ran it
+// myself by mistake"): an agent with shell access to the approvals CLI
+// reaches for its own role name (or any of the other three) rather than a
+// human identifying themselves, since that is the value already sitting in
+// its context. This does not authenticate that the caller is genuinely
+// human - a local CLI with no session/credential has no way to do that -
+// it only closes the specific reported pattern of an agent echoing an
+// agent-shaped identifier back as the approver.
+var agentRoleIdentifiers = map[string]bool{
+	string(protocol.ApprovalRecordRequestedBySemar):  true,
+	string(protocol.ApprovalRecordRequestedByGareng): true,
+	string(protocol.ApprovalRecordRequestedByPetruk): true,
+	string(protocol.ApprovalRecordRequestedByBagong): true,
+}
+
+// IsAgentRoleIdentifier reports whether approvedBy is one of the four agent
+// role identifiers rather than a human name, case- and whitespace-
+// insensitively. Shared with internal/gitops's own inline Resolve
+// equivalent (see its doc comment for why that one isn't migrated to call
+// this package outright), so the two approval paths reject the same
+// pattern identically.
+func IsAgentRoleIdentifier(approvedBy string) bool {
+	return agentRoleIdentifiers[strings.ToLower(strings.TrimSpace(approvedBy))]
+}
 
 // Store appends and reads approval records for a workspace. History is
 // append-only: resolving a request appends a new record with the same Id
@@ -134,6 +163,9 @@ func (s *Store) Resolve(id string, status protocol.ApprovalRecordStatus, approve
 	}
 	if rec.Status != protocol.ApprovalRecordStatusPending {
 		return fmt.Errorf("approvals: request %q is already %s", id, rec.Status)
+	}
+	if IsAgentRoleIdentifier(approvedBy) {
+		return fmt.Errorf("approvals: approved_by %q looks like an agent role, not a human identifying themselves; §16.2 requires a human name here - re-run with --by <your actual name>", approvedBy)
 	}
 
 	now := time.Now().UTC()

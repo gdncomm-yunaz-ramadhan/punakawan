@@ -88,6 +88,31 @@ func TestWorktreeRequestApproveCreateRemove(t *testing.T) {
 	}
 }
 
+func TestWorktreeApproveRejectsAgentRoleAsApprover(t *testing.T) {
+	repo := newCleanRepo(t)
+	workspace := t.TempDir()
+	mgr := newWorktreeManager(t, repo, workspace)
+
+	if _, err := mgr.RequestApproval("run-1", "repo-a", "task-1", protocol.ApprovalRecordRequestedByPetruk); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+
+	if err := mgr.Approve("repo-a", "task-1", "petruk"); err == nil {
+		t.Fatal("expected Approve to reject the requesting role approving its own request")
+	}
+	if err := mgr.Approve("repo-a", "task-1", "semar"); err == nil {
+		t.Fatal("expected Approve to reject any agent role name as approver, not just the requester's own")
+	}
+
+	if _, err := mgr.Create(context.Background(), workspace, repo, "repo-a", "task-1"); err == nil {
+		t.Fatal("expected Create to still fail: neither self-approval attempt should have gone through")
+	}
+
+	if err := mgr.Approve("repo-a", "task-1", "ygrip"); err != nil {
+		t.Fatalf("Approve with a real human name: %v", err)
+	}
+}
+
 func TestWorktreeCreateRefusesDirtyRepo(t *testing.T) {
 	repo := newTestRepo(t) // intentionally dirty, from inspect_test.go
 	workspace := t.TempDir()

@@ -141,6 +141,45 @@ func TestResolveAlreadyResolvedFails(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsAgentRoleAsApprover(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	req := protocol.ApprovalRecord{
+		Id:          "approval-1",
+		RunId:       "run-1",
+		Operation:   protocol.ApprovalRecordOperationGitPush,
+		RequestedBy: protocol.ApprovalRecordRequestedBySemar,
+		Status:      protocol.ApprovalRecordStatusPending,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := store.Append(req); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	// The requester (semar) approving its own request is the reported
+	// punakawan-d3s pattern, but so is any other agent role name - none of
+	// them is a human identifying themselves.
+	for _, approvedBy := range []string{"semar", "Semar", " GARENG ", "petruk", "bagong"} {
+		if err := store.Resolve("approval-1", protocol.ApprovalRecordStatusApproved, approvedBy); err == nil {
+			t.Fatalf("Resolve with approved_by %q: expected an error, got none", approvedBy)
+		}
+	}
+
+	current, err := store.Current()
+	if err != nil {
+		t.Fatalf("Current: %v", err)
+	}
+	if current["approval-1"].Status != protocol.ApprovalRecordStatusPending {
+		t.Fatalf("Status = %q, want still pending after every self-approval attempt was rejected", current["approval-1"].Status)
+	}
+
+	if err := store.Resolve("approval-1", protocol.ApprovalRecordStatusApproved, "ygrip"); err != nil {
+		t.Fatalf("Resolve with a real human name: %v", err)
+	}
+}
+
 func TestListOnEmptyStore(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

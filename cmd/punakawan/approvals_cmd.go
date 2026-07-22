@@ -15,6 +15,19 @@ import (
 // requested an action also grant it to itself, defeating the human-in-the-
 // loop point of the gate (§16.2's approved_by is documented as "user", not
 // the requesting role).
+//
+// This CLI has no session or credential of its own, so it cannot actually
+// authenticate that whoever runs it is human rather than the same agent
+// invoking it through its own shell access (punokawan-d3s). Resolve
+// rejects the one concrete pattern that showed up in practice - an agent
+// passing one of its own role names to --by, because that is the value
+// already in its context - but a caller determined to fabricate a
+// different, real-looking name is not stopped by anything here. The actual
+// human-in-the-loop guarantee is the MCP elicitation path in
+// ensureAdapterApproval (internal/mcpserver/adapter_approval.go): the
+// client's own UI shows Approve/Deny, which the connected agent cannot
+// script. This CLI is the documented fallback for clients that cannot
+// elicit, not the primary boundary.
 func newApprovalsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "approvals",

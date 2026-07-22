@@ -114,6 +114,9 @@ func (m *WorktreeManager) resolve(repoID, taskID string, status protocol.Approva
 	if !ok {
 		return fmt.Errorf("gitops: no approval request %q; call RequestApproval first", id)
 	}
+	if approvals.IsAgentRoleIdentifier(approvedBy) {
+		return fmt.Errorf("gitops: approved_by %q looks like an agent role, not a human identifying themselves; re-run with --by <your actual name>", approvedBy)
+	}
 
 	now := time.Now().UTC()
 	rec.Status = status
