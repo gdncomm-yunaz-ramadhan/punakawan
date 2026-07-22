@@ -161,9 +161,28 @@ func (m *WorktreeManager) Create(ctx context.Context, workspaceRoot, repoPath, r
 		return nil, fmt.Errorf("gitops: create worktree parent directory: %w", err)
 	}
 
+	// A task commonly resumes across more than one start_task_execution/
+	// finish_task_execution round (e.g. an implementation pass, then a
+	// later test/review pass on the same task_id) - finish_task_execution
+	// removes the worktree directory but intentionally leaves the branch
+	// and its commits in place. Re-running "git worktree add -b <branch>"
+	// for an already-existing branch fails, so check first and check the
+	// existing branch out instead of trying to recreate it.
+	branchExists, err := m.branchExists(ctx, repoPath, branch)
+	if err != nil {
+		return nil, fmt.Errorf("gitops: check existing task branch: %w", err)
+	}
+
+	args := []string{"worktree", "add"}
+	if branchExists {
+		args = append(args, worktreeDir, branch)
+	} else {
+		args = append(args, "-b", branch, worktreeDir)
+	}
+
 	res, err := m.sup.Run(ctx, tools.Spec{
 		Name: "git",
-		Args: []string{"worktree", "add", "-b", branch, worktreeDir},
+		Args: args,
 		Dir:  repoPath,
 	})
 	if err != nil {
@@ -174,6 +193,20 @@ func (m *WorktreeManager) Create(ctx context.Context, workspaceRoot, repoPath, r
 	}
 
 	return &Worktree{Path: worktreeDir, Branch: branch, BaseSHA: baseSHA}, nil
+}
+
+// branchExists reports whether branch already exists as a local branch in
+// repoPath.
+func (m *WorktreeManager) branchExists(ctx context.Context, repoPath, branch string) (bool, error) {
+	res, err := m.sup.Run(ctx, tools.Spec{
+		Name: "git",
+		Args: []string{"show-ref", "--verify", "--quiet", "refs/heads/" + branch},
+		Dir:  repoPath,
+	})
+	if err != nil {
+		return false, fmt.Errorf("git show-ref: %w", err)
+	}
+	return res.ExitCode == 0, nil
 }
 
 // Remove removes a previously created worktree from its base repository.
