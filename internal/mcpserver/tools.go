@@ -25,13 +25,18 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, buildContextDossierHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "request_capsule",
+		Description: "Build and persist an immutable, digested ContextCapsule for one Gareng/Petruk/Bagong invocation (architecture-enhancement-plan.md §6). Rejects requirement_ids/knowledge_ids whose record type is another role's output (e.g. bagong cannot cite a petruk-plan record) and allowed_tools entries a role must not have (e.g. bagong cannot be granted write_file). Call this before submit_gareng_review/submit_petruk_plan/submit_bagong_review, which require the returned id as capsule_id.",
+	}, requestCapsuleHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_gareng_review",
-		Description: "Validate and persist a Gareng feasibility/risk review (§8.2) as durable knowledge.",
+		Description: "Validate and persist a Gareng feasibility/risk review (§8.2) as durable knowledge. Requires capsule_id from a prior request_capsule call for role gareng.",
 	}, submitGarengReviewHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_petruk_plan",
-		Description: "Validate and persist a Petruk implementation-planning output (§8.3) as durable knowledge.",
+		Description: "Validate and persist a Petruk implementation-planning output (§8.3) as durable knowledge. Requires capsule_id from a prior request_capsule call for role petruk.",
 	}, submitPetrukPlanHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -41,7 +46,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_bagong_review",
-		Description: "Validate and persist a Bagong independent final review (§8.4) as durable knowledge.",
+		Description: "Validate and persist a Bagong independent final review (§8.4) as durable knowledge. Requires capsule_id from a prior request_capsule call for role bagong.",
 	}, submitBagongReviewHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{

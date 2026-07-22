@@ -32,16 +32,34 @@ func advanceRunToReviewing(t *testing.T, a *app.App, runID string) {
 	}
 }
 
+// bagongCapsuleID issues a bagong-role capsule for taskID via
+// requestCapsuleHandler, for tests exercising submit_bagong_review's now-
+// required capsule_id precondition (punokawan-ow9).
+func bagongCapsuleID(t *testing.T, a *app.App, taskID string) string {
+	t.Helper()
+	_, c, err := requestCapsuleHandler(a)(context.Background(), nil, RequestCapsuleInput{
+		TaskId:    taskID,
+		Role:      "bagong",
+		Objective: "test objective",
+	})
+	if err != nil {
+		t.Fatalf("request_capsule: %v", err)
+	}
+	return c.Id
+}
+
 func TestAdvanceWorkflowRefusesCompletionWithBlockingBagongFindings(t *testing.T) {
 	a := newTestApp(t)
 	newTestRun(t, a, "run-1")
 	advanceRunToReviewing(t, a, "run-1")
+	capsuleID := bagongCapsuleID(t, a, "run-1")
 
 	verdict := "reject"
 	summary := "found a regression"
 	if _, _, err := submitBagongReviewHandler(a)(context.Background(), nil, SubmitBagongReviewInput{
-		RunId: "run-1",
-		Title: "Bagong review",
+		RunId:     "run-1",
+		CapsuleId: capsuleID,
+		Title:     "Bagong review",
 		Review: protocol.KnowledgeRecordBagongReview{
 			Verdict:          &verdict,
 			HonestSummary:    &summary,
@@ -64,12 +82,14 @@ func TestAdvanceWorkflowAllowsCompletionWithCleanBagongReview(t *testing.T) {
 	a := newTestApp(t)
 	newTestRun(t, a, "run-1")
 	advanceRunToReviewing(t, a, "run-1")
+	capsuleID := bagongCapsuleID(t, a, "run-1")
 
 	verdict := "approve"
 	summary := "looks correct, no blocking issues"
 	if _, _, err := submitBagongReviewHandler(a)(context.Background(), nil, SubmitBagongReviewInput{
-		RunId: "run-1",
-		Title: "Bagong review",
+		RunId:     "run-1",
+		CapsuleId: capsuleID,
+		Title:     "Bagong review",
 		Review: protocol.KnowledgeRecordBagongReview{
 			Verdict:       &verdict,
 			HonestSummary: &summary,

@@ -21,9 +21,10 @@ func recordID(a *app.App, kind, localID string) string {
 
 // SubmitGarengReviewInput is submit_gareng_review's input.
 type SubmitGarengReviewInput struct {
-	Id     string                               `json:"id" jsonschema:"short local id for this review, e.g. the run id"`
-	Title  string                               `json:"title" jsonschema:"human-readable title"`
-	Review protocol.KnowledgeRecordGarengReview `json:"review" jsonschema:"the Gareng review payload (§8.2)"`
+	Id        string                               `json:"id" jsonschema:"short local id for this review, e.g. the run id"`
+	CapsuleId string                               `json:"capsule_id" jsonschema:"the request_capsule id (role gareng) this review was produced under"`
+	Title     string                               `json:"title" jsonschema:"human-readable title"`
+	Review    protocol.KnowledgeRecordGarengReview `json:"review" jsonschema:"the Gareng review payload (§8.2)"`
 }
 
 // SubmitOutput is the common confirmation shape every submit_* tool returns.
@@ -34,6 +35,9 @@ type SubmitOutput struct {
 
 func submitGarengReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitGarengReviewInput) (*mcp.CallToolResult, SubmitOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitGarengReviewInput) (*mcp.CallToolResult, SubmitOutput, error) {
+		if _, err := requireCapsuleForRole(a, in.CapsuleId, protocol.ContextCapsuleRoleGareng); err != nil {
+			return nil, SubmitOutput{}, err
+		}
 		store, err := a.OpenKnowledge()
 		if err != nil {
 			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
@@ -48,13 +52,17 @@ func submitGarengReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 
 // SubmitPetrukPlanInput is submit_petruk_plan's input.
 type SubmitPetrukPlanInput struct {
-	Id    string                             `json:"id" jsonschema:"short local id for this plan, e.g. the run id"`
-	Title string                             `json:"title" jsonschema:"human-readable title"`
-	Plan  protocol.KnowledgeRecordPetrukPlan `json:"plan" jsonschema:"the Petruk planning payload (§8.3)"`
+	Id        string                             `json:"id" jsonschema:"short local id for this plan, e.g. the run id"`
+	CapsuleId string                             `json:"capsule_id" jsonschema:"the request_capsule id (role petruk) this plan was produced under"`
+	Title     string                             `json:"title" jsonschema:"human-readable title"`
+	Plan      protocol.KnowledgeRecordPetrukPlan `json:"plan" jsonschema:"the Petruk planning payload (§8.3)"`
 }
 
 func submitPetrukPlanHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitPetrukPlanInput) (*mcp.CallToolResult, SubmitOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitPetrukPlanInput) (*mcp.CallToolResult, SubmitOutput, error) {
+		if _, err := requireCapsuleForRole(a, in.CapsuleId, protocol.ContextCapsuleRolePetruk); err != nil {
+			return nil, SubmitOutput{}, err
+		}
 		store, err := a.OpenKnowledge()
 		if err != nil {
 			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
@@ -72,13 +80,17 @@ func submitPetrukPlanHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 // advance_workflow completion gate (§18.1) looks up a run's Bagong review by
 // this exact id, so it cannot be left to a "usually the run id" convention.
 type SubmitBagongReviewInput struct {
-	RunId  string                               `json:"run_id" jsonschema:"the workflow run id this review belongs to"`
-	Title  string                               `json:"title" jsonschema:"human-readable title"`
-	Review protocol.KnowledgeRecordBagongReview `json:"review" jsonschema:"the Bagong review payload (§8.4)"`
+	RunId     string                               `json:"run_id" jsonschema:"the workflow run id this review belongs to"`
+	CapsuleId string                               `json:"capsule_id" jsonschema:"the request_capsule id (role bagong) this review was produced under"`
+	Title     string                               `json:"title" jsonschema:"human-readable title"`
+	Review    protocol.KnowledgeRecordBagongReview `json:"review" jsonschema:"the Bagong review payload (§8.4)"`
 }
 
 func submitBagongReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitBagongReviewInput) (*mcp.CallToolResult, SubmitOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitBagongReviewInput) (*mcp.CallToolResult, SubmitOutput, error) {
+		if _, err := requireCapsuleForRole(a, in.CapsuleId, protocol.ContextCapsuleRoleBagong); err != nil {
+			return nil, SubmitOutput{}, err
+		}
 		store, err := a.OpenKnowledge()
 		if err != nil {
 			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)

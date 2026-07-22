@@ -228,15 +228,33 @@ func requireDolt(t *testing.T) {
 	}
 }
 
+// requestTestCapsule calls request_capsule for role/taskID and returns its id.
+func requestTestCapsule(t *testing.T, cs *mcp.ClientSession, taskID, role string) string {
+	t.Helper()
+	var cap map[string]any
+	callTool(t, cs, "request_capsule", map[string]any{
+		"task_id":   taskID,
+		"role":      role,
+		"objective": "test objective",
+	}, &cap)
+	id, _ := cap["id"].(string)
+	if id == "" {
+		t.Fatalf("request_capsule returned no id: %+v", cap)
+	}
+	return id
+}
+
 func TestSubmitGarengReviewPersists(t *testing.T) {
 	requireDolt(t)
 	a := newTestApp(t)
 	cs := connect(t, a)
+	capsuleID := requestTestCapsule(t, cs, "bd-task-1", "gareng")
 
 	var out map[string]any
 	callTool(t, cs, "submit_gareng_review", map[string]any{
-		"id":    "run-1",
-		"title": "Gareng review",
+		"id":         "run-1",
+		"capsule_id": capsuleID,
+		"title":      "Gareng review",
 		"review": map[string]any{
 			"verdict":           "clarification_required",
 			"blocking_findings": []string{"no rollback plan"},
