@@ -1,0 +1,31 @@
+internal/gitops/worktree_test.go
+  6c4a5633395342b7 91-115
+internal/approvals/approvals.go
+  6c4a5633395342b7 11,18-44,167-169
+internal/gitops/worktree.go
+  6c4a5633395342b7 117-119
+internal/approvals/approvals_test.go
+  6c4a5633395342b7 144-182
+cmd/punakawan/approvals_cmd.go
+  6c4a5633395342b7 18-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "6a9847df1df22f429239ffffecf40d7f40f86dc7",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 112,
+      "total_deletions": 0,
+      "accepted_lines": 112,
+      "overriden_lines": 0
+    }
+  }
+}
