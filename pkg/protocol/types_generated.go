@@ -772,6 +772,221 @@ func (j *BrowserFlow) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// An immutable, hashable, bounded context handed to one Gareng/Petruk/Bagong
+// invocation. See punakawan-architecture-enhancement-plan.md §6 and AEP-M1
+// (punokawan-0m9). Digest is computed over
+// role/objective/requirements/acceptance_criteria/constraints/relevant_knowledge/evidence/allowed_tools/forbidden_actions
+// per §6.3 and must be recomputed (not mutated in place) if any of those fields
+// change.
+type ContextCapsule struct {
+	// AcceptanceCriteria corresponds to the JSON schema field "acceptance_criteria".
+	AcceptanceCriteria []string `json:"acceptance_criteria,omitempty,omitzero" yaml:"acceptance_criteria,omitempty" mapstructure:"acceptance_criteria,omitempty"`
+
+	// AllowedTools corresponds to the JSON schema field "allowed_tools".
+	AllowedTools []string `json:"allowed_tools" yaml:"allowed_tools" mapstructure:"allowed_tools"`
+
+	// Assumptions corresponds to the JSON schema field "assumptions".
+	Assumptions []string `json:"assumptions,omitempty,omitzero" yaml:"assumptions,omitempty" mapstructure:"assumptions,omitempty"`
+
+	// Constraints corresponds to the JSON schema field "constraints".
+	Constraints []string `json:"constraints,omitempty,omitzero" yaml:"constraints,omitempty" mapstructure:"constraints,omitempty"`
+
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Digest corresponds to the JSON schema field "digest".
+	Digest string `json:"digest" yaml:"digest" mapstructure:"digest"`
+
+	// Evidence corresponds to the JSON schema field "evidence".
+	Evidence []ContextCapsuleEvidenceElem `json:"evidence,omitempty,omitzero" yaml:"evidence,omitempty" mapstructure:"evidence,omitempty"`
+
+	// ExpectedOutput corresponds to the JSON schema field "expected_output".
+	ExpectedOutput *string `json:"expected_output,omitempty,omitzero" yaml:"expected_output,omitempty" mapstructure:"expected_output,omitempty"`
+
+	// ForbiddenActions corresponds to the JSON schema field "forbidden_actions".
+	ForbiddenActions []string `json:"forbidden_actions" yaml:"forbidden_actions" mapstructure:"forbidden_actions"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Objective corresponds to the JSON schema field "objective".
+	Objective string `json:"objective" yaml:"objective" mapstructure:"objective"`
+
+	// RelevantKnowledge corresponds to the JSON schema field "relevant_knowledge".
+	RelevantKnowledge []ContextCapsuleRelevantKnowledgeElem `json:"relevant_knowledge,omitempty,omitzero" yaml:"relevant_knowledge,omitempty" mapstructure:"relevant_knowledge,omitempty"`
+
+	// Requirements corresponds to the JSON schema field "requirements".
+	Requirements []ContextCapsuleRequirementsElem `json:"requirements,omitempty,omitzero" yaml:"requirements,omitempty" mapstructure:"requirements,omitempty"`
+
+	// Role corresponds to the JSON schema field "role".
+	Role ContextCapsuleRole `json:"role" yaml:"role" mapstructure:"role"`
+
+	// TaskId corresponds to the JSON schema field "task_id".
+	TaskId string `json:"task_id" yaml:"task_id" mapstructure:"task_id"`
+
+	// TokenBudget corresponds to the JSON schema field "token_budget".
+	TokenBudget *int `json:"token_budget,omitempty,omitzero" yaml:"token_budget,omitempty" mapstructure:"token_budget,omitempty"`
+
+	// UnresolvedQuestions corresponds to the JSON schema field
+	// "unresolved_questions".
+	UnresolvedQuestions []string `json:"unresolved_questions,omitempty,omitzero" yaml:"unresolved_questions,omitempty" mapstructure:"unresolved_questions,omitempty"`
+}
+
+type ContextCapsuleEvidenceElem struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContextCapsuleEvidenceElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ContextCapsuleEvidenceElem: required")
+	}
+	type Plain ContextCapsuleEvidenceElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ContextCapsuleEvidenceElem(plain)
+	return nil
+}
+
+type ContextCapsuleRelevantKnowledgeElem struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContextCapsuleRelevantKnowledgeElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ContextCapsuleRelevantKnowledgeElem: required")
+	}
+	type Plain ContextCapsuleRelevantKnowledgeElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ContextCapsuleRelevantKnowledgeElem(plain)
+	return nil
+}
+
+type ContextCapsuleRequirementsElem struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContextCapsuleRequirementsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ContextCapsuleRequirementsElem: required")
+	}
+	type Plain ContextCapsuleRequirementsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ContextCapsuleRequirementsElem(plain)
+	return nil
+}
+
+type ContextCapsuleRole string
+
+const ContextCapsuleRoleBagong ContextCapsuleRole = "bagong"
+const ContextCapsuleRoleGareng ContextCapsuleRole = "gareng"
+const ContextCapsuleRolePetruk ContextCapsuleRole = "petruk"
+
+var enumValues_ContextCapsuleRole = []interface{}{
+	"gareng",
+	"petruk",
+	"bagong",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContextCapsuleRole) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ContextCapsuleRole {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ContextCapsuleRole, v)
+	}
+	*j = ContextCapsuleRole(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContextCapsule) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["allowed_tools"]; raw != nil && !ok {
+		return fmt.Errorf("field allowed_tools in ContextCapsule: required")
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in ContextCapsule: required")
+	}
+	if _, ok := raw["digest"]; raw != nil && !ok {
+		return fmt.Errorf("field digest in ContextCapsule: required")
+	}
+	if _, ok := raw["forbidden_actions"]; raw != nil && !ok {
+		return fmt.Errorf("field forbidden_actions in ContextCapsule: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ContextCapsule: required")
+	}
+	if _, ok := raw["objective"]; raw != nil && !ok {
+		return fmt.Errorf("field objective in ContextCapsule: required")
+	}
+	if _, ok := raw["role"]; raw != nil && !ok {
+		return fmt.Errorf("field role in ContextCapsule: required")
+	}
+	if _, ok := raw["task_id"]; raw != nil && !ok {
+		return fmt.Errorf("field task_id in ContextCapsule: required")
+	}
+	type Plain ContextCapsule
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.Digest)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "Digest", `^sha256:[0-9a-f]{64}$`)
+	}
+	if plain.TokenBudget != nil && 1 > *plain.TokenBudget {
+		return fmt.Errorf("field %s: must be >= %v", "token_budget", 1)
+	}
+	*j = ContextCapsule(plain)
+	return nil
+}
+
 // Structured event record written to the JSONL event journal. See
 // punakawan-go-typescript-detailed-plan.md §7.5, §19.1.
 type Event struct {

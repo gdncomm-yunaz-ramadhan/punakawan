@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/capsule.schema.json",
+  "title": "ContextCapsule",
+  "description": "An immutable, hashable, bounded context handed to one Gareng/Petruk/Bagong invocation. See punakawan-architecture-enhancement-plan.md §6 and AEP-M1 (punokawan-0m9). Digest is computed over role/objective/requirements/acceptance_criteria/constraints/relevant_knowledge/evidence/allowed_tools/forbidden_actions per §6.3 and must be recomputed (not mutated in place) if any of those fields change.",
+  "type": "object",
+  "required": ["id", "digest", "task_id", "created_at", "role", "objective", "allowed_tools", "forbidden_actions"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "task_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+
+    "role": { "type": "string", "enum": ["gareng", "petruk", "bagong"] },
+    "objective": { "type": "string" },
+
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+    "constraints": { "type": "array", "items": { "type": "string" } },
+
+    "relevant_knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+
+    "assumptions": { "type": "array", "items": { "type": "string" } },
+    "unresolved_questions": { "type": "array", "items": { "type": "string" } },
+
+    "allowed_tools": { "type": "array", "items": { "type": "string" } },
+    "forbidden_actions": { "type": "array", "items": { "type": "string" } },
+
+    "expected_output": { "type": "string" },
+    "token_budget": { "type": "integer", "minimum": 1 }
+  }
+}
