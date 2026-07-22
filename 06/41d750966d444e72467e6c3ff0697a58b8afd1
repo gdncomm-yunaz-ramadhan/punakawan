@@ -1,0 +1,27 @@
+internal/workflow/workflow.go
+  6c4a5633395342b7 39-95,116-123,131-133
+internal/mcpserver/tools_workflow_test.go
+  6c4a5633395342b7 22-34,38,66,89
+internal/workflow/workflow_test.go
+  6c4a5633395342b7 57-60,67-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "0641d750966d444e72467e6c3ff0697a58b8afd1",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 158,
+      "total_deletions": 15,
+      "accepted_lines": 155,
+      "overriden_lines": 0
+    }
+  }
+}
