@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/gitcapabilities.schema.json",
+  "title": "GitCapabilities",
+  "description": "What Punakawan detected about a repository's git/remote/provider state. See punakawan-architecture-enhancement-plan.md §7.2-7.3.",
+  "type": "object",
+  "required": ["detected", "detached_head", "has_uncommitted_changes", "has_untracked_files", "remotes", "capabilities", "limitations"],
+  "additionalProperties": false,
+  "properties": {
+    "detected": { "type": "boolean" },
+    "repository_root": { "type": "string" },
+    "is_worktree": { "type": "boolean" },
+    "is_bare_repository": { "type": "boolean" },
+
+    "current_branch": { "type": "string" },
+    "detached_head": { "type": "boolean" },
+    "default_branch": { "type": "string" },
+
+    "has_uncommitted_changes": { "type": "boolean" },
+    "has_untracked_files": { "type": "boolean" },
+
+    "remotes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "fetch_url"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "fetch_url": { "type": "string" },
+          "push_url": { "type": "string" }
+        }
+      }
+    },
+    "provider": { "type": "string", "enum": ["github", "gitlab", "bitbucket", "generic"] },
+
+    "capabilities": {
+      "type": "object",
+      "required": [
+        "inspect_history", "create_branch", "create_worktree", "commit",
+        "push", "create_pull_request", "read_pull_request", "comment_pull_request"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "inspect_history": { "type": "boolean" },
+        "create_branch": { "type": "boolean" },
+        "create_worktree": { "type": "boolean" },
+        "commit": { "type": "boolean" },
+        "push": { "type": "boolean" },
+        "create_pull_request": { "type": "boolean" },
+        "read_pull_request": { "type": "boolean" },
+        "comment_pull_request": { "type": "boolean" }
+      }
+    },
+
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  }
+}

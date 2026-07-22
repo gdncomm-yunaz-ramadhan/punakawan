@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/gitexecutionpolicy.schema.json",
+  "title": "GitExecutionPolicy",
+  "description": "Effective git-behavior policy after merging detected GitCapabilities with repository policy and user overrides: 'effective behavior = detected capabilities ∩ repository policy ∩ user permission'. See punakawan-architecture-enhancement-plan.md §7.4-7.5.",
+  "type": "object",
+  "required": [
+    "source", "skip_git", "allow_branch_creation", "allow_worktree_creation",
+    "allow_commit", "allow_push", "allow_pull_request_creation"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source": { "type": "string", "enum": ["user", "repository-policy", "default"] },
+
+    "skip_git": { "type": "boolean" },
+    "allow_branch_creation": { "type": "boolean" },
+    "allow_worktree_creation": { "type": "boolean" },
+    "allow_commit": { "type": "boolean" },
+    "allow_push": { "type": "boolean" },
+    "allow_pull_request_creation": { "type": "boolean" },
+
+    "reason": { "type": "string" }
+  }
+}

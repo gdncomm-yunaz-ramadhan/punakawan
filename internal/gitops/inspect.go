@@ -26,6 +26,12 @@ type StatusResult struct {
 	// ChangedFiles lists the paths of modified/added/deleted/renamed/
 	// untracked files, in the order git reported them.
 	ChangedFiles []string
+	// UntrackedFiles lists only the untracked ('?') entries, a subset of
+	// ChangedFiles - kept separate so a caller (e.g. GitCapabilities'
+	// has_untracked_files, §7.2) can distinguish "nothing tracked changed
+	// but there's a new file" from "a tracked file changed" without
+	// reparsing the porcelain output itself.
+	UntrackedFiles []string
 }
 
 // Commit is a single entry from `git log`.
@@ -101,6 +107,7 @@ func parseStatus(out string) *StatusResult {
 			path := strings.TrimSpace(strings.TrimPrefix(line, "?"))
 			if path != "" {
 				result.ChangedFiles = append(result.ChangedFiles, path)
+				result.UntrackedFiles = append(result.UntrackedFiles, path)
 			}
 		}
 	}

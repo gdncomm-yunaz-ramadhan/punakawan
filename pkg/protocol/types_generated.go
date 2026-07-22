@@ -1257,6 +1257,318 @@ func (j *EvidenceRecord) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// What Punakawan detected about a repository's git/remote/provider state. See
+// punakawan-architecture-enhancement-plan.md §7.2-7.3.
+type GitCapabilities struct {
+	// Capabilities corresponds to the JSON schema field "capabilities".
+	Capabilities GitCapabilitiesCapabilities `json:"capabilities" yaml:"capabilities" mapstructure:"capabilities"`
+
+	// CurrentBranch corresponds to the JSON schema field "current_branch".
+	CurrentBranch *string `json:"current_branch,omitempty,omitzero" yaml:"current_branch,omitempty" mapstructure:"current_branch,omitempty"`
+
+	// DefaultBranch corresponds to the JSON schema field "default_branch".
+	DefaultBranch *string `json:"default_branch,omitempty,omitzero" yaml:"default_branch,omitempty" mapstructure:"default_branch,omitempty"`
+
+	// DetachedHead corresponds to the JSON schema field "detached_head".
+	DetachedHead bool `json:"detached_head" yaml:"detached_head" mapstructure:"detached_head"`
+
+	// Detected corresponds to the JSON schema field "detected".
+	Detected bool `json:"detected" yaml:"detected" mapstructure:"detected"`
+
+	// HasUncommittedChanges corresponds to the JSON schema field
+	// "has_uncommitted_changes".
+	HasUncommittedChanges bool `json:"has_uncommitted_changes" yaml:"has_uncommitted_changes" mapstructure:"has_uncommitted_changes"`
+
+	// HasUntrackedFiles corresponds to the JSON schema field "has_untracked_files".
+	HasUntrackedFiles bool `json:"has_untracked_files" yaml:"has_untracked_files" mapstructure:"has_untracked_files"`
+
+	// IsBareRepository corresponds to the JSON schema field "is_bare_repository".
+	IsBareRepository *bool `json:"is_bare_repository,omitempty,omitzero" yaml:"is_bare_repository,omitempty" mapstructure:"is_bare_repository,omitempty"`
+
+	// IsWorktree corresponds to the JSON schema field "is_worktree".
+	IsWorktree *bool `json:"is_worktree,omitempty,omitzero" yaml:"is_worktree,omitempty" mapstructure:"is_worktree,omitempty"`
+
+	// Limitations corresponds to the JSON schema field "limitations".
+	Limitations []string `json:"limitations" yaml:"limitations" mapstructure:"limitations"`
+
+	// Provider corresponds to the JSON schema field "provider".
+	Provider *GitCapabilitiesProvider `json:"provider,omitempty,omitzero" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
+
+	// Remotes corresponds to the JSON schema field "remotes".
+	Remotes []GitCapabilitiesRemotesElem `json:"remotes" yaml:"remotes" mapstructure:"remotes"`
+
+	// RepositoryRoot corresponds to the JSON schema field "repository_root".
+	RepositoryRoot *string `json:"repository_root,omitempty,omitzero" yaml:"repository_root,omitempty" mapstructure:"repository_root,omitempty"`
+}
+
+type GitCapabilitiesCapabilities struct {
+	// CommentPullRequest corresponds to the JSON schema field "comment_pull_request".
+	CommentPullRequest bool `json:"comment_pull_request" yaml:"comment_pull_request" mapstructure:"comment_pull_request"`
+
+	// Commit corresponds to the JSON schema field "commit".
+	Commit bool `json:"commit" yaml:"commit" mapstructure:"commit"`
+
+	// CreateBranch corresponds to the JSON schema field "create_branch".
+	CreateBranch bool `json:"create_branch" yaml:"create_branch" mapstructure:"create_branch"`
+
+	// CreatePullRequest corresponds to the JSON schema field "create_pull_request".
+	CreatePullRequest bool `json:"create_pull_request" yaml:"create_pull_request" mapstructure:"create_pull_request"`
+
+	// CreateWorktree corresponds to the JSON schema field "create_worktree".
+	CreateWorktree bool `json:"create_worktree" yaml:"create_worktree" mapstructure:"create_worktree"`
+
+	// InspectHistory corresponds to the JSON schema field "inspect_history".
+	InspectHistory bool `json:"inspect_history" yaml:"inspect_history" mapstructure:"inspect_history"`
+
+	// Push corresponds to the JSON schema field "push".
+	Push bool `json:"push" yaml:"push" mapstructure:"push"`
+
+	// ReadPullRequest corresponds to the JSON schema field "read_pull_request".
+	ReadPullRequest bool `json:"read_pull_request" yaml:"read_pull_request" mapstructure:"read_pull_request"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GitCapabilitiesCapabilities) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["comment_pull_request"]; raw != nil && !ok {
+		return fmt.Errorf("field comment_pull_request in GitCapabilitiesCapabilities: required")
+	}
+	if _, ok := raw["commit"]; raw != nil && !ok {
+		return fmt.Errorf("field commit in GitCapabilitiesCapabilities: required")
+	}
+	if _, ok := raw["create_branch"]; raw != nil && !ok {
+		return fmt.Errorf("field create_branch in GitCapabilitiesCapabilities: required")
+	}
+	if _, ok := raw["create_pull_request"]; raw != nil && !ok {
+		return fmt.Errorf("field create_pull_request in GitCapabilitiesCapabilities: required")
+	}
+	if _, ok := raw["create_worktree"]; raw != nil && !ok {
+		return fmt.Errorf("field create_worktree in GitCapabilitiesCapabilities: required")
+	}
+	if _, ok := raw["inspect_history"]; raw != nil && !ok {
+		return fmt.Errorf("field inspect_history in GitCapabilitiesCapabilities: required")
+	}
+	if _, ok := raw["push"]; raw != nil && !ok {
+		return fmt.Errorf("field push in GitCapabilitiesCapabilities: required")
+	}
+	if _, ok := raw["read_pull_request"]; raw != nil && !ok {
+		return fmt.Errorf("field read_pull_request in GitCapabilitiesCapabilities: required")
+	}
+	type Plain GitCapabilitiesCapabilities
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = GitCapabilitiesCapabilities(plain)
+	return nil
+}
+
+type GitCapabilitiesProvider string
+
+const GitCapabilitiesProviderBitbucket GitCapabilitiesProvider = "bitbucket"
+const GitCapabilitiesProviderGeneric GitCapabilitiesProvider = "generic"
+const GitCapabilitiesProviderGithub GitCapabilitiesProvider = "github"
+const GitCapabilitiesProviderGitlab GitCapabilitiesProvider = "gitlab"
+
+var enumValues_GitCapabilitiesProvider = []interface{}{
+	"github",
+	"gitlab",
+	"bitbucket",
+	"generic",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GitCapabilitiesProvider) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_GitCapabilitiesProvider {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_GitCapabilitiesProvider, v)
+	}
+	*j = GitCapabilitiesProvider(v)
+	return nil
+}
+
+type GitCapabilitiesRemotesElem struct {
+	// FetchUrl corresponds to the JSON schema field "fetch_url".
+	FetchUrl string `json:"fetch_url" yaml:"fetch_url" mapstructure:"fetch_url"`
+
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name" yaml:"name" mapstructure:"name"`
+
+	// PushUrl corresponds to the JSON schema field "push_url".
+	PushUrl *string `json:"push_url,omitempty,omitzero" yaml:"push_url,omitempty" mapstructure:"push_url,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GitCapabilitiesRemotesElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["fetch_url"]; raw != nil && !ok {
+		return fmt.Errorf("field fetch_url in GitCapabilitiesRemotesElem: required")
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in GitCapabilitiesRemotesElem: required")
+	}
+	type Plain GitCapabilitiesRemotesElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = GitCapabilitiesRemotesElem(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GitCapabilities) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["capabilities"]; raw != nil && !ok {
+		return fmt.Errorf("field capabilities in GitCapabilities: required")
+	}
+	if _, ok := raw["detached_head"]; raw != nil && !ok {
+		return fmt.Errorf("field detached_head in GitCapabilities: required")
+	}
+	if _, ok := raw["detected"]; raw != nil && !ok {
+		return fmt.Errorf("field detected in GitCapabilities: required")
+	}
+	if _, ok := raw["has_uncommitted_changes"]; raw != nil && !ok {
+		return fmt.Errorf("field has_uncommitted_changes in GitCapabilities: required")
+	}
+	if _, ok := raw["has_untracked_files"]; raw != nil && !ok {
+		return fmt.Errorf("field has_untracked_files in GitCapabilities: required")
+	}
+	if _, ok := raw["limitations"]; raw != nil && !ok {
+		return fmt.Errorf("field limitations in GitCapabilities: required")
+	}
+	if _, ok := raw["remotes"]; raw != nil && !ok {
+		return fmt.Errorf("field remotes in GitCapabilities: required")
+	}
+	type Plain GitCapabilities
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = GitCapabilities(plain)
+	return nil
+}
+
+// Effective git-behavior policy after merging detected GitCapabilities with
+// repository policy and user overrides: 'effective behavior = detected
+// capabilities ∩ repository policy ∩ user permission'. See
+// punakawan-architecture-enhancement-plan.md §7.4-7.5.
+type GitExecutionPolicy struct {
+	// AllowBranchCreation corresponds to the JSON schema field
+	// "allow_branch_creation".
+	AllowBranchCreation bool `json:"allow_branch_creation" yaml:"allow_branch_creation" mapstructure:"allow_branch_creation"`
+
+	// AllowCommit corresponds to the JSON schema field "allow_commit".
+	AllowCommit bool `json:"allow_commit" yaml:"allow_commit" mapstructure:"allow_commit"`
+
+	// AllowPullRequestCreation corresponds to the JSON schema field
+	// "allow_pull_request_creation".
+	AllowPullRequestCreation bool `json:"allow_pull_request_creation" yaml:"allow_pull_request_creation" mapstructure:"allow_pull_request_creation"`
+
+	// AllowPush corresponds to the JSON schema field "allow_push".
+	AllowPush bool `json:"allow_push" yaml:"allow_push" mapstructure:"allow_push"`
+
+	// AllowWorktreeCreation corresponds to the JSON schema field
+	// "allow_worktree_creation".
+	AllowWorktreeCreation bool `json:"allow_worktree_creation" yaml:"allow_worktree_creation" mapstructure:"allow_worktree_creation"`
+
+	// Reason corresponds to the JSON schema field "reason".
+	Reason *string `json:"reason,omitempty,omitzero" yaml:"reason,omitempty" mapstructure:"reason,omitempty"`
+
+	// SkipGit corresponds to the JSON schema field "skip_git".
+	SkipGit bool `json:"skip_git" yaml:"skip_git" mapstructure:"skip_git"`
+
+	// Source corresponds to the JSON schema field "source".
+	Source GitExecutionPolicySource `json:"source" yaml:"source" mapstructure:"source"`
+}
+
+type GitExecutionPolicySource string
+
+const GitExecutionPolicySourceDefault GitExecutionPolicySource = "default"
+const GitExecutionPolicySourceRepositoryPolicy GitExecutionPolicySource = "repository-policy"
+const GitExecutionPolicySourceUser GitExecutionPolicySource = "user"
+
+var enumValues_GitExecutionPolicySource = []interface{}{
+	"user",
+	"repository-policy",
+	"default",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GitExecutionPolicySource) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_GitExecutionPolicySource {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_GitExecutionPolicySource, v)
+	}
+	*j = GitExecutionPolicySource(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GitExecutionPolicy) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["allow_branch_creation"]; raw != nil && !ok {
+		return fmt.Errorf("field allow_branch_creation in GitExecutionPolicy: required")
+	}
+	if _, ok := raw["allow_commit"]; raw != nil && !ok {
+		return fmt.Errorf("field allow_commit in GitExecutionPolicy: required")
+	}
+	if _, ok := raw["allow_pull_request_creation"]; raw != nil && !ok {
+		return fmt.Errorf("field allow_pull_request_creation in GitExecutionPolicy: required")
+	}
+	if _, ok := raw["allow_push"]; raw != nil && !ok {
+		return fmt.Errorf("field allow_push in GitExecutionPolicy: required")
+	}
+	if _, ok := raw["allow_worktree_creation"]; raw != nil && !ok {
+		return fmt.Errorf("field allow_worktree_creation in GitExecutionPolicy: required")
+	}
+	if _, ok := raw["skip_git"]; raw != nil && !ok {
+		return fmt.Errorf("field skip_git in GitExecutionPolicy: required")
+	}
+	if _, ok := raw["source"]; raw != nil && !ok {
+		return fmt.Errorf("field source in GitExecutionPolicy: required")
+	}
+	type Plain GitExecutionPolicy
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = GitExecutionPolicy(plain)
+	return nil
+}
+
 // A durable knowledge record with provenance and validity state. See
 // punakawan-go-typescript-detailed-plan.md §7.
 type KnowledgeRecord struct {
