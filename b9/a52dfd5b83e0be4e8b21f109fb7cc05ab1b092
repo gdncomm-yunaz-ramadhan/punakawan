@@ -1,0 +1,23 @@
+internal/mcpserver/tools.go
+  6c4a5633395342b7 9-15,59,90,146,156,161,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "b9a52dfd5b83e0be4e8b21f109fb7cc05ab1b092",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 13,
+      "total_deletions": 6,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    }
+  }
+}
