@@ -1,0 +1,47 @@
+internal/capsule/build_test.go
+  6c4a5633395342b7 1-141
+internal/capsule/policy.go
+  6c4a5633395342b7 1-70
+internal/mcpserver/tools.go
+  6c4a5633395342b7 28-31,34,39,49
+internal/mcpserver/tools_capsule_test.go
+  6c4a5633395342b7 1-107
+internal/capsule/build.go
+  6c4a5633395342b7 1-161
+internal/capsule/store.go
+  6c4a5633395342b7 1-92
+internal/mcpserver/tools_capsule.go
+  6c4a5633395342b7 1-98
+internal/mcpserver/tools_workflow_test.go
+  6c4a5633395342b7 35-50,55,61,85,91
+internal/app/app.go
+  6c4a5633395342b7 15,31,72-76,105
+internal/mcpserver/tools_roles.go
+  6c4a5633395342b7 24-27,38-40,55-58,63-65,83-86,91-93
+internal/mcpserver/server_test.go
+  6c4a5633395342b7 231-246,251,255-257
+internal/capsule/policy_test.go
+  6c4a5633395342b7 1-45
+internal/capsule/store_test.go
+  6c4a5633395342b7 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "daa1454025b14e4ff454bac7b9093251261e2ced",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 857,
+      "total_deletions": 20,
+      "accepted_lines": 851,
+      "overriden_lines": 0
+    }
+  }
+}
