@@ -136,6 +136,16 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, commitTaskHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "push_task_branch",
+		Description: "Push a task's branch to its remote (AEP-M4 §8's 'push branch' step, before create_pr), gated by detected push capability ∩ repository policy ∩ this call's allow_push override. Never force-pushes. Must run before finish_task_execution removes the task's worktree.",
+	}, pushTaskBranchHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_pr",
+		Description: "Create a pull request for a pushed task branch (AEP-M4 §8.1). Templates the caller-supplied Summary/Requirements/Changes/Verification/etc. sections into the PR body verbatim - punakawan does not write any of that content itself. If PR creation is not currently possible (no remote, no push access, unsupported provider, no github adapter configured, ...) returns created=false with the specific reason instead of erroring, per §8.1's failure behavior." + approvalGateNote,
+	}, createPrHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "report_discovered_task",
 		Description: "Record newly discovered work found mid-execution as a discovered-from task, labeled for Semar's review (§10.4's discovery rule).",
 	}, reportDiscoveredTaskHandler(a))

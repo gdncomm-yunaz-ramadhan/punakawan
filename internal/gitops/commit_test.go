@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ygrip/punakawan/internal/tools"
 )
 
 func TestCommitTaskCommitsOnTaskBranch(t *testing.T) {
@@ -60,6 +62,57 @@ func TestCommitTaskRefusesWithoutPassingDiffCheck(t *testing.T) {
 
 	if _, err := mgr.CommitTask(context.Background(), wt, "should not commit", false, []string{"secret detected"}); err == nil {
 		t.Fatal("expected CommitTask to refuse when diffAllowed is false")
+	}
+}
+
+func TestPushBranchPushesToRemote(t *testing.T) {
+	repo := newCleanRepo(t)
+	bareDir := newLocalRemote(t, repo)
+	workspace := t.TempDir()
+	mgr := newWorktreeManager(t, repo, workspace)
+
+	if _, err := mgr.RequestApproval("run-1", "repo-a", "task-1", "petruk"); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+	if err := mgr.Approve("repo-a", "task-1", "ygrip"); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	wt, err := mgr.Create(context.Background(), workspace, repo, "repo-a", "task-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wt.Path, "change.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write change.txt: %v", err)
+	}
+	if _, err := mgr.CommitTask(context.Background(), wt, "add change.txt", true, nil); err != nil {
+		t.Fatalf("CommitTask: %v", err)
+	}
+
+	branch, err := mgr.PushBranch(context.Background(), wt, "origin")
+	if err != nil {
+		t.Fatalf("PushBranch: %v", err)
+	}
+	if branch != wt.Branch {
+		t.Fatalf("PushBranch returned %q, want %q", branch, wt.Branch)
+	}
+
+	out := runGit(t, bareDir, "branch", "--list", wt.Branch)
+	if out == "" {
+		t.Fatalf("expected %q to exist on the remote after push, branch --list returned nothing", wt.Branch)
+	}
+}
+
+func TestPushBranchRefusesOnNonTaskBranch(t *testing.T) {
+	repo := newCleanRepo(t)
+	baseSHA, err := NewInspector(tools.New(repo)).HeadSHA(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	mgr := newWorktreeManager(t, repo, t.TempDir())
+	wt := &Worktree{Path: repo, Branch: "main", BaseSHA: baseSHA}
+
+	if _, err := mgr.PushBranch(context.Background(), wt, "origin"); err == nil {
+		t.Fatal("expected PushBranch to refuse pushing a non-task branch")
 	}
 }
 

@@ -67,3 +67,29 @@ func (m *WorktreeManager) CommitTask(ctx context.Context, wt *Worktree, message 
 
 	return CommitResult{BaseSHA: wt.BaseSHA, CommitSHA: commitSHA}, nil
 }
+
+// PushBranch pushes wt's current branch to remote (e.g. "origin"), refusing
+// to do so unless the worktree is on a task branch rather than the
+// repository's default branch (the same defense-in-depth check CommitTask
+// makes). This never passes --force: per
+// punakawan-architecture-enhancement-plan.md §8.3's safety defaults,
+// force-push is always prohibited, and there is no caller-facing way to
+// request it through this method at all.
+func (m *WorktreeManager) PushBranch(ctx context.Context, wt *Worktree, remote string) (string, error) {
+	branch, err := m.inspector.CurrentBranch(ctx, wt.Path)
+	if err != nil {
+		return "", fmt.Errorf("gitops: determine current branch: %w", err)
+	}
+	if !strings.HasPrefix(branch, taskBranchPrefix) {
+		return "", fmt.Errorf("gitops: refusing to push branch %q; expected a %q-prefixed task branch", branch, taskBranchPrefix)
+	}
+
+	res, err := m.sup.Run(ctx, tools.Spec{Name: "git", Args: []string{"push", remote, branch}, Dir: wt.Path})
+	if err != nil {
+		return "", fmt.Errorf("gitops: git push: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return "", fmt.Errorf("gitops: git push failed: %s", strings.TrimSpace(string(res.Stderr)))
+	}
+	return branch, nil
+}

@@ -49,6 +49,36 @@ func TestDetectProvider(t *testing.T) {
 	}
 }
 
+func TestRepoSlug(t *testing.T) {
+	cases := []struct {
+		url      string
+		wantSlug string
+		wantOK   bool
+	}{
+		{"git@github.com:acme/widgets.git", "acme/widgets", true},
+		{"https://github.com/acme/widgets.git", "acme/widgets", true},
+		{"https://github.com/acme/widgets", "acme/widgets", true},
+		{"https://ghes.example.com/acme/widgets.git", "acme/widgets", true},
+		{"not a url at all", "", false},
+	}
+	for _, c := range cases {
+		slug, ok := RepoSlug(c.url)
+		if ok != c.wantOK || slug != c.wantSlug {
+			t.Errorf("RepoSlug(%q) = (%q, %v), want (%q, %v)", c.url, slug, ok, c.wantSlug, c.wantOK)
+		}
+	}
+}
+
+func TestDefaultExecutionPolicyAllowsEverything(t *testing.T) {
+	pol := DefaultExecutionPolicy(protocol.GitExecutionPolicySourceDefault)
+	if !pol.AllowBranchCreation || !pol.AllowWorktreeCreation || !pol.AllowCommit || !pol.AllowPush || !pol.AllowPullRequestCreation {
+		t.Fatalf("DefaultExecutionPolicy = %+v, want every allow field true", pol)
+	}
+	if pol.Source != protocol.GitExecutionPolicySourceDefault {
+		t.Fatalf("Source = %q, want default", pol.Source)
+	}
+}
+
 func TestRepositoryRootAndIsBareRepository(t *testing.T) {
 	dir := newTestRepo(t)
 	sup := tools.New(dir)

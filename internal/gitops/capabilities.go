@@ -90,6 +90,51 @@ func DetectProvider(remoteURL string) protocol.GitCapabilitiesProvider {
 	}
 }
 
+// RepoSlug extracts the "owner/repo" path from a git remote URL, in either
+// its SSH (git@github.com:owner/repo.git) or HTTPS
+// (https://github.com/owner/repo.git) form. This is the shape every one of
+// GitHub/GitLab/Bitbucket's own REST/GraphQL APIs address a repository by
+// (AEP-M4's create_pr uses this to call the GitHub adapter without
+// punakawan's workspace config needing its own separate "github slug"
+// field). ok is false if remoteURL's path does not have at least two
+// segments.
+func RepoSlug(remoteURL string) (slug string, ok bool) {
+	path := remoteURL
+	if at := strings.Index(path, "@"); at != -1 && !strings.Contains(path, "://") {
+		if colon := strings.Index(path[at+1:], ":"); colon != -1 {
+			path = path[at+1+colon+1:]
+		}
+	} else if u, err := url.Parse(path); err == nil && u.Path != "" {
+		path = strings.TrimPrefix(u.Path, "/")
+	}
+
+	path = strings.TrimSuffix(path, ".git")
+	path = strings.TrimSuffix(path, "/")
+	segments := strings.Split(path, "/")
+	if len(segments) < 2 || segments[0] == "" || segments[len(segments)-1] == "" {
+		return "", false
+	}
+	return segments[len(segments)-2] + "/" + segments[len(segments)-1], true
+}
+
+// DefaultExecutionPolicy returns a GitExecutionPolicy with every allow
+// field true - the "repository policy" layer's default until a caller
+// wires in a real repository-level policy source (e.g. policy.yaml; not
+// implemented yet - punokawan-06g's MergeExecutionPolicy call sites use
+// this as a placeholder middle layer so the merge itself is exercised with
+// real detected/user-permission inputs today, without inventing config
+// surface prematurely).
+func DefaultExecutionPolicy(source protocol.GitExecutionPolicySource) protocol.GitExecutionPolicy {
+	return protocol.GitExecutionPolicy{
+		Source:                   source,
+		AllowBranchCreation:      true,
+		AllowWorktreeCreation:    true,
+		AllowCommit:              true,
+		AllowPush:                true,
+		AllowPullRequestCreation: true,
+	}
+}
+
 // remoteHost extracts the host from a git remote URL, handling both the
 // scp-like SSH shorthand (user@host:path, no scheme) that url.Parse cannot
 // parse correctly and normal scheme://host/path URLs (https, ssh, git).
