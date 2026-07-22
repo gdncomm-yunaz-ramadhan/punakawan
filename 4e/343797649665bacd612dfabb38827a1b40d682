@@ -1,0 +1,35 @@
+internal/adapters/registry.go
+  6c4a5633395342b7 44-47,50-52,62-71,116
+internal/adapters/gate_test.go
+  6c4a5633395342b7 167-205
+internal/policy/policy.go
+  6c4a5633395342b7 87-97,100-101,109
+internal/app/app.go
+  6c4a5633395342b7 90-92,101
+internal/adapters/registry_test.go
+  6c4a5633395342b7 135-158
+internal/policy/policy_test.go
+  6c4a5633395342b7 3-7,32-52
+internal/adapters/gate.go
+  6c4a5633395342b7 30-34,38-39,44-68,123,154,159,169,174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4e343797649665bacd612dfabb38827a1b40d682",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 165,
+      "total_deletions": 19,
+      "accepted_lines": 165,
+      "overriden_lines": 0
+    }
+  }
+}
