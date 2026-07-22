@@ -2,5 +2,23 @@
   "name": "@punakawan/github-adapter",
   "version": "0.1.0",
   "private": true,
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "rm -rf dist dist-test",
+    "build": "rm -rf dist && tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "rm -rf dist-test && tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@punakawan/adapter-sdk": "workspace:*",
+    "@punakawan/schema-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  }
 }

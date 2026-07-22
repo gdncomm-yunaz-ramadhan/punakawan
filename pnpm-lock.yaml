@@ -76,7 +76,21 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/github-adapter: {}
+  packages/github-adapter:
+    dependencies:
+      '@punakawan/adapter-sdk':
+        specifier: workspace:*
+        version: link:../adapter-sdk
+      '@punakawan/schema-types':
+        specifier: workspace:*
+        version: link:../schema-types
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/gitlab-adapter: {}
 
