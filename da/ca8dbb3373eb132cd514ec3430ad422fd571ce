@@ -1,0 +1,25 @@
+internal/mcpserver/adapter_approval.go
+  6c4a5633395342b7 60-65,79
+internal/mcpserver/adapter_approval_test.go
+  6c4a5633395342b7 5,116-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "daca8dbb3373eb132cd514ec3430ad422fd571ce",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 50,
+      "total_deletions": 15,
+      "accepted_lines": 49,
+      "overriden_lines": 0
+    }
+  }
+}
