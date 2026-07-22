@@ -1,0 +1,31 @@
+internal/taskcontext/build_test.go
+  6c4a5633395342b7 261-396
+internal/mcpserver/tools_taskcontext_test.go
+  6c4a5633395342b7 1-58
+internal/mcpserver/tools_taskcontext.go
+  6c4a5633395342b7 35-48,59-61,64,66,68
+internal/taskcontext/taskcontext.go
+  6c4a5633395342b7 92-110,203-204,280-333
+internal/mcpserver/tools.go
+  6c4a5633395342b7 85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4797f64709e2f7ef4112342b5307af51a00b5c66",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 290,
+      "total_deletions": 7,
+      "accepted_lines": 290,
+      "overriden_lines": 0
+    }
+  }
+}
