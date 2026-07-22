@@ -2351,6 +2351,179 @@ func (j *KnowledgeRecord) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// One deduplicated, prioritized finding from review_pr's pipeline: Gareng/Petruk
+// build independent review capsules, Bagong verifies findings against the diff and
+// evidence, Semar deduplicates and prioritizes. See
+// punakawan-architecture-enhancement-plan.md §8.2.
+type ReviewFinding struct {
+	// Category corresponds to the JSON schema field "category".
+	Category string `json:"category" yaml:"category" mapstructure:"category"`
+
+	// Confidence corresponds to the JSON schema field "confidence".
+	Confidence float64 `json:"confidence" yaml:"confidence" mapstructure:"confidence"`
+
+	// EndLine corresponds to the JSON schema field "end_line".
+	EndLine *int `json:"end_line,omitempty,omitzero" yaml:"end_line,omitempty" mapstructure:"end_line,omitempty"`
+
+	// Evidence corresponds to the JSON schema field "evidence".
+	Evidence []ReviewFindingEvidenceElem `json:"evidence" yaml:"evidence" mapstructure:"evidence"`
+
+	// Explanation corresponds to the JSON schema field "explanation".
+	Explanation string `json:"explanation" yaml:"explanation" mapstructure:"explanation"`
+
+	// File corresponds to the JSON schema field "file".
+	File *string `json:"file,omitempty,omitzero" yaml:"file,omitempty" mapstructure:"file,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// RelatedKnowledge corresponds to the JSON schema field "related_knowledge".
+	RelatedKnowledge []ReviewFindingRelatedKnowledgeElem `json:"related_knowledge" yaml:"related_knowledge" mapstructure:"related_knowledge"`
+
+	// Severity corresponds to the JSON schema field "severity".
+	Severity ReviewFindingSeverity `json:"severity" yaml:"severity" mapstructure:"severity"`
+
+	// StartLine corresponds to the JSON schema field "start_line".
+	StartLine *int `json:"start_line,omitempty,omitzero" yaml:"start_line,omitempty" mapstructure:"start_line,omitempty"`
+
+	// SuggestedFix corresponds to the JSON schema field "suggested_fix".
+	SuggestedFix *string `json:"suggested_fix,omitempty,omitzero" yaml:"suggested_fix,omitempty" mapstructure:"suggested_fix,omitempty"`
+
+	// Title corresponds to the JSON schema field "title".
+	Title string `json:"title" yaml:"title" mapstructure:"title"`
+}
+
+type ReviewFindingEvidenceElem struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReviewFindingEvidenceElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ReviewFindingEvidenceElem: required")
+	}
+	type Plain ReviewFindingEvidenceElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ReviewFindingEvidenceElem(plain)
+	return nil
+}
+
+type ReviewFindingRelatedKnowledgeElem struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReviewFindingRelatedKnowledgeElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ReviewFindingRelatedKnowledgeElem: required")
+	}
+	type Plain ReviewFindingRelatedKnowledgeElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ReviewFindingRelatedKnowledgeElem(plain)
+	return nil
+}
+
+type ReviewFindingSeverity string
+
+const ReviewFindingSeverityBlocker ReviewFindingSeverity = "blocker"
+const ReviewFindingSeverityMajor ReviewFindingSeverity = "major"
+const ReviewFindingSeverityMinor ReviewFindingSeverity = "minor"
+const ReviewFindingSeveritySuggestion ReviewFindingSeverity = "suggestion"
+
+var enumValues_ReviewFindingSeverity = []interface{}{
+	"blocker",
+	"major",
+	"minor",
+	"suggestion",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReviewFindingSeverity) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ReviewFindingSeverity {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ReviewFindingSeverity, v)
+	}
+	*j = ReviewFindingSeverity(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReviewFinding) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["category"]; raw != nil && !ok {
+		return fmt.Errorf("field category in ReviewFinding: required")
+	}
+	if _, ok := raw["confidence"]; raw != nil && !ok {
+		return fmt.Errorf("field confidence in ReviewFinding: required")
+	}
+	if _, ok := raw["evidence"]; raw != nil && !ok {
+		return fmt.Errorf("field evidence in ReviewFinding: required")
+	}
+	if _, ok := raw["explanation"]; raw != nil && !ok {
+		return fmt.Errorf("field explanation in ReviewFinding: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ReviewFinding: required")
+	}
+	if _, ok := raw["related_knowledge"]; raw != nil && !ok {
+		return fmt.Errorf("field related_knowledge in ReviewFinding: required")
+	}
+	if _, ok := raw["severity"]; raw != nil && !ok {
+		return fmt.Errorf("field severity in ReviewFinding: required")
+	}
+	if _, ok := raw["title"]; raw != nil && !ok {
+		return fmt.Errorf("field title in ReviewFinding: required")
+	}
+	type Plain ReviewFinding
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 1 < plain.Confidence {
+		return fmt.Errorf("field %s: must be <= %v", "confidence", 1)
+	}
+	if 0 > plain.Confidence {
+		return fmt.Errorf("field %s: must be >= %v", "confidence", 0)
+	}
+	*j = ReviewFinding(plain)
+	return nil
+}
+
 // A dependency-aware Beads work item generated from an approved plan. See
 // punakawan-go-typescript-detailed-plan.md §10.
 type TaskContract struct {

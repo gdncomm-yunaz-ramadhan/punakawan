@@ -17,27 +17,35 @@ func githubTestManifest() protocol.AdapterManifest {
 	approval := approvalRequired()
 	m.Id = "github"
 	m.Operations = protocol.AdapterManifestOperations{
-		"github.createPullRequest": {SideEffect: true, Approval: approval},
-		"github.addLabels":         {SideEffect: true, Approval: approval},
-		"github.requestReviewers":  {SideEffect: true, Approval: approval},
+		"github.getPullRequest":              {SideEffect: false},
+		"github.getPullRequestFiles":         {SideEffect: false},
+		"github.getPullRequestChecks":        {SideEffect: false},
+		"github.listPullRequestComments":     {SideEffect: false},
+		"github.listUnresolvedReviewThreads": {SideEffect: false},
+		"github.createPullRequest":           {SideEffect: true, Approval: approval},
+		"github.addLabels":                   {SideEffect: true, Approval: approval},
+		"github.requestReviewers":            {SideEffect: true, Approval: approval},
+		"github.resolveReviewThread":         {SideEffect: true, Approval: approval},
 	}
 	return m
 }
 
 // fakeGitHubCaller mirrors fakeAtlassianCaller's pattern for a GitHub-shaped
-// fake response set, so createPr's adapter-call logic can be exercised
-// without spawning the real packages/github-adapter process.
+// fake response set, so create_pr/review_pr/fix_pr_review's adapter-call
+// logic can be exercised without spawning the real
+// packages/github-adapter process.
 type fakeGitHubCaller struct {
-	calls        []map[string]any
-	createResult map[string]any
+	calls     []map[string]any
+	responses map[string]string // raw JSON per op name, defaulting to {"ok":true}
 }
 
 func (f *fakeGitHubCaller) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	args, _ := params.(map[string]any)
 	f.calls = append(f.calls, args)
-	if op, _ := args["op"].(string); op == "github.createPullRequest" {
-		data, _ := json.Marshal(map[string]any{"normalized": f.createResult})
-		return data, nil
+	if op, _ := args["op"].(string); op != "" {
+		if resp, ok := f.responses[op]; ok {
+			return json.RawMessage(resp), nil
+		}
 	}
 	return json.RawMessage(`{"ok":true}`), nil
 }
@@ -62,7 +70,9 @@ func newCreatePrTestGate(t *testing.T) (*adapters.Gate, *fakeGitHubCaller) {
 	if err != nil {
 		t.Fatalf("approvals.Open: %v", err)
 	}
-	fc := &fakeGitHubCaller{createResult: map[string]any{"number": 43, "url": "https://github.com/acme/widgets/pull/43"}}
+	fc := &fakeGitHubCaller{responses: map[string]string{
+		"github.createPullRequest": `{"normalized":{"number":43,"url":"https://github.com/acme/widgets/pull/43"}}`,
+	}}
 	return adapters.NewGate("github", githubTestManifest(), fc, store), fc
 }
 

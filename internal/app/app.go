@@ -17,6 +17,7 @@ import (
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/policy"
+	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
@@ -35,6 +36,7 @@ type App struct {
 	Workflow        *workflow.Store
 	AdapterRegistry *adapters.Registry
 	SyncQueue       *syncqueue.Queue
+	PrReviews       *prreview.Store
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
@@ -101,6 +103,11 @@ func Load(startDir string) (*App, error) {
 		return nil, err
 	}
 
+	prReviews, err := prreview.OpenStore(ws.Root)
+	if err != nil {
+		return nil, err
+	}
+
 	registry := adapters.NewRegistry(specs, store)
 	registry.SetApprovalScope(pol.Approvals.Scope)
 	registry.SetSyncQueue(syncQueue)
@@ -116,6 +123,7 @@ func Load(startDir string) (*App, error) {
 		Workflow:        wf,
 		AdapterRegistry: registry,
 		SyncQueue:       syncQueue,
+		PrReviews:       prReviews,
 	}, nil
 }
 

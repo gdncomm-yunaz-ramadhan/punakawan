@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/reviewfinding.schema.json",
+  "title": "ReviewFinding",
+  "description": "One deduplicated, prioritized finding from review_pr's pipeline: Gareng/Petruk build independent review capsules, Bagong verifies findings against the diff and evidence, Semar deduplicates and prioritizes. See punakawan-architecture-enhancement-plan.md §8.2.",
+  "type": "object",
+  "required": ["id", "severity", "category", "title", "explanation", "evidence", "related_knowledge", "confidence"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "severity": { "type": "string", "enum": ["blocker", "major", "minor", "suggestion"] },
+
+    "category": { "type": "string" },
+    "title": { "type": "string" },
+    "explanation": { "type": "string" },
+
+    "file": { "type": "string" },
+    "start_line": { "type": "integer" },
+    "end_line": { "type": "integer" },
+
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": { "id": { "type": "string" }, "summary": { "type": "string" } }
+      }
+    },
+    "related_knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": { "id": { "type": "string" }, "summary": { "type": "string" } }
+      }
+    },
+
+    "suggested_fix": { "type": "string" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

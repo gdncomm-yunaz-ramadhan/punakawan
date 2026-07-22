@@ -146,6 +146,26 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, createPrHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "review_pr",
+		Description: "Fetch a PR's metadata, diff files, CI checks, and (optionally) comments (§8.2). REACTIVE - explicit_trigger must be true only when a human explicitly asked to review this specific PR; never call this for a PR being discovered, CI failing, or any other automatic signal. Punakawan does not review anything itself (ADR-0016): use this output to build Gareng/Petruk review capsules via request_capsule, have Bagong verify findings, then call submit_pr_review_findings with Semar's deduplicated result.",
+	}, reviewPrHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "submit_pr_review_findings",
+		Description: "Persist review_pr's final, Semar-deduplicated ReviewFinding[] for a PR (§8.2's 'return final review' step).",
+	}, submitPrReviewFindingsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "fetch_unresolved_pr_comments",
+		Description: "Fetch a PR's still-open review threads (§8.3). REACTIVE - explicit_trigger must be true only when a human explicitly asked to fix this PR's review comments; never call this for a reviewer commenting, CI failing, or review_pr finishing. Classifying each comment as applicable/already_resolved/stale/conflicting/requires_clarification/major_change_required is the calling agent's judgment, not something this tool determines.",
+	}, fetchUnresolvedPrCommentsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "resolve_review_thread",
+		Description: "Mark a review thread resolved (§8.3's final, optional write step). Requires allow=true - review threads are never resolved automatically." + approvalGateNote,
+	}, resolveReviewThreadHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "report_discovered_task",
 		Description: "Record newly discovered work found mid-execution as a discovered-from task, labeled for Semar's review (§10.4's discovery rule).",
 	}, reportDiscoveredTaskHandler(a))
