@@ -52,10 +52,15 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Description: "Transition a workflow run to a new state, appending a checkpoint (§18.1).",
 	}, advanceWorkflowHandler(a))
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "ingest_jira_requirement",
+		Description: "Fetch a Jira issue and create (or refresh) its requirement knowledge record, so the requirement_id build_task_context and submit_task_graph both hard-require actually exists. Call this before either of those for any requirement_id not already ingested. Read-only against Jira; no approval needed.",
+	}, ingestJiraRequirementHandler(a))
+
 	// Milestone 6: Plan-to-Beads and Petruk execution (§10, §11).
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_task_graph",
-		Description: "Batch-create TaskContracts and wire their dependency edges into Beads (§10.1-§10.4). The calling role does the decomposition; this tool only creates and wires the result.",
+		Description: "Batch-create TaskContracts and wire their dependency edges into Beads (§10.1-§10.4). The calling role does the decomposition; this tool only creates and wires the result. Each item's requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested.",
 	}, submitTaskGraphHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -70,7 +75,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "build_task_context",
-		Description: "Assemble the fresh, bounded per-task execution context (§11.2) and write it as this task's task.yaml evidence (§17.2). Read-only against the knowledge store.",
+		Description: "Assemble the fresh, bounded per-task execution context (§11.2) and write it as this task's task.yaml evidence (§17.2). Read-only against the knowledge store. requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested.",
 	}, buildTaskContextHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{

@@ -154,7 +154,7 @@ func TestFetchOpForSourceConfluence(t *testing.T) {
 func TestStableSourcePayloadIgnoresChangingRetrievalMetadata(t *testing.T) {
 	first := json.RawMessage(`{"normalized":{"source":{"retrieved_at":"2026-07-21T01:00:00Z"}},"raw":{"status":200,"data":{"key":"PAY-1","fields":{"status":{"name":"Open"}}}}}`)
 	second := json.RawMessage(`{"normalized":{"source":{"retrieved_at":"2026-07-21T02:00:00Z"}},"raw":{"status":200,"data":{"key":"PAY-1","fields":{"status":{"name":"Open"}}}}}`)
-	if knowledge.ContentHash(stableSourcePayload(first)) != knowledge.ContentHash(stableSourcePayload(second)) {
+	if knowledge.ContentHash(StableSourcePayload(first)) != knowledge.ContentHash(StableSourcePayload(second)) {
 		t.Fatal("retrieval metadata must not change the source content hash")
 	}
 }

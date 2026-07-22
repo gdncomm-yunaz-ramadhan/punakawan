@@ -26,6 +26,7 @@ package taskcontext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -181,6 +182,9 @@ func Build(ctx context.Context, store *knowledge.Store, in BuildInput) (Context,
 	}
 
 	req, err := store.Get(in.RequirementID)
+	if errors.Is(err, knowledge.ErrNotFound) {
+		return Context{}, fmt.Errorf("taskcontext: no requirement record %q exists yet; for a Jira-sourced requirement, call ingest_jira_requirement first: %w", in.RequirementID, err)
+	}
 	if err != nil {
 		return Context{}, fmt.Errorf("taskcontext: get parent requirement %q: %w", in.RequirementID, err)
 	}

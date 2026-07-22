@@ -21,6 +21,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ygrip/punakawan/internal/beads"
@@ -306,6 +307,9 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 	resultByKey := make(map[string]GraphResult, len(items))
 	for i, item := range items {
 		req, err := store.Get(item.RequirementID)
+		if errors.Is(err, knowledge.ErrNotFound) {
+			return nil, fmt.Errorf("tasks: item %q: no requirement record %q exists yet; for a Jira-sourced requirement, call ingest_jira_requirement first: %w", item.LocalKey, item.RequirementID, err)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("tasks: item %q: load requirement %q: %w", item.LocalKey, item.RequirementID, err)
 		}
