@@ -1,0 +1,35 @@
+internal/reconcile/reconcile.go
+  6c4a5633395342b7 46,53,58-63
+internal/taskcontext/taskcontext.go
+  6c4a5633395342b7 29,185-187
+internal/mcpserver/tools_requirement_test.go
+  6c4a5633395342b7 1-151
+internal/mcpserver/tools.go
+  6c4a5633395342b7 55-59,63,78
+internal/tasks/tasks.go
+  6c4a5633395342b7 24,310-312
+internal/reconcile/reconcile_test.go
+  6c4a5633395342b7 157
+internal/mcpserver/tools_requirement.go
+  6c4a5633395342b7 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "d088e187971852a5c1e03f65f93b1cd93c2e035c",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 311,
+      "total_deletions": 6,
+      "accepted_lines": 311,
+      "overriden_lines": 0
+    }
+  }
+}
