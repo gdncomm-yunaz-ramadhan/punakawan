@@ -1,0 +1,33 @@
+packages/github-adapter/test/adapter.test.ts
+  6c4a5633395342b7 28,72-81
+packages/github-adapter/src/manifest.ts
+  6c4a5633395342b7 31
+packages/github-adapter/test/fakeGitHubRest.ts
+  6c4a5633395342b7 37-49,89-92
+packages/github-adapter/src/normalize.ts
+  6c4a5633395342b7 121-141
+packages/github-adapter/src/operations.ts
+  6c4a5633395342b7 4,9,145-196
+packages/github-adapter/src/adapter.ts
+  6c4a5633395342b7 12,77-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "0a5fcffe8b65e0be902c48becf1e592f43788685",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 112,
+      "total_deletions": 1,
+      "accepted_lines": 112,
+      "overriden_lines": 0
+    }
+  }
+}
