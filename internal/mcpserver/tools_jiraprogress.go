@@ -2,8 +2,10 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -29,7 +31,17 @@ type UpdateJiraTaskProgressInput struct {
 	OriginalEstimateHours *float64 `json:"original_estimate_hours,omitempty"`
 	WorklogHours          *float64 `json:"worklog_hours,omitempty"`
 	Comment               string   `json:"comment,omitempty"`
-	RequestedBy           string   `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong; who is requesting this operation"`
+	// TransitionToStatus, when given, moves the issue to the Jira workflow
+	// status with this name (e.g. "In Progress", "Done") - matched
+	// case-insensitively against the issue's currently available
+	// transitions' target status names (falling back to the transition
+	// names themselves, since some workflows name a transition differently
+	// from the status it lands on). This folds status movement into the
+	// same call as the worklog/comment so a caller doing "I did work, log
+	// it, and move the ticket" does not need a separate tool plus its own
+	// getTransitionsForJiraIssue lookup.
+	TransitionToStatus string `json:"transition_to_status,omitempty" jsonschema:"move the issue to this workflow status (matched case-insensitively against available transitions), e.g. 'In Progress' or 'Done'"`
+	RequestedBy        string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong; who is requesting this operation"`
 }
 
 // UpdateJiraTaskProgressOutput is update_jira_task_progress's output.
@@ -49,6 +61,13 @@ type UpdateJiraTaskProgressOutput struct {
 	RemainingEstimateHours float64 `json:"remaining_estimate_hours,omitempty"`
 	WorklogAdded           bool    `json:"worklog_added"`
 	CommentPosted          bool    `json:"comment_posted"`
+	Transitioned           bool    `json:"transitioned"`
+	TransitionedTo         string  `json:"transitioned_to,omitempty"`
+	// TransitionSkipReason explains why Transitioned is false despite
+	// TransitionToStatus having been given - e.g. no available transition
+	// matches, distinct from "no transition was requested" (both leave
+	// Transitioned false, so this is left empty in the latter case).
+	TransitionSkipReason string `json:"transition_skip_reason,omitempty"`
 }
 
 func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, UpdateJiraTaskProgressInput) (*mcp.CallToolResult, UpdateJiraTaskProgressOutput, error) {
@@ -115,7 +134,84 @@ func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate 
 		out.CommentPosted = true
 	}
 
+	if in.TransitionToStatus != "" {
+		transitioned, transitionedTo, skipReason, err := transitionIssueToStatus(
+			ctx, req, gate, in.RunId, in.IssueIdOrKey, in.TransitionToStatus, requestedBy,
+		)
+		if err != nil {
+			return out, fmt.Errorf("mcpserver: transition issue: %w", err)
+		}
+		out.Transitioned = transitioned
+		out.TransitionedTo = transitionedTo
+		out.TransitionSkipReason = skipReason
+	}
+
 	return out, nil
+}
+
+// transitionIssueToStatus resolves targetStatusName against the issue's
+// currently available transitions (matched case-insensitively against each
+// transition's target status name, falling back to the transition's own
+// name, since some workflows name a transition differently from the status
+// it lands on) and, on a match, fires it. No match is reported via
+// skipReason rather than an error - the issue may simply not have that
+// status reachable from its current state, which is a normal outcome for a
+// caller to branch on, not a failure of the call itself.
+func transitionIssueToStatus(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	gate *adapters.Gate,
+	runID string,
+	issueIDOrKey string,
+	targetStatusName string,
+	requestedBy protocol.ApprovalRecordRequestedBy,
+) (transitioned bool, transitionedTo string, skipReason string, err error) {
+	raw, err := invokeAdapterOperation(ctx, req, gate, runID, "atlassian.getTransitionsForJiraIssue", map[string]any{
+		"issueIdOrKey": issueIDOrKey,
+	}, requestedBy)
+	if err != nil {
+		return false, "", "", fmt.Errorf("list available transitions: %w", err)
+	}
+
+	var result struct {
+		Transitions []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			ToStatus struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"toStatus"`
+		} `json:"transitions"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return false, "", "", fmt.Errorf("decode available transitions: %w", err)
+	}
+
+	var matchID, matchToStatus string
+	var available []string
+	for _, t := range result.Transitions {
+		available = append(available, t.ToStatus.Name)
+		if strings.EqualFold(t.ToStatus.Name, targetStatusName) || strings.EqualFold(t.Name, targetStatusName) {
+			matchID = t.ID
+			matchToStatus = t.ToStatus.Name
+			break
+		}
+	}
+	if matchID == "" {
+		return false, "", fmt.Sprintf(
+			"no transition from the issue's current status reaches %q; available target statuses: %s",
+			targetStatusName, strings.Join(available, ", "),
+		), nil
+	}
+
+	if _, err := invokeAdapterOperation(ctx, req, gate, runID, "atlassian.transitionJiraIssue", map[string]any{
+		"issueIdOrKey": issueIDOrKey,
+		"transitionId": matchID,
+	}, requestedBy); err != nil {
+		return false, "", "", fmt.Errorf("fire transition %q: %w", matchID, err)
+	}
+
+	return true, matchToStatus, "", nil
 }
 
 // resolveEstimateHours implements the user's decision: an explicit
