@@ -1,0 +1,49 @@
+internal/artifact/review_store.go
+  6c4a5633395342b7 1-276
+pkg/protocol/doc.go
+  6c4a5633395342b7 6
+internal/artifact/plan_store_test.go
+  6c4a5633395342b7 1-149
+internal/artifact/review_store_test.go
+  6c4a5633395342b7 1-234
+protocol/artifactreference.schema.json
+  6c4a5633395342b7 1-25
+protocol/artifactrevisionproposal.schema.json
+  6c4a5633395342b7 1-56
+internal/artifact/hash_test.go
+  6c4a5633395342b7 1-25
+internal/artifact/blockid_test.go
+  6c4a5633395342b7 1-91,93-107,109-131
+internal/artifact/hash.go
+  6c4a5633395342b7 1-18
+protocol/artifactreview.schema.json
+  6c4a5633395342b7 1-52
+internal/artifact/plan_store.go
+  6c4a5633395342b7 1-181
+internal/artifact/blockid.go
+  6c4a5633395342b7 1-163
+protocol/artifactcomment.schema.json
+  6c4a5633395342b7 1-34
+protocol/artifactrevisionrequest.schema.json
+  6c4a5633395342b7 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "9196026d28b90166411613378cba01d1cd683f6c",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1410,
+      "total_deletions": 10,
+      "accepted_lines": 1399,
+      "overriden_lines": 2
+    }
+  }
+}
