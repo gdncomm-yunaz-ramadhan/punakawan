@@ -1,0 +1,83 @@
+internal/mcpserver/server.go
+  76c7b28fab141eab 47-49
+internal/search/index.go
+  76c7b28fab141eab 5-6,64-74,117-125,131-139,164-167,171-181
+internal/mcpserver/tools_knowledgesearch.go
+  76c7b28fab141eab 69-75
+internal/mcpserver/tools_jiraclarify.go
+  76c7b28fab141eab 32-43,78-81,95-101,103-106,108,111
+internal/dossier/dossier.go
+  76c7b28fab141eab 97-107,117,125,184-217
+internal/dossier/scope_test.go
+  76c7b28fab141eab 1-85
+internal/app/app.go
+  76c7b28fab141eab 208-224
+internal/mcpserver/tools_adapters.go
+  76c7b28fab141eab 7,21-26,47-51,57,67-70,74-107
+internal/search/rrf_limit_test.go
+  76c7b28fab141eab 1-38
+internal/mcpserver/tools.go
+  76c7b28fab141eab 80,85
+internal/mcpserver/tools_execution.go
+  76c7b28fab141eab 32-36,47,79-86
+internal/taskcontext/scope_test.go
+  76c7b28fab141eab 1-84
+internal/mcpserver/tools_beadsready.go
+  76c7b28fab141eab 13-17,19-24,26,29-32,35-36,41-48,61-67,73-74,81,83-88
+internal/mcpserver/tools_jirasync.go
+  76c7b28fab141eab 117-121,139
+internal/mcpserver/tools_validate.go
+  76c7b28fab141eab 1-67
+internal/mcpserver/tools_jiraclarify_test.go
+  76c7b28fab141eab 164-167,180-181,184,189-234
+internal/mcpserver/tools_workflow.go
+  76c7b28fab141eab 27-32
+internal/mcpserver/tools_validate_test.go
+  76c7b28fab141eab 1-63
+internal/mcpserver/tools_adapters_projection_test.go
+  76c7b28fab141eab 1-42
+internal/mcpserver/tools_capsule.go
+  76c7b28fab141eab 52-56
+internal/mcpserver/tools_openapicheck.go
+  76c7b28fab141eab 12-13,19-22,26-28,33-43
+internal/mcpserver/tools_jiraprogress_test.go
+  76c7b28fab141eab 235-274
+internal/mcpserver/tools_jiraassessment_test.go
+  76c7b28fab141eab 120-183
+internal/fileops/fileops.go
+  76c7b28fab141eab 40-48
+internal/taskcontext/taskcontext.go
+  76c7b28fab141eab 216-223,233,241,243-244,250,357-411
+internal/search/rrf.go
+  76c7b28fab141eab 10-14,40-51,64-66
+internal/search/audit_test.go
+  76c7b28fab141eab 1-146
+internal/search/search.go
+  76c7b28fab141eab 90-104,121,126-131,134,141,146-148,153-221,225-231,233-234,238-251,253,260,262,269-291,294-295,297,312-316,358-382,410-415,419,422,424,447,452,455-456,458,465,493-498,500-506,508-515,518-531,533-534,537,545,563,567,573-579,584,586,588-590,592,594-607
+internal/mcpserver/tools_jiraassessment.go
+  76c7b28fab141eab 79-85,105-121,162-165
+internal/mcpserver/tools_commit.go
+  76c7b28fab141eab 10,14-19,21-27,40-48,59
+internal/mcpserver/tools_jiraprogress.go
+  76c7b28fab141eab 71-80,105-114,129,134,142,145,153,156,160,164,190,195,209,223,233,236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "dbfe326e199f681cb23956f2fd3ae713576ff192",
+  "prompts": {
+    "76c7b28fab141eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38d4d1e8-5b04-4c5b-8dc1-aaf4dbe006cf",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2543,
+      "total_deletions": 696,
+      "accepted_lines": 2300,
+      "overriden_lines": 0
+    }
+  }
+}
