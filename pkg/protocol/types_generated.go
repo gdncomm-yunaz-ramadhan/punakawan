@@ -1616,6 +1616,17 @@ type KnowledgeRecord struct {
 	// Relations corresponds to the JSON schema field "relations".
 	Relations []KnowledgeRecordRelationsElem `json:"relations,omitempty,omitzero" yaml:"relations,omitempty" mapstructure:"relations,omitempty"`
 
+	// A declarative, provider-tested procedure for a recurring read-only lookup,
+	// present on retrieval-recipe records. See
+	// punakawan-procedural-knowledge-retrieval-recipe-plan-final.md §3-4. Lifecycle
+	// state lives in validity.state (reusing the shared enum, not duplicated here);
+	// this object holds recipe-specific binding, selector, and evidence data only.
+	// Immutable versioning is achieved the same way every other knowledge record is
+	// corrected: a new id/version is Put and the old one's superseded_by is set, with
+	// relations[{type:supersedes,target:<old-id>}] recording the forward link - no
+	// separate versioning mechanism is introduced.
+	RetrievalRecipe *KnowledgeRecordRetrievalRecipe `json:"retrieval_recipe,omitempty,omitzero" yaml:"retrieval_recipe,omitempty" mapstructure:"retrieval_recipe,omitempty"`
+
 	// Where this record applies, used for search scope boosting. See §10.4/§11.10.
 	Scope *KnowledgeRecordScope `json:"scope,omitempty,omitzero" yaml:"scope,omitempty" mapstructure:"scope,omitempty"`
 
@@ -1981,9 +1992,11 @@ const KnowledgeRecordRelationsElemTypeObservedIn KnowledgeRecordRelationsElemTyp
 const KnowledgeRecordRelationsElemTypeOwnedBy KnowledgeRecordRelationsElemType = "owned-by"
 const KnowledgeRecordRelationsElemTypeRelatedTo KnowledgeRecordRelationsElemType = "related-to"
 const KnowledgeRecordRelationsElemTypeResolves KnowledgeRecordRelationsElemType = "resolves"
+const KnowledgeRecordRelationsElemTypeRetrieves KnowledgeRecordRelationsElemType = "retrieves"
 const KnowledgeRecordRelationsElemTypeSupersedes KnowledgeRecordRelationsElemType = "supersedes"
 const KnowledgeRecordRelationsElemTypeTestedBy KnowledgeRecordRelationsElemType = "tested-by"
 const KnowledgeRecordRelationsElemTypeTrackedBy KnowledgeRecordRelationsElemType = "tracked-by"
+const KnowledgeRecordRelationsElemTypeUsesAdapter KnowledgeRecordRelationsElemType = "uses-adapter"
 const KnowledgeRecordRelationsElemTypeValidates KnowledgeRecordRelationsElemType = "validates"
 const KnowledgeRecordRelationsElemTypeVerifiedBy KnowledgeRecordRelationsElemType = "verified-by"
 
@@ -2008,6 +2021,8 @@ var enumValues_KnowledgeRecordRelationsElemType = []interface{}{
 	"observed-in",
 	"assumes",
 	"resolves",
+	"uses-adapter",
+	"retrieves",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -2048,6 +2063,747 @@ func (j *KnowledgeRecordRelationsElem) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	*j = KnowledgeRecordRelationsElem(plain)
+	return nil
+}
+
+// A declarative, provider-tested procedure for a recurring read-only lookup,
+// present on retrieval-recipe records. See
+// punakawan-procedural-knowledge-retrieval-recipe-plan-final.md §3-4. Lifecycle
+// state lives in validity.state (reusing the shared enum, not duplicated here);
+// this object holds recipe-specific binding, selector, and evidence data only.
+// Immutable versioning is achieved the same way every other knowledge record is
+// corrected: a new id/version is Put and the old one's superseded_by is set, with
+// relations[{type:supersedes,target:<old-id>}] recording the forward link - no
+// separate versioning mechanism is introduced.
+type KnowledgeRecordRetrievalRecipe struct {
+	// AppliesTo corresponds to the JSON schema field "applies_to".
+	AppliesTo *KnowledgeRecordRetrievalRecipeAppliesTo `json:"applies_to,omitempty,omitzero" yaml:"applies_to,omitempty" mapstructure:"applies_to,omitempty"`
+
+	// Capability registry identifier this recipe is bound to, e.g. jira.issue.search.
+	Capability string `json:"capability" yaml:"capability" mapstructure:"capability"`
+
+	// Inputs corresponds to the JSON schema field "inputs".
+	Inputs []KnowledgeRecordRetrievalRecipeInputsElem `json:"inputs,omitempty,omitzero" yaml:"inputs,omitempty" mapstructure:"inputs,omitempty"`
+
+	// Typed operation intent this recipe answers, e.g. project.next-sprint.issues.
+	Intent string `json:"intent" yaml:"intent" mapstructure:"intent"`
+
+	// The most recent execution's evidence summary (§13). Full history lives in
+	// evidence records referenced by evidence_id; this is only the latest, for quick
+	// display.
+	LastExecution *KnowledgeRecordRetrievalRecipeLastExecution `json:"last_execution,omitempty,omitzero" yaml:"last_execution,omitempty" mapstructure:"last_execution,omitempty"`
+
+	// Operation corresponds to the JSON schema field "operation".
+	Operation string `json:"operation" yaml:"operation" mapstructure:"operation"`
+
+	// Ordering corresponds to the JSON schema field "ordering".
+	Ordering []KnowledgeRecordRetrievalRecipeOrderingElem `json:"ordering,omitempty,omitzero" yaml:"ordering,omitempty" mapstructure:"ordering,omitempty"`
+
+	// Output corresponds to the JSON schema field "output".
+	Output KnowledgeRecordRetrievalRecipeOutput `json:"output" yaml:"output" mapstructure:"output"`
+
+	// Provider corresponds to the JSON schema field "provider".
+	Provider string `json:"provider" yaml:"provider" mapstructure:"provider"`
+
+	// Must be true for every recipe this phase's engine can execute (§14: a future
+	// write-capable ActionRecipe is a separate type, gated by the approval engine,
+	// not a flag here).
+	ReadOnly bool `json:"read_only" yaml:"read_only" mapstructure:"read_only"`
+
+	// Monotonically increasing per capability+intent+scope lineage; incremented on
+	// every accepted correction.
+	RecipeVersion *int `json:"recipe_version,omitempty,omitzero" yaml:"recipe_version,omitempty" mapstructure:"recipe_version,omitempty"`
+
+	// Resource corresponds to the JSON schema field "resource".
+	Resource string `json:"resource" yaml:"resource" mapstructure:"resource"`
+
+	// Structured selector AST (§5): a group of clauses. Bounded at two nesting levels
+	// - a clause may itself be a nested any/all group, but that group's own clauses
+	// are leaves only (field+operator+value, no further any/all). The real Jira
+	// next-sprint example never nests deeper than this; a provider needing deeper
+	// nesting is a schema revision for a later phase, not a silent extension here. No
+	// $ref/$defs is used anywhere in this repo's schemas yet, so the leaf clause
+	// shape is duplicated inline (all/any/leaf) rather than risk being the first to
+	// rely on untested go-jsonschema $ref support.
+	Selector KnowledgeRecordRetrievalRecipeSelector `json:"selector" yaml:"selector" mapstructure:"selector"`
+
+	// The most recent validation/acceptance report (§9, §4's validation: block).
+	// Sample results and full compiled-query text are stored as evidence records,
+	// referenced by id here, not inlined.
+	Validation *KnowledgeRecordRetrievalRecipeValidation `json:"validation,omitempty,omitzero" yaml:"validation,omitempty" mapstructure:"validation,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeAppliesTo struct {
+	// RepositoryIds corresponds to the JSON schema field "repository_ids".
+	RepositoryIds []string `json:"repository_ids,omitempty,omitzero" yaml:"repository_ids,omitempty" mapstructure:"repository_ids,omitempty"`
+
+	// WorkspaceIds corresponds to the JSON schema field "workspace_ids".
+	WorkspaceIds []string `json:"workspace_ids,omitempty,omitzero" yaml:"workspace_ids,omitempty" mapstructure:"workspace_ids,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeInputsElem struct {
+	// Default corresponds to the JSON schema field "default".
+	Default *string `json:"default,omitempty,omitzero" yaml:"default,omitempty" mapstructure:"default,omitempty"`
+
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name" yaml:"name" mapstructure:"name"`
+
+	// Required corresponds to the JSON schema field "required".
+	Required *bool `json:"required,omitempty,omitzero" yaml:"required,omitempty" mapstructure:"required,omitempty"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type string `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeInputsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in KnowledgeRecordRetrievalRecipeInputsElem: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in KnowledgeRecordRetrievalRecipeInputsElem: required")
+	}
+	type Plain KnowledgeRecordRetrievalRecipeInputsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = KnowledgeRecordRetrievalRecipeInputsElem(plain)
+	return nil
+}
+
+// The most recent execution's evidence summary (§13). Full history lives in
+// evidence records referenced by evidence_id; this is only the latest, for quick
+// display.
+type KnowledgeRecordRetrievalRecipeLastExecution struct {
+	// Bindings corresponds to the JSON schema field "bindings".
+	Bindings KnowledgeRecordRetrievalRecipeLastExecutionBindings `json:"bindings,omitempty,omitzero" yaml:"bindings,omitempty" mapstructure:"bindings,omitempty"`
+
+	// CompiledQueryHash corresponds to the JSON schema field "compiled_query_hash".
+	CompiledQueryHash *string `json:"compiled_query_hash,omitempty,omitzero" yaml:"compiled_query_hash,omitempty" mapstructure:"compiled_query_hash,omitempty"`
+
+	// EvidenceId corresponds to the JSON schema field "evidence_id".
+	EvidenceId *string `json:"evidence_id,omitempty,omitzero" yaml:"evidence_id,omitempty" mapstructure:"evidence_id,omitempty"`
+
+	// ExecutedAt corresponds to the JSON schema field "executed_at".
+	ExecutedAt *time.Time `json:"executed_at,omitempty,omitzero" yaml:"executed_at,omitempty" mapstructure:"executed_at,omitempty"`
+
+	// ProviderRequestId corresponds to the JSON schema field "provider_request_id".
+	ProviderRequestId *string `json:"provider_request_id,omitempty,omitzero" yaml:"provider_request_id,omitempty" mapstructure:"provider_request_id,omitempty"`
+
+	// ResultCount corresponds to the JSON schema field "result_count".
+	ResultCount *int `json:"result_count,omitempty,omitzero" yaml:"result_count,omitempty" mapstructure:"result_count,omitempty"`
+
+	// SessionId corresponds to the JSON schema field "session_id".
+	SessionId *string `json:"session_id,omitempty,omitzero" yaml:"session_id,omitempty" mapstructure:"session_id,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status *KnowledgeRecordRetrievalRecipeLastExecutionStatus `json:"status,omitempty,omitzero" yaml:"status,omitempty" mapstructure:"status,omitempty"`
+
+	// TaskId corresponds to the JSON schema field "task_id".
+	TaskId *string `json:"task_id,omitempty,omitzero" yaml:"task_id,omitempty" mapstructure:"task_id,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeLastExecutionBindings map[string]interface{}
+
+type KnowledgeRecordRetrievalRecipeLastExecutionStatus string
+
+const KnowledgeRecordRetrievalRecipeLastExecutionStatusFailure KnowledgeRecordRetrievalRecipeLastExecutionStatus = "failure"
+const KnowledgeRecordRetrievalRecipeLastExecutionStatusSuccess KnowledgeRecordRetrievalRecipeLastExecutionStatus = "success"
+
+var enumValues_KnowledgeRecordRetrievalRecipeLastExecutionStatus = []interface{}{
+	"success",
+	"failure",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeLastExecutionStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeLastExecutionStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeLastExecutionStatus, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeLastExecutionStatus(v)
+	return nil
+}
+
+type KnowledgeRecordRetrievalRecipeOrderingElem struct {
+	// Direction corresponds to the JSON schema field "direction".
+	Direction KnowledgeRecordRetrievalRecipeOrderingElemDirection `json:"direction" yaml:"direction" mapstructure:"direction"`
+
+	// Field corresponds to the JSON schema field "field".
+	Field string `json:"field" yaml:"field" mapstructure:"field"`
+}
+
+type KnowledgeRecordRetrievalRecipeOrderingElemDirection string
+
+const KnowledgeRecordRetrievalRecipeOrderingElemDirectionAscending KnowledgeRecordRetrievalRecipeOrderingElemDirection = "ascending"
+const KnowledgeRecordRetrievalRecipeOrderingElemDirectionDescending KnowledgeRecordRetrievalRecipeOrderingElemDirection = "descending"
+
+var enumValues_KnowledgeRecordRetrievalRecipeOrderingElemDirection = []interface{}{
+	"ascending",
+	"descending",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeOrderingElemDirection) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeOrderingElemDirection {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeOrderingElemDirection, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeOrderingElemDirection(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeOrderingElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["direction"]; raw != nil && !ok {
+		return fmt.Errorf("field direction in KnowledgeRecordRetrievalRecipeOrderingElem: required")
+	}
+	if _, ok := raw["field"]; raw != nil && !ok {
+		return fmt.Errorf("field field in KnowledgeRecordRetrievalRecipeOrderingElem: required")
+	}
+	type Plain KnowledgeRecordRetrievalRecipeOrderingElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = KnowledgeRecordRetrievalRecipeOrderingElem(plain)
+	return nil
+}
+
+type KnowledgeRecordRetrievalRecipeOutput struct {
+	// EntityType corresponds to the JSON schema field "entity_type".
+	EntityType string `json:"entity_type" yaml:"entity_type" mapstructure:"entity_type"`
+
+	// Fields corresponds to the JSON schema field "fields".
+	Fields []string `json:"fields" yaml:"fields" mapstructure:"fields"`
+
+	// IdentityField corresponds to the JSON schema field "identity_field".
+	IdentityField string `json:"identity_field" yaml:"identity_field" mapstructure:"identity_field"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeOutput) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["entity_type"]; raw != nil && !ok {
+		return fmt.Errorf("field entity_type in KnowledgeRecordRetrievalRecipeOutput: required")
+	}
+	if _, ok := raw["fields"]; raw != nil && !ok {
+		return fmt.Errorf("field fields in KnowledgeRecordRetrievalRecipeOutput: required")
+	}
+	if _, ok := raw["identity_field"]; raw != nil && !ok {
+		return fmt.Errorf("field identity_field in KnowledgeRecordRetrievalRecipeOutput: required")
+	}
+	type Plain KnowledgeRecordRetrievalRecipeOutput
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = KnowledgeRecordRetrievalRecipeOutput(plain)
+	return nil
+}
+
+// Structured selector AST (§5): a group of clauses. Bounded at two nesting levels
+// - a clause may itself be a nested any/all group, but that group's own clauses
+// are leaves only (field+operator+value, no further any/all). The real Jira
+// next-sprint example never nests deeper than this; a provider needing deeper
+// nesting is a schema revision for a later phase, not a silent extension here. No
+// $ref/$defs is used anywhere in this repo's schemas yet, so the leaf clause shape
+// is duplicated inline (all/any/leaf) rather than risk being the first to rely on
+// untested go-jsonschema $ref support.
+type KnowledgeRecordRetrievalRecipeSelector struct {
+	// All corresponds to the JSON schema field "all".
+	All []KnowledgeRecordRetrievalRecipeSelectorAllElem `json:"all,omitempty,omitzero" yaml:"all,omitempty" mapstructure:"all,omitempty"`
+
+	// Any corresponds to the JSON schema field "any".
+	Any []KnowledgeRecordRetrievalRecipeSelectorAnyElem `json:"any,omitempty,omitzero" yaml:"any,omitempty" mapstructure:"any,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAllElem struct {
+	// All corresponds to the JSON schema field "all".
+	All []KnowledgeRecordRetrievalRecipeSelectorAllElemAllElem `json:"all,omitempty,omitzero" yaml:"all,omitempty" mapstructure:"all,omitempty"`
+
+	// Any corresponds to the JSON schema field "any".
+	Any []KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElem `json:"any,omitempty,omitzero" yaml:"any,omitempty" mapstructure:"any,omitempty"`
+
+	// Field corresponds to the JSON schema field "field".
+	Field *string `json:"field,omitempty,omitzero" yaml:"field,omitempty" mapstructure:"field,omitempty"`
+
+	// Operator corresponds to the JSON schema field "operator".
+	Operator *KnowledgeRecordRetrievalRecipeSelectorAllElemOperator `json:"operator,omitempty,omitzero" yaml:"operator,omitempty" mapstructure:"operator,omitempty"`
+
+	// Value corresponds to the JSON schema field "value".
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAllElemAllElem struct {
+	// Field corresponds to the JSON schema field "field".
+	Field *string `json:"field,omitempty,omitzero" yaml:"field,omitempty" mapstructure:"field,omitempty"`
+
+	// Operator corresponds to the JSON schema field "operator".
+	Operator *KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator `json:"operator,omitempty,omitzero" yaml:"operator,omitempty" mapstructure:"operator,omitempty"`
+
+	// Value corresponds to the JSON schema field "value".
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator string
+
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorContains KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "contains"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorEquals KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "equals"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorGreaterThan KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "greater_than"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorIn KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "in"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorLessThan KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "less_than"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorNotEquals KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "not_equals"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorNotIn KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "not_in"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperatorPhraseContains KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = "phrase_contains"
+
+var enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator = []interface{}{
+	"equals",
+	"not_equals",
+	"phrase_contains",
+	"contains",
+	"in",
+	"not_in",
+	"greater_than",
+	"less_than",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeSelectorAllElemAllElemOperator(v)
+	return nil
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElem struct {
+	// Field corresponds to the JSON schema field "field".
+	Field *string `json:"field,omitempty,omitzero" yaml:"field,omitempty" mapstructure:"field,omitempty"`
+
+	// Operator corresponds to the JSON schema field "operator".
+	Operator *KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator `json:"operator,omitempty,omitzero" yaml:"operator,omitempty" mapstructure:"operator,omitempty"`
+
+	// Value corresponds to the JSON schema field "value".
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator string
+
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorContains KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "contains"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorEquals KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "equals"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorGreaterThan KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "greater_than"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorIn KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "in"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorLessThan KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "less_than"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorNotEquals KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "not_equals"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorNotIn KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "not_in"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperatorPhraseContains KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = "phrase_contains"
+
+var enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator = []interface{}{
+	"equals",
+	"not_equals",
+	"phrase_contains",
+	"contains",
+	"in",
+	"not_in",
+	"greater_than",
+	"less_than",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeSelectorAllElemAnyElemOperator(v)
+	return nil
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAllElemOperator string
+
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorContains KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "contains"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorEquals KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "equals"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorGreaterThan KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "greater_than"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorIn KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "in"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorLessThan KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "less_than"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorNotEquals KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "not_equals"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorNotIn KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "not_in"
+const KnowledgeRecordRetrievalRecipeSelectorAllElemOperatorPhraseContains KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = "phrase_contains"
+
+var enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemOperator = []interface{}{
+	"equals",
+	"not_equals",
+	"phrase_contains",
+	"contains",
+	"in",
+	"not_in",
+	"greater_than",
+	"less_than",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeSelectorAllElemOperator) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemOperator {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeSelectorAllElemOperator, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeSelectorAllElemOperator(v)
+	return nil
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAnyElem struct {
+	// All corresponds to the JSON schema field "all".
+	All []KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElem `json:"all,omitempty,omitzero" yaml:"all,omitempty" mapstructure:"all,omitempty"`
+
+	// Any corresponds to the JSON schema field "any".
+	Any []KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElem `json:"any,omitempty,omitzero" yaml:"any,omitempty" mapstructure:"any,omitempty"`
+
+	// Field corresponds to the JSON schema field "field".
+	Field *string `json:"field,omitempty,omitzero" yaml:"field,omitempty" mapstructure:"field,omitempty"`
+
+	// Operator corresponds to the JSON schema field "operator".
+	Operator *KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator `json:"operator,omitempty,omitzero" yaml:"operator,omitempty" mapstructure:"operator,omitempty"`
+
+	// Value corresponds to the JSON schema field "value".
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElem struct {
+	// Field corresponds to the JSON schema field "field".
+	Field *string `json:"field,omitempty,omitzero" yaml:"field,omitempty" mapstructure:"field,omitempty"`
+
+	// Operator corresponds to the JSON schema field "operator".
+	Operator *KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator `json:"operator,omitempty,omitzero" yaml:"operator,omitempty" mapstructure:"operator,omitempty"`
+
+	// Value corresponds to the JSON schema field "value".
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator string
+
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorContains KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "contains"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorEquals KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "equals"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorGreaterThan KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "greater_than"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorIn KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "in"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorLessThan KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "less_than"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorNotEquals KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "not_equals"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorNotIn KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "not_in"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperatorPhraseContains KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = "phrase_contains"
+
+var enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator = []interface{}{
+	"equals",
+	"not_equals",
+	"phrase_contains",
+	"contains",
+	"in",
+	"not_in",
+	"greater_than",
+	"less_than",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeSelectorAnyElemAllElemOperator(v)
+	return nil
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElem struct {
+	// Field corresponds to the JSON schema field "field".
+	Field *string `json:"field,omitempty,omitzero" yaml:"field,omitempty" mapstructure:"field,omitempty"`
+
+	// Operator corresponds to the JSON schema field "operator".
+	Operator *KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator `json:"operator,omitempty,omitzero" yaml:"operator,omitempty" mapstructure:"operator,omitempty"`
+
+	// Value corresponds to the JSON schema field "value".
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator string
+
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorContains KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "contains"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorEquals KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "equals"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorGreaterThan KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "greater_than"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorIn KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "in"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorLessThan KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "less_than"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorNotEquals KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "not_equals"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorNotIn KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "not_in"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperatorPhraseContains KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = "phrase_contains"
+
+var enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator = []interface{}{
+	"equals",
+	"not_equals",
+	"phrase_contains",
+	"contains",
+	"in",
+	"not_in",
+	"greater_than",
+	"less_than",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeSelectorAnyElemAnyElemOperator(v)
+	return nil
+}
+
+type KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator string
+
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorContains KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "contains"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorEquals KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "equals"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorGreaterThan KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "greater_than"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorIn KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "in"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorLessThan KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "less_than"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorNotEquals KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "not_equals"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorNotIn KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "not_in"
+const KnowledgeRecordRetrievalRecipeSelectorAnyElemOperatorPhraseContains KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = "phrase_contains"
+
+var enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator = []interface{}{
+	"equals",
+	"not_equals",
+	"phrase_contains",
+	"contains",
+	"in",
+	"not_in",
+	"greater_than",
+	"less_than",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeSelectorAnyElemOperator(v)
+	return nil
+}
+
+// The most recent validation/acceptance report (§9, §4's validation: block).
+// Sample results and full compiled-query text are stored as evidence records,
+// referenced by id here, not inlined.
+type KnowledgeRecordRetrievalRecipeValidation struct {
+	// AcceptedAt corresponds to the JSON schema field "accepted_at".
+	AcceptedAt *time.Time `json:"accepted_at,omitempty,omitzero" yaml:"accepted_at,omitempty" mapstructure:"accepted_at,omitempty"`
+
+	// AcceptedBy corresponds to the JSON schema field "accepted_by".
+	AcceptedBy *string `json:"accepted_by,omitempty,omitzero" yaml:"accepted_by,omitempty" mapstructure:"accepted_by,omitempty"`
+
+	// AcceptedResultCount corresponds to the JSON schema field
+	// "accepted_result_count".
+	AcceptedResultCount *int `json:"accepted_result_count,omitempty,omitzero" yaml:"accepted_result_count,omitempty" mapstructure:"accepted_result_count,omitempty"`
+
+	// CompiledQueryHash corresponds to the JSON schema field "compiled_query_hash".
+	CompiledQueryHash *string `json:"compiled_query_hash,omitempty,omitzero" yaml:"compiled_query_hash,omitempty" mapstructure:"compiled_query_hash,omitempty"`
+
+	// EvidenceIds corresponds to the JSON schema field "evidence_ids".
+	EvidenceIds []string `json:"evidence_ids,omitempty,omitzero" yaml:"evidence_ids,omitempty" mapstructure:"evidence_ids,omitempty"`
+
+	// ProviderInstanceFingerprint corresponds to the JSON schema field
+	// "provider_instance_fingerprint".
+	ProviderInstanceFingerprint *string `json:"provider_instance_fingerprint,omitempty,omitzero" yaml:"provider_instance_fingerprint,omitempty" mapstructure:"provider_instance_fingerprint,omitempty"`
+
+	// SampleSize corresponds to the JSON schema field "sample_size".
+	SampleSize *int `json:"sample_size,omitempty,omitzero" yaml:"sample_size,omitempty" mapstructure:"sample_size,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status *KnowledgeRecordRetrievalRecipeValidationStatus `json:"status,omitempty,omitzero" yaml:"status,omitempty" mapstructure:"status,omitempty"`
+
+	// ValidationId corresponds to the JSON schema field "validation_id".
+	ValidationId *string `json:"validation_id,omitempty,omitzero" yaml:"validation_id,omitempty" mapstructure:"validation_id,omitempty"`
+}
+
+type KnowledgeRecordRetrievalRecipeValidationStatus string
+
+const KnowledgeRecordRetrievalRecipeValidationStatusFailed KnowledgeRecordRetrievalRecipeValidationStatus = "failed"
+const KnowledgeRecordRetrievalRecipeValidationStatusPassed KnowledgeRecordRetrievalRecipeValidationStatus = "passed"
+const KnowledgeRecordRetrievalRecipeValidationStatusPending KnowledgeRecordRetrievalRecipeValidationStatus = "pending"
+
+var enumValues_KnowledgeRecordRetrievalRecipeValidationStatus = []interface{}{
+	"pending",
+	"passed",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeValidationStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordRetrievalRecipeValidationStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordRetrievalRecipeValidationStatus, v)
+	}
+	*j = KnowledgeRecordRetrievalRecipeValidationStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipeValidation) UnmarshalJSON(value []byte) error {
+	type Plain KnowledgeRecordRetrievalRecipeValidation
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.CompiledQueryHash != nil {
+		if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(*plain.CompiledQueryHash)); !matched {
+			return fmt.Errorf("field %s pattern match: must match %s", "CompiledQueryHash", `^sha256:[0-9a-f]{64}$`)
+		}
+	}
+	*j = KnowledgeRecordRetrievalRecipeValidation(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordRetrievalRecipe) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["capability"]; raw != nil && !ok {
+		return fmt.Errorf("field capability in KnowledgeRecordRetrievalRecipe: required")
+	}
+	if _, ok := raw["intent"]; raw != nil && !ok {
+		return fmt.Errorf("field intent in KnowledgeRecordRetrievalRecipe: required")
+	}
+	if _, ok := raw["operation"]; raw != nil && !ok {
+		return fmt.Errorf("field operation in KnowledgeRecordRetrievalRecipe: required")
+	}
+	if _, ok := raw["output"]; raw != nil && !ok {
+		return fmt.Errorf("field output in KnowledgeRecordRetrievalRecipe: required")
+	}
+	if _, ok := raw["provider"]; raw != nil && !ok {
+		return fmt.Errorf("field provider in KnowledgeRecordRetrievalRecipe: required")
+	}
+	if _, ok := raw["read_only"]; raw != nil && !ok {
+		return fmt.Errorf("field read_only in KnowledgeRecordRetrievalRecipe: required")
+	}
+	if _, ok := raw["resource"]; raw != nil && !ok {
+		return fmt.Errorf("field resource in KnowledgeRecordRetrievalRecipe: required")
+	}
+	if _, ok := raw["selector"]; raw != nil && !ok {
+		return fmt.Errorf("field selector in KnowledgeRecordRetrievalRecipe: required")
+	}
+	type Plain KnowledgeRecordRetrievalRecipe
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.ReadOnly != true {
+		return fmt.Errorf("field %s: must be equal to %t", "read_only", true)
+	}
+	if plain.RecipeVersion != nil && 1 > *plain.RecipeVersion {
+		return fmt.Errorf("field %s: must be >= %v", "recipe_version", 1)
+	}
+	*j = KnowledgeRecordRetrievalRecipe(plain)
 	return nil
 }
 
@@ -2229,6 +2985,7 @@ const KnowledgeRecordTypePetrukPlan KnowledgeRecordType = "petruk-plan"
 const KnowledgeRecordTypeQuestion KnowledgeRecordType = "question"
 const KnowledgeRecordTypeRepository KnowledgeRecordType = "repository"
 const KnowledgeRecordTypeRequirement KnowledgeRecordType = "requirement"
+const KnowledgeRecordTypeRetrievalRecipe KnowledgeRecordType = "retrieval-recipe"
 const KnowledgeRecordTypeReviewFinding KnowledgeRecordType = "review-finding"
 const KnowledgeRecordTypeRisk KnowledgeRecordType = "risk"
 const KnowledgeRecordTypeSemarSynthesis KnowledgeRecordType = "semar-synthesis"
@@ -2269,6 +3026,7 @@ var enumValues_KnowledgeRecordType = []interface{}{
 	"petruk-plan",
 	"bagong-review",
 	"final-plan",
+	"retrieval-recipe",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -2292,7 +3050,11 @@ func (j *KnowledgeRecordType) UnmarshalJSON(value []byte) error {
 }
 
 type KnowledgeRecordValidity struct {
-	// State corresponds to the JSON schema field "state".
+	// draft and validating are only meaningful for retrieval-recipe records
+	// (punakawan-procedural-knowledge-retrieval-recipe-plan-final.md §12): a recipe
+	// starts draft while being taught, moves to validating during its provider
+	// dry-run, then verified once explicitly accepted. Every other record type goes
+	// straight to observed/inferred/assumed/verified.
 	State KnowledgeRecordValidityState `json:"state" yaml:"state" mapstructure:"state"`
 
 	// VerifiedAt corresponds to the JSON schema field "verified_at".
@@ -2306,11 +3068,13 @@ type KnowledgeRecordValidityState string
 
 const KnowledgeRecordValidityStateAssumed KnowledgeRecordValidityState = "assumed"
 const KnowledgeRecordValidityStateDisputed KnowledgeRecordValidityState = "disputed"
+const KnowledgeRecordValidityStateDraft KnowledgeRecordValidityState = "draft"
 const KnowledgeRecordValidityStateInferred KnowledgeRecordValidityState = "inferred"
 const KnowledgeRecordValidityStateInvalid KnowledgeRecordValidityState = "invalid"
 const KnowledgeRecordValidityStateObserved KnowledgeRecordValidityState = "observed"
 const KnowledgeRecordValidityStateStale KnowledgeRecordValidityState = "stale"
 const KnowledgeRecordValidityStateSuperseded KnowledgeRecordValidityState = "superseded"
+const KnowledgeRecordValidityStateValidating KnowledgeRecordValidityState = "validating"
 const KnowledgeRecordValidityStateVerified KnowledgeRecordValidityState = "verified"
 
 var enumValues_KnowledgeRecordValidityState = []interface{}{
@@ -2322,6 +3086,8 @@ var enumValues_KnowledgeRecordValidityState = []interface{}{
 	"superseded",
 	"invalid",
 	"stale",
+	"draft",
+	"validating",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
