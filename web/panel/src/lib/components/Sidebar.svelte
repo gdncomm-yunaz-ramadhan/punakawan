@@ -17,6 +17,10 @@
 </script>
 
 <nav aria-label="Primary">
+  <a class="brand" href="/" onclick={(e) => { e.preventDefault(); navigate("/"); }}>
+    <img class="brand-logo" src="/logo.svg" alt="" aria-hidden="true" width="32" height="32" />
+    <span class="brand-name">Punakawan</span>
+  </a>
   <ul>
     {#each links as link (link.path)}
       <li>
@@ -46,6 +50,26 @@
     flex-shrink: 0;
     border-right: 1px solid #e0e0e0;
     padding: 1rem 0.5rem;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    text-decoration: none;
+    color: inherit;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .brand-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  /* Logo art is a monochrome black silhouette; invert it in dark mode so it
+     reads as light-on-dark. data-theme lives on <html> (see index.html). */
+  :global(html[data-theme="dark"]) .brand-logo {
+    filter: invert(1);
   }
   ul {
     list-style: none;

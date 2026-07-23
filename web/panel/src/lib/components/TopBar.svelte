@@ -18,6 +18,7 @@
 </script>
 
 <header>
+  <img class="logo" src="/logo.svg" alt="" aria-hidden="true" width="28" height="28" />
   <h1>Punakawan Panel</h1>
   <div class="spacer"></div>
   {#if system}
@@ -40,6 +41,15 @@
     gap: 0.75rem;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid #e0e0e0;
+  }
+  .logo {
+    display: block;
+    flex-shrink: 0;
+  }
+  /* Logo art is a monochrome black silhouette; invert it in dark mode so it
+     reads as light-on-dark. data-theme lives on <html> (see index.html). */
+  :global(html[data-theme="dark"]) .logo {
+    filter: invert(1);
   }
   h1 {
     font-size: 1.1rem;
