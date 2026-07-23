@@ -10,6 +10,7 @@
   import AddCommentPopover from "../../lib/components/review/AddCommentPopover.svelte";
   import ReviewInstructionPanel from "../../lib/components/review/ReviewInstructionPanel.svelte";
   import ActiveRevisionSummary from "../../lib/components/review/ActiveRevisionSummary.svelte";
+  import ProposalReview from "../../lib/components/review/ProposalReview.svelte";
   import { parseDocument, groupIntoSections, buildAnchor } from "../../lib/review/markdown";
   import {
     getArtifactCurrent,
@@ -85,6 +86,13 @@
   const documentHeadingOrder = $derived(sections.map((s) => s.headingPath.join(" › ")));
 
   const isDraft = $derived(review?.metadata.status === "draft");
+  // Once a proposal exists, ProposalReview takes over from
+  // ActiveRevisionSummary - the remaining in-flight statuses
+  // (submitted/queued/revising/awaiting_clarification, plus the terminal
+  // cancelled/failed which never produce a proposal) have nothing to
+  // review yet, so they keep the simpler status view.
+  const PROPOSAL_STATUSES = new Set(["proposal_ready", "revision_requested", "accepted", "rejected", "conflicted"]);
+  const hasProposal = $derived(review ? PROPOSAL_STATUSES.has(review.metadata.status) : false);
   const shortHash = $derived(
     artifact?.reference.revision_hash ? artifact.reference.revision_hash.replace(/^sha256:/, "").slice(0, 10) : "",
   );
@@ -317,6 +325,28 @@
     }
   }
 
+  // ProposalReview's accept/reject/request-changes/rebase actions all
+  // return a fresh ArtifactReview - refetch comments alongside it (a
+  // request-changes' next attempt doesn't change comments, but rebase
+  // returning to "draft" is exactly the restart-recovery path loadAll
+  // already handles, so reusing the same refresh here keeps one code path
+  // for "the review's server-side state moved, resync everything local").
+  async function onProposalReviewChanged(updated: ArtifactReview) {
+    review = updated;
+    try {
+      const commentList = await listComments(reviewId);
+      comments = commentList.items;
+    } catch {
+      // Comments will resync on the next successful poll/reload - not
+      // worth surfacing a page-level error over a post-action refresh.
+    }
+    if (TERMINAL_STATUSES.has(updated.metadata.status)) {
+      stopPolling();
+    } else {
+      startPollingIfNeeded();
+    }
+  }
+
   // Answers a clarification question by reusing the existing comment
   // PATCH endpoint (no new comment-editing machinery) - "resolved_by_user"
   // is the status transition modeling "the user answered."
@@ -353,7 +383,19 @@
       description={`Reviewing ${review.artifact.type} ${review.artifact.id} · version ${review.artifact.version} · ${shortHash}`}
     />
 
-    {#if !isDraft}
+    {#if !isDraft && hasProposal}
+      <!-- A proposal exists (or a further revision was requested on top
+      of one) - hand off to the full review-of-the-proposal UI (diff,
+      comment resolution, validation, lineage, accept/reject/request-
+      changes/rebase) instead of the plainer in-flight status view. -->
+      <ProposalReview
+        {reviewId}
+        {review}
+        {comments}
+        {isDesktop}
+        onreviewChanged={onProposalReviewChanged}
+      />
+    {:else if !isDraft}
       <!-- Submitted (or later) - the document + comment-editing UI no
       longer applies (§8's freeze on submit), so this renders the
       active-revision status view instead. -->

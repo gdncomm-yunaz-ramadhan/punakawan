@@ -267,3 +267,203 @@ export async function getTimeline(reviewId: string): Promise<TimelineResponse> {
   });
   return parseJSON<TimelineResponse>(res);
 }
+
+// --- Artifact Review Phase 5: proposal review (internal/panel/api/proposal_handler.go) ---
+
+// DiffLine mirrors internal/artifact/diff.go's DiffLine struct exactly -
+// it carries no json tags, so Go's default marshaling capitalizes the
+// field names ("Kind"/"Text"), unlike every other snake_case shape in
+// this file. Do not "fix" this to lowercase - it would silently stop
+// matching the wire format.
+export interface DiffLine {
+  Kind: "equal" | "added" | "removed";
+  Text: string;
+}
+
+export interface DiffSummary {
+  added: number;
+  removed: number;
+}
+
+export interface DiffResponse {
+  lines: DiffLine[];
+  summary: DiffSummary;
+}
+
+export interface ValidationIssue {
+  check: string;
+  message: string;
+}
+
+export interface StructuralReport {
+  passed: boolean;
+  issues: ValidationIssue[];
+}
+
+export interface ReviewComplianceReport {
+  passed: boolean;
+  issues: ValidationIssue[];
+  unresolved_comment_ids?: string[];
+}
+
+export interface ValidationResponse {
+  structural: StructuralReport;
+  compliance: ReviewComplianceReport;
+}
+
+// Attempt-level status of one stored proposal record - distinct from
+// ReviewStatus, which tracks the review as a whole. "pending"/"failed" are
+// not currently produced by CreateProposalHandler (it always writes
+// "ready"), but the enum is generated from the JSON schema
+// (pkg/protocol/types_generated.go) so all four values are modeled here.
+export type ProposalStatus = "pending" | "ready" | "failed" | "superseded";
+
+export type CommentResolutionStatus = "addressed" | "partially_addressed" | "rejected" | "not_applicable";
+
+export interface CommentResolution {
+  comment_id: string;
+  status: CommentResolutionStatus;
+  explanation?: string;
+  changed_block_ids?: string[];
+}
+
+export type ProposalValidationStatus = "pending" | "passed" | "failed";
+
+export interface ArtifactRevisionProposalResults {
+  addressed_comments?: number;
+  partially_addressed_comments?: number;
+  unresolved_comments?: number;
+  validation_status?: ProposalValidationStatus;
+  comment_resolutions?: CommentResolution[];
+}
+
+export interface ArtifactRevisionProposal {
+  metadata: {
+    id: string;
+    review_id: string;
+    revision_request_id: string;
+    attempt: number;
+    status: ProposalStatus;
+  };
+  base: {
+    artifact_id: string;
+    version: number;
+    revision_hash: string;
+  };
+  proposed: {
+    version: number;
+    content_hash: string;
+    content_location: string;
+    change_summary?: string;
+  };
+  results?: ArtifactRevisionProposalResults;
+}
+
+// listProposals is a plain read - every stored attempt for the review, in
+// order (attempt 1 first), so callers can build the version-lineage view
+// or find the latest attempt without a separate "give me the last one"
+// endpoint.
+export async function listProposals(reviewId: string): Promise<{ items: ArtifactRevisionProposal[] }> {
+  const res = await fetch(`/api/v1/reviews/${encodeURIComponent(reviewId)}/proposals`, {
+    headers: { Accept: "application/json" },
+  });
+  return parseJSON<{ items: ArtifactRevisionProposal[] }>(res);
+}
+
+// getProposal's proposalId is actually an attempt number (e.g. "1", "2"),
+// per the backend's parseAttempt - not an opaque id, despite the name in
+// the URL path.
+export async function getProposal(reviewId: string, proposalId: string): Promise<ArtifactRevisionProposal> {
+  const res = await fetch(
+    `/api/v1/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(proposalId)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  return parseJSON<ArtifactRevisionProposal>(res);
+}
+
+export async function getProposalDiff(reviewId: string, proposalId: string): Promise<DiffResponse> {
+  const res = await fetch(
+    `/api/v1/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(proposalId)}/diff`,
+    { headers: { Accept: "application/json" } },
+  );
+  return parseJSON<DiffResponse>(res);
+}
+
+// getProposalValidation recomputes both reports live server-side rather
+// than reading a stored snapshot (see ProposalValidationHandler's own
+// comment) - callers should treat this as the authoritative,
+// up-to-the-moment pass/fail state, not just a historical record.
+export async function getProposalValidation(reviewId: string, proposalId: string): Promise<ValidationResponse> {
+  const res = await fetch(
+    `/api/v1/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(proposalId)}/validation`,
+    { headers: { Accept: "application/json" } },
+  );
+  return parseJSON<ValidationResponse>(res);
+}
+
+export interface AcceptProposalResponse {
+  review: ArtifactReview;
+  new_version: unknown;
+}
+
+// acceptProposal can 409 for two distinct reasons the caller must tell
+// apart: the canonical artifact moved out from under this proposal's base
+// (review flips to "conflicted" server-side - the fix is POST
+// .../rebase) or the proposal failed validation (the fix is requesting
+// changes instead). ApiError only carries a message string, so callers
+// that need to branch on which 409 this was should also have already
+// checked results.validation_status themselves before calling accept.
+export async function acceptProposal(reviewId: string, proposalId: string): Promise<AcceptProposalResponse> {
+  const res = await fetchWithCsrf(
+    `/api/v1/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(proposalId)}/accept`,
+    { method: "POST" },
+  );
+  return parseJSON<AcceptProposalResponse>(res);
+}
+
+// rejectProposal never touches the canonical artifact (§16's
+// non-destructive rejection) - it only moves the review to "rejected".
+export async function rejectProposal(reviewId: string, proposalId: string): Promise<ArtifactReview> {
+  const res = await fetchWithCsrf(
+    `/api/v1/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(proposalId)}/reject`,
+    { method: "POST" },
+  );
+  return parseJSON<ArtifactReview>(res);
+}
+
+export interface RequestChangesResponse {
+  review: ArtifactReview;
+  run: RunReference;
+}
+
+// requestChanges dispatches another revision attempt under the same
+// review (status -> "revision_requested") - the instruction is optional
+// free-text appended server-side to the review's existing instruction,
+// not a replacement for it.
+export async function requestChanges(
+  reviewId: string,
+  proposalId: string,
+  instruction?: string,
+): Promise<RequestChangesResponse> {
+  const res = await fetchWithCsrf(
+    `/api/v1/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(proposalId)}/request-changes`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction }),
+    },
+  );
+  return parseJSON<RequestChangesResponse>(res);
+}
+
+// rebaseReview re-points a conflicted review at the artifact's current
+// canonical version and resets status to "draft" - it deliberately does
+// not touch comments or re-run a revision automatically (§12); the user
+// reviews the refreshed document and resubmits explicitly via the normal
+// draft flow.
+export async function rebaseReview(reviewId: string): Promise<ArtifactReview> {
+  const res = await fetchWithCsrf(`/api/v1/reviews/${encodeURIComponent(reviewId)}/rebase`, {
+    method: "POST",
+  });
+  return parseJSON<ArtifactReview>(res);
+}

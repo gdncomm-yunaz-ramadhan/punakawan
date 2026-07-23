@@ -34,6 +34,22 @@ vi.mock("chart.js", () => {
   };
 });
 
+// ProposalReview (rendered once a proposal exists) pulls in
+// VersionLineageGraphView, which constructs a real Cytoscape instance -
+// stub it out exactly like VersionLineageGraphView.test.ts does, since
+// jsdom has no canvas support.
+vi.mock("cytoscape", () => {
+  const factory = vi.fn(() => ({
+    on: vi.fn(),
+    destroy: vi.fn(),
+    style: () => ({ update: vi.fn() }),
+    zoom: vi.fn(() => 1),
+    fit: vi.fn(),
+    layout: () => ({ run: vi.fn() }),
+  }));
+  return { default: factory };
+});
+
 const sampleReview: reviewApi.ArtifactReview = {
   metadata: {
     id: "review-1",
@@ -101,6 +117,31 @@ const sampleRun: reviewApi.RunReference = {
   parent_task_id: "revision-abc123def456",
 };
 
+const proposalReadyReview: reviewApi.ArtifactReview = {
+  ...sampleReview,
+  metadata: { ...sampleReview.metadata, status: "proposal_ready" },
+};
+
+const sampleProposal: reviewApi.ArtifactRevisionProposal = {
+  metadata: {
+    id: "proposal-1",
+    review_id: "review-1",
+    revision_request_id: "revreq-1",
+    attempt: 1,
+    status: "ready",
+  },
+  base: { artifact_id: "plan-panel", version: 3, revision_hash: "sha256:abcdef1234567890" },
+  proposed: {
+    version: 4,
+    content_hash: "sha256:" + "a".repeat(64),
+    content_location: ".punakawan/reviews/review-1/proposals/1.md",
+  },
+  results: {
+    validation_status: "passed",
+    comment_resolutions: [{ comment_id: "comment-1", status: "addressed", changed_block_ids: ["security-model"] }],
+  },
+};
+
 beforeEach(() => {
   vi.spyOn(reviewApi, "getReview").mockResolvedValue(sampleReview);
   vi.spyOn(reviewApi, "getArtifactCurrent").mockResolvedValue(sampleContent);
@@ -126,6 +167,15 @@ beforeEach(() => {
     comment_count: sampleComments.length,
     revision_request: sampleRevisionRequest,
     run: sampleRun,
+  });
+  vi.spyOn(reviewApi, "listProposals").mockResolvedValue({ items: [sampleProposal] });
+  vi.spyOn(reviewApi, "getProposalDiff").mockResolvedValue({
+    lines: [{ Kind: "equal", Text: "# Plan Panel" }],
+    summary: { added: 0, removed: 0 },
+  });
+  vi.spyOn(reviewApi, "getProposalValidation").mockResolvedValue({
+    structural: { passed: true, issues: [] },
+    compliance: { passed: true, issues: [] },
   });
 });
 
@@ -397,6 +447,46 @@ describe("ReviewMode", () => {
           status: "resolved_by_user",
         }),
       );
+    });
+  });
+
+  describe("proposal review", () => {
+    it("renders ProposalReview instead of ActiveRevisionSummary once a proposal exists", async () => {
+      (reviewApi.getReview as ReturnType<typeof vi.fn>).mockResolvedValue(proposalReadyReview);
+
+      render(ReviewMode, { props: { reviewId: "review-1", forceWidth: 1280 } });
+
+      await waitFor(() => expect(screen.getByTestId("proposal-review")).toBeTruthy());
+      expect(screen.queryByTestId("active-revision-summary")).toBeNull();
+      expect(reviewApi.listProposals).toHaveBeenCalledWith("review-1");
+    });
+
+    it("still renders ActiveRevisionSummary (not ProposalReview) for in-flight statuses with no proposal yet", async () => {
+      (reviewApi.getReview as ReturnType<typeof vi.fn>).mockResolvedValue(queuedReview);
+
+      render(ReviewMode, { props: { reviewId: "review-1", forceWidth: 1280 } });
+
+      await waitFor(() => expect(screen.getByTestId("active-revision-summary")).toBeTruthy());
+      expect(screen.queryByTestId("proposal-review")).toBeNull();
+    });
+
+    it("refetches comments and re-renders after an accept action changes the review", async () => {
+      (reviewApi.getReview as ReturnType<typeof vi.fn>).mockResolvedValue(proposalReadyReview);
+      const acceptedReview: reviewApi.ArtifactReview = {
+        ...proposalReadyReview,
+        metadata: { ...proposalReadyReview.metadata, status: "accepted" },
+      };
+      vi.spyOn(reviewApi, "acceptProposal").mockResolvedValue({ review: acceptedReview, new_version: {} });
+
+      render(ReviewMode, { props: { reviewId: "review-1", forceWidth: 1280 } });
+      await waitFor(() => expect(screen.getByTestId("accept-button")).toBeTruthy());
+
+      await fireEvent.click(screen.getByTestId("accept-button"));
+      const dialog = screen.getByRole("dialog");
+      await fireEvent.click(within(dialog).getByText("Accept Proposal"));
+
+      await waitFor(() => expect(reviewApi.acceptProposal).toHaveBeenCalledWith("review-1", "1"));
+      await waitFor(() => expect(screen.queryByTestId("accept-button")).toBeNull());
     });
   });
 });
