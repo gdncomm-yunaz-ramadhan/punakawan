@@ -1,0 +1,37 @@
+internal/contextrequest/contextrequest.go
+  6c4a5633395342b7 1-119
+internal/contextrequest/contextrequest_test.go
+  6c4a5633395342b7 1-85
+internal/mcpserver/tools.go
+  6c4a5633395342b7 230-243
+protocol/missingcontextrequest.schema.json
+  6c4a5633395342b7 1-29
+internal/app/app.go
+  6c4a5633395342b7 16,42,117-121,138
+pkg/protocol/doc.go
+  6c4a5633395342b7 6
+internal/mcpserver/tools_contextrequest.go
+  6c4a5633395342b7 1-141
+internal/mcpserver/tools_contextrequest_test.go
+  6c4a5633395342b7 1-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "a2e516b5f8c9cb8a791f1f985fd3f16018deb32d",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 529,
+      "total_deletions": 11,
+      "accepted_lines": 519,
+      "overriden_lines": 0
+    }
+  }
+}
