@@ -53,7 +53,10 @@ type Sprint struct {
 // whichever later phase adds live execution (§15's RecipeExecutor) - an
 // honest gap, not an oversight. A nil Agile client is valid: both
 // resolvers degrade to an explicitly labeled futureSprints()
-// approximation with a warning instead of failing outright.
+// approximation with a warning instead of failing outright. Whatever
+// eventually implements this against real HTTP should be wrapped in
+// RetryingAgile (retry.go, task q9r.7 #2) for the same rate-limit/
+// transient-failure protection as JiraSearchClient.
 type JiraAgileClient interface {
 	BoardsForProject(ctx context.Context, projectKey string) ([]Board, error)
 	Sprints(ctx context.Context, boardID string) ([]Sprint, error)
@@ -426,6 +429,16 @@ func (c *Compiler) callResolver(ctx context.Context, name string, m map[string]i
 		return nil, fmt.Errorf("recipe: compile: unknown resolver %q", name)
 	}
 	argsRaw, _ := m["arguments"].(map[string]interface{})
+	// selector.value.resolver.arguments is the schema's other fully
+	// free-form object (task q9r.7 #4): a candidate recipe compiled
+	// during discovery, before CreateVersion ever persists it, could
+	// otherwise carry a secret-shaped argument value straight into a
+	// stored selector. Checking here, not just at the last_execution
+	// boundary in operation.go, covers both places a recipe record can
+	// pick up caller-supplied free-form data.
+	if err := CheckNoSecrets(fmt.Sprintf("selector.resolver[%s].arguments", name), argsRaw); err != nil {
+		return nil, err
+	}
 	args := make(map[string]interface{}, len(argsRaw))
 	for k, raw := range argsRaw {
 		resolvedArg, err := c.resolveArgument(ctx, raw, warnings)

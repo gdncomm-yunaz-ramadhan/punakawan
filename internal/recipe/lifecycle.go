@@ -89,7 +89,11 @@ func (r *Repository) Verify(recipeID, verifiedBy, reason string) error {
 	}
 	rec.Validity.State = protocol.KnowledgeRecordValidityStateVerified
 	rec.Validity.VerifiedBy = []string{verifiedBy}
-	if err := r.Store.Put(rec); err != nil {
+	// Two callers racing to revalidate the same stale recipe (task q9r.7
+	// #5's concurrency question) both reach this same Put; retry the
+	// transient Dolt conflict that can produce rather than letting one
+	// caller's otherwise-successful revalidation fail outright.
+	if err := putWithConflictRetry(r.Store.Put, rec); err != nil {
 		return fmt.Errorf("recipe: verify: %w", err)
 	}
 	return nil

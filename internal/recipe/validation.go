@@ -30,7 +30,10 @@ type JiraIssue struct {
 // wiring this to call_adapter_operation is §15's RecipeExecutor, a later
 // phase's job, same honest gap as Compiler's JiraAgileClient. A nil
 // client makes Validate fail step 6 explicitly rather than silently
-// reporting zero results as a pass.
+// reporting zero results as a pass. Whatever eventually implements this
+// interface against real HTTP should be wrapped in RetryingSearch
+// (retry.go, task q9r.7 #2) so a 429/5xx/timeout doesn't fail an
+// otherwise-healthy validate/execute call outright.
 type JiraSearchClient interface {
 	Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]JiraIssue, error)
 }

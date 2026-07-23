@@ -13,9 +13,15 @@ import (
 type fakeSearch struct {
 	issues []JiraIssue
 	err    error
+	// calls counts every Search invocation, for tests that assert a code
+	// path did (or deliberately did not) trigger an extra provider round
+	// trip - e.g. a matching instance fingerprint must not force a
+	// redundant revalidation dry run.
+	calls int
 }
 
 func (f *fakeSearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]JiraIssue, error) {
+	f.calls++
 	if f.err != nil {
 		return nil, f.err
 	}

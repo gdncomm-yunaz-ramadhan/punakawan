@@ -5,6 +5,72 @@
 // its RetrievalRecipe field populated (Phase 0), so this package only
 // adds recipe-shaped querying and ranking on top of the store that
 // already exists.
+//
+// # Adding a second read-only provider (task q9r.7 #7)
+//
+// This phase implements exactly one provider, Jira, so there is no
+// separate provider-agnostic Compiler/Resolver/Validator/Executor
+// interface today the way §15 stylizes them - Jira is not "the first
+// implementation of a generic seam", it is simply what got built first.
+// The package-level structure is, however, already naturally seamed along
+// provider lines: two-thirds of it (Repository and Resolver, in
+// repository.go/resolver.go) has zero Jira-specific code at all, and the
+// discovery state machine (discovery.go) and lifecycle commands
+// (lifecycle.go) are provider-agnostic in every way except doc-comment
+// prose. A second provider (e.g. a read-only Confluence or GitHub search
+// recipe) needs to touch only:
+//
+//  1. JiraSearchClient (validation.go) - a "run this compiled query
+//     against the real provider, return rows" interface. A second
+//     provider implements the equivalent shape for its own compiled
+//     query type (e.g. a ConfluenceSearchClient running CQL).
+//  2. JiraAgileClient (compiler.go) - resolves the dynamic
+//     provider-specific metadata a selector's `resolver:`-shaped values
+//     need (Jira's board/sprint lookups). A provider with no equivalent
+//     dynamic-resolution need (most read-only lookups won't) can skip
+//     this seam entirely; NewCompiler already treats a nil Agile client
+//     as valid.
+//  3. Compiler (compiler.go) - the selector-AST-to-provider-query
+//     translation (§5's QueryCompiler). A second provider needs its own
+//     Compiler-shaped type with its own field/operator allow-list
+//     (fieldOperators) and its own escaping function (quoteJQL's
+//     equivalent) - selector/resolver/clarification-error plumbing
+//     (ClarificationNeededError, ResolverFunc, the any/all selector walk)
+//     is reusable as-is only if the second provider's query language is
+//     boolean-clause-shaped like JQL; a provider with a fundamentally
+//     different query model (e.g. a graph query) would need its own
+//     compiler from the selector AST down, not a copy of this one.
+//  4. Validator/Executor (validation.go/operation.go) - both are
+//     structurally generic pipelines (schema/compile validation, dry run,
+//     sample/match-reason reporting, execute-and-record-evidence) that
+//     happen to be typed directly to Jira's client interfaces and result
+//     shape rather than a generic one. Concretely: ValidationReport.JQL
+//     and ExecutorResult.Issues []JiraIssue are Jira-named fields for
+//     what is conceptually "the compiled query text" and "the result
+//     rows" - a naming leak, not a logic leak (nothing here parses JQL
+//     syntax or assumes Jira semantics beyond the field name). A second
+//     provider today would need its own Validator/Executor-shaped type
+//     with the same pipeline logic and its own JiraIssue-equivalent
+//     result row type, copying the ~80 lines of orchestration rather than
+//     sharing it generically.
+//
+// What stays fully generic and shared unchanged by any additional
+// provider: protocol.KnowledgeRecordRetrievalRecipe's schema shape
+// (selector/validation/last_execution), Repository (storage/scope
+// filtering), Resolver (ranking/ambiguity), DiscoverySession (the
+// guided-discovery state machine), and the lifecycle commands
+// (dispute/supersede/update/staleness/instance-fingerprint checks in
+// lifecycle.go and fingerprint.go).
+//
+// Generalizing bullets 3-4 into truly provider-agnostic interfaces
+// (rather than "copy this file, retype the client and result shape") is
+// real, non-trivial refactoring - renaming JQL/JiraIssue and extracting a
+// provider-parameterized Compiler/Executor would ripple across every file
+// in this package plus every test that references them. That is out of
+// this hardening phase's scope; see punokawan-q9r.7's filed follow-up gap
+// for generalizing the Validator/Executor pipeline (JQL/JiraIssue naming)
+// into a provider-parameterized shape once a second provider is actually
+// being added, rather than speculatively generalizing it now.
 package recipe
 
 import (

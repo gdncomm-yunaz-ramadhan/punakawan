@@ -11,7 +11,10 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-func newTestStore(t *testing.T) *knowledge.Store {
+// newTestStore accepts testing.TB (not just *testing.T) so benchmarks
+// (repository_bench_test.go's *testing.B) can share this exact setup/
+// cleanup path instead of a parallel copy.
+func newTestStore(t testing.TB) *knowledge.Store {
 	t.Helper()
 	if _, err := exec.LookPath("dolt"); err != nil {
 		t.Skip("dolt not installed")
