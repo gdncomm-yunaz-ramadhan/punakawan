@@ -75,6 +75,13 @@ const (
 	StalenessProviderRejected StalenessReason = "provider_rejected_query"
 	StalenessUserReported     StalenessReason = "user_reported_incorrect"
 	StalenessRevalidationDue  StalenessReason = "revalidation_period_expired"
+	// StalenessSchemaDrift is task q9r.7.2's proactive counterpart to
+	// StalenessProviderRejected: a built-in field the recipe's selector
+	// references was found missing from its project's current field
+	// configuration by a configured JiraFieldSchemaClient, detected before
+	// a live query ever ran against it rather than only reacting to Jira
+	// rejecting the query outright.
+	StalenessSchemaDrift StalenessReason = "schema_drift"
 )
 
 // Verify moves a recipe to verified and sets verified_by. Store.Put's

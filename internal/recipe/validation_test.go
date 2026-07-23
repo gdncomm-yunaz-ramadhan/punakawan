@@ -11,7 +11,7 @@ import (
 )
 
 type fakeSearch struct {
-	issues []JiraIssue
+	issues []ResultRow
 	err    error
 	// calls counts every Search invocation, for tests that assert a code
 	// path did (or deliberately did not) trigger an extra provider round
@@ -20,7 +20,7 @@ type fakeSearch struct {
 	calls int
 }
 
-func (f *fakeSearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]JiraIssue, error) {
+func (f *fakeSearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]ResultRow, error) {
 	f.calls++
 	if f.err != nil {
 		return nil, f.err
@@ -62,7 +62,7 @@ func TestValidateNoSearchClientFails(t *testing.T) {
 }
 
 func TestValidatePassesAndAttributesMatchReasons(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{
+	search := &fakeSearch{issues: []ResultRow{
 		{Key: "TRF-1842", Summary: "Affiliate payout retry", Fields: map[string]interface{}{"component": "AFFILIATE-PLATFORM"}},
 		{Key: "TRF-1851", Summary: "AFFILIATE PLATFORM dashboard audit", Fields: map[string]interface{}{"component": "WEB"}},
 	}}
@@ -103,7 +103,7 @@ func TestValidateFailsBelowMinResults(t *testing.T) {
 }
 
 func TestValidateFailsWhenExcludedResultStillMatches(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1842", Summary: "Affiliate payout retry"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1842", Summary: "Affiliate payout retry"}}}
 	v := &Validator{Compiler: NewCompiler(nil), Search: search}
 
 	report, err := v.Validate(context.Background(), validationRecipe(), nil, []string{"TRF-1842"}, nil)
@@ -116,7 +116,7 @@ func TestValidateFailsWhenExcludedResultStillMatches(t *testing.T) {
 }
 
 func TestValidateFailsWhenMustIncludeMissing(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1842", Summary: "Affiliate payout retry"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1842", Summary: "Affiliate payout retry"}}}
 	v := &Validator{Compiler: NewCompiler(nil), Search: search}
 
 	report, err := v.Validate(context.Background(), validationRecipe(), nil, nil, []string{"TRF-9999"})
@@ -172,7 +172,7 @@ func TestRecordValidationAndAcceptanceEvidence(t *testing.T) {
 		t.Fatalf("OpenLedger: %v", err)
 	}
 
-	report := ValidationReport{Status: protocol.KnowledgeRecordRetrievalRecipeValidationStatusPassed, JQL: `project = "TRF"`, ResultCount: 14}
+	report := ValidationReport{Status: protocol.KnowledgeRecordRetrievalRecipeValidationStatusPassed, CompiledQueryText: `project = "TRF"`, ResultCount: 14}
 	if _, err := RecordValidationEvidence(ledger, "run-1", "task-1", report, time.Now()); err != nil {
 		t.Fatalf("RecordValidationEvidence: %v", err)
 	}

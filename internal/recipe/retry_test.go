@@ -14,11 +14,11 @@ import (
 type fakeFlakySearch struct {
 	failCount int
 	err       error
-	issues    []JiraIssue
+	issues    []ResultRow
 	calls     int
 }
 
-func (f *fakeFlakySearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]JiraIssue, error) {
+func (f *fakeFlakySearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]ResultRow, error) {
 	f.calls++
 	if f.calls <= f.failCount {
 		return nil, f.err
@@ -31,7 +31,7 @@ func fastTestPolicy() BackoffPolicy {
 }
 
 func TestRetryingSearchRetriesTransientFailureAndSucceeds(t *testing.T) {
-	inner := &fakeFlakySearch{failCount: 2, err: &RetryableError{Err: errors.New("429 too many requests")}, issues: []JiraIssue{{Key: "TRF-1"}}}
+	inner := &fakeFlakySearch{failCount: 2, err: &RetryableError{Err: errors.New("429 too many requests")}, issues: []ResultRow{{Key: "TRF-1"}}}
 	rs := &RetryingSearch{Client: inner, Policy: fastTestPolicy()}
 
 	got, err := rs.Search(context.Background(), "project = TRF", "", nil, 20)
@@ -74,7 +74,7 @@ func TestRetryingSearchDoesNotRetryPermanentFailure(t *testing.T) {
 }
 
 func TestRetryingSearchHonorsRetryAfter(t *testing.T) {
-	inner := &fakeFlakySearch{failCount: 1, err: &RetryableError{Err: errors.New("429"), RetryAfter: 2 * time.Millisecond}, issues: []JiraIssue{{Key: "TRF-1"}}}
+	inner := &fakeFlakySearch{failCount: 1, err: &RetryableError{Err: errors.New("429"), RetryAfter: 2 * time.Millisecond}, issues: []ResultRow{{Key: "TRF-1"}}}
 	rs := &RetryingSearch{Client: inner, Policy: BackoffPolicy{MaxAttempts: 3, BaseDelay: time.Hour}}
 
 	start := time.Now()

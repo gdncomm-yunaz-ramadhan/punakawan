@@ -37,7 +37,7 @@ func verifiedRecipeFixture(id string) protocol.KnowledgeRecord {
 }
 
 func TestResolveAndExecuteRunsAVerifiedRecipe(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}, {Key: "TRF-2", Summary: "b"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}, {Key: "TRF-2", Summary: "b"}}}
 	exec, repo := newTestExecutor(t, search)
 
 	rec := verifiedRecipeFixture("pkw:recipe/a/only")
@@ -82,7 +82,7 @@ func TestResolveAndExecuteReturnsDiscoveryNeededWhenNoCandidate(t *testing.T) {
 }
 
 func TestResolveAndExecuteRevalidatesStaleRecipeBeforeReuse(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}}}
 	exec, repo := newTestExecutor(t, search)
 
 	rec := withSelector(recipeFixture{id: "pkw:recipe/a/aging", capability: "jira.issue.search", state: protocol.KnowledgeRecordValidityStateStale}.build())
@@ -129,7 +129,7 @@ func TestResolveAndExecuteFailsWhenRevalidationFindsNothing(t *testing.T) {
 }
 
 func TestResolveAndExecuteRecordsExecutionEvidence(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}}}
 	exec, repo := newTestExecutor(t, search)
 
 	rec := verifiedRecipeFixture("pkw:recipe/a/only")

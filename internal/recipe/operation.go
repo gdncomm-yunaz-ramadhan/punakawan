@@ -60,6 +60,15 @@ type Executor struct {
 	// caller's behavior exactly - only a caller that populates this can
 	// opt into instance-mismatch protection.
 	Instance InstanceFingerprint
+	// Schema, if set, enables task q9r.7.2's proactive schema-drift check:
+	// before reusing an otherwise-clean Resolved candidate, ask it whether
+	// every built-in field the recipe's selector references still exists
+	// in its project's field configuration, catching a removed field
+	// before a live query ever runs against it. nil (the default)
+	// disables the check entirely, preserving every existing caller's
+	// behavior exactly - only execute's reactive StalenessProviderRejected
+	// handling below still applies.
+	Schema JiraFieldSchemaClient
 }
 
 // ExecutionResult is what a successful resolve_operation step returns.
@@ -67,7 +76,7 @@ type ExecutionResult struct {
 	RecipeID      string
 	RecipeVersion int
 	CompiledQuery CompiledQuery
-	Issues        []JiraIssue
+	Issues        []ResultRow
 	Evidence      protocol.EvidenceRecord
 }
 
@@ -96,11 +105,34 @@ func (e *Executor) ResolveAndExecute(ctx context.Context, req OperationRequest, 
 		res.Outcome = OutcomeStale
 	}
 
+	// task q9r.7.2: catch a removed built-in field before ever running a
+	// live query against it, rather than relying solely on execute's
+	// reactive StalenessProviderRejected handling below (which only fires
+	// after Jira itself rejects the compiled query). Only checked for an
+	// otherwise-clean Resolved candidate - one already headed for
+	// revalidation (Stale, or just fingerprint-mismatched above) gets no
+	// benefit from an extra live schema lookup, since it is about to be
+	// recompiled and dry-run again regardless. Unlike the fingerprint
+	// check above, a detected drift is marked stale immediately (mirroring
+	// execute's own StalenessProviderRejected call) rather than only
+	// branching in memory, since nothing later in this path would
+	// otherwise ever persist it.
+	schemaDrifted := res.Outcome == OutcomeResolved && e.checkFieldSchemaDrift(ctx, rec)
+	if schemaDrifted {
+		if err := e.Repo.MarkStale(rec.Id, StalenessSchemaDrift); err != nil {
+			return nil, fmt.Errorf("recipe: resolve_operation: mark recipe %q stale on schema drift: %w", rec.Id, err)
+		}
+		res.Outcome = OutcomeStale
+	}
+
 	switch res.Outcome {
 	case OutcomeStale:
 		if err := e.revalidate(ctx, rec, bindings); err != nil {
 			reason := fmt.Sprintf("stale recipe %q failed revalidation: %v", rec.Id, err)
-			if fingerprintErr != nil {
+			switch {
+			case schemaDrifted:
+				reason = fmt.Sprintf("recipe %q failed revalidation after a detected field-schema drift: %v", rec.Id, err)
+			case fingerprintErr != nil:
 				reason = fmt.Sprintf("recipe %q failed revalidation after instance-fingerprint mismatch (%v): %v", rec.Id, fingerprintErr, err)
 			}
 			return nil, fmt.Errorf("recipe: resolve_operation: %s", reason)
@@ -149,6 +181,44 @@ func (e *Executor) revalidate(ctx context.Context, rec protocol.KnowledgeRecord,
 	// this re-check, not a second full acceptance (§9 step 10's human
 	// acceptance already happened when the recipe was first verified).
 	return e.Repo.Verify(rec.Id, "system:revalidation", "revalidated after staleness")
+}
+
+// checkFieldSchemaDrift is task q9r.7.2's proactive drift check: it asks
+// e.Schema (if configured) whether every built-in field rec's selector
+// references is still present in the field configuration of the project
+// the selector's own literal "project" clause scopes to (selectorProjectKey
+// - reusing the scope a recipe's selector already captures, rather than
+// inventing a separate project/issue-type context-resolution mechanism).
+//
+// It is best-effort and only ever positively confirms drift: an
+// unconfigured e.Schema, a client error, or a selector this package
+// cannot anchor to a specific project all mean "cannot check" rather than
+// "assume drift" - a flaky or partially-wired schema client must never
+// block an otherwise-healthy resolve_operation call, since execute's
+// reactive StalenessProviderRejected handling remains the safety net
+// regardless of whether this proactive check ever runs at all.
+func (e *Executor) checkFieldSchemaDrift(ctx context.Context, rec protocol.KnowledgeRecord) bool {
+	if e.Schema == nil || rec.RetrievalRecipe == nil {
+		return false
+	}
+	projectKey, ok := selectorProjectKey(rec.RetrievalRecipe.Selector)
+	if !ok {
+		return false
+	}
+	fields := referencedBuiltinFields(rec.RetrievalRecipe.Selector)
+	if len(fields) == 0 {
+		return false
+	}
+	schema, err := e.Schema.FieldMeta(ctx, projectKey, "")
+	if err != nil {
+		return false
+	}
+	for _, f := range fields {
+		if _, present := schema.Fields[f]; !present {
+			return true
+		}
+	}
+	return false
 }
 
 // recordFingerprint stamps e.Instance onto rec's validation block after a

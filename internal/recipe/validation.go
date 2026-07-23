@@ -12,9 +12,9 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// JiraIssue is the minimal shape a provider dry run returns: enough to
+// ResultRow is the minimal shape a provider dry run returns: enough to
 // count, sample, and infer match reasons, not a full issue mirror.
-type JiraIssue struct {
+type ResultRow struct {
 	Key     string
 	Summary string
 	// Fields holds raw field values keyed by selector field name (e.g.
@@ -35,7 +35,7 @@ type JiraIssue struct {
 // (retry.go, task q9r.7 #2) so a 429/5xx/timeout doesn't fail an
 // otherwise-healthy validate/execute call outright.
 type JiraSearchClient interface {
-	Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]JiraIssue, error)
+	Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]ResultRow, error)
 }
 
 // SampleResult is one representative row, per §9's presentation table.
@@ -51,8 +51,13 @@ type SampleResult struct {
 // step between what Validate produces and what gets embedded in a
 // recipe's validation block.
 type ValidationReport struct {
-	Status            protocol.KnowledgeRecordRetrievalRecipeValidationStatus
-	JQL               string
+	Status protocol.KnowledgeRecordRetrievalRecipeValidationStatus
+	// CompiledQueryText is the compiled query's provider-native text (JQL,
+	// for the one provider implemented today). Named generically because
+	// the Validator pipeline around it is structurally provider-agnostic
+	// even though only one provider exists yet - see repository.go's
+	// package doc comment.
+	CompiledQueryText string
 	CompiledQueryHash string
 	ResultCount       int
 	Samples           []SampleResult
@@ -98,7 +103,7 @@ func (v *Validator) Validate(ctx context.Context, rr *protocol.KnowledgeRecordRe
 
 	hash := sha256.Sum256([]byte(cq.JQL))
 	report := ValidationReport{
-		JQL:               cq.JQL,
+		CompiledQueryText: cq.JQL,
 		CompiledQueryHash: "sha256:" + hex.EncodeToString(hash[:]),
 		Warnings:          append([]string{}, cq.Warnings...),
 	}
@@ -173,7 +178,7 @@ func (v *Validator) Validate(ctx context.Context, rr *protocol.KnowledgeRecordRe
 // lists component/title reasons, never the sprint clause every result
 // necessarily shares, so skipping dynamic clauses here is consistent
 // with the example rather than a shortcut around it.
-func matchReasons(rr *protocol.KnowledgeRecordRetrievalRecipe, issue JiraIssue) []string {
+func matchReasons(rr *protocol.KnowledgeRecordRetrievalRecipe, issue ResultRow) []string {
 	var reasons []string
 	check := func(field, operator string, value interface{}) {
 		m, ok := value.(map[string]interface{})
@@ -277,7 +282,7 @@ func BuildValidationBlock(report ValidationReport, validationID, acceptedBy stri
 // validation.evidence_ids.
 func RecordValidationEvidence(l *evidence.Ledger, runID, taskID string, report ValidationReport, now time.Time) (protocol.EvidenceRecord, error) {
 	summary := fmt.Sprintf("compiled JQL: %s | result_count=%d sample_size=%d status=%s",
-		report.JQL, report.ResultCount, len(report.Samples), report.Status)
+		report.CompiledQueryText, report.ResultCount, len(report.Samples), report.Status)
 	rec := protocol.EvidenceRecord{
 		Id:        fmt.Sprintf("ev-%s-%s-jql-validate-%d", runID, taskID, now.UnixNano()),
 		RunId:     runID,

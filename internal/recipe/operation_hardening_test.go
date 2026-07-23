@@ -13,7 +13,7 @@ import (
 // Jira instance must not be silently reused against a different one, even
 // though nothing about its capability/scope/selector looks stale.
 func TestResolveAndExecuteRevalidatesOnInstanceFingerprintMismatch(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}}}
 	exec, repo := newTestExecutor(t, search)
 	exec.Instance = InstanceFingerprint{Host: "company-b.atlassian.net", CloudID: "cloud-b"}
 
@@ -52,7 +52,7 @@ func TestResolveAndExecuteRevalidatesOnInstanceFingerprintMismatch(t *testing.T)
 // (which would otherwise defeat the "one clear verified candidate: reuse
 // automatically" fast path, §7).
 func TestResolveAndExecuteDoesNotRevalidateOnMatchingInstance(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}}}
 	exec, repo := newTestExecutor(t, search)
 	fp := InstanceFingerprint{Host: "company-a.atlassian.net", CloudID: "cloud-a"}
 	exec.Instance = fp
@@ -105,7 +105,7 @@ func TestResolveAndExecuteMarksRecipeStaleOnProviderRejection(t *testing.T) {
 	// The very next resolve must go through revalidation rather than
 	// immediately re-attempting (and re-failing) the same query.
 	search.err = nil
-	search.issues = []JiraIssue{{Key: "TRF-9", Summary: "fixed"}}
+	search.issues = []ResultRow{{Key: "TRF-9", Summary: "fixed"}}
 	got, err := exec.ResolveAndExecute(context.Background(), OperationRequest{Capability: "jira.issue.search"}, nil, "run-1", "task-2", time.Now())
 	if err != nil {
 		t.Fatalf("ResolveAndExecute after fix: %v", err)

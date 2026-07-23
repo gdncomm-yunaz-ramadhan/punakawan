@@ -42,17 +42,20 @@
 //     compiler from the selector AST down, not a copy of this one.
 //  4. Validator/Executor (validation.go/operation.go) - both are
 //     structurally generic pipelines (schema/compile validation, dry run,
-//     sample/match-reason reporting, execute-and-record-evidence) that
-//     happen to be typed directly to Jira's client interfaces and result
-//     shape rather than a generic one. Concretely: ValidationReport.JQL
-//     and ExecutorResult.Issues []JiraIssue are Jira-named fields for
-//     what is conceptually "the compiled query text" and "the result
-//     rows" - a naming leak, not a logic leak (nothing here parses JQL
-//     syntax or assumes Jira semantics beyond the field name). A second
-//     provider today would need its own Validator/Executor-shaped type
-//     with the same pipeline logic and its own JiraIssue-equivalent
-//     result row type, copying the ~80 lines of orchestration rather than
-//     sharing it generically.
+//     sample/match-reason reporting, execute-and-record-evidence) typed
+//     directly to Jira's client interface (JiraSearchClient) rather than a
+//     generic one. ValidationReport.CompiledQueryText and
+//     ExecutionResult.Issues's ResultRow element type are honestly,
+//     provider-agnostically named (renamed from JQL/JiraIssue, task
+//     q9r.7.1) since the pipeline logic itself never parses JQL syntax or
+//     assumes Jira semantics beyond the client method signature - but the
+//     seam is still Jira-typed (JiraSearchClient.Search's own signature,
+//     not a generic Provider[T] interface). A second provider today would
+//     still need its own Validator/Executor-shaped type with the same
+//     pipeline logic and its own client interface, copying the ~80 lines
+//     of orchestration rather than sharing it generically, until a second
+//     provider actually exists to verify a real generic interface
+//     against.
 //
 // What stays fully generic and shared unchanged by any additional
 // provider: protocol.KnowledgeRecordRetrievalRecipe's schema shape
@@ -63,14 +66,15 @@
 // lifecycle.go and fingerprint.go).
 //
 // Generalizing bullets 3-4 into truly provider-agnostic interfaces
-// (rather than "copy this file, retype the client and result shape") is
-// real, non-trivial refactoring - renaming JQL/JiraIssue and extracting a
-// provider-parameterized Compiler/Executor would ripple across every file
-// in this package plus every test that references them. That is out of
-// this hardening phase's scope; see punokawan-q9r.7's filed follow-up gap
-// for generalizing the Validator/Executor pipeline (JQL/JiraIssue naming)
-// into a provider-parameterized shape once a second provider is actually
-// being added, rather than speculatively generalizing it now.
+// (rather than "copy this file, retype the client interface") is real,
+// non-trivial refactoring - extracting a provider-parameterized
+// Compiler/Executor (e.g. a Provider[T] type parameter or a generic
+// client interface) would ripple across every file in this package plus
+// every test that references them. The naming leak itself (JQL ->
+// CompiledQueryText, JiraIssue -> ResultRow) was mechanical and safe to
+// fix now (task q9r.7.1, done); the deeper interface generalization
+// remains out of scope until a second provider is actually being added,
+// rather than speculatively generalizing it now.
 package recipe
 
 import (

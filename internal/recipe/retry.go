@@ -156,8 +156,8 @@ func NewRetryingSearch(client JiraSearchClient) *RetryingSearch {
 	return &RetryingSearch{Client: client, Policy: DefaultBackoffPolicy()}
 }
 
-func (r *RetryingSearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]JiraIssue, error) {
-	return withRetry(ctx, r.Policy, func() ([]JiraIssue, error) {
+func (r *RetryingSearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]ResultRow, error) {
+	return withRetry(ctx, r.Policy, func() ([]ResultRow, error) {
 		return r.Client.Search(ctx, jql, orderBy, fields, maxResults)
 	})
 }

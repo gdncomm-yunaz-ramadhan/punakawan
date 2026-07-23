@@ -100,7 +100,7 @@ func TestCheckNoSecretsPassesForOrdinaryBindings(t *testing.T) {
 // reach Store.Put (and therefore never round-trip back out of the
 // knowledge store), not just fail some standalone unit check.
 func TestExecutorRefusesToPersistSecretShapedBinding(t *testing.T) {
-	search := &fakeSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}}}
+	search := &fakeSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}}}
 	exec, repo := newTestExecutor(t, search)
 
 	rec := verifiedRecipeFixture("pkw:recipe/a/secret-binding")

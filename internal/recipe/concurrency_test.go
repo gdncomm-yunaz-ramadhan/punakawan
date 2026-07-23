@@ -26,7 +26,7 @@ import (
 func TestConcurrentResolveAndExecuteAgainstStaleRecipeDoesNotRace(t *testing.T) {
 	const goroutines = 8
 
-	search := &countingSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}}}
+	search := &countingSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}}}
 	exec, repo := newTestExecutor(t, search)
 
 	rec := withSelector(recipeFixture{id: "pkw:recipe/a/racey", capability: "jira.issue.search", state: protocol.KnowledgeRecordValidityStateStale}.build())
@@ -89,11 +89,11 @@ func TestConcurrentResolveAndExecuteAgainstStaleRecipeDoesNotRace(t *testing.T) 
 // fakeSearch (whose issues/err fields are read-only here so a data race on
 // them isn't a concern, but calls needs atomic counting under -race).
 type countingSearch struct {
-	issues []JiraIssue
+	issues []ResultRow
 	calls  atomic.Int64
 }
 
-func (c *countingSearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]JiraIssue, error) {
+func (c *countingSearch) Search(ctx context.Context, jql, orderBy string, fields []string, maxResults int) ([]ResultRow, error) {
 	c.calls.Add(1)
 	return c.issues, nil
 }
@@ -106,7 +106,7 @@ func (c *countingSearch) Search(ctx context.Context, jql, orderBy string, fields
 func TestConcurrentResolveAndExecuteAgainstVerifiedRecipeDoesNotRace(t *testing.T) {
 	const goroutines = 8
 
-	search := &countingSearch{issues: []JiraIssue{{Key: "TRF-1", Summary: "a"}}}
+	search := &countingSearch{issues: []ResultRow{{Key: "TRF-1", Summary: "a"}}}
 	exec, repo := newTestExecutor(t, search)
 
 	rec := verifiedRecipeFixture("pkw:recipe/a/verified-racey")
