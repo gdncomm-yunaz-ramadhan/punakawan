@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SessionDetail from "../src/routes/sessions/SessionDetail.svelte";
 
@@ -70,6 +70,7 @@ describe("SessionDetail", () => {
 
     (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
       if (url.includes("/capsules")) return Promise.resolve(jsonResponse(capsules));
+      if (url.includes("/evidence")) return Promise.resolve(jsonResponse({ items: [] }));
       return Promise.resolve(jsonResponse(session));
     });
 
@@ -83,6 +84,49 @@ describe("SessionDetail", () => {
     expect(screen.getAllByText("tests_run").length).toBeGreaterThan(0);
     expect(screen.getByText("implement the refund flow")).toBeTruthy();
     expect(screen.getByText(/1 total error/)).toBeTruthy();
+  });
+
+  it("expands an evidence record to show its redacted preview text", async () => {
+    const session = {
+      id: "run-1",
+      workspace_id: "ws-a",
+      workflow: "feature-delivery",
+      status: "executing",
+      started_at: "2026-07-23T00:00:00Z",
+      updated_at: "2026-07-23T00:05:00Z",
+      Timeline: [],
+    };
+    const evidenceList = {
+      items: [
+        { id: "ev-1", run_id: "run-1", type: "command-output", summary: "build log", created_at: "2026-07-23T00:01:00Z" },
+      ],
+    };
+    const preview = {
+      content_type: "text/plain",
+      text: "build ok\n[REDACTED]\n",
+      offset: 0,
+      total_size: 20,
+      truncated: false,
+      diff_summary: null,
+    };
+
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
+      if (url.includes("/capsules")) return Promise.resolve(jsonResponse({ items: [] }));
+      if (url.includes("/evidence/ev-1/preview")) return Promise.resolve(jsonResponse(preview));
+      if (url.includes("/evidence")) return Promise.resolve(jsonResponse(evidenceList));
+      return Promise.resolve(jsonResponse(session));
+    });
+
+    render(SessionDetail, { props: { workspaceId: "ws-a", sessionId: "run-1" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("build log")).toBeTruthy();
+    });
+    await fireEvent.click(screen.getByText("build log"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/build ok/)).toBeTruthy();
+    });
   });
 
   it("shows an error state when the session call fails", async () => {

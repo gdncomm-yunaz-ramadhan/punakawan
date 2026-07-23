@@ -5,7 +5,7 @@
     { path: "/", label: "Overview" },
     { path: "/workspaces", label: "Workspaces" },
     { path: "/search", label: "Search" },
-    { path: "/system", label: "System", disabled: true },
+    { path: "/system", label: "System" },
   ];
 
   function isActive(path: string): boolean {

@@ -73,6 +73,16 @@ export interface ApprovalRecord {
   status: string;
   created_at: string;
   resolved_at?: string;
+  approved_by?: string;
+  preview?: string;
+  policy_level?: string;
+  // approve_command/deny_command are only present on GET .../approvals'
+  // response (internal/panel/api/approval_handler.go), and only for a
+  // still-pending record - the panel's read-only MVP has no
+  // approve/deny endpoint of its own, so this is the concrete next step
+  // ("run this in your terminal") it can offer instead.
+  approve_command?: string;
+  deny_command?: string;
 }
 
 export type NeedsAttentionKind =
@@ -440,4 +450,95 @@ export function globalSearch(
   if (opts.repo) params.set("repo", opts.repo);
   if (opts.limit) params.set("limit", String(opts.limit));
   return getJSON<{ items: GlobalSearchResult[] }>(`/search?${params.toString()}`);
+}
+
+export type EvidenceRecordType =
+  | "source-excerpt"
+  | "repository-snapshot"
+  | "command-output"
+  | "test-report"
+  | "playwright-trace"
+  | "screenshot"
+  | "api-diff"
+  | "git-diff"
+  | "commit"
+  | "user-answer"
+  | "approval-record"
+  | "external-response";
+
+export interface EvidenceRecord {
+  id: string;
+  run_id: string;
+  task_id?: string;
+  type: EvidenceRecordType;
+  path?: string;
+  content_hash?: string;
+  summary?: string;
+  created_at: string;
+}
+
+export interface DiffSummary {
+  files_changed: number;
+  insertions: number;
+  deletions: number;
+  truncated: boolean;
+}
+
+export interface EvidenceTextPreview {
+  content_type: string;
+  text: string;
+  offset: number;
+  total_size: number;
+  truncated: boolean;
+  diff_summary: DiffSummary | null;
+}
+
+// binaryEvidenceTypes mirrors internal/panel/sources/evidence_source.go's
+// binaryEvidenceTypes: these are served as a raw blob (an <img> can point
+// straight at evidencePreviewUrl), never as the JSON text-preview shape.
+const binaryEvidenceTypes: ReadonlySet<EvidenceRecordType> = new Set(["screenshot", "playwright-trace"]);
+
+export function isBinaryEvidence(type: EvidenceRecordType): boolean {
+  return binaryEvidenceTypes.has(type);
+}
+
+export function listEvidence(workspaceId: string, sessionId: string): Promise<{ items: EvidenceRecord[] }> {
+  return getJSON<{ items: EvidenceRecord[] }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}/evidence`,
+  );
+}
+
+export function getEvidence(workspaceId: string, evidenceId: string): Promise<EvidenceRecord> {
+  return getJSON<EvidenceRecord>(`/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}`);
+}
+
+// evidencePreviewUrl builds the preview URL directly (rather than
+// fetching through getJSON) so callers can hand it straight to an <img
+// src> for binary evidence (screenshots) without round-tripping the
+// bytes through JS.
+export function evidencePreviewUrl(workspaceId: string, evidenceId: string, opts: { offset?: number; limit?: number } = {}): string {
+  const params = new URLSearchParams();
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`;
+}
+
+export function getEvidenceTextPreview(
+  workspaceId: string,
+  evidenceId: string,
+  opts: { offset?: number; limit?: number } = {},
+): Promise<EvidenceTextPreview> {
+  const params = new URLSearchParams();
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return getJSON<EvidenceTextPreview>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function listApprovals(workspaceId: string, status?: string): Promise<{ items: ApprovalRecord[] }> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return getJSON<{ items: ApprovalRecord[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/approvals${qs}`);
 }

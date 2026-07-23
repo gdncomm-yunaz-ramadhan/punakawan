@@ -86,6 +86,21 @@ func (r *Registry) SetSyncQueue(q *syncqueue.Queue) {
 	}
 }
 
+// Specs returns a copy of the configured adapter ids and specs, without
+// starting any of them. Callers that only need to introspect what is
+// configured (e.g. a panel health check) should use this rather than
+// Gate, which has the side effect of spawning the adapter process.
+func (r *Registry) Specs() map[string]AdapterSpec {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := make(map[string]AdapterSpec, len(r.specs))
+	for id, spec := range r.specs {
+		out[id] = spec
+	}
+	return out
+}
+
 // Gate returns the memoized Gate for adapterID, starting the adapter
 // process, fetching its manifest, and completing the initialize handshake
 // on first use.

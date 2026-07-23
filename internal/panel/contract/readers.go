@@ -173,12 +173,44 @@ type KnowledgeFilter struct {
 }
 
 // EvidenceReader lists and describes evidence records, per §8.4. Large
-// artifacts are not loaded by these calls: Get returns the
-// protocol.EvidenceRecord's metadata (path, hash, type), and reading the
-// artifact itself is left to a later phase's dedicated preview endpoints.
+// artifacts are not loaded by List/Get: Get returns the
+// protocol.EvidenceRecord's metadata (path, hash, type) only. Preview is
+// the dedicated, size-bounded path for actually reading an artifact's
+// content, per §14.7/Phase 6's ranged log loading, diff summaries, and
+// screenshot previews.
 type EvidenceReader interface {
 	List(ctx context.Context, workspaceID, sessionID string) ([]protocol.EvidenceRecord, error)
 	Get(ctx context.Context, workspaceID, evidenceID string) (protocol.EvidenceRecord, error)
+	// Preview reads at most limit bytes of the evidence artifact starting
+	// at offset (limit<=0 selects a source-defined default), enforcing
+	// that the artifact's resolved path lies within the workspace's own
+	// evidence directory - the concrete mechanism behind Phase 6's exit
+	// criterion "arbitrary workspace paths cannot be served".
+	Preview(ctx context.Context, workspaceID, evidenceID string, offset, limit int64) (EvidencePreview, error)
+}
+
+// DiffSummary is a cheap, streamed-and-bounded count of a unified diff's
+// shape (files touched, lines added/removed), computed without holding
+// the full diff in memory at once. Only populated for
+// EvidenceRecordTypeGitDiff/ApiDiff previews.
+type DiffSummary struct {
+	FilesChanged int  `json:"files_changed"`
+	Insertions   int  `json:"insertions"`
+	Deletions    int  `json:"deletions"`
+	Truncated    bool `json:"truncated"`
+}
+
+// EvidencePreview is EvidenceReader.Preview's result: either a redacted
+// text excerpt (Kind "text") or a size-capped binary blob (Kind "binary",
+// e.g. a screenshot), never both.
+type EvidencePreview struct {
+	Kind        string // "text" or "binary"
+	MimeType    string
+	Data        []byte
+	TotalSize   int64
+	Offset      int64
+	Truncated   bool
+	DiffSummary *DiffSummary
 }
 
 // ApprovalFilter narrows ApprovalReader.List.

@@ -3,11 +3,14 @@
   import {
     getSession,
     listCapsules,
+    listEvidence,
     type SessionDetail,
     type TimelineEvent,
     type ContextCapsule,
+    type EvidenceRecord,
   } from "../../lib/api/client";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import EvidenceItem from "../../lib/components/EvidenceItem.svelte";
 
   interface Props {
     workspaceId: string;
@@ -17,6 +20,7 @@
 
   let detail: SessionDetail | null = $state(null);
   let capsules: ContextCapsule[] = $state([]);
+  let evidence: EvidenceRecord[] = $state([]);
   let error: string | null = $state(null);
   let loading = $state(true);
 
@@ -26,8 +30,9 @@
     loading = true;
     error = null;
     try {
-      const d = await getSession(wsId, sesId);
+      const [d, ev] = await Promise.all([getSession(wsId, sesId), listEvidence(wsId, sesId)]);
       detail = d;
+      evidence = ev.items;
 
       // Context capsules have no run/session field (a documented gap, see
       // internal/panel/api/capsule_handler.go) - the closest honest link
@@ -85,6 +90,19 @@
       <div class="card"><strong>{detail.task_counts?.closed ?? 0}</strong><span>Closed</span></div>
       <div class="card"><strong>{detail.evidence_count ?? 0}</strong><span>Evidence</span></div>
     </div>
+  </section>
+
+  <section aria-labelledby="evidence-heading">
+    <h2 id="evidence-heading">Evidence</h2>
+    {#if evidence.length === 0}
+      <p>No evidence recorded for this session.</p>
+    {:else}
+      <ul class="evidence">
+        {#each evidence as rec (rec.id)}
+          <EvidenceItem {workspaceId} record={rec} />
+        {/each}
+      </ul>
+    {/if}
   </section>
 
   <section aria-labelledby="timeline-heading">
@@ -341,6 +359,12 @@
   .hint {
     color: #666;
     font-size: 0.8rem;
+  }
+  ul.evidence {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
   }
 
   @media (max-width: 720px) {

@@ -13,6 +13,8 @@
   import KnowledgeList from "./routes/knowledge/KnowledgeList.svelte";
   import KnowledgeDetail from "./routes/knowledge/KnowledgeDetail.svelte";
   import GlobalSearch from "./routes/search/GlobalSearch.svelte";
+  import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
+  import SystemPage from "./routes/system/SystemPage.svelte";
 
   let system: SystemInfo | null = $state(null);
   let systemError: string | null = $state(null);
@@ -31,6 +33,7 @@
   const tasksPath = /^\/workspaces\/([^/]+)\/tasks$/;
   const knowledgeListPath = /^\/workspaces\/([^/]+)\/knowledge$/;
   const knowledgeDetailPath = /^\/workspaces\/([^/]+)\/knowledge\/([^/]+)$/;
+  const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
 </script>
 
 <div class="shell">
@@ -48,6 +51,11 @@
         <WorkspacesList />
       {:else if getPath() === "/search"}
         <GlobalSearch />
+      {:else if getPath() === "/system"}
+        <SystemPage />
+      {:else if approvalsPath.exec(getPath())}
+        {@const match = approvalsPath.exec(getPath())}
+        <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
       {:else if knowledgeDetailPath.exec(getPath())}
         {@const match = knowledgeDetailPath.exec(getPath())}
         <KnowledgeDetail

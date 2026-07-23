@@ -7,6 +7,8 @@ package sources
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"sort"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
@@ -197,6 +199,9 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 		health = append(health, healthOK("workflow", now))
 	}
 
+	health = append(health, gitHealth(ctx, a, now)...)
+	health = append(health, adapterHealth(a, now)...)
+
 	displayName := a.Workspace.Name
 	pinned := false
 	if entry != nil {
@@ -220,6 +225,76 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 		Pinned:             pinned,
 	}
 	return contract.WorkspaceDetail{WorkspaceSummary: summary, Health: health}, nil
+}
+
+// gitHealth reports one protocol.PanelSourceHealth per repository a
+// declares, via `git status` through a.Inspector (read-only, per §14.3
+// "Git health"). A repository whose path cannot be resolved or whose
+// status command fails is reported unavailable rather than failing the
+// whole workspace describe call, matching every other per-source health
+// check here.
+func gitHealth(ctx context.Context, a *app.App, now time.Time) []protocol.PanelSourceHealth {
+	health := make([]protocol.PanelSourceHealth, 0, len(a.Workspace.Repositories))
+	for _, repo := range a.Workspace.Repositories {
+		source := "git:" + repo.ID
+		path, err := a.RepoPath(repo.ID)
+		if err != nil {
+			health = append(health, healthDown(source, err, now))
+			continue
+		}
+		status, err := a.Inspector.Status(ctx, path)
+		if err != nil {
+			health = append(health, healthDown(source, err, now))
+			continue
+		}
+		branch := status.Branch
+		if branch == "" {
+			branch = "(detached)"
+		}
+		msg := fmt.Sprintf("branch=%s clean=%t changed_files=%d", branch, status.Clean, len(status.ChangedFiles))
+		health = append(health, protocol.PanelSourceHealth{
+			Source:       source,
+			Availability: protocol.PanelSourceHealthAvailabilityAvailable,
+			Message:      &msg,
+			CheckedAt:    now,
+		})
+	}
+	return health
+}
+
+// adapterHealth reports one protocol.PanelSourceHealth per configured
+// external adapter (Jira, Confluence, ...), per §14.3/§18's "source
+// adapter health". It deliberately does not start the adapter process
+// (a.AdapterRegistry.Gate would spawn it and perform a live handshake,
+// which is neither cheap nor side-effect-free to do on every workspace
+// page load): it only checks that the adapter's configured command
+// resolves on PATH, an honest but shallower signal than "the adapter is
+// actually reachable" - a missing/misconfigured binary is a real and
+// common failure this still catches.
+func adapterHealth(a *app.App, now time.Time) []protocol.PanelSourceHealth {
+	specs := a.AdapterRegistry.Specs()
+	ids := make([]string, 0, len(specs))
+	for id := range specs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	health := make([]protocol.PanelSourceHealth, 0, len(ids))
+	for _, id := range ids {
+		source := "adapter:" + id
+		if _, err := exec.LookPath(specs[id].Command); err != nil {
+			health = append(health, healthDown(source, fmt.Errorf("command %q not found on PATH", specs[id].Command), now))
+			continue
+		}
+		msg := "command resolves on PATH; not started this session, so live connectivity is not verified"
+		health = append(health, protocol.PanelSourceHealth{
+			Source:       source,
+			Availability: protocol.PanelSourceHealthAvailabilityAvailable,
+			Message:      &msg,
+			CheckedAt:    now,
+		})
+	}
+	return health
 }
 
 // overallAvailability rolls per-source health up into one

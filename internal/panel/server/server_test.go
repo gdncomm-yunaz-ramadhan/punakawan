@@ -15,6 +15,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/capsule"
+	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/tools"
@@ -474,6 +475,128 @@ func TestServerGlobalSearchEndpoint(t *testing.T) {
 	items, _ := body["items"].([]any)
 	if len(items) == 0 {
 		t.Fatal("expected at least one fused global search result")
+	}
+}
+
+func TestServerEvidenceEndpoints(t *testing.T) {
+	s, a := startTestServer(t)
+
+	run := workflow.New("run-ev-1", a.Workspace.ID, protocol.WorkflowRunWorkflowNameFeatureDelivery, time.Now().UTC())
+	if err := a.Workflow.Append(run); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+	dir := filepath.Join(a.Workspace.Root, ".punakawan", "evidence", "run-ev-1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "build.log")
+	// awsKeyLooking is concatenated, not a contiguous literal, so this
+	// file's raw text doesn't contain a string shaped like a real AWS
+	// access key id - GitHub's push protection blocks any push whose diff
+	// contains that shape, real or not.
+	awsKeyLooking := "AKIA" + "ABCDEFGHIJKLMNOP"
+	content := "build ok\nAWS_ACCESS_KEY_ID=" + awsKeyLooking + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write evidence file: %v", err)
+	}
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, "run-ev-1")
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	if err := ledger.Append(protocol.EvidenceRecord{
+		Id:        "ev-1",
+		RunId:     "run-ev-1",
+		Type:      protocol.EvidenceRecordTypeCommandOutput,
+		Path:      &path,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("ledger.Append: %v", err)
+	}
+
+	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/run-ev-1/evidence")
+	if status != http.StatusOK {
+		t.Fatalf("list: status = %d, want 200", status)
+	}
+	items, _ := body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("list items = %+v, want 1", items)
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/evidence/ev-1")
+	if status != http.StatusOK {
+		t.Fatalf("get: status = %d, want 200", status)
+	}
+	if body["id"] != "ev-1" {
+		t.Fatalf("get id = %v, want ev-1", body["id"])
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/evidence/ev-1/preview")
+	if status != http.StatusOK {
+		t.Fatalf("preview: status = %d, want 200", status)
+	}
+	text, _ := body["text"].(string)
+	if strings.Contains(text, awsKeyLooking) {
+		t.Fatalf("preview text = %q, secret was not redacted before reaching the API response", text)
+	}
+	if !strings.Contains(text, "[REDACTED]") {
+		t.Fatalf("preview text = %q, want a [REDACTED] marker", text)
+	}
+}
+
+func TestServerEvidencePreviewRejectsPathOutsideEvidenceRoot(t *testing.T) {
+	s, a := startTestServer(t)
+
+	run := workflow.New("run-ev-2", a.Workspace.ID, protocol.WorkflowRunWorkflowNameFeatureDelivery, time.Now().UTC())
+	if err := a.Workflow.Append(run); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, "run-ev-2")
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	escaped := filepath.Join(a.Workspace.Root, "repo-a", "f.txt")
+	if err := ledger.Append(protocol.EvidenceRecord{
+		Id:        "ev-escape",
+		RunId:     "run-ev-2",
+		Type:      protocol.EvidenceRecordTypeCommandOutput,
+		Path:      &escaped,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("ledger.Append: %v", err)
+	}
+
+	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/evidence/ev-escape/preview")
+	if status == http.StatusOK {
+		t.Fatal("preview: want a non-200 status for a path outside the evidence directory")
+	}
+}
+
+func TestServerApprovalsEndpoint(t *testing.T) {
+	s, a := startTestServer(t)
+
+	rec := protocol.ApprovalRecord{
+		Id:          "appr-1",
+		RunId:       "run-1",
+		Operation:   protocol.ApprovalRecordOperationGitPush,
+		RequestedBy: protocol.ApprovalRecordRequestedByPetruk,
+		Status:      protocol.ApprovalRecordStatusPending,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := a.Approvals.Append(rec); err != nil {
+		t.Fatalf("Approvals.Append: %v", err)
+	}
+
+	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/approvals")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ := body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want 1", items)
+	}
+	first, _ := items[0].(map[string]any)
+	if first["approve_command"] == nil || first["approve_command"] == "" {
+		t.Fatalf("approve_command = %v, want a non-empty CLI hint", first["approve_command"])
 	}
 }
 

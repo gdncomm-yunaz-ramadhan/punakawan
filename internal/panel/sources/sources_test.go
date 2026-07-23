@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
@@ -753,5 +754,169 @@ func TestApprovalSourceListFiltersByStatus(t *testing.T) {
 	}
 	if len(approved) != 0 {
 		t.Fatalf("List(approved) = %+v, want 0", approved)
+	}
+}
+
+func TestWorkspaceSourceGetIncludesGitHealth(t *testing.T) {
+	requireBd(t)
+	a := newTestApp(t)
+	ws := &WorkspaceSource{App: a}
+
+	detail, err := ws.Get(context.Background(), a.Workspace.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	found := false
+	for _, h := range detail.Health {
+		if h.Source == "git:repo-a" {
+			found = true
+			if h.Availability != protocol.PanelSourceHealthAvailabilityAvailable {
+				t.Fatalf("git:repo-a availability = %s, want available", h.Availability)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("Health = %+v, want a git:repo-a entry", detail.Health)
+	}
+}
+
+// writeEvidenceFile writes content under
+// <workspaceRoot>/.punakawan/evidence/<runID>/, appends a matching
+// EvidenceRecord to that run's ledger, and registers a workflow run for
+// runID so EvidenceSource.Get (which enumerates known runs) can find it.
+// It returns the absolute path written.
+func writeEvidenceFile(t *testing.T, a *app.App, runID, evidenceID, name, content string, evidenceType protocol.EvidenceRecordType) string {
+	t.Helper()
+	if err := a.Workflow.Append(newTestRun(a, runID)); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+
+	dir := filepath.Join(a.Workspace.Root, ".punakawan", "evidence", runID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir evidence dir: %v", err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write evidence file: %v", err)
+	}
+
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, runID)
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	if err := ledger.Append(protocol.EvidenceRecord{
+		Id:        evidenceID,
+		RunId:     runID,
+		Type:      evidenceType,
+		Path:      &path,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("ledger.Append: %v", err)
+	}
+	return path
+}
+
+// awsKeyLooking is built by concatenation, not as one contiguous literal,
+// so this file's raw text doesn't contain a string shaped like a real AWS
+// access key id - GitHub's push protection secret scanner flags that
+// shape on sight, real or not, and a contiguous literal here blocks every
+// push.
+const awsKeyLooking = "AKIA" + "ABCDEFGHIJKLMNOP"
+
+func TestEvidenceSourcePreviewRedactsAndSupportsRanges(t *testing.T) {
+	a := newTestApp(t)
+	writeEvidenceFile(t, a, "run-ev-1", "ev-1", "build.log",
+		"line one\nAWS_ACCESS_KEY_ID="+awsKeyLooking+"\nline three\n",
+		protocol.EvidenceRecordTypeCommandOutput)
+
+	es := &EvidenceSource{App: a}
+
+	full, err := es.Preview(context.Background(), a.Workspace.ID, "ev-1", 0, 0)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if strings.Contains(string(full.Data), awsKeyLooking) {
+		t.Fatalf("Preview text = %q, still contains the secret", full.Data)
+	}
+	if !strings.Contains(string(full.Data), "[REDACTED]") {
+		t.Fatalf("Preview text = %q, want a [REDACTED] marker", full.Data)
+	}
+	if full.Truncated {
+		t.Fatalf("Truncated = true for a small file read in full")
+	}
+
+	ranged, err := es.Preview(context.Background(), a.Workspace.ID, "ev-1", 0, 9)
+	if err != nil {
+		t.Fatalf("Preview(limit=9): %v", err)
+	}
+	if string(ranged.Data) != "line one\n" {
+		t.Fatalf("Preview(limit=9).Data = %q, want %q", ranged.Data, "line one\n")
+	}
+	if !ranged.Truncated {
+		t.Fatal("Preview(limit=9): want Truncated=true")
+	}
+}
+
+func TestEvidenceSourcePreviewRejectsPathOutsideEvidenceRoot(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.Workflow.Append(newTestRun(a, "run-ev-2")); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, "run-ev-2")
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	escaped := filepath.Join(a.Workspace.Root, "repo-a", "f.txt")
+	if err := ledger.Append(protocol.EvidenceRecord{
+		Id:        "ev-escape",
+		RunId:     "run-ev-2",
+		Type:      protocol.EvidenceRecordTypeCommandOutput,
+		Path:      &escaped,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("ledger.Append: %v", err)
+	}
+
+	es := &EvidenceSource{App: a}
+	if _, err := es.Preview(context.Background(), a.Workspace.ID, "ev-escape", 0, 0); err == nil {
+		t.Fatal("Preview: expected an error for a path outside the evidence directory, got nil")
+	}
+}
+
+func TestEvidenceSourcePreviewComputesDiffSummary(t *testing.T) {
+	a := newTestApp(t)
+	diff := "diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -1,3 +1,4 @@\n package foo\n+import \"fmt\"\n-old line\n unchanged\n"
+	writeEvidenceFile(t, a, "run-ev-3", "ev-diff", "diff.patch", diff, protocol.EvidenceRecordTypeGitDiff)
+
+	es := &EvidenceSource{App: a}
+	preview, err := es.Preview(context.Background(), a.Workspace.ID, "ev-diff", 0, 0)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if preview.DiffSummary == nil {
+		t.Fatal("DiffSummary = nil, want a summary for a git-diff evidence type")
+	}
+	if preview.DiffSummary.FilesChanged != 1 || preview.DiffSummary.Insertions != 1 || preview.DiffSummary.Deletions != 1 {
+		t.Fatalf("DiffSummary = %+v, want {FilesChanged:1 Insertions:1 Deletions:1}", preview.DiffSummary)
+	}
+}
+
+func TestEvidenceSourcePreviewServesScreenshotAsBinary(t *testing.T) {
+	a := newTestApp(t)
+	writeEvidenceFile(t, a, "run-ev-4", "ev-shot", "screen.png", "not-really-a-png-but-bytes", protocol.EvidenceRecordTypeScreenshot)
+
+	es := &EvidenceSource{App: a}
+	preview, err := es.Preview(context.Background(), a.Workspace.ID, "ev-shot", 0, 0)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if preview.Kind != "binary" {
+		t.Fatalf("Kind = %q, want binary", preview.Kind)
+	}
+	if preview.MimeType != "image/png" {
+		t.Fatalf("MimeType = %q, want image/png", preview.MimeType)
+	}
+	if string(preview.Data) != "not-really-a-png-but-bytes" {
+		t.Fatalf("Data = %q, want the file's raw bytes", preview.Data)
 	}
 }

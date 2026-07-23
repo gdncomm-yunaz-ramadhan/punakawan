@@ -88,6 +88,15 @@
       <strong>{detail.knowledge_count}</strong>
       <span>Knowledge records</span>
     </div>
+    <div
+      class="card clickable"
+      role="button"
+      tabindex="0"
+      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/approvals`)}
+      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/approvals`)}
+    >
+      <span>Approvals</span>
+    </div>
   </section>
 
   <section aria-labelledby="source-health-heading">

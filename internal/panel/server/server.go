@@ -114,6 +114,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/search", api.GlobalSearchHandler(s.readers.GlobalSearch))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/knowledge", api.KnowledgeListHandler(s.readers.Knowledge))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/knowledge/{knowledgeRest...}", api.KnowledgeDetailHandler(s.readers.Knowledge))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}/evidence", api.EvidenceListHandler(s.readers.Evidence))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(s.readers.Evidence))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(s.readers.Evidence))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/approvals", api.ApprovalsHandler(s.readers.Approval))
 	mux.Handle("/", static)
 
 	s.httpServer = &http.Server{
