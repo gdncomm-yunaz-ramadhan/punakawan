@@ -1,0 +1,25 @@
+internal/recipe/compiler.go
+  6c4a5633395342b7 1-579
+internal/recipe/compiler_test.go
+  6c4a5633395342b7 1-371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "003943d1d5d259cfd6f59ca9f510e6c1e7b17cb3",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 950,
+      "total_deletions": 0,
+      "accepted_lines": 950,
+      "overriden_lines": 0
+    }
+  }
+}
