@@ -1,0 +1,63 @@
+web/panel/src/lib/components/review/ProposalReview.svelte
+  3415a4432044e41f 479,631,641,651
+web/panel/tests/ReviewAccessibility.test.ts
+  3415a4432044e41f 1-394
+web/panel/tests/fixtures/DialogFocusHarness.svelte
+  3415a4432044e41f 1-13
+web/panel/tests/fixtures/BottomSheetFocusHarness.svelte
+  3415a4432044e41f 1-13
+web/panel/src/lib/components/review/AddCommentPopover.svelte
+  3415a4432044e41f 42,116
+web/panel/src/lib/components/overlay/Dialog.svelte
+  3415a4432044e41f 3,14-18,20-76,85
+web/panel/tests/Dialog.test.ts
+  3415a4432044e41f 1,4,39-102
+web/panel/src/lib/components/overlay/BottomSheet.svelte
+  3415a4432044e41f 3,14-18,20-68,82
+web/panel/tests/DiffViewer.test.ts
+  3415a4432044e41f 90-121
+web/panel/tests/ProposalReview.test.ts
+  3415a4432044e41f 409-464
+web/panel/src/routes/review/StartReview.svelte
+  3415a4432044e41f 125
+web/panel/src/lib/components/review/ActiveRevisionSummary.svelte
+  3415a4432044e41f 152,159,232,272-285
+web/panel/tests/ReviewMode.test.ts
+  3415a4432044e41f 221-254
+docs/workflows/artifact-review.md
+  3415a4432044e41f 1-265
+web/panel/src/lib/components/review/CommentThread.svelte
+  3415a4432044e41f 72-77,157-158
+web/panel/src/routes/review/ReviewMode.svelte
+  3415a4432044e41f 579,600,610
+web/panel/src/lib/components/review/ReviewInstructionPanel.svelte
+  3415a4432044e41f 66,78
+web/panel/tests/VersionLineageGraphPerformance.test.ts
+  3415a4432044e41f 1-111
+web/panel/tests/BottomSheet.test.ts
+  3415a4432044e41f 1,4,39-100
+web/panel/src/lib/components/review/PlanDocument.svelte
+  3415a4432044e41f 162,164-182,204
+web/panel/src/lib/components/review/DiffViewer.svelte
+  3415a4432044e41f 107,222-223,276-277
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "cf8c02f3ac571c4bab35bcc17eb3e17d820d2b86",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1270,
+      "total_deletions": 57,
+      "accepted_lines": 1233,
+      "overriden_lines": 0
+    }
+  }
+}
