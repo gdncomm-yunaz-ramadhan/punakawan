@@ -16,9 +16,32 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+func requireBd(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not installed")
+	}
+}
+
+// initBd runs bd init in a's workspace root, for tests that exercise the
+// tasks endpoints: newTestApp itself does not initialize a bd project,
+// since most server tests have no need for one.
+func initBd(t *testing.T, a *app.App) {
+	t.Helper()
+	res, err := a.Supervisor.Run(context.Background(), tools.Spec{
+		Name: "bd",
+		Args: []string{"init", "--non-interactive", "--prefix", "test", "--skip-agents", "--skip-hooks", "-q"},
+		Dir:  a.Workspace.Root,
+	})
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("bd init: err=%v exit=%d stderr=%s", err, res.ExitCode, res.Stderr)
+	}
+}
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
@@ -280,6 +303,68 @@ func TestServerSessionsEndpoints(t *testing.T) {
 	}
 	if _, ok := body["items"]; !ok {
 		t.Fatalf("expected an items field: %+v", body)
+	}
+}
+
+func TestServerTasksEndpoints(t *testing.T) {
+	requireBd(t)
+	s, a := startTestServer(t)
+	initBd(t, a)
+
+	res, err := a.Supervisor.Run(context.Background(), tools.Spec{
+		Name: "bd",
+		Args: []string{"create", "--json", "--title=first task", "--type=task"},
+		Dir:  a.Workspace.Root,
+	})
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("bd create: err=%v exit=%d stderr=%s", err, res.ExitCode, res.Stderr)
+	}
+	var created struct {
+		Id string `json:"id"`
+	}
+	if err := json.Unmarshal(res.Stdout, &created); err != nil {
+		t.Fatalf("decode bd create output: %v", err)
+	}
+
+	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/tasks")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ := body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want 1", items)
+	}
+	first, _ := items[0].(map[string]any)
+	if first["board_status"] != "ready" {
+		t.Fatalf("board_status = %v, want ready", first["board_status"])
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/tasks/"+created.Id)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if body["id"] != created.Id {
+		t.Fatalf("id = %v, want %v", body["id"], created.Id)
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/task-graph")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	nodes, _ := body["Nodes"].([]any)
+	if len(nodes) != 1 {
+		t.Fatalf("Nodes = %+v, want 1", nodes)
+	}
+}
+
+func TestServerTasksEndpointUnknownTaskReturns404(t *testing.T) {
+	requireBd(t)
+	s, a := startTestServer(t)
+	initBd(t, a)
+
+	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/tasks/no-such-task")
+	if status != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", status)
 	}
 }
 

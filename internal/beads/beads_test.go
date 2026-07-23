@@ -296,6 +296,39 @@ func TestReopenIssueReopensClosedIssue(t *testing.T) {
 	}
 }
 
+func TestListIncludesClosedIssuesByDefault(t *testing.T) {
+	sup, dir := newTestProject(t)
+	ctx := context.Background()
+
+	taskID, err := CreateTask(ctx, sup, dir, "Task to close", "desc", CreateTaskOptions{})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	closeRes, err := sup.Run(ctx, tools.Spec{Name: "bd", Args: []string{"close", taskID, "--json"}, Dir: dir})
+	if err != nil || closeRes.ExitCode != 0 {
+		t.Fatalf("bd close: err=%v exitCode=%d stderr=%s", err, closeRes.ExitCode, closeRes.Stderr)
+	}
+
+	issues, err := List(ctx, sup, dir, ListOptions{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(issues) != 1 || issues[0].ID != taskID {
+		t.Fatalf("expected List() with no status filter to include the closed issue, got %+v", issues)
+	}
+	if issues[0].Status != "closed" {
+		t.Fatalf("expected status %q, got %q", "closed", issues[0].Status)
+	}
+
+	openOnly, err := List(ctx, sup, dir, ListOptions{Status: "open"})
+	if err != nil {
+		t.Fatalf("List with status=open: %v", err)
+	}
+	if len(openOnly) != 0 {
+		t.Fatalf("expected no open issues after closing the only task, got %+v", openOnly)
+	}
+}
+
 func TestClaimReadyNoIssues(t *testing.T) {
 	sup, dir := newTestProject(t)
 	ctx := context.Background()

@@ -9,6 +9,7 @@
   import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
   import SessionsList from "./routes/sessions/SessionsList.svelte";
   import SessionDetail from "./routes/sessions/SessionDetail.svelte";
+  import TasksPage from "./routes/tasks/TasksPage.svelte";
 
   let system: SystemInfo | null = $state(null);
   let systemError: string | null = $state(null);
@@ -24,6 +25,7 @@
   const workspaceDetailPath = /^\/workspaces\/([^/]+)$/;
   const sessionsListPath = /^\/workspaces\/([^/]+)\/sessions$/;
   const sessionDetailPath = /^\/workspaces\/([^/]+)\/sessions\/([^/]+)$/;
+  const tasksPath = /^\/workspaces\/([^/]+)\/tasks$/;
 </script>
 
 <div class="shell">
@@ -48,6 +50,9 @@
       {:else if sessionsListPath.exec(getPath())}
         {@const match = sessionsListPath.exec(getPath())}
         <SessionsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+      {:else if tasksPath.exec(getPath())}
+        {@const match = tasksPath.exec(getPath())}
+        <TasksPage workspaceId={decodeURIComponent(match?.[1] ?? "")} />
       {:else if workspaceDetailPath.exec(getPath())}
         {@const match = workspaceDetailPath.exec(getPath())}
         <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />

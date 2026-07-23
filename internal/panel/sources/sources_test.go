@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -333,6 +334,181 @@ func TestTaskSourceListGetDependencies(t *testing.T) {
 	}
 	if len(graph.Nodes) != 1 {
 		t.Fatalf("Dependencies.Nodes = %+v, want 1", graph.Nodes)
+	}
+	if len(graph.Cycles) != 0 {
+		t.Fatalf("Dependencies.Cycles = %+v, want none", graph.Cycles)
+	}
+
+	matches, err := ts.List(ctx, a.Workspace.ID, contract.TaskFilter{Query: "first"})
+	if err != nil {
+		t.Fatalf("List with query: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("List with query=first = %+v, want 1", matches)
+	}
+	none, err := ts.List(ctx, a.Workspace.ID, contract.TaskFilter{Query: "no-such-task-title"})
+	if err != nil {
+		t.Fatalf("List with non-matching query: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("List with non-matching query = %+v, want none", none)
+	}
+}
+
+func TestTaskSourceDependenciesDetectsCycle(t *testing.T) {
+	requireBd(t)
+	a := newTestApp(t)
+	ts := &TaskSource{App: a}
+	ctx := context.Background()
+
+	create := func(title string) string {
+		res, err := a.Supervisor.Run(ctx, tools.Spec{
+			Name: "bd",
+			Args: []string{"create", "--json", "--title=" + title, "--type=task"},
+			Dir:  a.Workspace.Root,
+		})
+		if err != nil || res.ExitCode != 0 {
+			t.Fatalf("bd create %s: err=%v exit=%d stderr=%s", title, err, res.ExitCode, res.Stderr)
+		}
+		var out struct {
+			Id string `json:"id"`
+		}
+		if err := json.Unmarshal(res.Stdout, &out); err != nil {
+			t.Fatalf("decode bd create output: %v", err)
+		}
+		return out.Id
+	}
+	addDep := func(from, to string) {
+		res, err := a.Supervisor.Run(ctx, tools.Spec{
+			Name: "bd",
+			Args: []string{"dep", "add", from, to, "--json", "--type", "related"},
+			Dir:  a.Workspace.Root,
+		})
+		if err != nil || res.ExitCode != 0 {
+			t.Fatalf("bd dep add %s %s: err=%v exit=%d stderr=%s", from, to, err, res.ExitCode, res.Stderr)
+		}
+	}
+
+	first := create("cycle task one")
+	second := create("cycle task two")
+	// bd itself rejects a dependency that would create a cycle through its
+	// own "blocks" type, so this uses "related" edges (which bd allows to
+	// cycle) purely to exercise detectCycles against a real bd-shaped
+	// edge list.
+	addDep(first, second)
+	addDep(second, first)
+
+	graph, err := ts.Dependencies(ctx, a.Workspace.ID)
+	if err != nil {
+		t.Fatalf("Dependencies: %v", err)
+	}
+	if len(graph.Cycles) == 0 {
+		t.Fatalf("Dependencies.Cycles = %+v, want at least one cycle for %s <-> %s", graph.Cycles, first, second)
+	}
+}
+
+func TestTaskSourceListComputesRealBlockedStatusFromReadiness(t *testing.T) {
+	requireBd(t)
+	a := newTestApp(t)
+	ts := &TaskSource{App: a}
+	ctx := context.Background()
+
+	create := func(title string) string {
+		res, err := a.Supervisor.Run(ctx, tools.Spec{
+			Name: "bd",
+			Args: []string{"create", "--json", "--title=" + title, "--type=task"},
+			Dir:  a.Workspace.Root,
+		})
+		if err != nil || res.ExitCode != 0 {
+			t.Fatalf("bd create %s: err=%v exit=%d stderr=%s", title, err, res.ExitCode, res.Stderr)
+		}
+		var out struct {
+			Id string `json:"id"`
+		}
+		if err := json.Unmarshal(res.Stdout, &out); err != nil {
+			t.Fatalf("decode bd create output: %v", err)
+		}
+		return out.Id
+	}
+
+	epicRes, err := a.Supervisor.Run(ctx, tools.Spec{
+		Name: "bd",
+		Args: []string{"create", "--json", "--title=parent epic", "--type=epic"},
+		Dir:  a.Workspace.Root,
+	})
+	if err != nil || epicRes.ExitCode != 0 {
+		t.Fatalf("bd create epic: err=%v exit=%d stderr=%s", err, epicRes.ExitCode, epicRes.Stderr)
+	}
+	var epic struct {
+		Id string `json:"id"`
+	}
+	if err := json.Unmarshal(epicRes.Stdout, &epic); err != nil {
+		t.Fatalf("decode bd create epic output: %v", err)
+	}
+
+	prereq := create("prerequisite task")
+	res, err := a.Supervisor.Run(ctx, tools.Spec{
+		Name: "bd",
+		// Created as a child of an open epic, so its Dependencies also
+		// carries a parent-child edge to an issue that is not closed -
+		// this must NOT count as a blocking reason (see blockingReasons'
+		// doc comment: only "blocks" edges do, verified against bd
+		// ready --explain).
+		Args: []string{"create", "--json", "--title=dependent task", "--type=task", "--parent", epic.Id},
+		Dir:  a.Workspace.Root,
+	})
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("bd create dependent: err=%v exit=%d stderr=%s", err, res.ExitCode, res.Stderr)
+	}
+	var dependentOut struct {
+		Id string `json:"id"`
+	}
+	if err := json.Unmarshal(res.Stdout, &dependentOut); err != nil {
+		t.Fatalf("decode bd create dependent output: %v", err)
+	}
+	dependent := dependentOut.Id
+
+	depRes, err := a.Supervisor.Run(ctx, tools.Spec{
+		Name: "bd",
+		Args: []string{"dep", "add", dependent, prereq, "--json", "--type", "blocks"},
+		Dir:  a.Workspace.Root,
+	})
+	if err != nil || depRes.ExitCode != 0 {
+		t.Fatalf("bd dep add: err=%v exit=%d stderr=%s", err, depRes.ExitCode, depRes.Stderr)
+	}
+
+	issues, err := ts.List(ctx, a.Workspace.ID, contract.TaskFilter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	byID := map[string]contract.TaskSummary{}
+	for _, issue := range issues {
+		byID[issue.ID] = issue
+	}
+
+	dependentSummary, ok := byID[dependent]
+	if !ok {
+		t.Fatalf("List = %+v, missing dependent task %s", issues, dependent)
+	}
+	// bd itself never flips the dependent's stored status away from
+	// "open" just because prereq is still open (verified empirically) -
+	// this is exactly the case BoardStatus must catch via real readiness.
+	if dependentSummary.Status != "open" {
+		t.Fatalf("dependent Status = %q, want open (bd does not auto-set status=blocked)", dependentSummary.Status)
+	}
+	if dependentSummary.BoardStatus != "blocked" {
+		t.Fatalf("dependent BoardStatus = %q, want blocked", dependentSummary.BoardStatus)
+	}
+	if len(dependentSummary.BlockingReasons) != 1 {
+		t.Fatalf("dependent BlockingReasons = %+v, want 1 entry naming %s", dependentSummary.BlockingReasons, prereq)
+	}
+
+	prereqSummary, ok := byID[prereq]
+	if !ok {
+		t.Fatalf("List = %+v, missing prerequisite task %s", issues, prereq)
+	}
+	if prereqSummary.BoardStatus != "ready" {
+		t.Fatalf("prerequisite BoardStatus = %q, want ready", prereqSummary.BoardStatus)
 	}
 }
 

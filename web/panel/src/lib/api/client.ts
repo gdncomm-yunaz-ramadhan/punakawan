@@ -204,3 +204,102 @@ export function listCapsules(workspaceId: string, taskId: string): Promise<{ ite
     `/workspaces/${encodeURIComponent(workspaceId)}/capsules?task_id=${encodeURIComponent(taskId)}`,
   );
 }
+
+export interface TaskDependencyEdge {
+  issue_id: string;
+  depends_on_id: string;
+  type: string;
+}
+
+export interface TaskSummary {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: number;
+  issue_type: string;
+  owner?: string;
+  assignee?: string;
+  labels?: string[];
+  parent?: string;
+  dependencies?: TaskDependencyEdge[];
+  created_at: string;
+  created_by?: string;
+  updated_at: string;
+  started_at?: string;
+  external_ref?: string;
+  board_status: string;
+  blocking_reasons?: string[];
+  stale: boolean;
+}
+
+export interface RelatedTask {
+  id: string;
+  title: string;
+  status: string;
+  priority: number;
+  issue_type: string;
+  dependency_type: string;
+}
+
+export interface TaskDetail {
+  id: string;
+  title: string;
+  description?: string;
+  acceptance_criteria?: string;
+  status: string;
+  priority: number;
+  issue_type: string;
+  owner?: string;
+  assignee?: string;
+  labels?: string[];
+  parent?: string;
+  dependencies?: RelatedTask[];
+  dependents?: RelatedTask[];
+  created_at: string;
+  created_by?: string;
+  updated_at: string;
+  closed_at?: string;
+  external_ref?: string;
+}
+
+export interface TaskGraphEdge {
+  From: string;
+  To: string;
+  Type: string;
+}
+
+export interface TaskGraph {
+  Nodes: TaskSummary[];
+  Edges: TaskGraphEdge[];
+  Cycles: string[][];
+}
+
+export interface TaskFilter {
+  status?: string;
+  priority?: string;
+  type?: string;
+  blocked?: boolean;
+  query?: string;
+  limit?: number;
+}
+
+export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
+  const params = new URLSearchParams();
+  if (filter.status) params.set("status", filter.status);
+  if (filter.priority) params.set("priority", filter.priority);
+  if (filter.type) params.set("type", filter.type);
+  if (filter.blocked) params.set("blocked", "true");
+  if (filter.query) params.set("query", filter.query);
+  if (filter.limit) params.set("limit", String(filter.limit));
+  const qs = params.toString();
+  return getJSON<{ items: TaskSummary[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks${qs ? `?${qs}` : ""}`);
+}
+
+export function getTask(workspaceId: string, taskId: string): Promise<TaskDetail> {
+  return getJSON<TaskDetail>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`);
+}
+
+export function getTaskGraph(workspaceId: string): Promise<TaskGraph> {
+  return getJSON<TaskGraph>(`/workspaces/${encodeURIComponent(workspaceId)}/task-graph`);
+}

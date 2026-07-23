@@ -76,13 +76,37 @@ type SessionReader interface {
 }
 
 // TaskFilter narrows TaskReader.List, per §11.4's documented query filters.
+// role and repository_id are accepted by the HTTP handler but not
+// represented here: bd's issue schema has no per-task role or repository
+// assignment, so there is nothing to filter on - an honest gap, not an
+// oversight.
 type TaskFilter struct {
 	Status        string
 	Priority      string
 	Type          string
 	Assignee      string
 	ExternalIssue string
-	Limit         int
+	// Query matches case-insensitively against title and description, bd
+	// having no server-side full-text search this package wraps.
+	Query string
+	Limit int
+}
+
+// TaskSummary wraps a bd issue with panel-computed fields bd's own CLI
+// output does not include. BoardStatus is derived from bd's real
+// readiness computation (bd's GetReadyWork/`bd ready`, the same one `bd
+// ready`/`bd list --ready` use), not just the issue's stored Status field:
+// an "open" issue with an unmet "blocks" dependency stays stored as
+// status=open in bd (verified empirically against bd 1.0.4), so trusting
+// Status alone would misreport most real blocked tasks as ready.
+// BoardStatus never yields "review" or "failed": bd has no issue status
+// for either, an honest gap in the underlying data model rather than an
+// oversight here.
+type TaskSummary struct {
+	beads.ReadyIssue
+	BoardStatus     string   `json:"board_status"`
+	BlockingReasons []string `json:"blocking_reasons,omitempty"`
+	Stale           bool     `json:"stale"`
 }
 
 // TaskEdge is one dependency edge in a TaskGraph.
@@ -92,16 +116,21 @@ type TaskEdge struct {
 	Type string
 }
 
-// TaskGraph is the BD work graph's dependency view, per §14.5.
+// TaskGraph is the BD work graph's dependency view, per §14.5. Cycles lists
+// every dependency cycle found among Edges (each entry is the ordered list
+// of issue IDs forming one cycle), per the phase's exit criterion that
+// cycles be detected and displayed rather than silently mis-rendered as a
+// tree.
 type TaskGraph struct {
-	Nodes []beads.ReadyIssue
-	Edges []TaskEdge
+	Nodes  []TaskSummary
+	Edges  []TaskEdge
+	Cycles [][]string
 }
 
 // TaskReader lists and describes BD issues without mutating them, per
 // §8.2.
 type TaskReader interface {
-	List(ctx context.Context, workspaceID string, filter TaskFilter) ([]beads.ReadyIssue, error)
+	List(ctx context.Context, workspaceID string, filter TaskFilter) ([]TaskSummary, error)
 	Get(ctx context.Context, workspaceID, taskID string) (beads.Issue, error)
 	Dependencies(ctx context.Context, workspaceID string) (TaskGraph, error)
 }

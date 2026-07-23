@@ -218,6 +218,10 @@ type ReadyIssue struct {
 	CreatedBy    string            `json:"created_by"`
 	UpdatedAt    string            `json:"updated_at"`
 	StartedAt    string            `json:"started_at"`
+	// ExternalRef is bd's external issue mapping (e.g. "jira-ABC-1"), set
+	// via bd create/CreateTaskOptions.ExternalRef and echoed back by both
+	// bd list/ready and bd show's JSON output.
+	ExternalRef string `json:"external_ref,omitempty"`
 }
 
 // RelatedIssue is one entry of Issue.Dependents (bd show --json's
@@ -257,6 +261,7 @@ type Issue struct {
 	CreatedBy          string         `json:"created_by"`
 	UpdatedAt          string         `json:"updated_at"`
 	ClosedAt           string         `json:"closed_at"`
+	ExternalRef        string         `json:"external_ref,omitempty"`
 }
 
 // ReadyDependency is the subset of a ReadyIssue's "dependencies" entries
@@ -381,9 +386,10 @@ type ListOptions struct {
 	Priority string
 	Type     string
 	Assignee string
-	// Limit overrides bd's own default of 50. 0 defers to that default,
-	// matching ReadyOptions' convention; List does not expose bd's
-	// --limit=0 ("unlimited") passthrough today.
+	// Limit overrides bd's own default of 50. 0 defers to that default.
+	// A negative value explicitly requests bd's own --limit=0
+	// ("unlimited") passthrough, for callers (like the panel's dependency
+	// graph) that need every issue rather than a page of them.
 	Limit int
 }
 
@@ -394,6 +400,12 @@ func List(ctx context.Context, sup *tools.Supervisor, dir string, opts ListOptio
 	args := []string{"list", "--json"}
 	if opts.Status != "" {
 		args = append(args, "--status", opts.Status)
+	} else {
+		// bd list hides closed issues by default (its --all flag "overrides
+		// default filter"); without this, an unfiltered List() call would
+		// silently drop every closed issue, contradicting this function's
+		// own "regardless of ... closed state" contract above.
+		args = append(args, "--all")
 	}
 	if opts.Priority != "" {
 		args = append(args, "--priority", opts.Priority)
@@ -406,6 +418,8 @@ func List(ctx context.Context, sup *tools.Supervisor, dir string, opts ListOptio
 	}
 	if opts.Limit > 0 {
 		args = append(args, "--limit", fmt.Sprintf("%d", opts.Limit))
+	} else if opts.Limit < 0 {
+		args = append(args, "--limit", "0")
 	}
 	return decodeReadyIssues(ctx, sup, dir, args)
 }

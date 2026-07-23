@@ -58,11 +58,23 @@
       <strong>{detail.active_session_count}</strong>
       <span>Active sessions</span>
     </div>
-    <div class="card">
+    <div
+      class="card clickable"
+      role="button"
+      tabindex="0"
+      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
+      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
+    >
       <strong>{detail.open_task_count}</strong>
       <span>Open tasks</span>
     </div>
-    <div class="card">
+    <div
+      class="card clickable"
+      role="button"
+      tabindex="0"
+      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
+      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
+    >
       <strong>{detail.blocked_task_count}</strong>
       <span>Blocked tasks</span>
     </div>
