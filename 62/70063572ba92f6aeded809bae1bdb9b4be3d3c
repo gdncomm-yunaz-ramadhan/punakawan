@@ -1,0 +1,63 @@
+web/panel/src/routes/workspaces/WorkspaceSummary.svelte
+  6c4a5633395342b7 81-87
+internal/search/rrf.go
+  6c4a5633395342b7 1-49
+internal/panel/sources/knowledge_source.go
+  6c4a5633395342b7 8-9,28-92,129-152
+internal/panel/deps.go
+  6c4a5633395342b7 18,22-28,33-34,37-43
+internal/panel/server/server_test.go
+  6c4a5633395342b7 19,32-38,379-479
+internal/panel/sources/global_search_source.go
+  6c4a5633395342b7 1-94
+internal/panel/api/knowledge_handler_test.go
+  6c4a5633395342b7 1-237
+internal/panel/sources/sources_test.go
+  6c4a5633395342b7 14,30-31,575-717
+web/panel/src/lib/api/client.ts
+  6c4a5633395342b7 306-443
+web/panel/src/routes/knowledge/KnowledgeList.svelte
+  6c4a5633395342b7 1-253
+web/panel/src/routes/knowledge/KnowledgeDetail.svelte
+  6c4a5633395342b7 1-291
+web/panel/src/routes/search/GlobalSearch.svelte
+  6c4a5633395342b7 1-151
+web/panel/src/lib/components/Sidebar.svelte
+  6c4a5633395342b7 7
+web/panel/tests/KnowledgeDetail.test.ts
+  6c4a5633395342b7 1-59
+internal/panel/server/server.go
+  6c4a5633395342b7 114-116
+internal/panel/contract/readers.go
+  6c4a5633395342b7 16,143-146,150-172,194-212
+web/panel/tests/GlobalSearch.test.ts
+  6c4a5633395342b7 1-55
+internal/panel/api/knowledge_handler.go
+  6c4a5633395342b7 1-173
+internal/search/rrf_test.go
+  6c4a5633395342b7 1-64
+web/panel/src/App.svelte
+  6c4a5633395342b7 13-15,32-33,49-59
+web/panel/tests/KnowledgeList.test.ts
+  6c4a5633395342b7 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "6270063572ba92f6aeded809bae1bdb9b4be3d3c",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2105,
+      "total_deletions": 47,
+      "accepted_lines": 2075,
+      "overriden_lines": 0
+    }
+  }
+}
