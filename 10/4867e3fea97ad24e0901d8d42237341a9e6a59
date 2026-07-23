@@ -1,0 +1,29 @@
+internal/panel/api/fail_handler_test.go
+  3415a4432044e41f 1-124
+internal/panel/api/fail_handler.go
+  3415a4432044e41f 1-93
+internal/panel/server/server.go
+  3415a4432044e41f 178
+internal/panel/server/server_test.go
+  3415a4432044e41f 798-809
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "104867e3fea97ad24e0901d8d42237341a9e6a59",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 230,
+      "total_deletions": 0,
+      "accepted_lines": 230,
+      "overriden_lines": 0
+    }
+  }
+}
