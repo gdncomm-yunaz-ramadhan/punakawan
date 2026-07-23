@@ -7,6 +7,7 @@
   // it once a proposal actually exists.
   import StickyActionBar from "../StickyActionBar.svelte";
   import Dialog from "../overlay/Dialog.svelte";
+  import Tabs from "../Tabs.svelte";
   import StatusBadge, { type BadgeVariant } from "../StatusBadge.svelte";
   import ErrorStateCard from "../cards/ErrorStateCard.svelte";
   import DiffViewer from "./DiffViewer.svelte";
@@ -48,6 +49,22 @@
   let loading = $state(true);
   let loadError = $state<string | null>(null);
 
+  // Mobile-only tab chrome (punokawan-apy.7.3, §13.4/§13.10): on desktop
+  // the four sections below still render stacked exactly as before -
+  // isDesktop is only threaded further down into DiffViewer's own
+  // side-by-side/unified switch, untouched by this. "Evidence" (the
+  // plan doc's fourth tab name) doesn't correspond to anything this
+  // component actually renders; "Lineage" does (the existing Version
+  // lineage section), so it gets the fourth tab under its real name
+  // instead of a same-named-but-empty stand-in.
+  const mobileTabs = [
+    { id: "diff", label: "Diff" },
+    { id: "comments", label: "Comments" },
+    { id: "validation", label: "Validation" },
+    { id: "lineage", label: "Lineage" },
+  ];
+  let activeMobileTab = $state("diff");
+
   let proposals = $state<ArtifactRevisionProposal[]>([]);
   let latestProposal = $state<ArtifactRevisionProposal | null>(null);
   let diffLines = $state<DiffLine[]>([]);
@@ -58,6 +75,7 @@
   async function loadProposalData() {
     loading = true;
     loadError = null;
+    activeMobileTab = "diff";
     try {
       const list = await listProposals(reviewId);
       proposals = list.items;
@@ -310,86 +328,133 @@
       {/if}
     </section>
 
-    <section class="panel-block">
-      <h2>Diff</h2>
-      <DiffViewer lines={diffLines} {isDesktop} />
-    </section>
+    {#snippet diffPanel()}
+      <section class="panel-block">
+        <h2>Diff</h2>
+        <DiffViewer lines={diffLines} {isDesktop} />
+      </section>
+    {/snippet}
 
-    <section class="panel-block">
-      <h2>Comment resolution</h2>
-      {#if relevantComments.length === 0}
-        <p class="muted">No comments were on this review.</p>
-      {:else}
-        <ul class="resolution-list" data-testid="comment-resolution-list">
-          {#each relevantComments as c (c.id)}
-            {@const resolution = resolutionByCommentId.get(c.id)}
-            {@const isUnresolved = unresolvedCommentIds.has(c.id)}
-            <li class="resolution-item" class:unresolved={isUnresolved} data-testid="comment-resolution-item">
-              <div class="resolution-head">
-                <span class="comment-body">{c.body}</span>
-                {#if resolution}
-                  <StatusBadge
-                    variant={resolutionStatusVariant[resolution.status]}
-                    label={resolutionStatusLabel[resolution.status]}
-                  />
-                {:else if isUnresolved}
-                  <StatusBadge variant="danger" label="Unresolved" />
+    {#snippet commentsPanel()}
+      <section class="panel-block">
+        <h2>Comment resolution</h2>
+        {#if relevantComments.length === 0}
+          <p class="muted">No comments were on this review.</p>
+        {:else}
+          <ul class="resolution-list" data-testid="comment-resolution-list">
+            {#each relevantComments as c (c.id)}
+              {@const resolution = resolutionByCommentId.get(c.id)}
+              {@const isUnresolved = unresolvedCommentIds.has(c.id)}
+              <li class="resolution-item" class:unresolved={isUnresolved} data-testid="comment-resolution-item">
+                <div class="resolution-head">
+                  <span class="comment-body">{c.body}</span>
+                  {#if resolution}
+                    <StatusBadge
+                      variant={resolutionStatusVariant[resolution.status]}
+                      label={resolutionStatusLabel[resolution.status]}
+                    />
+                  {:else if isUnresolved}
+                    <StatusBadge variant="danger" label="Unresolved" />
+                  {/if}
+                </div>
+                {#if resolution?.explanation && (resolution.status === "rejected" || resolution.status === "partially_addressed")}
+                  <p class="explanation">{resolution.explanation}</p>
                 {/if}
-              </div>
-              {#if resolution?.explanation && (resolution.status === "rejected" || resolution.status === "partially_addressed")}
-                <p class="explanation">{resolution.explanation}</p>
-              {/if}
-              {#if resolution?.status === "addressed" && resolution.changed_block_ids?.length}
-                <p class="changed-blocks">
-                  Changed blocks: {resolution.changed_block_ids.join(", ")}
-                </p>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
+                {#if resolution?.status === "addressed" && resolution.changed_block_ids?.length}
+                  <p class="changed-blocks">
+                    Changed blocks: {resolution.changed_block_ids.join(", ")}
+                  </p>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    {/snippet}
 
-    <section class="panel-block">
-      <h2>Validation</h2>
-      <div class="validation-grid">
-        <div class="validation-report">
-          <StatusBadge
-            variant={structural?.passed ? "success" : "danger"}
-            label={structural?.passed ? "Structural: passed" : "Structural: failed"}
-          />
-          {#if structural?.issues.length}
-            <ul class="issue-list">
-              {#each structural.issues as issue}
-                <li><strong>{issue.check}</strong>: {issue.message}</li>
-              {/each}
-            </ul>
-          {/if}
+    {#snippet validationPanel()}
+      <section class="panel-block">
+        <h2>Validation</h2>
+        <div class="validation-grid">
+          <div class="validation-report">
+            <StatusBadge
+              variant={structural?.passed ? "success" : "danger"}
+              label={structural?.passed ? "Structural: passed" : "Structural: failed"}
+            />
+            {#if structural?.issues.length}
+              <ul class="issue-list">
+                {#each structural.issues as issue}
+                  <li><strong>{issue.check}</strong>: {issue.message}</li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          <div class="validation-report">
+            <StatusBadge
+              variant={compliance?.passed ? "success" : "danger"}
+              label={compliance?.passed ? "Review compliance: passed" : "Review compliance: failed"}
+            />
+            {#if compliance?.issues.length}
+              <ul class="issue-list">
+                {#each compliance.issues as issue}
+                  <li><strong>{issue.check}</strong>: {issue.message}</li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         </div>
-        <div class="validation-report">
-          <StatusBadge
-            variant={compliance?.passed ? "success" : "danger"}
-            label={compliance?.passed ? "Review compliance: passed" : "Review compliance: failed"}
-          />
-          {#if compliance?.issues.length}
-            <ul class="issue-list">
-              {#each compliance.issues as issue}
-                <li><strong>{issue.check}</strong>: {issue.message}</li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-      </div>
-      <StatusBadge
-        variant={structural?.passed && compliance?.passed ? "success" : "danger"}
-        label={structural?.passed && compliance?.passed ? "Overall: passed" : "Overall: failed"}
+        <StatusBadge
+          variant={structural?.passed && compliance?.passed ? "success" : "danger"}
+          label={structural?.passed && compliance?.passed ? "Overall: passed" : "Overall: failed"}
+        />
+      </section>
+    {/snippet}
+
+    {#snippet lineagePanel()}
+      <section class="panel-block">
+        <h2>Version lineage</h2>
+        <VersionLineageGraphView nodes={lineageNodes} edges={lineageEdges} title="Proposal lineage" />
+      </section>
+    {/snippet}
+
+    {#if isDesktop}
+      <!-- Unchanged three-pane-equivalent stacked layout (§13.10 desktop
+      spec: "Comments | Artifact diff | Validation and resolutions") -
+      every section always mounted, no tab chrome. -->
+      {@render diffPanel()}
+      {@render commentsPanel()}
+      {@render validationPanel()}
+      {@render lineagePanel()}
+    {:else}
+      <!-- §13.4 "Three-pane proposal review becomes tabs on mobile" /
+      §13.10 mobile spec. Only the active tab's section is mounted -
+      functionally equivalent to `hidden` for assistive tech, and avoids
+      keeping three inactive sections (including a Cytoscape graph) alive
+      off-screen. -->
+      <Tabs
+        tabs={mobileTabs}
+        activeId={activeMobileTab}
+        onchange={(id) => (activeMobileTab = id)}
+        ariaLabel="Proposal review sections"
       />
-    </section>
-
-    <section class="panel-block">
-      <h2>Version lineage</h2>
-      <VersionLineageGraphView nodes={lineageNodes} edges={lineageEdges} title="Proposal lineage" />
-    </section>
+      <div
+        role="tabpanel"
+        id={`tabpanel-${activeMobileTab}`}
+        aria-labelledby={`tab-${activeMobileTab}`}
+        tabindex="0"
+        data-testid="proposal-review-tabpanel"
+      >
+        {#if activeMobileTab === "diff"}
+          {@render diffPanel()}
+        {:else if activeMobileTab === "comments"}
+          {@render commentsPanel()}
+        {:else if activeMobileTab === "validation"}
+          {@render validationPanel()}
+        {:else if activeMobileTab === "lineage"}
+          {@render lineagePanel()}
+        {/if}
+      </div>
+    {/if}
 
     {#if actionError && !showConflictFromAccept}
       <p class="error" role="alert">{actionError}</p>

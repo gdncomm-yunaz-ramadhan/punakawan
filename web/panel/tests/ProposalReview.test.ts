@@ -480,4 +480,118 @@ describe("ProposalReview", () => {
       expect(screen.queryByTestId("accept-button")).toBeNull();
     });
   });
+
+  // Mobile tab layout (punokawan-apy.7.3): §13.4 "Three-pane proposal
+  // review becomes tabs on mobile". Diff/Comments/Validation/Lineage map
+  // onto this component's four existing sections - "Lineage" instead of
+  // the plan doc's "Evidence" wording, since Version lineage is the
+  // section that actually exists here.
+  describe("mobile tab layout", () => {
+    it("desktop keeps every section stacked with no tab chrome (regression guard)", async () => {
+      mockAll();
+      render(ProposalReview, {
+        props: { reviewId: "review-1", review: review(), comments: [comment()], isDesktop: true, onreviewChanged: vi.fn() },
+      });
+
+      await waitFor(() => expect(screen.getByTestId("diff-viewer")).toBeTruthy());
+      expect(screen.queryByRole("tablist")).toBeNull();
+      expect(screen.getByTestId("comment-resolution-list")).toBeTruthy();
+      expect(screen.getByText("Validation")).toBeTruthy();
+      expect(screen.getByText("Version lineage")).toBeTruthy();
+    });
+
+    it("mobile renders a tablist and shows only the active tab's section", async () => {
+      mockAll();
+      render(ProposalReview, {
+        props: { reviewId: "review-1", review: review(), comments: [comment()], isDesktop: false, onreviewChanged: vi.fn() },
+      });
+
+      await waitFor(() => expect(screen.getByRole("tablist")).toBeTruthy());
+      // Diff is the default active tab.
+      expect(screen.getByTestId("diff-viewer")).toBeTruthy();
+      expect(screen.queryByTestId("comment-resolution-list")).toBeNull();
+      expect(screen.queryByText("Version lineage")).toBeNull();
+
+      await fireEvent.click(screen.getByTestId("tab-comments"));
+      await waitFor(() => expect(screen.getByTestId("comment-resolution-list")).toBeTruthy());
+      expect(screen.queryByTestId("diff-viewer")).toBeNull();
+      expect(screen.queryByText("Version lineage")).toBeNull();
+
+      await fireEvent.click(screen.getByTestId("tab-validation"));
+      await waitFor(() => expect(screen.getByText("Structural: passed")).toBeTruthy());
+      expect(screen.queryByTestId("comment-resolution-list")).toBeNull();
+
+      await fireEvent.click(screen.getByTestId("tab-lineage"));
+      await waitFor(() => expect(screen.getByText("Version lineage")).toBeTruthy());
+      expect(screen.queryByText("Structural: passed")).toBeNull();
+    });
+
+    it("moves and activates tabs via ArrowRight/ArrowLeft, matching WAI-ARIA automatic activation", async () => {
+      mockAll();
+      render(ProposalReview, {
+        props: { reviewId: "review-1", review: review(), comments: [comment()], isDesktop: false, onreviewChanged: vi.fn() },
+      });
+
+      await waitFor(() => expect(screen.getByTestId("tab-diff")).toBeTruthy());
+      const diffTab = screen.getByTestId("tab-diff");
+      diffTab.focus();
+      await fireEvent.keyDown(diffTab, { key: "ArrowRight" });
+
+      const commentsTab = screen.getByTestId("tab-comments");
+      await waitFor(() => expect(commentsTab.getAttribute("aria-selected")).toBe("true"));
+      expect(document.activeElement).toBe(commentsTab);
+      expect(screen.getByTestId("comment-resolution-list")).toBeTruthy();
+
+      await fireEvent.keyDown(commentsTab, { key: "ArrowLeft" });
+      await waitFor(() => expect(diffTab.getAttribute("aria-selected")).toBe("true"));
+      expect(document.activeElement).toBe(diffTab);
+      expect(screen.getByTestId("diff-viewer")).toBeTruthy();
+    });
+
+    it("wires up role=tablist/tab/tabpanel, aria-selected, and aria-controls/aria-labelledby correctly", async () => {
+      mockAll();
+      render(ProposalReview, {
+        props: { reviewId: "review-1", review: review(), comments: [comment()], isDesktop: false, onreviewChanged: vi.fn() },
+      });
+
+      await waitFor(() => expect(screen.getByRole("tablist")).toBeTruthy());
+      expect(screen.getByRole("tablist").getAttribute("aria-label")).toBeTruthy();
+
+      const diffTab = screen.getByTestId("tab-diff");
+      expect(diffTab.getAttribute("role")).toBe("tab");
+      expect(diffTab.getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByTestId("tab-comments").getAttribute("aria-selected")).toBe("false");
+
+      const panel = screen.getByTestId("proposal-review-tabpanel");
+      expect(panel.getAttribute("role")).toBe("tabpanel");
+      expect(panel.getAttribute("id")).toBe(diffTab.getAttribute("aria-controls"));
+      expect(panel.getAttribute("aria-labelledby")).toBe(diffTab.getAttribute("id"));
+    });
+
+    it("keeps the sticky action bar visible and functional regardless of which tab is active", async () => {
+      mockAll();
+      const rejectedReview = review({ status: "rejected" });
+      vi.spyOn(reviewApi, "rejectProposal").mockResolvedValue(rejectedReview);
+      const onreviewChanged = vi.fn();
+
+      render(ProposalReview, {
+        props: { reviewId: "review-1", review: review(), comments: [comment()], isDesktop: false, onreviewChanged },
+      });
+
+      await waitFor(() => expect(screen.getByTestId("accept-button")).toBeTruthy());
+      for (const tabId of ["comments", "validation", "lineage", "diff"]) {
+        await fireEvent.click(screen.getByTestId(`tab-${tabId}`));
+        await waitFor(() => expect(screen.getByTestId("accept-button")).toBeTruthy());
+        expect(screen.getByTestId("reject-button")).toBeTruthy();
+        expect(screen.getByTestId("request-changes-button")).toBeTruthy();
+      }
+
+      await fireEvent.click(screen.getByTestId("reject-button"));
+      const dialog = screen.getByRole("dialog");
+      await fireEvent.click(within(dialog).getByText("Reject Proposal"));
+
+      await waitFor(() => expect(reviewApi.rejectProposal).toHaveBeenCalledWith("review-1", "1"));
+      expect(onreviewChanged).toHaveBeenCalledWith(rejectedReview);
+    });
+  });
 });
