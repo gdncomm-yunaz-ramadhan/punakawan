@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
 	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/panel/session"
 )
 
 // Options configures a Server, per §26's configuration keys this phase
@@ -40,6 +42,9 @@ type Server struct {
 	hub                *events.Hub
 	stopReconciliation context.CancelFunc
 
+	sessions     *session.Manager
+	bootstrapURL string
+
 	httpServer *http.Server
 	listener   net.Listener
 }
@@ -65,6 +70,7 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 		opts:     opts,
 		logger:   logger,
 		hub:      events.NewHub(),
+		sessions: session.NewManager(),
 	}
 }
 
@@ -75,6 +81,16 @@ func (s *Server) Addr() string {
 		return ""
 	}
 	return s.listener.Addr().String()
+}
+
+// BootstrapURL returns the one-time URL - the bound address plus a fresh
+// bootstrap token as a query parameter - that trades for a session on
+// first load, valid only after Start succeeds. Per §15, the token is
+// single-use: opening this URL a second time (e.g. from browser history)
+// will not grant a session, since the first exchange already invalidated
+// it.
+func (s *Server) BootstrapURL() string {
+	return s.bootstrapURL
 }
 
 // Start binds the loopback listener and begins serving in the
@@ -92,13 +108,21 @@ func (s *Server) Start() error {
 		return fmt.Errorf("server: static assets: %w", err)
 	}
 
+	bootstrapToken, err := s.sessions.IssueBootstrapToken()
+	if err != nil {
+		return fmt.Errorf("server: issue bootstrap token: %w", err)
+	}
+	s.bootstrapURL = "http://" + listener.Addr().String() + "/?bootstrap=" + bootstrapToken
+
 	mux := http.NewServeMux()
 	cfg := api.Config{
 		PunakawanVersion: panel.Version,
-		ReadOnly:         true, // §17.1's read-only MVP: no mutation endpoints exist yet
+		ReadOnly:         false, // §15's mutation session + CSRF layer now gates the write endpoints below
 		BoundAddr:        listener.Addr().String(),
 		StartedAt:        s.startedAt,
 	}
+	plans := &artifact.PlanStore{WorkspaceRoot: s.app.Workspace.Root}
+	reviews := &artifact.ReviewStore{WorkspaceRoot: s.app.Workspace.Root}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
 	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
@@ -118,6 +142,17 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(s.readers.Evidence))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(s.readers.Evidence))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/approvals", api.ApprovalsHandler(s.readers.Approval))
+
+	mux.HandleFunc("POST /api/v1/session/exchange", session.ExchangeHandler(s.sessions))
+
+	mux.HandleFunc("POST /api/v1/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, api.CreateReviewHandler(plans, reviews, s.app.Workspace.ID)))
+	mux.HandleFunc("GET /api/v1/reviews/{reviewId}", api.ReviewHandler(reviews))
+	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}", session.RequireSession(s.sessions, api.UpdateReviewHandler(reviews)))
+	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/comments", session.RequireSession(s.sessions, api.CreateCommentHandler(reviews, plans)))
+	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/comments", api.CommentsHandler(reviews))
+	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.UpdateCommentHandler(reviews)))
+	mux.HandleFunc("DELETE /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.DeleteCommentHandler(reviews)))
+
 	mux.Handle("/", static)
 
 	s.httpServer = &http.Server{
@@ -145,6 +180,7 @@ func (s *Server) Start() error {
 // dropped. Stopping never modifies canonical workspace state (§30) - this
 // server only reads from the stores behind its readers.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.sessions.InvalidateAll()
 	if s.stopReconciliation != nil {
 		s.stopReconciliation()
 	}

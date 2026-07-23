@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/registry"
@@ -157,8 +161,8 @@ func TestServerSystemEndpoint(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
-	if body["read_only"] != true {
-		t.Fatalf("read_only = %v, want true", body["read_only"])
+	if body["read_only"] != false {
+		t.Fatalf("read_only = %v, want false (mutation session endpoints now exist)", body["read_only"])
 	}
 	if body["panel_version"] == "" || body["panel_version"] == nil {
 		t.Fatalf("panel_version missing: %+v", body)
@@ -702,5 +706,126 @@ func TestServerGracefulShutdown(t *testing.T) {
 
 	if _, err := http.Get(fmt.Sprintf("http://%s/api/v1/system", s.Addr())); err == nil {
 		t.Fatal("expected the connection to be refused after shutdown")
+	}
+}
+
+// exchangeSession trades s's bootstrap URL for a live session, returning
+// an *http.Client whose cookie jar now carries the session cookie and the
+// CSRF token that must accompany every mutating request.
+func exchangeSession(t *testing.T, s *Server) (*http.Client, string) {
+	t.Helper()
+	u, err := url.Parse(s.BootstrapURL())
+	if err != nil {
+		t.Fatalf("parse BootstrapURL: %v", err)
+	}
+	bootstrapToken := u.Query().Get("bootstrap")
+	if bootstrapToken == "" {
+		t.Fatalf("BootstrapURL %q has no bootstrap query param", s.BootstrapURL())
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+
+	body, _ := json.Marshal(map[string]string{"bootstrap_token": bootstrapToken})
+	resp, err := client.Post(fmt.Sprintf("http://%s/api/v1/session/exchange", s.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("exchange status = %d, want 200", resp.StatusCode)
+	}
+	var out struct {
+		CSRFToken string `json:"csrf_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode exchange response: %v", err)
+	}
+	return client, out.CSRFToken
+}
+
+func TestServerSessionExchangeGrantsAWorkingSession(t *testing.T) {
+	s, a := startTestServer(t)
+	plans := &artifact.PlanStore{WorkspaceRoot: a.Workspace.Root}
+	if _, err := plans.CreateVersion("plan-panel", a.Workspace.ID, []byte("# Plan\n\nBody.\n"), time.Now()); err != nil {
+		t.Fatalf("CreateVersion: %v", err)
+	}
+	client, csrfToken := exchangeSession(t, s)
+
+	createBody, _ := json.Marshal(map[string]string{"title": "Panel review"})
+	resp, err := client.Post(fmt.Sprintf("http://%s/api/v1/artifacts/plan/plan-panel/reviews", s.Addr()), "application/json", bytes.NewReader(createBody))
+	if err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status without CSRF header = %d, want 403", resp.StatusCode)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/api/v1/artifacts/plan/plan-panel/reviews", s.Addr()), bytes.NewReader(createBody))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("X-Csrf-Token", csrfToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp2, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("create review with CSRF: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp2.Body)
+		t.Fatalf("status with CSRF header = %d, want 201: %s", resp2.StatusCode, body)
+	}
+}
+
+func TestServerRejectsMutationWithNoSessionCookie(t *testing.T) {
+	s, _ := startTestServer(t)
+	body, _ := json.Marshal(map[string]string{"title": "x"})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/artifacts/plan/plan-panel/reviews", s.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestServerSessionIsInvalidatedOnShutdown(t *testing.T) {
+	a := newTestApp(t)
+	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	if err != nil {
+		t.Fatalf("registry.OpenAt: %v", err)
+	}
+	s := New(a, reg, Options{Port: "0"})
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	client, _ := exchangeSession(t, s)
+	apiURL, err := url.Parse(fmt.Sprintf("http://%s/", s.Addr()))
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	cookies := client.Jar.Cookies(apiURL)
+	if len(cookies) != 1 {
+		t.Fatalf("cookies = %+v, want the one session cookie the exchange just set", cookies)
+	}
+	sessionID := cookies[0].Value
+	if !s.sessions.ValidSession(sessionID) {
+		t.Fatal("ValidSession = false right after exchange, want true")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if s.sessions.ValidSession(sessionID) {
+		t.Fatal("ValidSession = true after Shutdown, want the session invalidated")
 	}
 }

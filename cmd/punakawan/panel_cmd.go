@@ -24,9 +24,10 @@ func newPanelCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "panel",
 		Short: "Start the Punakawan Panel: a local, loopback-only web dashboard",
-		Long: "Start the Punakawan Panel, per punakawan-panel-implementation-plan.md: a read-only " +
-			"local web dashboard served from this binary. It binds to loopback only, auto-registers " +
-			"the current workspace, and never writes to any workspace state.",
+		Long: "Start the Punakawan Panel, per punakawan-panel-implementation-plan.md: a local web " +
+			"dashboard served from this binary. It binds to loopback only, auto-registers the " +
+			"current workspace, and never writes to canonical workspace state except through an " +
+			"authenticated review session, per punakawan-artifact-review-plan-mutation-plan-v2.md §15.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := workspacePath
 			if dir == "" {
@@ -62,10 +63,10 @@ func newPanelCmd() *cobra.Command {
 				return fmt.Errorf("panel: start server: %w", err)
 			}
 
-			addr := s.Addr()
-			fmt.Fprintf(cmd.OutOrStdout(), "Punakawan Panel listening on http://%s\n", addr)
+			bootstrapURL := s.BootstrapURL()
+			fmt.Fprintf(cmd.OutOrStdout(), "Punakawan Panel listening on %s\n", bootstrapURL)
 			if openBrowser {
-				openInBrowser("http://" + addr)
+				openInBrowser(bootstrapURL)
 			}
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
