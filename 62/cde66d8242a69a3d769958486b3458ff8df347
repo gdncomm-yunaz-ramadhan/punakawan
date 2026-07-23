@@ -1,0 +1,37 @@
+internal/knowledge/service.go
+  6c4a5633395342b7 140-146,159-164,166-171
+internal/mcpserver/tools_knowledgedelete.go
+  6c4a5633395342b7 1-149
+internal/mcpserver/tools.go
+  6c4a5633395342b7 228-237
+internal/search/index.go
+  6c4a5633395342b7 94-103,109-117,120-124,135-155
+internal/knowledge/events.go
+  6c4a5633395342b7 20
+internal/knowledge/events_test.go
+  6c4a5633395342b7 55-94
+internal/search/search_test.go
+  6c4a5633395342b7 239-273
+internal/mcpserver/tools_knowledgedelete_test.go
+  6c4a5633395342b7 1-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "62cde66d8242a69a3d769958486b3458ff8df347",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 458,
+      "total_deletions": 24,
+      "accepted_lines": 442,
+      "overriden_lines": 0
+    }
+  }
+}
