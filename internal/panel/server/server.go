@@ -145,6 +145,7 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("POST /api/v1/session/exchange", session.ExchangeHandler(s.sessions))
 
+	mux.HandleFunc("GET /api/v1/artifacts/{type}/{id}/current", api.ArtifactCurrentHandler(plans))
 	mux.HandleFunc("POST /api/v1/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, api.CreateReviewHandler(plans, reviews, s.app.Workspace.ID)))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}", api.ReviewHandler(reviews))
 	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}", session.RequireSession(s.sessions, api.UpdateReviewHandler(reviews)))
