@@ -77,12 +77,12 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_ready_tasks",
-		Description: "List Beads issues with no active blockers (§9's 'Petruk executes ready task'). Read-only.",
+		Description: "List Beads issues with no active blockers (§9's 'Petruk executes ready task'). Read-only. Returns at most `limit` issues (default 50).",
 	}, listReadyTasksHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "claim_ready_task",
-		Description: "Atomically claim the first ready Beads issue matching the filters (§11.3's 'claim task' step). Mutates issue state.",
+		Description: "Atomically claim the first ready Beads issue matching the filters (§11.3's 'claim task' step). Mutates issue state, returning the single claimed issue. The optional assignee filters which candidate issues are considered; it is NOT the claimer - bd assigns the claimed issue to the invoking bd user itself.",
 	}, claimReadyTaskHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{

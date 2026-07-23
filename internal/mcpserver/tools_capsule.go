@@ -49,12 +49,16 @@ type RequestCapsuleInput struct {
 
 func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RequestCapsuleInput) (*mcp.CallToolResult, protocol.ContextCapsule, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in RequestCapsuleInput) (*mcp.CallToolResult, protocol.ContextCapsule, error) {
+		role, err := validateCapsuleRole(in.Role)
+		if err != nil {
+			return nil, protocol.ContextCapsule{}, err
+		}
+
 		store, err := a.OpenKnowledge()
 		if err != nil {
 			return nil, protocol.ContextCapsule{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
 
-		role := protocol.ContextCapsuleRole(in.Role)
 		id := fmt.Sprintf("cap-%s-%s-%d", role, in.TaskId, time.Now().UnixNano())
 
 		buildInput := capsule.BuildInput{

@@ -213,6 +213,14 @@ func Build(ctx context.Context, store *knowledge.Store, in BuildInput) (Context,
 		return Context{}, fmt.Errorf("taskcontext: %s: expected a requirement record, got type %q", req.Id, req.Type)
 	}
 
+	// The api/data-contract, decision, and constraint lists are named
+	// "relevant"/"related"/"known" but were previously every record of each
+	// type in the whole store, unbounded - straight model-context bloat as the
+	// store grows (punokawan-d9v). Filter each to records whose own scope does
+	// not conflict with the parent requirement's scope, and cap each list, so
+	// the naming is honest and the context stays bounded.
+	reqScope := req.Scope
+
 	var relevantSourceExcerpts []string
 	for _, t := range []protocol.KnowledgeRecordType{
 		protocol.KnowledgeRecordTypeApiContract,
@@ -222,9 +230,7 @@ func Build(ctx context.Context, store *knowledge.Store, in BuildInput) (Context,
 		if err != nil {
 			return Context{}, fmt.Errorf("taskcontext: list knowledge records of type %s: %w", t, err)
 		}
-		for _, r := range recs {
-			relevantSourceExcerpts = append(relevantSourceExcerpts, summarize(r))
-		}
+		relevantSourceExcerpts = appendScopedSummaries(relevantSourceExcerpts, recs, reqScope, maxRelevantSourceExcerpts)
 	}
 
 	var relatedDecisions []string
@@ -232,18 +238,16 @@ func Build(ctx context.Context, store *knowledge.Store, in BuildInput) (Context,
 	if err != nil {
 		return Context{}, fmt.Errorf("taskcontext: list decision records: %w", err)
 	}
-	for _, r := range decisions {
-		relatedDecisions = append(relatedDecisions, summarize(r))
-	}
+	relatedDecisions = appendScopedSummaries(relatedDecisions, decisions, reqScope, maxRelatedDecisions)
 
+	// Caller-supplied constraints are always kept (they came with the task);
+	// only the store-derived additions are scope-filtered and capped.
 	knownConstraints := append([]string{}, in.KnownConstraints...)
 	constraints, err := store.ListByType(protocol.KnowledgeRecordTypeConstraint)
 	if err != nil {
 		return Context{}, fmt.Errorf("taskcontext: list constraint records: %w", err)
 	}
-	for _, r := range constraints {
-		knownConstraints = append(knownConstraints, summarize(r))
-	}
+	knownConstraints = appendScopedSummaries(knownConstraints, constraints, reqScope, len(knownConstraints)+maxKnownConstraints)
 
 	previousTaskOutputs := append([]string{}, in.PreviousTaskOutputs...)
 	related, err := store.Related(in.TaskID)
@@ -348,6 +352,61 @@ func WriteYAML(c Context, path string) error {
 // already created bundle via evidence.NewBundle).
 func WriteToBundle(c Context, bundle *evidence.Bundle) error {
 	return WriteYAML(c, bundle.Path("task.yaml"))
+}
+
+// Caps bounding each store-derived context list (punokawan-d9v). These are
+// deliberately generous - a task's genuinely relevant background rarely runs
+// to dozens of contracts or decisions - but finite, so a large knowledge store
+// cannot balloon a single task's execution context without limit.
+const (
+	maxRelevantSourceExcerpts = 20
+	maxRelatedDecisions       = 20
+	maxKnownConstraints       = 20
+)
+
+// appendScopedSummaries appends summaries of recs to dst, skipping records
+// whose scope conflicts with the parent requirement's scope, until dst reaches
+// cap. It preserves whatever dst already holds (so a shared cap can span
+// several ListByType calls, and caller-supplied entries are never dropped).
+func appendScopedSummaries(dst []string, recs []protocol.KnowledgeRecord, reqScope *protocol.KnowledgeRecordScope, cap int) []string {
+	for _, r := range recs {
+		if len(dst) >= cap {
+			break
+		}
+		if !inRequirementScope(r.Scope, reqScope) {
+			continue
+		}
+		dst = append(dst, summarize(r))
+	}
+	return dst
+}
+
+// inRequirementScope reports whether a record with recScope is plausibly
+// relevant to a task under reqScope. It only excludes a record that explicitly
+// declares a different project/repository/module than the requirement's;
+// unscoped (cross-cutting) records, and any record when the requirement itself
+// is unscoped, are kept - the goal is to drop obviously out-of-scope records,
+// not to demand an exact scope match the schema rarely carries.
+func inRequirementScope(recScope, reqScope *protocol.KnowledgeRecordScope) bool {
+	if reqScope == nil || recScope == nil {
+		return true
+	}
+	if scopeConflict(recScope.Project, reqScope.Project) {
+		return false
+	}
+	if scopeConflict(recScope.Repository, reqScope.Repository) {
+		return false
+	}
+	if scopeConflict(recScope.Module, reqScope.Module) {
+		return false
+	}
+	return true
+}
+
+// scopeConflict reports whether a and b are both set to non-empty, differing
+// values. A nil or empty side never conflicts (it is simply unspecified).
+func scopeConflict(a, b *string) bool {
+	return a != nil && b != nil && *a != "" && *b != "" && *a != *b
 }
 
 // summarize produces a short human-readable reference to a knowledge

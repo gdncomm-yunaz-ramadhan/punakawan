@@ -10,7 +10,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // JiraAssessmentFinding is one observation about what already exists in the
@@ -77,6 +76,13 @@ type SubmitJiraAssessmentOutput struct {
 	CommentPosted bool                       `json:"comment_posted"`
 	TasksCreated  []JiraAssessmentTaskResult `json:"tasks_created,omitempty"`
 	TasksSkipped  []JiraAssessmentTaskResult `json:"tasks_skipped,omitempty"`
+	// FailedStep/FailedError report a partial success (punokawan-4tw): if the
+	// assessment comment posted but the subtask-creation write then failed,
+	// these carry the failure while the call still returns as a non-error
+	// result, so the caller sees the comment succeeded and does not re-post it
+	// on a blind retry.
+	FailedStep  string `json:"failed_step,omitempty"`
+	FailedError string `json:"failed_error,omitempty"`
 }
 
 func submitJiraAssessmentHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitJiraAssessmentInput) (*mcp.CallToolResult, SubmitJiraAssessmentOutput, error) {
@@ -96,7 +102,23 @@ func submitJiraAssessmentHandler(a *app.App) func(context.Context, *mcp.CallTool
 // adapter process, which would require live Jira credentials.
 func submitJiraAssessment(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in SubmitJiraAssessmentInput) (SubmitJiraAssessmentOutput, error) {
 	var out SubmitJiraAssessmentOutput
-	requestedBy := protocol.ApprovalRecordRequestedBy(in.RequestedBy)
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+
+	// Reject duplicate task summaries up front (punokawan-clq): createJiraSubtask
+	// keys its created/skipped results by summary, and this handler maps those
+	// results back to each task's ai/human hours by summary too, so two tasks
+	// sharing a summary would collide and misattribute estimates. Fail before
+	// posting the comment so nothing is written on a bad payload.
+	seen := make(map[string]struct{}, len(in.Tasks))
+	for _, task := range in.Tasks {
+		if _, dup := seen[task.Summary]; dup {
+			return out, fmt.Errorf("mcpserver: submit_jira_assessment: duplicate task summary %q; each task must have a unique summary so its estimate is attributed correctly", task.Summary)
+		}
+		seen[task.Summary] = struct{}{}
+	}
 
 	if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.addJiraComment", map[string]any{
 		"issueIdOrKey": in.IssueIdOrKey,
@@ -137,7 +159,10 @@ func submitJiraAssessment(ctx context.Context, req *mcp.CallToolRequest, gate *a
 		"candidates":    candidates,
 	}, requestedBy)
 	if err != nil {
-		return out, fmt.Errorf("mcpserver: create assessment tasks: %w", err)
+		// The comment already posted, so a subtask-creation failure is a
+		// partial success: record it and return a non-error result rather
+		// than discarding the fact that the comment went out (punokawan-4tw).
+		return out, recordPartialFailure(&out.FailedStep, &out.FailedError, true, "subtasks", fmt.Errorf("mcpserver: create assessment tasks: %w", err))
 	}
 
 	var result struct {

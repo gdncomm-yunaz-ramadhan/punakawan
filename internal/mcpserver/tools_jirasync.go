@@ -9,7 +9,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // CheckJiraSkippableInput is check_jira_skippable's input.
@@ -115,6 +114,11 @@ func syncJiraSubtasksHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 // internal/adapters/gate_test.go's pattern) instead of a real spawned
 // adapter process, which would require live Jira credentials.
 func syncJiraSubtasks(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in SyncJiraSubtasksInput) (SyncJiraSubtasksOutput, error) {
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return SyncJiraSubtasksOutput{}, err
+	}
+
 	candidates := make([]map[string]any, len(in.Candidates))
 	for i, c := range in.Candidates {
 		candidate := map[string]any{"summary": c.Summary}
@@ -132,7 +136,7 @@ func syncJiraSubtasks(ctx context.Context, req *mcp.CallToolRequest, gate *adapt
 		"projectKey":    in.ProjectKey,
 		"issueTypeName": in.IssueTypeName,
 		"candidates":    candidates,
-	}, protocol.ApprovalRecordRequestedBy(in.RequestedBy))
+	}, requestedBy)
 	if err != nil {
 		return SyncJiraSubtasksOutput{}, fmt.Errorf("mcpserver: create jira subtasks: %w", err)
 	}
