@@ -1,0 +1,115 @@
+web/panel/src/lib/components/charts/themeColors.ts
+  6c4a5633395342b7 1-119
+web/panel/src/lib/components/graphs/VersionLineageGraphView.svelte
+  6c4a5633395342b7 1-92
+web/panel/tests/GraphControls.test.ts
+  6c4a5633395342b7 1-80
+web/panel/tests/Showcase.test.ts
+  3415a4432044e41f 2,5-42
+web/panel/src/lib/components/charts/RevisionOutcomeChart.svelte
+  6c4a5633395342b7 1-81
+web/panel/tests/VersionLineageGraphView.test.ts
+  6c4a5633395342b7 1-56
+web/panel/tests/RelationGraphView.test.ts
+  6c4a5633395342b7 1-48
+web/panel/src/lib/components/graphs/RelationGraphView.svelte
+  6c4a5633395342b7 1-90
+web/panel/src/lib/components/graphs/RelationList.svelte
+  6c4a5633395342b7 1-76
+web/panel/tests/ChartShell.test.ts
+  6c4a5633395342b7 1-129
+web/panel/tests/GraphCanvas.test.ts
+  6c4a5633395342b7 1-118
+web/panel/tests/graphLoader.test.ts
+  6c4a5633395342b7 1-36
+web/panel/tests/ReviewActivityChart.test.ts
+  6c4a5633395342b7 1-62
+web/panel/tests/CommentResolutionChart.test.ts
+  6c4a5633395342b7 1-73
+web/panel/src/lib/components/charts/CommentResolutionChart.svelte
+  6c4a5633395342b7 1-87
+web/panel/src/lib/components/graphs/types.ts
+  6c4a5633395342b7 1-24
+web/panel/tests/DurationChart.test.ts
+  6c4a5633395342b7 1-60
+web/panel/tests/TaskGraphView.test.ts
+  6c4a5633395342b7 1-75
+web/panel/src/routes/showcase/Showcase.svelte
+  6c4a5633395342b7 10-19,33-114,175-217,227-231
+web/panel/src/lib/components/charts/ReviewActivityChart.svelte
+  6c4a5633395342b7 1-83
+web/panel/src/lib/components/graphs/hops.ts
+  6c4a5633395342b7 1-56
+web/panel/tests/RevisionOutcomeChart.test.ts
+  6c4a5633395342b7 1-62
+web/panel/src/lib/components/charts/ChangeVolumeChart.svelte
+  6c4a5633395342b7 1-88
+web/panel/tests/RelationList.test.ts
+  6c4a5633395342b7 1-43
+web/panel/src/lib/components/graphs/graphLoader.ts
+  6c4a5633395342b7 1-25
+web/panel/src/lib/components/charts/types.ts
+  6c4a5633395342b7 1-26
+web/panel/tests/WorkflowGraphView.test.ts
+  6c4a5633395342b7 1-56
+web/panel/src/lib/components/graphs/WorkflowGraphView.svelte
+  6c4a5633395342b7 1-91
+web/panel/src/lib/components/graphs/TaskGraphView.svelte
+  6c4a5633395342b7 1-90
+web/panel/src/lib/components/graphs/GraphCanvas.svelte
+  6c4a5633395342b7 1-260
+web/panel/src/lib/components/charts/ChartShell.svelte
+  6c4a5633395342b7 1-209
+web/panel/tests/themeColors.test.ts
+  6c4a5633395342b7 1-59
+web/panel/src/lib/components/graphs/GraphControls.svelte
+  6c4a5633395342b7 1-92
+web/panel/tests/ChangeVolumeChart.test.ts
+  6c4a5633395342b7 1-78
+web/panel/src/lib/components/graphs/graphStyle.ts
+  6c4a5633395342b7 1-81
+web/panel/tests/chartLoader.test.ts
+  6c4a5633395342b7 1-48
+web/panel/tests/hops.test.ts
+  6c4a5633395342b7 1-61
+web/panel/src/lib/components/charts/colorRoles.ts
+  6c4a5633395342b7 1-13
+web/panel/src/lib/components/charts/chartLoader.ts
+  3415a4432044e41f 5-18,21,27,30-44
+  6c4a5633395342b7 1-4,19-20,22-26,28-29,45-56
+web/panel/src/lib/components/charts/DurationChart.svelte
+  6c4a5633395342b7 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "1e629d47020e3b3224f1522e8a3258fdc2a35628",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 71,
+      "total_deletions": 40,
+      "accepted_lines": 71,
+      "overriden_lines": 0
+    },
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 3142,
+      "total_deletions": 39,
+      "accepted_lines": 3064,
+      "overriden_lines": 0
+    }
+  }
+}
