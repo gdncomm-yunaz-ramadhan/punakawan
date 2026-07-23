@@ -1,0 +1,27 @@
+{
+  "name": "@punakawan/panel",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "lint": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "svelte": "^5.15.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@testing-library/svelte": "^5.2.6",
+    "@types/node": "^24.0.0",
+    "jsdom": "^25.0.1",
+    "svelte-check": "^4.1.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}

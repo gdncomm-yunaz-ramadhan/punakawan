@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test test-go test-ts test-install lint generate protocol-check integration-test package doctor
+.PHONY: bootstrap build test test-go test-ts test-install lint generate protocol-check integration-test package doctor panel-dev panel-build panel-test
 
 bootstrap:
 	go mod download
@@ -44,3 +44,20 @@ doctor:
 	go version
 	node --version
 	pnpm --version
+
+# Two-terminal dev loop (punakawan-panel-implementation-plan.md §21): run
+# this target in one terminal, then `pnpm --filter @punakawan/panel dev`
+# in another - Vite proxies /api/v1 to this server.
+panel-dev:
+	go run ./cmd/punakawan panel --port 7331 --open-browser=false
+
+# Builds the frontend directly into internal/panel/assets/dist (vite.config.ts's
+# outDir), then rebuilds the Go binary so it embeds the fresh assets.
+panel-build:
+	pnpm --filter @punakawan/panel build
+	go build ./cmd/punakawan
+
+panel-test:
+	go test ./internal/panel/...
+	pnpm --filter @punakawan/panel test
+	pnpm --filter @punakawan/panel typecheck

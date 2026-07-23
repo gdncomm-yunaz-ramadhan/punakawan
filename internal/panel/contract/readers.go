@@ -18,26 +18,28 @@ import (
 )
 
 // WorkspaceSummary is one workspace's panel-facing overview, per
-// punakawan-panel-implementation-plan.md §14.2's workspace card.
+// punakawan-panel-implementation-plan.md §14.2's workspace card. JSON tags
+// are load-bearing: HTTP handlers marshal this type directly as the
+// GET /api/v1/workspaces response shape.
 type WorkspaceSummary struct {
-	ID                 string
-	Path               string
-	DisplayName        string
-	Availability       protocol.PanelSourceHealthAvailability
-	RepositoryCount    int
-	ActiveSessionCount int
-	OpenTaskCount      int
-	BlockedTaskCount   int
-	KnowledgeCount     int
-	LastActivityAt     time.Time
-	Pinned             bool
+	ID                 string                                 `json:"id"`
+	Path               string                                 `json:"path"`
+	DisplayName        string                                 `json:"display_name"`
+	Availability       protocol.PanelSourceHealthAvailability `json:"availability"`
+	RepositoryCount    int                                    `json:"repository_count"`
+	ActiveSessionCount int                                    `json:"active_session_count"`
+	OpenTaskCount      int                                    `json:"open_task_count"`
+	BlockedTaskCount   int                                    `json:"blocked_task_count"`
+	KnowledgeCount     int                                    `json:"knowledge_count"`
+	LastActivityAt     time.Time                              `json:"last_activity_at"`
+	Pinned             bool                                   `json:"pinned"`
 }
 
 // WorkspaceDetail extends WorkspaceSummary with per-source health, per
 // §14.3.
 type WorkspaceDetail struct {
 	WorkspaceSummary
-	Health []protocol.PanelSourceHealth
+	Health []protocol.PanelSourceHealth `json:"health"`
 }
 
 // WorkspaceReader lists and describes registered workspaces. Until the
