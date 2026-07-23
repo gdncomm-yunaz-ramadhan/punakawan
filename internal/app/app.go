@@ -13,6 +13,7 @@ import (
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/capsule"
+	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
@@ -38,6 +39,7 @@ type App struct {
 	AdapterRegistry *adapters.Registry
 	SyncQueue       *syncqueue.Queue
 	PrReviews       *prreview.Store
+	ContextRequests *contextrequest.Store
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
@@ -112,6 +114,11 @@ func Load(startDir string) (*App, error) {
 		return nil, err
 	}
 
+	contextRequests, err := contextrequest.OpenStore(ws.Root)
+	if err != nil {
+		return nil, err
+	}
+
 	registry := adapters.NewRegistry(specs, store)
 	registry.SetApprovalScope(pol.Approvals.Scope)
 	registry.SetSyncQueue(syncQueue)
@@ -128,6 +135,7 @@ func Load(startDir string) (*App, error) {
 		AdapterRegistry: registry,
 		SyncQueue:       syncQueue,
 		PrReviews:       prReviews,
+		ContextRequests: contextRequests,
 	}, nil
 }
 

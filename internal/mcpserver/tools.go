@@ -227,6 +227,21 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, searchKnowledgeHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "submit_missing_context_request",
+		Description: "Request context a capsule did not include (§6.4). Subagents may request additional context but must not search broadly themselves - this only records the request; it is Semar's (the calling agent's) own next call to search_knowledge, request_capsule, or resolve_missing_context_request that decides what happens to it.",
+	}, submitMissingContextRequestHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_missing_context_requests",
+		Description: "List missing-context requests (§6.4), defaulting to pending ones, so Semar can decide each one's resolution.",
+	}, listMissingContextRequestsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "resolve_missing_context_request",
+		Description: "Record Semar's decision on a missing-context request (§6.4): added_to_revision (requires revised_capsule_id from a prior request_capsule call), rejected, or asked_user. Punakawan does not choose between these - it only persists whichever the calling agent picked.",
+	}, resolveMissingContextRequestHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_knowledge",
 		Description: "Bulk-delete specific knowledge records by id, e.g. ones a search_knowledge call surfaced as stale, superseded, or wrong - so a future search does not keep returning dirty context. Deletes are permanent (no fold-latest, no undo); ids not found in the store are reported separately and are not an error.",
 	}, deleteKnowledgeHandler(a))

@@ -2401,6 +2401,119 @@ func (j *KnowledgeRecord) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// A subagent's request for context its capsule did not include, routed back to
+// Semar per punakawan-architecture-enhancement-plan.md §6.4. Punakawan never
+// decides how to resolve it (ADR-0016) - it only persists the request and
+// whichever resolution the calling agent, acting as Semar, chooses.
+type MissingContextRequest struct {
+	// Blocking corresponds to the JSON schema field "blocking".
+	Blocking bool `json:"blocking" yaml:"blocking" mapstructure:"blocking"`
+
+	// CapsuleId corresponds to the JSON schema field "capsule_id".
+	CapsuleId string `json:"capsule_id" yaml:"capsule_id" mapstructure:"capsule_id"`
+
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// PreferredTypes corresponds to the JSON schema field "preferred_types".
+	PreferredTypes []string `json:"preferred_types,omitempty,omitzero" yaml:"preferred_types,omitempty" mapstructure:"preferred_types,omitempty"`
+
+	// Query corresponds to the JSON schema field "query".
+	Query string `json:"query" yaml:"query" mapstructure:"query"`
+
+	// Reason corresponds to the JSON schema field "reason".
+	Reason string `json:"reason" yaml:"reason" mapstructure:"reason"`
+
+	// ResolutionNote corresponds to the JSON schema field "resolution_note".
+	ResolutionNote *string `json:"resolution_note,omitempty,omitzero" yaml:"resolution_note,omitempty" mapstructure:"resolution_note,omitempty"`
+
+	// ResolvedAt corresponds to the JSON schema field "resolved_at".
+	ResolvedAt *time.Time `json:"resolved_at,omitempty,omitzero" yaml:"resolved_at,omitempty" mapstructure:"resolved_at,omitempty"`
+
+	// Set when status is added_to_revision: the id of the new ContextCapsule (from
+	// request_capsule) that supersedes capsule_id with the missing context included.
+	RevisedCapsuleId *string `json:"revised_capsule_id,omitempty,omitzero" yaml:"revised_capsule_id,omitempty" mapstructure:"revised_capsule_id,omitempty"`
+
+	// pending until Semar resolves it. §6.4's four resolutions: search for the
+	// context (not itself a terminal status - that's just a search_knowledge call,
+	// which then leads to one of the below), add it to a new capsule revision, reject
+	// it as irrelevant, or ask the user.
+	Status MissingContextRequestStatus `json:"status" yaml:"status" mapstructure:"status"`
+}
+
+type MissingContextRequestStatus string
+
+const MissingContextRequestStatusAddedToRevision MissingContextRequestStatus = "added_to_revision"
+const MissingContextRequestStatusAskedUser MissingContextRequestStatus = "asked_user"
+const MissingContextRequestStatusPending MissingContextRequestStatus = "pending"
+const MissingContextRequestStatusRejected MissingContextRequestStatus = "rejected"
+
+var enumValues_MissingContextRequestStatus = []interface{}{
+	"pending",
+	"added_to_revision",
+	"rejected",
+	"asked_user",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *MissingContextRequestStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_MissingContextRequestStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_MissingContextRequestStatus, v)
+	}
+	*j = MissingContextRequestStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *MissingContextRequest) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["blocking"]; raw != nil && !ok {
+		return fmt.Errorf("field blocking in MissingContextRequest: required")
+	}
+	if _, ok := raw["capsule_id"]; raw != nil && !ok {
+		return fmt.Errorf("field capsule_id in MissingContextRequest: required")
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in MissingContextRequest: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in MissingContextRequest: required")
+	}
+	if _, ok := raw["query"]; raw != nil && !ok {
+		return fmt.Errorf("field query in MissingContextRequest: required")
+	}
+	if _, ok := raw["reason"]; raw != nil && !ok {
+		return fmt.Errorf("field reason in MissingContextRequest: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in MissingContextRequest: required")
+	}
+	type Plain MissingContextRequest
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = MissingContextRequest(plain)
+	return nil
+}
+
 // One deduplicated, prioritized finding from review_pr's pipeline: Gareng/Petruk
 // build independent review capsules, Bagong verifies findings against the diff and
 // evidence, Semar deduplicates and prioritizes. See
