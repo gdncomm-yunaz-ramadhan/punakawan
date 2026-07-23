@@ -1,0 +1,25 @@
+internal/knowledge/retrievalrecipe_test.go
+  6c4a5633395342b7 1-130,132-179,181-205
+protocol/knowledge.schema.json
+  6c4a5633395342b7 20-21,87,89,113,278-481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "b6d04f2db912026e0bf1e03490e31ddf0d3473a3",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 210,
+      "total_deletions": 5,
+      "accepted_lines": 412,
+      "overriden_lines": 2
+    }
+  }
+}
