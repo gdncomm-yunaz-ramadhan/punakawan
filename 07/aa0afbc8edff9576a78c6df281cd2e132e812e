@@ -1,0 +1,35 @@
+web/panel/src/lib/review/api.ts
+  3415a4432044e41f 270-469
+web/panel/tests/ProposalReview.test.ts
+  3415a4432044e41f 1-427
+web/panel/src/lib/components/review/DiffViewer.svelte
+  3415a4432044e41f 1-282
+web/panel/tests/ReviewMode.test.ts
+  3415a4432044e41f 37-52,120-144,171-179,452-491
+web/panel/src/lib/components/review/ProposalReview.svelte
+  3415a4432044e41f 1-678
+web/panel/src/routes/review/ReviewMode.svelte
+  3415a4432044e41f 13,89-95,328-349,386-398
+web/panel/tests/DiffViewer.test.ts
+  3415a4432044e41f 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "07aa0afbc8edff9576a78c6df281cd2e132e812e",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1813,
+      "total_deletions": 4,
+      "accepted_lines": 1810,
+      "overriden_lines": 0
+    }
+  }
+}
