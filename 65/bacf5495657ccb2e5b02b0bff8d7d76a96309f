@@ -1,0 +1,63 @@
+web/panel/tests/layout.test.ts
+  6c4a5633395342b7 1-53
+web/panel/src/routes/tasks/TasksBoard.svelte
+  6c4a5633395342b7 1-77
+internal/panel/server/server.go
+  6c4a5633395342b7 111-113
+internal/panel/sources/sources_test.go
+  6c4a5633395342b7 5,338-407,410-512
+internal/panel/api/task_handler.go
+  6c4a5633395342b7 1-78
+web/panel/src/routes/tasks/TaskDetailDrawer.svelte
+  6c4a5633395342b7 1-186
+web/panel/src/routes/tasks/TasksTable.svelte
+  6c4a5633395342b7 1-92
+internal/panel/api/task_handler_test.go
+  6c4a5633395342b7 1-128
+internal/panel/contract/readers.go
+  6c4a5633395342b7 79-82,89-92,95-109,119-123,125-127,133
+internal/panel/sources/task_source.go
+  6c4a5633395342b7 6-8,15-19,32-138,141,145-150,154-156,158-166,168-182,203,207-209,212,218,221-271
+web/panel/src/routes/tasks/TasksPage.svelte
+  6c4a5633395342b7 1-137
+web/panel/src/routes/workspaces/WorkspaceSummary.svelte
+  6c4a5633395342b7 61-67,71-77
+web/panel/src/App.svelte
+  6c4a5633395342b7 12,28,53-55
+internal/beads/beads.go
+  6c4a5633395342b7 221-224,264,389-392,403-408,421-422
+internal/panel/server/server_test.go
+  6c4a5633395342b7 19,24-44,309-370
+internal/beads/beads_test.go
+  6c4a5633395342b7 299-331
+web/panel/src/lib/api/client.ts
+  6c4a5633395342b7 207-305
+web/panel/src/routes/tasks/TaskGraph.svelte
+  6c4a5633395342b7 1-235
+web/panel/tests/TasksPage.test.ts
+  6c4a5633395342b7 1-55
+web/panel/src/routes/tasks/TaskCard.svelte
+  6c4a5633395342b7 1-92
+web/panel/src/lib/graph/layout.ts
+  6c4a5633395342b7 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "65bacf5495657ccb2e5b02b0bff8d7d76a96309f",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2123,
+      "total_deletions": 267,
+      "accepted_lines": 1888,
+      "overriden_lines": 0
+    }
+  }
+}
