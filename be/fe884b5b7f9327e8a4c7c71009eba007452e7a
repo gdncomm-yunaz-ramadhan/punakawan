@@ -1,0 +1,53 @@
+web/panel/src/lib/components/overlay/BottomSheet.svelte
+  76c7b28fab141eab 98,107,110-112
+web/panel/src/lib/components/AccentPicker.svelte
+  76c7b28fab141eab 5
+web/panel/src/lib/components/overlay/Drawer.svelte
+  76c7b28fab141eab 42,51,53-55
+web/panel/src/lib/accent.ts
+  76c7b28fab141eab 7,25-29,31-46,134,137
+web/panel/tests/AccentPicker.test.ts
+  76c7b28fab141eab 19,21,26,28
+web/panel/src/routes/overview/Overview.svelte
+  76c7b28fab141eab 11,53-64,86-89,91-135,263-306
+web/panel/src/lib/components/cards/BentoCard.svelte
+  76c7b28fab141eab 72-73
+web/panel/src/lib/components/TopBar.svelte
+  76c7b28fab141eab 39,45-56
+web/panel/src/lib/theme.css
+  76c7b28fab141eab 5,7-11,14,16,19-22,24-26,29-44,46-47,49-58,62-78,80-81,83-88,90-93
+web/panel/src/lib/components/cards/MetricCard.svelte
+  76c7b28fab141eab 6-9,19-21,23-45,55-62,77,83-110,112-114,116-117,122
+web/panel/index.html
+  76c7b28fab141eab 27-30,53-54,61
+web/panel/src/lib/components/StatusBadge.svelte
+  76c7b28fab141eab 70-74,76-78,80-82,85-87,90-92,96-98,102,104,107,109,112,114,117,119,124
+web/panel/src/lib/components/cards/Card.svelte
+  76c7b28fab141eab 65,74-84
+web/panel/src/lib/components/review/ProposalReview.svelte
+  76c7b28fab141eab 623-628,630,634-637,639-641,643,646-649,654-663
+web/panel/src/lib/components/charts/colorRoles.ts
+  76c7b28fab141eab 5-10
+web/panel/src/lib/components/charts/themeColors.ts
+  76c7b28fab141eab 25-32,53-57,64,66,68-74,76-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "befe884b5b7f9327e8a4c7c71009eba007452e7a",
+  "prompts": {
+    "76c7b28fab141eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38d4d1e8-5b04-4c5b-8dc1-aaf4dbe006cf",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 427,
+      "overriden_lines": 0
+    }
+  }
+}
