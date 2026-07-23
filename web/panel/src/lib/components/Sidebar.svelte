@@ -4,7 +4,7 @@
   const links: { path: string; label: string; disabled?: boolean }[] = [
     { path: "/", label: "Overview" },
     { path: "/workspaces", label: "Workspaces" },
-    { path: "/search", label: "Search", disabled: true },
+    { path: "/search", label: "Search" },
     { path: "/system", label: "System", disabled: true },
   ];
 

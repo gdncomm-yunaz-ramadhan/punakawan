@@ -303,3 +303,141 @@ export function getTask(workspaceId: string, taskId: string): Promise<TaskDetail
 export function getTaskGraph(workspaceId: string): Promise<TaskGraph> {
   return getJSON<TaskGraph>(`/workspaces/${encodeURIComponent(workspaceId)}/task-graph`);
 }
+
+export interface KnowledgeRelation {
+  target: string;
+  type: string;
+}
+
+export interface KnowledgeRecord {
+  id: string;
+  type: string;
+  status: string;
+  title: string;
+  summary?: string;
+  content?: string;
+  tags?: string[];
+  aliases?: string[];
+  scope?: {
+    project?: string;
+    organization?: string;
+    module?: string;
+    path?: string;
+    repository?: string;
+  };
+  source: {
+    provider: string;
+    external_id?: string;
+    uri?: string;
+    version?: unknown;
+    section?: string;
+    content_hash?: string;
+    retrieved_at: string;
+  };
+  extraction: {
+    method: string;
+    confidence?: number;
+    extractor_version?: string;
+  };
+  validity: {
+    state: string;
+    verified_at?: string;
+    verified_by?: string[];
+  };
+  relations?: KnowledgeRelation[];
+  superseded_by?: string;
+}
+
+export interface KnowledgeEvent {
+  type: "put" | "supersede" | "delete";
+  record_id: string;
+  record_type: string;
+  superseded_by?: string;
+  timestamp: string;
+}
+
+export interface SearchMatch {
+  Kind: "identifier" | "alias" | "bm25" | "fuzzy" | "related";
+  Fields?: string[];
+  Terms?: string[];
+}
+
+export interface SearchResult {
+  Id: string;
+  Title: string;
+  Summary: string;
+  Type: string;
+  Score: number;
+  Match: SearchMatch;
+  Explanation?: string[];
+  Record: KnowledgeRecord;
+}
+
+export interface KnowledgeFilter {
+  type?: string;
+  state?: string;
+  repository?: string;
+  source?: string;
+  stale?: boolean;
+  has_relation?: boolean;
+  has_conflict?: boolean;
+  q?: string;
+  limit?: number;
+}
+
+function buildKnowledgeQuery(filter: KnowledgeFilter): string {
+  const params = new URLSearchParams();
+  if (filter.type) params.set("type", filter.type);
+  if (filter.state) params.set("state", filter.state);
+  if (filter.repository) params.set("repository", filter.repository);
+  if (filter.source) params.set("source", filter.source);
+  if (filter.stale) params.set("stale", "true");
+  if (filter.has_relation) params.set("has_relation", "true");
+  if (filter.has_conflict) params.set("has_conflict", "true");
+  if (filter.q) params.set("q", filter.q);
+  if (filter.limit) params.set("limit", String(filter.limit));
+  return params.toString();
+}
+
+export async function listKnowledge(
+  workspaceId: string,
+  filter: KnowledgeFilter = {},
+): Promise<{ items: (KnowledgeRecord | SearchResult)[] }> {
+  const qs = buildKnowledgeQuery(filter);
+  return getJSON<{ items: (KnowledgeRecord | SearchResult)[] }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getKnowledge(workspaceId: string, knowledgeId: string): Promise<KnowledgeRecord> {
+  return getJSON<KnowledgeRecord>(`/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}`);
+}
+
+export function getKnowledgeRelations(workspaceId: string, knowledgeId: string): Promise<{ items: KnowledgeRecord[] }> {
+  return getJSON<{ items: KnowledgeRecord[] }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}/relations`,
+  );
+}
+
+export function getKnowledgeHistory(workspaceId: string, knowledgeId: string): Promise<{ items: KnowledgeEvent[] }> {
+  return getJSON<{ items: KnowledgeEvent[] }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}/history`,
+  );
+}
+
+export interface GlobalSearchResult {
+  WorkspaceID: string;
+  Result: SearchResult;
+  RRFScore: number;
+}
+
+export function globalSearch(
+  query: string,
+  opts: { type?: string; repo?: string; limit?: number } = {},
+): Promise<{ items: GlobalSearchResult[] }> {
+  const params = new URLSearchParams({ q: query });
+  if (opts.type) params.set("type", opts.type);
+  if (opts.repo) params.set("repo", opts.repo);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  return getJSON<{ items: GlobalSearchResult[] }>(`/search?${params.toString()}`);
+}

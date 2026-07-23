@@ -16,6 +16,7 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -25,6 +26,13 @@ func requireBd(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("bd"); err != nil {
 		t.Skip("bd not installed")
+	}
+}
+
+func requireDolt(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("dolt"); err != nil {
+		t.Skip("dolt not installed")
 	}
 }
 
@@ -365,6 +373,107 @@ func TestServerTasksEndpointUnknownTaskReturns404(t *testing.T) {
 	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/tasks/no-such-task")
 	if status != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", status)
+	}
+}
+
+func TestServerKnowledgeEndpoints(t *testing.T) {
+	requireDolt(t)
+	s, a := startTestServer(t)
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	rec := protocol.KnowledgeRecord{
+		Id:         "pkw:requirement/repo-a/refund-sla",
+		Type:       protocol.KnowledgeRecordTypeRequirement,
+		Title:      "Refund SLA policy",
+		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodManual},
+		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
+	}
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ := body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want 1", items)
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/"+rec.Id)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if body["id"] != rec.Id {
+		t.Fatalf("id = %v, want %v", body["id"], rec.Id)
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/relations")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if _, ok := body["items"]; !ok {
+		t.Fatalf("expected an items field: %+v", body)
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/history")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ = body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("history items = %+v, want 1 put event", items)
+	}
+}
+
+func TestServerKnowledgeHandlerUnknownIDReturns404(t *testing.T) {
+	requireDolt(t)
+	s, a := startTestServer(t)
+	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/no-such-id")
+	if status != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", status)
+	}
+}
+
+func TestServerGlobalSearchEndpoint(t *testing.T) {
+	requireDolt(t)
+	s, a := startTestServer(t)
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	rec := protocol.KnowledgeRecord{
+		Id:         "pkw:requirement/repo-a/refund-sla",
+		Type:       protocol.KnowledgeRecordTypeRequirement,
+		Title:      "Refund SLA policy",
+		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodManual},
+		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
+	}
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	ix, err := a.OpenSearchIndex()
+	if err != nil {
+		t.Fatalf("OpenSearchIndex: %v", err)
+	}
+	if err := search.Rebuild(store, ix); err != nil {
+		t.Fatalf("search.Rebuild: %v", err)
+	}
+
+	status, body := getJSON(t, s.Addr(), "/api/v1/search?q=refund+SLA")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ := body["items"].([]any)
+	if len(items) == 0 {
+		t.Fatal("expected at least one fused global search result")
 	}
 }
 

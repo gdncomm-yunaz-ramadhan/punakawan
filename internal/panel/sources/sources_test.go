@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/search"
@@ -25,6 +26,8 @@ func requireDolt(t *testing.T) {
 		t.Skip("dolt not installed")
 	}
 }
+
+func strPtr(s string) *string { return &s }
 
 func requireBd(t *testing.T) {
 	t.Helper()
@@ -566,6 +569,149 @@ func TestKnowledgeSourceSearchGetRelations(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Fatal("expected at least one search result")
+	}
+}
+
+func TestKnowledgeSourceListFiltersAndHistory(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	ks := &KnowledgeSource{App: a}
+	ctx := context.Background()
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+
+	verified := protocol.KnowledgeRecord{
+		Id:         "pkw:requirement/repo-a/refund-sla",
+		Type:       protocol.KnowledgeRecordTypeRequirement,
+		Status:     "active",
+		Title:      "Refund SLA policy",
+		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodModelAssisted},
+		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
+		Scope:      &protocol.KnowledgeRecordScope{Repository: strPtr("repo-a")},
+	}
+	if err := store.Put(verified); err != nil {
+		t.Fatalf("Put verified: %v", err)
+	}
+
+	stale := protocol.KnowledgeRecord{
+		Id:         "pkw:requirement/repo-b/checkout-flow",
+		Type:       protocol.KnowledgeRecordTypeRequirement,
+		Status:     "active",
+		Title:      "Checkout flow",
+		Source:     protocol.KnowledgeRecordSource{Provider: "jira", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodModelAssisted},
+		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateStale},
+		Scope:      &protocol.KnowledgeRecordScope{Repository: strPtr("repo-b")},
+	}
+	if err := store.Put(stale); err != nil {
+		t.Fatalf("Put stale: %v", err)
+	}
+
+	all, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("List = %+v, want 2", all)
+	}
+
+	byRepo, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{Repository: "repo-a"})
+	if err != nil {
+		t.Fatalf("List by repository: %v", err)
+	}
+	if len(byRepo) != 1 || byRepo[0].Id != verified.Id {
+		t.Fatalf("List by repository=repo-a = %+v, want only %s", byRepo, verified.Id)
+	}
+
+	staleOnly, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{Stale: true})
+	if err != nil {
+		t.Fatalf("List stale=true: %v", err)
+	}
+	if len(staleOnly) != 1 || staleOnly[0].Id != stale.Id {
+		t.Fatalf("List stale=true = %+v, want only %s", staleOnly, stale.Id)
+	}
+
+	bySource, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{Source: "jira"})
+	if err != nil {
+		t.Fatalf("List by source: %v", err)
+	}
+	if len(bySource) != 1 || bySource[0].Id != stale.Id {
+		t.Fatalf("List source=jira = %+v, want only %s", bySource, stale.Id)
+	}
+
+	if err := store.Supersede(verified.Id, stale.Id); err != nil {
+		t.Fatalf("Supersede: %v", err)
+	}
+
+	history, err := ks.History(ctx, a.Workspace.ID, verified.Id)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	// Supersede's own implementation Puts the record back through the
+	// same path any other write takes (setting SupersededBy first), so it
+	// emits both a "put" and a "supersede" event - the coarseness
+	// documented on KnowledgeReader.History: a "put" alone cannot tell a
+	// create from a later update.
+	if len(history) != 3 {
+		t.Fatalf("History = %+v, want 3 events (create put, supersede's put, supersede)", history)
+	}
+	last := history[len(history)-1]
+	if last.Type != knowledge.EventTypeSupersede || last.SupersededBy != stale.Id {
+		t.Fatalf("last History entry = %+v, want a supersede event naming %s", last, stale.Id)
+	}
+
+	noHistory, err := ks.History(ctx, a.Workspace.ID, "pkw:requirement/repo-a/never-existed")
+	if err != nil {
+		t.Fatalf("History for unknown id: %v", err)
+	}
+	if len(noHistory) != 0 {
+		t.Fatalf("History for unknown id = %+v, want none", noHistory)
+	}
+}
+
+func TestGlobalSearchSourceFusesAcrossWorkspaces(t *testing.T) {
+	requireDolt(t)
+	requireBd(t)
+	a := newTestApp(t)
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	rec := protocol.KnowledgeRecord{
+		Id:         "pkw:requirement/repo-a/refund-sla",
+		Type:       protocol.KnowledgeRecordTypeRequirement,
+		Status:     "active",
+		Title:      "Refund SLA policy",
+		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodModelAssisted},
+		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
+	}
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	ix, err := a.OpenSearchIndex()
+	if err != nil {
+		t.Fatalf("OpenSearchIndex: %v", err)
+	}
+	if err := search.Rebuild(store, ix); err != nil {
+		t.Fatalf("search.Rebuild: %v", err)
+	}
+
+	gs := &GlobalSearchSource{App: a, Registry: nil}
+	results, err := gs.Search(context.Background(), search.Request{Query: "refund SLA"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one fused result")
+	}
+	if results[0].WorkspaceID != a.Workspace.ID {
+		t.Fatalf("results[0].WorkspaceID = %q, want %q", results[0].WorkspaceID, a.Workspace.ID)
 	}
 }
 

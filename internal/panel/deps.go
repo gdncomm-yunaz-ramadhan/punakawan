@@ -15,29 +15,31 @@ import (
 // Version is the Punakawan Panel's own release version.
 const Version = "0.1.0"
 
-// Readers bundles the six read-only reader interfaces
+// Readers bundles the read-only reader interfaces
 // (internal/panel/contract) that every HTTP handler reaches Punakawan's
 // data through.
 type Readers struct {
-	Workspace contract.WorkspaceReader
-	Session   contract.SessionReader
-	Task      contract.TaskReader
-	Knowledge contract.KnowledgeReader
-	Evidence  contract.EvidenceReader
-	Approval  contract.ApprovalReader
+	Workspace    contract.WorkspaceReader
+	Session      contract.SessionReader
+	Task         contract.TaskReader
+	Knowledge    contract.KnowledgeReader
+	Evidence     contract.EvidenceReader
+	Approval     contract.ApprovalReader
+	GlobalSearch contract.GlobalSearchReader
 }
 
 // NewReaders builds Readers backed by internal/panel/sources'
 // implementations over a. reg is the global workspace registry
-// (WorkspaceReader uses it to describe every registered workspace, not
-// just a's own).
+// (WorkspaceReader and GlobalSearchReader use it to reach every
+// registered workspace, not just a's own).
 func NewReaders(a *app.App, reg *registry.Store) Readers {
 	return Readers{
-		Workspace: &sources.WorkspaceSource{App: a, Registry: reg},
-		Session:   &sources.SessionSource{App: a},
-		Task:      &sources.TaskSource{App: a},
-		Knowledge: &sources.KnowledgeSource{App: a},
-		Evidence:  &sources.EvidenceSource{App: a},
-		Approval:  &sources.ApprovalSource{App: a},
+		Workspace:    &sources.WorkspaceSource{App: a, Registry: reg},
+		Session:      &sources.SessionSource{App: a},
+		Task:         &sources.TaskSource{App: a},
+		Knowledge:    &sources.KnowledgeSource{App: a},
+		Evidence:     &sources.EvidenceSource{App: a},
+		Approval:     &sources.ApprovalSource{App: a},
+		GlobalSearch: &sources.GlobalSearchSource{App: a, Registry: reg},
 	}
 }

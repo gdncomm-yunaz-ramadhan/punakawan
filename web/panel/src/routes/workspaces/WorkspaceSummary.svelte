@@ -78,7 +78,13 @@
       <strong>{detail.blocked_task_count}</strong>
       <span>Blocked tasks</span>
     </div>
-    <div class="card">
+    <div
+      class="card clickable"
+      role="button"
+      tabindex="0"
+      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/knowledge`)}
+      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/knowledge`)}
+    >
       <strong>{detail.knowledge_count}</strong>
       <span>Knowledge records</span>
     </div>

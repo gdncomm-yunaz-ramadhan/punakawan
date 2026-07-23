@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/beads"
+	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -139,9 +140,36 @@ type TaskReader interface {
 // §10. Search reuses internal/search's existing BM25F+relation-expansion
 // pipeline (AEP-M6) directly - the panel does not reimplement ranking.
 type KnowledgeReader interface {
+	// List browses without a query (search.Search returns nothing for an
+	// empty query, so this is a separate path per §14.6's filter rail:
+	// type, state, repository, source, and staleness, not text relevance).
+	List(ctx context.Context, workspaceID string, filter KnowledgeFilter) ([]protocol.KnowledgeRecord, error)
 	Search(ctx context.Context, workspaceID string, req search.Request) ([]search.Result, error)
 	Get(ctx context.Context, workspaceID, knowledgeID string) (protocol.KnowledgeRecord, error)
 	Relations(ctx context.Context, workspaceID, knowledgeID string) ([]protocol.KnowledgeRecord, error)
+	// History returns every put/supersede/delete event
+	// internal/knowledge.Store has recorded for one record, in append
+	// (chronological) order. This is coarser than §14.6's history section
+	// ("created/verified/updated/disputed/superseded/invalidated"): bd
+	// itself only distinguishes put (create-or-update, not itself
+	// distinguishable from a re-verification), supersede, and delete - an
+	// honest gap in the underlying event log, not fabricated here.
+	History(ctx context.Context, workspaceID, knowledgeID string) ([]knowledge.Event, error)
+}
+
+// KnowledgeFilter narrows KnowledgeReader.List, per §14.6's filter rail.
+// HasConflict/HasRelation are derived from the record's own embedded
+// Relations rather than a separate index: "conflicts-with" is just one of
+// the 20 relation types a record can declare on itself.
+type KnowledgeFilter struct {
+	Type        string
+	State       string
+	Repository  string
+	Source      string
+	Stale       bool
+	HasConflict bool
+	HasRelation bool
+	Limit       int
 }
 
 // EvidenceReader lists and describes evidence records, per §8.4. Large
@@ -162,4 +190,23 @@ type ApprovalFilter struct {
 // read-only: no Approve/Resolve method exists here on purpose.
 type ApprovalReader interface {
 	List(ctx context.Context, workspaceID string, filter ApprovalFilter) ([]protocol.ApprovalRecord, error)
+}
+
+// GlobalSearchResult pairs one workspace's search.Result with the
+// workspace it came from and its fused rank score, per §10.1's global
+// search: every registered workspace is queried through the same
+// KnowledgeReader.Search path, then merged by rank rather than raw score
+// (search.FuseRankedLists) since separate BM25F corpora are not
+// comparable on score alone.
+type GlobalSearchResult struct {
+	WorkspaceID string
+	Result      search.Result
+	RRFScore    float64
+}
+
+// GlobalSearchReader searches every registered workspace at once, per
+// §10.1. Unlike KnowledgeReader, it takes no workspaceID: that is the
+// entire point of "global."
+type GlobalSearchReader interface {
+	Search(ctx context.Context, req search.Request) ([]GlobalSearchResult, error)
 }
