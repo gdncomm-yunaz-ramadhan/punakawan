@@ -22,6 +22,37 @@
     },
     "status": { "type": "string" },
     "title": { "type": "string" },
+    "summary": {
+      "description": "A short human-readable summary, indexed for search alongside title/content. See punakawan-architecture-enhancement-plan.md §10.4/§11.4.",
+      "type": "string"
+    },
+    "content": {
+      "description": "The record's full text body, the lowest-weighted BM25F search field. See §11.4/§11.5.",
+      "type": "string"
+    },
+    "aliases": {
+      "description": "Alternate names this record is also known by (e.g. an acronym or a renamed component), matched with a strong ranking bonus. See §11.7.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tags": {
+      "description": "Free-form labels for filtering and search. See §11.4/§11.5.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "scope": {
+      "description": "Where this record applies, used for search scope boosting. See §10.4/§11.10.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "organization": { "type": "string" },
+        "project": { "type": "string" },
+        "repository": { "type": "string" },
+        "module": { "type": "string" },
+        "path": { "type": "string" },
+        "symbol": { "type": "string" }
+      }
+    },
     "source": {
       "type": "object",
       "required": ["provider", "retrieved_at"],

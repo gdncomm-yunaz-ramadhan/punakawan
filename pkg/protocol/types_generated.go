@@ -1572,8 +1572,16 @@ func (j *GitExecutionPolicy) UnmarshalJSON(value []byte) error {
 // A durable knowledge record with provenance and validity state. See
 // punakawan-go-typescript-detailed-plan.md §7.
 type KnowledgeRecord struct {
+	// Alternate names this record is also known by (e.g. an acronym or a renamed
+	// component), matched with a strong ranking bonus. See §11.7.
+	Aliases []string `json:"aliases,omitempty,omitzero" yaml:"aliases,omitempty" mapstructure:"aliases,omitempty"`
+
 	// Bagong's independent final review, present on bagong-review records. See §8.4.
 	BagongReview *KnowledgeRecordBagongReview `json:"bagong_review,omitempty,omitzero" yaml:"bagong_review,omitempty" mapstructure:"bagong_review,omitempty"`
+
+	// The record's full text body, the lowest-weighted BM25F search field. See
+	// §11.4/§11.5.
+	Content *string `json:"content,omitempty,omitzero" yaml:"content,omitempty" mapstructure:"content,omitempty"`
 
 	// Semar's pre-planning context dossier, present on context-dossier records. See
 	// §9.1.
@@ -1602,6 +1610,9 @@ type KnowledgeRecord struct {
 	// Relations corresponds to the JSON schema field "relations".
 	Relations []KnowledgeRecordRelationsElem `json:"relations,omitempty,omitzero" yaml:"relations,omitempty" mapstructure:"relations,omitempty"`
 
+	// Where this record applies, used for search scope boosting. See §10.4/§11.10.
+	Scope *KnowledgeRecordScope `json:"scope,omitempty,omitzero" yaml:"scope,omitempty" mapstructure:"scope,omitempty"`
+
 	// Semar's consolidated output after merging Gareng and Petruk findings, present
 	// on semar-synthesis records. See §8.1, §9.2.
 	SemarSynthesis *KnowledgeRecordSemarSynthesis `json:"semar_synthesis,omitempty,omitzero" yaml:"semar_synthesis,omitempty" mapstructure:"semar_synthesis,omitempty"`
@@ -1615,10 +1626,17 @@ type KnowledgeRecord struct {
 	// Structural conventions, present on convention-profile records. See §27.3.
 	Structure *KnowledgeRecordStructure `json:"structure,omitempty,omitzero" yaml:"structure,omitempty" mapstructure:"structure,omitempty"`
 
+	// A short human-readable summary, indexed for search alongside title/content. See
+	// punakawan-architecture-enhancement-plan.md §10.4/§11.4.
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+
 	// The id of the knowledge record that supersedes this one, set by Store.Supersede
 	// without deleting or overwriting this record. See
 	// punakawan-architecture-enhancement-plan.md §10.4.
 	SupersededBy *string `json:"superseded_by,omitempty,omitzero" yaml:"superseded_by,omitempty" mapstructure:"superseded_by,omitempty"`
+
+	// Free-form labels for filtering and search. See §11.4/§11.5.
+	Tags []string `json:"tags,omitempty,omitzero" yaml:"tags,omitempty" mapstructure:"tags,omitempty"`
 
 	// Title corresponds to the JSON schema field "title".
 	Title string `json:"title" yaml:"title" mapstructure:"title"`
@@ -2025,6 +2043,27 @@ func (j *KnowledgeRecordRelationsElem) UnmarshalJSON(value []byte) error {
 	}
 	*j = KnowledgeRecordRelationsElem(plain)
 	return nil
+}
+
+// Where this record applies, used for search scope boosting. See §10.4/§11.10.
+type KnowledgeRecordScope struct {
+	// Module corresponds to the JSON schema field "module".
+	Module *string `json:"module,omitempty,omitzero" yaml:"module,omitempty" mapstructure:"module,omitempty"`
+
+	// Organization corresponds to the JSON schema field "organization".
+	Organization *string `json:"organization,omitempty,omitzero" yaml:"organization,omitempty" mapstructure:"organization,omitempty"`
+
+	// Path corresponds to the JSON schema field "path".
+	Path *string `json:"path,omitempty,omitzero" yaml:"path,omitempty" mapstructure:"path,omitempty"`
+
+	// Project corresponds to the JSON schema field "project".
+	Project *string `json:"project,omitempty,omitzero" yaml:"project,omitempty" mapstructure:"project,omitempty"`
+
+	// Repository corresponds to the JSON schema field "repository".
+	Repository *string `json:"repository,omitempty,omitzero" yaml:"repository,omitempty" mapstructure:"repository,omitempty"`
+
+	// Symbol corresponds to the JSON schema field "symbol".
+	Symbol *string `json:"symbol,omitempty,omitzero" yaml:"symbol,omitempty" mapstructure:"symbol,omitempty"`
 }
 
 // Semar's consolidated output after merging Gareng and Petruk findings, present on

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -57,6 +58,42 @@ func (s *Store) allRecords() ([]protocol.KnowledgeRecord, error) {
 		return nil, fmt.Errorf("knowledge: export iterate records: %w", err)
 	}
 	return records, nil
+}
+
+// RecordWithUpdatedAt pairs a KnowledgeRecord with the updated_at timestamp
+// Dolt tracks on its row - not itself part of the JSON payload - for
+// callers like internal/search that need recency as a ranking signal.
+type RecordWithUpdatedAt struct {
+	Record    protocol.KnowledgeRecord
+	UpdatedAt time.Time
+}
+
+// AllWithUpdatedAt returns every knowledge record currently in the store,
+// ordered by id, alongside its Dolt-tracked updated_at.
+func (s *Store) AllWithUpdatedAt() ([]RecordWithUpdatedAt, error) {
+	rows, err := s.db.Query(`SELECT data, updated_at FROM knowledge_records ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("knowledge: export query: %w", err)
+	}
+	defer rows.Close()
+
+	var out []RecordWithUpdatedAt
+	for rows.Next() {
+		var data []byte
+		var updatedAt time.Time
+		if err := rows.Scan(&data, &updatedAt); err != nil {
+			return nil, fmt.Errorf("knowledge: export scan record: %w", err)
+		}
+		var rec protocol.KnowledgeRecord
+		if err := json.Unmarshal(data, &rec); err != nil {
+			return nil, fmt.Errorf("knowledge: export decode record: %w", err)
+		}
+		out = append(out, RecordWithUpdatedAt{Record: rec, UpdatedAt: updatedAt})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("knowledge: export iterate records: %w", err)
+	}
+	return out, nil
 }
 
 // PortableExport is the top-level shape of .punakawan/portable/knowledge.yaml

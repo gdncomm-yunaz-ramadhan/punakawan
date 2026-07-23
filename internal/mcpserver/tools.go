@@ -220,4 +220,9 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "reopen_task",
 		Description: "Reopen a closed Beads issue, e.g. when Bagong's independent review finds a blocking regression in already-completed work (§8.4). Pairs with report_discovered_task, which covers the 'create a new task' half of the same acceptance criterion.",
 	}, reopenTaskHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "search_knowledge",
+		Description: "Search the durable knowledge store locally (§11): exact structured identifiers (CVE/GHSA/Sonar rule/Jira key/git hash/...) and aliases outrank BM25F keyword matches, which fall back to fuzzy matching only when keyword search finds nothing. project/repository/module/path only bias ranking (§11.10's scope bonus) - they never filter results out; use types/tags for that. Every result carries an explanation (§11.13) of why it matched. No embeddings, no external model calls: this is a local index over knowledge Punakawan already has, not new reasoning.",
+	}, searchKnowledgeHandler(a))
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
+	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
@@ -40,6 +41,9 @@ type App struct {
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
+
+	searchIndexMu sync.Mutex
+	searchIndex   *search.Index
 
 	jiraWorkflowMu     sync.Mutex
 	jiraWorkflowConfig *jiraworkflow.Config
@@ -173,24 +177,59 @@ func (a *App) JiraWorkflow() (*jiraworkflow.Config, error) {
 	return cfg, nil
 }
 
+// OpenSearchIndex lazily opens the Bleve BM25F index rooted at
+// .punakawan/index/bm25 under the workspace (§10.2), memoizing the result.
+// Per §11.11 the index is disposable and always rebuildable from
+// OpenKnowledge's Store, so callers searching it should call search.Rebuild
+// first rather than assume it is already current.
+func (a *App) OpenSearchIndex() (*search.Index, error) {
+	a.searchIndexMu.Lock()
+	defer a.searchIndexMu.Unlock()
+
+	if a.searchIndex != nil {
+		return a.searchIndex, nil
+	}
+	ix, err := search.OpenIndex(filepath.Join(a.Workspace.Root, ".punakawan", "index", "bm25"))
+	if err != nil {
+		return nil, err
+	}
+	a.searchIndex = ix
+	return ix, nil
+}
+
 // Close releases resources opened on demand (the knowledge store's Dolt
-// server, if OpenKnowledge was ever called) and shuts down any adapter
-// processes the AdapterRegistry has started.
+// server and the BM25 search index, if OpenKnowledge/OpenSearchIndex were
+// ever called) and shuts down any adapter processes the AdapterRegistry has
+// started.
 func (a *App) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	adapterErr := a.AdapterRegistry.Close(ctx)
 
+	a.searchIndexMu.Lock()
+	var searchErr error
+	if a.searchIndex != nil {
+		searchErr = a.searchIndex.Close()
+		a.searchIndex = nil
+	}
+	a.searchIndexMu.Unlock()
+
 	a.knowledgeMu.Lock()
 	defer a.knowledgeMu.Unlock()
 
 	if a.knowledgeStore == nil {
-		return adapterErr
+		if adapterErr != nil {
+			return adapterErr
+		}
+		return searchErr
 	}
 	knowledgeErr := a.knowledgeStore.Close()
 	a.knowledgeStore = nil
 	if adapterErr != nil {
 		return adapterErr
+	}
+	if searchErr != nil {
+		return searchErr
 	}
 	return knowledgeErr
 }
