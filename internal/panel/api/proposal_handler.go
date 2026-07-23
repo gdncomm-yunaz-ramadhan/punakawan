@@ -327,6 +327,20 @@ func AcceptProposalHandler(reviews *artifact.ReviewStore, plans *artifact.PlanSt
 			return
 		}
 
+		// Serialize this whole read-compare-write sequence per artifact
+		// id: §12's conflict check ("current canonical hash == proposal
+		// base hash") and the version it creates on success must be
+		// atomic together, or two concurrent accepts against two
+		// different reviews' proposals - both based on the same now-
+		// current version - can each read Current() before either has
+		// written the next version, both see current==base, and both
+		// succeed. That silently accepts two proposals onto the same
+		// base, which is exactly the "never silently overwrite the newer
+		// version" outcome §12 forbids - only one of two concurrent
+		// accepts against the same base may win; the other must observe
+		// the winner's new version and conflict.
+		defer plans.LockArtifact(proposal.Base.ArtifactId)()
+
 		current, err := plans.Current(proposal.Base.ArtifactId)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)

@@ -55,6 +55,16 @@ type submitResponse struct {
 func SubmitHandler(reviews *artifact.ReviewStore, dispatcher revision.Dispatcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reviewID := r.PathValue("reviewId")
+
+		// Serialize this whole read-check-write sequence per review id:
+		// two concurrent submits for the *same* review (a double-click,
+		// or a client retrying after a lost response) must not both
+		// observe "no submission exists yet for this idempotency key"
+		// and both proceed to create one, per §8's "submitting twice
+		// must return the existing run, not create two competing
+		// agents."
+		defer reviews.LockReview(reviewID)()
+
 		review, err := reviews.GetReview(reviewID)
 		if errors.Is(err, artifact.ErrReviewNotFound) {
 			writeError(w, http.StatusNotFound, err)

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -39,6 +40,25 @@ type referenceDocument struct {
 // verified version in place."
 type PlanStore struct {
 	WorkspaceRoot string
+
+	locksOnce sync.Once
+	locks     *keyedMutex
+}
+
+// LockArtifact serializes callers' multi-step read-check-write sequences
+// against the same artifact id (e.g. AcceptProposalHandler's "read
+// current version, compare against the proposal's base, and if equal
+// create the next version" sequence, per §12's optimistic-concurrency
+// rule). Without this, two concurrent accept calls for two different
+// reviews both proposing against the same base version can each read
+// Current() before either has written CreateVersion's next version,
+// so both observe current==base and both succeed - exactly the "silently
+// overwrite the newer version" outcome §12 forbids. It has no effect
+// across different artifact ids. Call the returned func to release,
+// typically via `defer plans.LockArtifact(id)()`.
+func (s *PlanStore) LockArtifact(artifactID string) func() {
+	s.locksOnce.Do(func() { s.locks = newKeyedMutex() })
+	return s.locks.Lock(artifactID)
 }
 
 func (s *PlanStore) planDir(planID string) string {

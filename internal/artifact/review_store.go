@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -36,6 +37,26 @@ var ErrProposalAttemptExists = errors.New("artifact: proposal attempt already ex
 // proposals/<attempt>.{md,patch,yaml}.
 type ReviewStore struct {
 	WorkspaceRoot string
+
+	locksOnce sync.Once
+	locks     *keyedMutex
+}
+
+// LockReview serializes callers' multi-step read-check-write sequences
+// against the same review id (e.g. SubmitHandler's "check draft, check
+// existing submission, write submission, flip status" sequence) so two
+// concurrent calls for the *same* review can't interleave and both
+// observe a state that's since become stale. It has no effect across
+// different review ids. Call the returned func to release, typically via
+// `defer reviews.LockReview(id)()`.
+//
+// ReviewStore is normally constructed once and shared (see
+// internal/panel/server), so the zero-value locks map is lazily built on
+// first use rather than requiring a constructor - a struct literal
+// (as most of this codebase's tests use) still works correctly.
+func (s *ReviewStore) LockReview(reviewID string) func() {
+	s.locksOnce.Do(func() { s.locks = newKeyedMutex() })
+	return s.locks.Lock(reviewID)
 }
 
 func (s *ReviewStore) reviewDir(reviewID string) string {
