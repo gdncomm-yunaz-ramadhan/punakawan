@@ -1,0 +1,37 @@
+internal/knowledge/service.go
+  6c4a5633395342b7 56-65,68-91
+protocol/knowledge.schema.json
+  6c4a5633395342b7 62-65
+internal/knowledge/events_test.go
+  6c4a5633395342b7 1-54
+internal/knowledge/service_test.go
+  6c4a5633395342b7 163-200
+internal/knowledge/dolt.go
+  6c4a5633395342b7 18,30-32,43-49,56,88,98
+internal/knowledge/importexport.go
+  6c4a5633395342b7 9-10,21-37,40,44,48,52,54,57-101
+internal/knowledge/events.go
+  6c4a5633395342b7 1-90
+internal/knowledge/importexport_test.go
+  6c4a5633395342b7 106-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "1124cbcd4a2724f6455692e98867c1cb23320069",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 378,
+      "total_deletions": 20,
+      "accepted_lines": 370,
+      "overriden_lines": 0
+    }
+  }
+}
