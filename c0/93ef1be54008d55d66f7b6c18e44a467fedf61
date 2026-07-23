@@ -1,0 +1,59 @@
+internal/panel/sources/task_source.go
+  6c4a5633395342b7 1-80
+internal/panel/sessionsummary/sessionsummary.go
+  6c4a5633395342b7 1-97
+internal/panel/sessionsummary/sessionsummary_test.go
+  6c4a5633395342b7 1-108
+internal/beads/beads.go
+  6c4a5633395342b7 223-259,374-433
+protocol/panelworkspace.schema.json
+  6c4a5633395342b7 1-17
+internal/panel/contract/readers.go
+  6c4a5633395342b7 1-134
+internal/panel/sources/session_source.go
+  6c4a5633395342b7 1-138
+pkg/protocol/doc.go
+  6c4a5633395342b7 6
+internal/panel/sources/workspace_source.go
+  6c4a5633395342b7 1-144
+protocol/panelsourcehealth.schema.json
+  6c4a5633395342b7 1-18
+internal/panel/sources/approval_source.go
+  6c4a5633395342b7 1-39
+protocol/panelsessionsummary.schema.json
+  6c4a5633395342b7 1-38
+internal/panel/sources/knowledge_source.go
+  6c4a5633395342b7 1-61
+protocol/workflow.schema.json
+  6c4a5633395342b7 40-52
+internal/evidence/ledger.go
+  6c4a5633395342b7 63-80,105
+internal/panel/sources/evidence_source.go
+  6c4a5633395342b7 1-73
+internal/mcpserver/tools_workflow.go
+  6c4a5633395342b7 14,31-33,85-87
+protocol/panelevent.schema.json
+  6c4a5633395342b7 1-32
+internal/panel/sources/sources_test.go
+  6c4a5633395342b7 1-320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "c093ef1be54008d55d66f7b6c18e44a467fedf61",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1472,
+      "total_deletions": 38,
+      "accepted_lines": 1442,
+      "overriden_lines": 0
+    }
+  }
+}
