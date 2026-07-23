@@ -795,6 +795,18 @@ func TestServerRejectsMutationWithNoSessionCookie(t *testing.T) {
 	}
 }
 
+func TestServerRejectsFailReviewWithNoSessionCookie(t *testing.T) {
+	s, _ := startTestServer(t)
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/reviews/no-such-review/fail", s.Addr()), "application/json", bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
 func TestServerSessionIsInvalidatedOnShutdown(t *testing.T) {
 	a := newTestApp(t)
 	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
