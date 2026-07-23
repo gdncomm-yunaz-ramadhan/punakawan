@@ -15,6 +15,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/session"
+	"github.com/ygrip/punakawan/internal/revision"
 )
 
 // Options configures a Server, per §26's configuration keys this phase
@@ -123,6 +124,7 @@ func (s *Server) Start() error {
 	}
 	plans := &artifact.PlanStore{WorkspaceRoot: s.app.Workspace.Root}
 	reviews := &artifact.ReviewStore{WorkspaceRoot: s.app.Workspace.Root}
+	dispatcher := &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: s.app.Workspace.Root}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
 	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
@@ -153,6 +155,9 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/comments", api.CommentsHandler(reviews))
 	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.UpdateCommentHandler(reviews)))
 	mux.HandleFunc("DELETE /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.DeleteCommentHandler(reviews)))
+	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/submit", session.RequireSession(s.sessions, api.SubmitHandler(reviews, dispatcher)))
+	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/cancel", session.RequireSession(s.sessions, api.CancelHandler(reviews)))
+	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/timeline", api.TimelineHandler(reviews))
 
 	mux.Handle("/", static)
 

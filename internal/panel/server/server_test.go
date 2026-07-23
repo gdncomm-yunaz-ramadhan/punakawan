@@ -829,3 +829,65 @@ func TestServerSessionIsInvalidatedOnShutdown(t *testing.T) {
 		t.Fatal("ValidSession = true after Shutdown, want the session invalidated")
 	}
 }
+
+func TestServerSubmitDispatchesABDTaskGraph(t *testing.T) {
+	requireBd(t)
+	requireDolt(t)
+
+	s, a := startTestServer(t)
+	initBd(t, a)
+
+	plans := &artifact.PlanStore{WorkspaceRoot: a.Workspace.Root}
+	if _, err := plans.CreateVersion("plan-panel", a.Workspace.ID, []byte("# Plan\n\nBody.\n"), time.Now()); err != nil {
+		t.Fatalf("CreateVersion: %v", err)
+	}
+	client, csrfToken := exchangeSession(t, s)
+	doWithCSRF := func(method, path string, body []byte) *http.Response {
+		req, err := http.NewRequest(method, fmt.Sprintf("http://%s%s", s.Addr(), path), bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		req.Header.Set("X-Csrf-Token", csrfToken)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return resp
+	}
+
+	createBody, _ := json.Marshal(map[string]string{"title": "Panel review"})
+	createResp := doWithCSRF(http.MethodPost, "/api/v1/artifacts/plan/plan-panel/reviews", createBody)
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(createResp.Body)
+		t.Fatalf("create review status = %d: %s", createResp.StatusCode, body)
+	}
+	var review protocol.ArtifactReview
+	if err := json.NewDecoder(createResp.Body).Decode(&review); err != nil {
+		t.Fatalf("decode review: %v", err)
+	}
+
+	submitResp := doWithCSRF(http.MethodPost, "/api/v1/reviews/"+review.Metadata.Id+"/submit", nil)
+	defer submitResp.Body.Close()
+	if submitResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(submitResp.Body)
+		t.Fatalf("submit status = %d, want 201: %s", submitResp.StatusCode, body)
+	}
+	var submitted struct {
+		Run struct {
+			RunID string `json:"run_id"`
+		} `json:"run"`
+	}
+	if err := json.NewDecoder(submitResp.Body).Decode(&submitted); err != nil {
+		t.Fatalf("decode submit response: %v", err)
+	}
+	if submitted.Run.RunID == "" {
+		t.Fatal("submit response has no run_id")
+	}
+
+	res, err := a.Supervisor.Run(context.Background(), tools.Spec{Name: "bd", Args: []string{"show", submitted.Run.RunID}, Dir: a.Workspace.Root})
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("bd show %s: err=%v exit=%d stderr=%s", submitted.Run.RunID, err, res.ExitCode, res.Stderr)
+	}
+}
