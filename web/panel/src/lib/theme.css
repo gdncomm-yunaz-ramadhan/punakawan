@@ -2,57 +2,95 @@
    source of semantic UI color for new components. Existing components
    keep their hardcoded colors for now (migration is UI-017, a later
    phase) - only this global base and NEW components below consume these
-   tokens. */
+   tokens.
+
+   Palette (UI visual overhaul): derived from the project's wayang batik
+   art (assets/punakawan-colored.png) - gold, teal, terracotta, and
+   indigo-blue over a warm cream/ink ground in light and a warm near-black
+   in dark. Token NAMES are stable (15+ routes + tests depend on them);
+   only their VALUES change here, plus purely additive tokens below. */
 
 :root {
-  --color-bg: #f6f7fb;
+  --color-bg: #f7f5f0;
   --color-surface: #ffffff;
-  --color-surface-subtle: #eef1f6;
+  --color-surface-subtle: #f0ece3;
   --color-surface-raised: #ffffff;
 
-  --color-text: #172033;
-  --color-text-muted: #667085;
-  --color-border: #dce2ea;
-  --color-border-strong: #c7cfdb;
+  --color-text: #1f2430;
+  --color-text-muted: #6b6459;
+  --color-border: #e6ddcf;
+  --color-border-strong: #d3c8b6;
 
-  --color-accent: #5b5bd6;
-  --color-accent-hover: #4b4bc4;
-  --color-accent-soft: #ececfe;
+  --color-accent: #235fb5;
+  --color-accent-hover: #1b4a90;
+  --color-accent-soft: #e8eefb;
   --color-accent-contrast: #ffffff;
 
-  --color-secondary: #0f9f9c;
-  --color-success: #16875b;
-  --color-warning: #b76e00;
-  --color-danger: #c7374f;
-  --color-info: #2878c7;
+  --color-secondary: #128a5e;
+  --color-success: #128a5e;
+  --color-warning: #c07b12;
+  --color-danger: #c7402a;
+  --color-info: #235fb5;
 
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05);
+  /* Additive batik brand tokens - named for the wayang palette so
+     components (charts, accented cards, badges) can reach for a specific
+     hue without hardcoding hex. */
+  --color-gold: #c9880f;
+  --color-gold-soft: #fbeed0;
+  --color-teal: #128a5e;
+  --color-terracotta: #d9531f;
+  --color-indigo: #235fb5;
+  /* Fifth categorical chart hue - no semantic role, batik-adjacent violet. */
+  --color-violet: #7a5bd0;
+
+  /* Additive radius scale. --radius-card kept (existing components use it). */
+  --radius-sm: 8px;
   --radius-card: 16px;
+  --radius-lg: 22px;
+
+  /* Additive elevation scale. --shadow-card kept (existing components use it). */
+  --shadow-sm: 0 1px 2px rgb(31 36 48 / 0.06);
+  --shadow-card: 0 2px 8px rgb(31 36 48 / 0.07);
+  --shadow-md: 0 8px 24px rgb(31 36 48 / 0.10);
+  --shadow-lg: 0 18px 48px rgb(31 36 48 / 0.14);
+
+  /* Signature batik ribbon gradient (gold -> terracotta -> teal -> indigo). */
+  --gradient-brand: linear-gradient(90deg, #c9880f 0%, #d9531f 34%, #128a5e 67%, #235fb5 100%);
 }
 
 [data-theme="dark"] {
-  --color-bg: #0c111b;
-  --color-surface: #141b2a;
-  --color-surface-subtle: #1b2435;
-  --color-surface-raised: #192235;
+  --color-bg: #14110c;
+  --color-surface: #1e1a13;
+  --color-surface-subtle: #26211a;
+  --color-surface-raised: #231e16;
 
-  --color-text: #e8ecf4;
-  --color-text-muted: #99a4b5;
-  --color-border: #293449;
-  --color-border-strong: #3a465d;
+  --color-text: #f0e9dc;
+  --color-text-muted: #a89f8f;
+  --color-border: #352e22;
+  --color-border-strong: #4a4031;
 
-  --color-accent: #8b8cf6;
-  --color-accent-hover: #a0a1ff;
-  --color-accent-soft: #29294f;
-  --color-accent-contrast: #101321;
+  --color-accent: #7fa8ee;
+  --color-accent-hover: #a0c1f5;
+  --color-accent-soft: #1f2b40;
+  --color-accent-contrast: #10131c;
 
-  --color-secondary: #35c7c4;
-  --color-success: #46bd86;
+  --color-secondary: #35c79a;
+  --color-success: #35c79a;
   --color-warning: #e5a940;
-  --color-danger: #ee6b80;
-  --color-info: #65a9ef;
+  --color-danger: #ee7a5e;
+  --color-info: #7fa8ee;
 
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28);
+  --color-gold: #f0a818;
+  --color-gold-soft: #3a2e12;
+  --color-teal: #35c79a;
+  --color-terracotta: #f0794a;
+  --color-indigo: #7fa8ee;
+  --color-violet: #a78bfa;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-card: 0 2px 10px rgb(0 0 0 / 0.34);
+  --shadow-md: 0 10px 28px rgb(0 0 0 / 0.42);
+  --shadow-lg: 0 20px 52px rgb(0 0 0 / 0.5);
 }
 
 html,

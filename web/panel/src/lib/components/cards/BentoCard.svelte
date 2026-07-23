@@ -69,5 +69,7 @@
   }
   .bento-card :global(.card) {
     height: 100%;
+    /* Bento tiles read as larger, softer surfaces than inline cards. */
+    border-radius: var(--radius-lg);
   }
 </style>
