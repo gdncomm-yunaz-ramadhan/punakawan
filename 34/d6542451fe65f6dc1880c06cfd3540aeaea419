@@ -1,0 +1,23 @@
+README.md
+  76c7b28fab141eab 171-173,175-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "34d6542451fe65f6dc1880c06cfd3540aeaea419",
+  "prompts": {
+    "76c7b28fab141eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38d4d1e8-5b04-4c5b-8dc1-aaf4dbe006cf",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}
