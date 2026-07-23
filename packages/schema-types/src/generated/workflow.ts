@@ -26,6 +26,18 @@ export interface WorkflowRun {
     | "cancelled";
   created_at: string;
   updated_at: string;
+  /**
+   * Human-readable goal of this run, set by the calling agent at creation or advance time. Used by the panel's session summary (punakawan-panel-implementation-plan.md §8.3); Punakawan never infers or edits this itself.
+   */
+  objective?: string;
+  /**
+   * Who or what started this run (e.g. "user", "scheduled", an agent identifier). Set by the calling agent, not inferred.
+   */
+  initiator?: string;
+  /**
+   * The Punakawan role currently driving this run, as reported by the calling agent.
+   */
+  active_role?: "semar" | "gareng" | "petruk" | "bagong";
   checkpoints?: {
     state: string;
     at: string;
