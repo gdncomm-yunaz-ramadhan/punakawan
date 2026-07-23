@@ -1,0 +1,41 @@
+internal/panel/api/proposal_handler_test.go
+  3415a4432044e41f 1-395
+internal/panel/server/server.go
+  3415a4432044e41f 160,162-168
+internal/validation/structural.go
+  3415a4432044e41f 1-101
+internal/validation/comment_resolutions_test.go
+  3415a4432044e41f 1-81
+internal/artifact/diff_test.go
+  3415a4432044e41f 1-52
+internal/validation/comment_resolutions.go
+  3415a4432044e41f 1-57
+internal/artifact/diff.go
+  3415a4432044e41f 1-126
+protocol/artifactrevisionproposal.schema.json
+  3415a4432044e41f 42-43,53-70
+internal/validation/structural_test.go
+  3415a4432044e41f 1-63
+internal/panel/api/proposal_handler.go
+  3415a4432044e41f 1-492
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "283a6f9e7996be73dabaa26fe848e2c1f4a500b1",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1408,
+      "total_deletions": 15,
+      "accepted_lines": 1395,
+      "overriden_lines": 0
+    }
+  }
+}
