@@ -128,7 +128,9 @@ export interface KnowledgeRecord {
       | "tracked-by"
       | "observed-in"
       | "assumes"
-      | "resolves";
+      | "resolves"
+      | "uses-adapter"
+      | "retrieves";
     target: string;
   }[];
   /**
