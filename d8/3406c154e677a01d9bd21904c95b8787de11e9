@@ -1,0 +1,35 @@
+internal/recipe/lifecycle_test.go
+  6c4a5633395342b7 1-122
+cmd/punakawan/knowledge_cmd.go
+  6c4a5633395342b7 1-275
+internal/recipe/lifecycle.go
+  6c4a5633395342b7 1-116
+cmd/punakawan/main.go
+  6c4a5633395342b7 33
+internal/recipe/operation.go
+  6c4a5633395342b7 1-201
+internal/recipe/operation_test.go
+  6c4a5633395342b7 1-40,42-58,60-85,87,89-100,102-110,112,114-121,123-132,134-155
+cmd/punakawan/knowledge_cmd_test.go
+  6c4a5633395342b7 1-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "d83406c154e677a01d9bd21904c95b8787de11e9",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1075,
+      "total_deletions": 27,
+      "accepted_lines": 1039,
+      "overriden_lines": 9
+    }
+  }
+}
