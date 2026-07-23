@@ -5,8 +5,8 @@
 // a cross-org graph) that a longest-path layering pass is enough.
 
 export interface Edge {
-  From: string;
-  To: string;
+  from: string;
+  to: string;
 }
 
 export interface LayoutResult {
@@ -28,7 +28,7 @@ export function layoutGraph(nodeIds: string[], edges: Edge[]): LayoutResult {
   const adjacency = new Map<string, string[]>();
   for (const id of nodeIds) adjacency.set(id, []);
   for (const e of edges) {
-    if (idSet.has(e.From)) adjacency.get(e.From)?.push(e.To);
+    if (idSet.has(e.from)) adjacency.get(e.from)?.push(e.to);
   }
 
   const levels = new Map<string, number>();
@@ -69,7 +69,7 @@ export function externalRefs(nodeIds: string[], edges: Edge[]): string[] {
   const idSet = new Set(nodeIds);
   const seen = new Set<string>();
   for (const e of edges) {
-    if (!idSet.has(e.To)) seen.add(e.To);
+    if (!idSet.has(e.to)) seen.add(e.to);
   }
   return [...seen];
 }

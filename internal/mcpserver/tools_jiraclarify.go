@@ -2,16 +2,13 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // RequestJiraClarificationInput is request_jira_clarification's input.
@@ -32,17 +29,18 @@ type RequestJiraClarificationOutput struct {
 	TransitionApplied bool   `json:"transition_applied"`
 	TransitionId      string `json:"transition_id,omitempty"`
 	ToStatus          string `json:"to_status,omitempty"`
-}
-
-type jiraTransitionsResult struct {
-	Transitions []struct {
-		Id       string `json:"id"`
-		Name     string `json:"name"`
-		ToStatus struct {
-			Id   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"toStatus"`
-	} `json:"transitions"`
+	// TransitionSkipReason explains why TransitionApplied is false despite a
+	// clarification_status being configured - e.g. no available transition on
+	// the issue's current state reaches (or is named) that status. This is a
+	// soft skip, not an error: the comment still posted, and the issue may
+	// simply not have that status reachable right now (punokawan-7a1).
+	TransitionSkipReason string `json:"transition_skip_reason,omitempty"`
+	// FailedStep/FailedError report a partial success (punokawan-4tw): if the
+	// comment posted but the subsequent transition write failed, these carry
+	// the failure while the call still returns as a non-error result, so the
+	// caller does not re-post the (non-dedup) comment on a blind retry.
+	FailedStep  string `json:"failed_step,omitempty"`
+	FailedError string `json:"failed_error,omitempty"`
 }
 
 // requestJiraClarificationHandler implements the user's direct ask: "when
@@ -77,7 +75,10 @@ func requestJiraClarificationHandler(a *app.App) func(context.Context, *mcp.Call
 // spawned adapter process, which would require live Jira credentials.
 func requestJiraClarification(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, cfg *jiraworkflow.Config, in RequestJiraClarificationInput) (RequestJiraClarificationOutput, error) {
 	var out RequestJiraClarificationOutput
-	requestedBy := protocol.ApprovalRecordRequestedBy(in.RequestedBy)
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
 
 	if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.addJiraComment", map[string]any{
 		"issueIdOrKey": in.IssueIdOrKey,
@@ -91,38 +92,23 @@ func requestJiraClarification(ctx context.Context, req *mcp.CallToolRequest, gat
 		return out, nil
 	}
 
-	raw, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.getTransitionsForJiraIssue", map[string]any{
-		"issueIdOrKey": in.IssueIdOrKey,
-	}, requestedBy)
+	// Reuse transitionIssueToStatus (shared with update_jira_task_progress) so
+	// a configured clarification_status that names a transition, not only a
+	// target status, still resolves, and a non-match is a soft skip with a
+	// reason rather than a hard error (punokawan-7a1).
+	transitioned, transitionID, toStatus, skipReason, err := transitionIssueToStatus(
+		ctx, req, gate, in.RunId, in.IssueIdOrKey, cfg.ClarificationStatus, requestedBy,
+	)
 	if err != nil {
-		return out, fmt.Errorf("mcpserver: list workflow transitions: %w", err)
+		// The comment already posted, so a transition-write failure is a
+		// partial success: record it and return a non-error result rather
+		// than discarding the fact that the comment went out (punokawan-4tw).
+		return out, recordPartialFailure(&out.FailedStep, &out.FailedError, true, "transition", fmt.Errorf("mcpserver: transition issue to clarification status: %w", err))
 	}
-	var transitions jiraTransitionsResult
-	if err := json.Unmarshal(raw, &transitions); err != nil {
-		return out, fmt.Errorf("mcpserver: decode workflow transitions: %w", err)
-	}
-
-	var transitionID, toStatus string
-	for _, t := range transitions.Transitions {
-		if strings.EqualFold(t.ToStatus.Name, cfg.ClarificationStatus) {
-			transitionID = t.Id
-			toStatus = t.ToStatus.Name
-			break
-		}
-	}
-	if transitionID == "" {
-		return out, fmt.Errorf("mcpserver: no workflow transition to configured clarification status %q found for issue %q", cfg.ClarificationStatus, in.IssueIdOrKey)
-	}
-
-	if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.transitionJiraIssue", map[string]any{
-		"issueIdOrKey": in.IssueIdOrKey,
-		"transitionId": transitionID,
-	}, requestedBy); err != nil {
-		return out, fmt.Errorf("mcpserver: transition issue to clarification status: %w", err)
-	}
-	out.TransitionApplied = true
+	out.TransitionApplied = transitioned
 	out.TransitionId = transitionID
 	out.ToStatus = toStatus
+	out.TransitionSkipReason = skipReason
 
 	return out, nil
 }

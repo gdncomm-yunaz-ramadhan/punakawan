@@ -66,16 +66,13 @@ func searchKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			return nil, SearchKnowledgeOutput{}, fmt.Errorf("mcpserver: open search index: %w", err)
 		}
 
-		// §11.11's index is disposable and this schema has no cheap
-		// per-record dirty flag, so search_knowledge keeps it correct by
-		// fully re-syncing before every query rather than risking a stale
-		// result set. Rebuild is an idempotent upsert of every record, so
-		// this is safe to call on every search, not just after a rebuild.
-		if err := search.Rebuild(store, ix); err != nil {
-			return nil, SearchKnowledgeOutput{}, fmt.Errorf("mcpserver: rebuild search index: %w", err)
-		}
-
-		results, err := search.Search(store, ix, search.Request{
+		// §11.11's index is disposable and always rebuildable from the store.
+		// App.SearchKnowledge re-syncs it before querying so a deleted or
+		// changed record can never surface, but that rebuild is watermark-gated
+		// (a no-op when nothing changed since the last sync, punokawan-77q) and
+		// serialized with the read under one lock so two concurrent searches
+		// cannot race the shared index (punokawan-hzp).
+		results, err := a.SearchKnowledge(store, ix, search.Request{
 			Query: in.Query,
 			Scope: search.Scope{
 				Project:    in.Project,

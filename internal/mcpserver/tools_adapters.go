@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // CallAdapterOperationInput is call_adapter_operation's input.
@@ -18,6 +18,12 @@ type CallAdapterOperationInput struct {
 	Op          string         `json:"op" jsonschema:"operation name declared in the adapter's manifest, e.g. atlassian.getJiraIssue"`
 	Params      map[string]any `json:"params,omitempty" jsonschema:"operation-specific parameters, passed through to the adapter unchanged"`
 	RequestedBy string         `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong; who is requesting this operation, recorded if approval is required"`
+	// Fields, when non-empty, projects the adapter result down to just these
+	// keys before returning it, so a caller that only needs a few fields of a
+	// large Jira/Confluence payload does not pay the full envelope in model
+	// context. Dot notation selects one level of nesting (e.g. "fields.summary").
+	// Omitting fields returns the adapter result unchanged (§3.2 passthrough).
+	Fields []string `json:"fields,omitempty" jsonschema:"optional top-level (or dotted one-level) keys to keep from the result; omit for the full payload"`
 }
 
 // CallAdapterOperationOutput is call_adapter_operation's output: whatever
@@ -38,12 +44,17 @@ type CallAdapterOperationOutput struct {
 // is deliberately not exposed as another agent-callable MCP tool.
 func callAdapterOperationHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CallAdapterOperationInput) (*mcp.CallToolResult, CallAdapterOperationOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CallAdapterOperationInput) (*mcp.CallToolResult, CallAdapterOperationOutput, error) {
+		requestedBy, err := validateRequestedBy(in.RequestedBy)
+		if err != nil {
+			return nil, CallAdapterOperationOutput{}, err
+		}
+
 		gate, err := a.AdapterRegistry.Gate(ctx, in.AdapterId)
 		if err != nil {
 			return nil, CallAdapterOperationOutput{}, fmt.Errorf("mcpserver: call_adapter_operation: %w", err)
 		}
 
-		raw, err := invokeAdapterOperation(ctx, req, gate, in.RunId, in.Op, in.Params, protocol.ApprovalRecordRequestedBy(in.RequestedBy))
+		raw, err := invokeAdapterOperation(ctx, req, gate, in.RunId, in.Op, in.Params, requestedBy)
 		if err != nil {
 			return nil, CallAdapterOperationOutput{}, fmt.Errorf("mcpserver: call_adapter_operation: %w", err)
 		}
@@ -53,6 +64,45 @@ func callAdapterOperationHandler(a *app.App) func(context.Context, *mcp.CallTool
 			return nil, CallAdapterOperationOutput{}, fmt.Errorf("mcpserver: decode adapter result: %w", err)
 		}
 
+		if len(in.Fields) > 0 {
+			result = projectResult(result, in.Fields)
+		}
+
 		return nil, CallAdapterOperationOutput{Result: result}, nil
 	}
+}
+
+// projectResult keeps only the requested keys from result. A key may be a
+// top-level name ("summary") or a single-level dotted path ("fields.summary"),
+// in which case the nested value is preserved under its parent. Requested keys
+// that do not exist are skipped. The original map is not mutated.
+func projectResult(result map[string]any, fields []string) map[string]any {
+	out := make(map[string]any, len(fields))
+	for _, f := range fields {
+		if f == "" {
+			continue
+		}
+		parent, child, nested := strings.Cut(f, ".")
+		if !nested {
+			if v, ok := result[f]; ok {
+				out[f] = v
+			}
+			continue
+		}
+		sub, ok := result[parent].(map[string]any)
+		if !ok {
+			continue
+		}
+		val, ok := sub[child]
+		if !ok {
+			continue
+		}
+		dst, ok := out[parent].(map[string]any)
+		if !ok {
+			dst = make(map[string]any)
+			out[parent] = dst
+		}
+		dst[child] = val
+	}
+	return out
 }

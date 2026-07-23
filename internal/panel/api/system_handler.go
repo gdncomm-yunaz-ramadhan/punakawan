@@ -6,10 +6,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/panel"
+	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 )
 
@@ -48,6 +50,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // HTML, so it is safe to return as-is inside a JSON string.
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// listErrorStatus maps a list-endpoint error to an HTTP status. A request
+// for a workspace this panel instance does not serve
+// (contract.ErrWorkspaceUnavailable) is the caller's mistake - the
+// non-workspace sources only serve the single workspace the panel's App
+// was loaded for - so it answers 404 rather than a misleading 500.
+func listErrorStatus(err error) int {
+	if errors.Is(err, contract.ErrWorkspaceUnavailable) {
+		return http.StatusNotFound
+	}
+	return http.StatusInternalServerError
 }
 
 // SystemHandler serves GET /api/v1/system.

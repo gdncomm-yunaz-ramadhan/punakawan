@@ -10,7 +10,6 @@ import (
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/execution"
 	"github.com/ygrip/punakawan/internal/gitops"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // StartTaskExecutionInput is start_task_execution's input.
@@ -30,6 +29,11 @@ type StartTaskExecutionOutput struct {
 
 func startTaskExecutionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartTaskExecutionInput) (*mcp.CallToolResult, StartTaskExecutionOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in StartTaskExecutionInput) (*mcp.CallToolResult, StartTaskExecutionOutput, error) {
+		requestedBy, err := validateRequestedBy(in.RequestedBy)
+		if err != nil {
+			return nil, StartTaskExecutionOutput{}, err
+		}
+
 		repoPath, err := a.RepoPath(in.RepoId)
 		if err != nil {
 			return nil, StartTaskExecutionOutput{}, fmt.Errorf("mcpserver: resolve repository %q: %w", in.RepoId, err)
@@ -40,7 +44,7 @@ func startTaskExecutionHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 		// decision happens out-of-band (§16 is a human-in-the-loop gate, not
 		// something the same calling role can grant itself) -- Create below
 		// fails clearly if it has not been approved yet.
-		if _, err := a.Worktrees.RequestApproval(in.RunId, in.RepoId, in.TaskId, protocol.ApprovalRecordRequestedBy(in.RequestedBy)); err != nil {
+		if _, err := a.Worktrees.RequestApproval(in.RunId, in.RepoId, in.TaskId, requestedBy); err != nil {
 			return nil, StartTaskExecutionOutput{}, fmt.Errorf("mcpserver: request worktree approval: %w", err)
 		}
 
@@ -72,6 +76,14 @@ type finishTaskExecutionOutput struct{}
 
 func finishTaskExecutionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, FinishTaskExecutionInput) (*mcp.CallToolResult, finishTaskExecutionOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in FinishTaskExecutionInput) (*mcp.CallToolResult, finishTaskExecutionOutput, error) {
+		// Validate the status enum up front (punokawan-4ae): downstream
+		// FinishTaskExecution treats any non-"committed" value as failure, so
+		// a typo like "commited" would silently be recorded as a failure
+		// rather than rejected. Only committed|blocked are meaningful here.
+		if in.Status != "committed" && in.Status != "blocked" {
+			return nil, finishTaskExecutionOutput{}, fmt.Errorf("mcpserver: finish_task_execution: invalid status %q: must be one of committed, blocked", in.Status)
+		}
+
 		repoPath, err := a.RepoPath(in.RepoId)
 		if err != nil {
 			return nil, finishTaskExecutionOutput{}, fmt.Errorf("mcpserver: resolve repository %q: %w", in.RepoId, err)

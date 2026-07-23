@@ -12,14 +12,14 @@
   let container: HTMLDivElement | undefined = $state();
   let lines: { x1: number; y1: number; x2: number; y2: number; cyclic: boolean }[] = $state([]);
 
-  const nodeIds = $derived(graph.Nodes.map((n) => n.id));
-  const layout = $derived(layoutGraph(nodeIds, graph.Edges));
-  const externals = $derived(externalRefs(nodeIds, graph.Edges));
-  const cycleNodeIds = $derived(new Set(graph.Cycles.flat()));
+  const nodeIds = $derived(graph.nodes.map((n) => n.id));
+  const layout = $derived(layoutGraph(nodeIds, graph.edges));
+  const externals = $derived(externalRefs(nodeIds, graph.edges));
+  const cycleNodeIds = $derived(new Set(graph.cycles.flat()));
 
   const columns = $derived.by(() => {
     const cols: { id: string; external?: boolean }[][] = Array.from({ length: layout.maxLevel + 1 }, () => []);
-    for (const node of graph.Nodes) {
+    for (const node of graph.nodes) {
       const level = layout.levels.get(node.id) ?? 0;
       cols[level].push({ id: node.id });
     }
@@ -32,7 +32,7 @@
   });
 
   function nodeById(id: string) {
-    return graph.Nodes.find((n) => n.id === id);
+    return graph.nodes.find((n) => n.id === id);
   }
 
   async function recomputeLines() {
@@ -41,14 +41,14 @@
     const containerRect = container.getBoundingClientRect();
     const next: typeof lines = [];
     const cyclicPairs = new Set<string>();
-    for (const cycle of graph.Cycles) {
+    for (const cycle of graph.cycles) {
       for (let i = 0; i < cycle.length - 1; i++) {
         cyclicPairs.add(cycle[i] + "->" + cycle[i + 1]);
       }
     }
-    for (const edge of graph.Edges) {
-      const fromEl = container.querySelector(`[data-node-id="${cssEscape(edge.From)}"]`);
-      const toEl = container.querySelector(`[data-node-id="${cssEscape(edge.To)}"]`);
+    for (const edge of graph.edges) {
+      const fromEl = container.querySelector(`[data-node-id="${cssEscape(edge.from)}"]`);
+      const toEl = container.querySelector(`[data-node-id="${cssEscape(edge.to)}"]`);
       if (!fromEl || !toEl) continue;
       const fromRect = fromEl.getBoundingClientRect();
       const toRect = toEl.getBoundingClientRect();
@@ -57,7 +57,7 @@
         y1: fromRect.top - containerRect.top + fromRect.height / 2,
         x2: toRect.left - containerRect.left + toRect.width / 2,
         y2: toRect.top - containerRect.top + toRect.height / 2,
-        cyclic: cyclicPairs.has(edge.From + "->" + edge.To),
+        cyclic: cyclicPairs.has(edge.from + "->" + edge.to),
       });
     }
     lines = next;
@@ -76,9 +76,9 @@
   });
 </script>
 
-{#if graph.Cycles.length > 0}
+{#if graph.cycles.length > 0}
   <p class="cycle-warning" role="alert">
-    {graph.Cycles.length} dependency cycle(s) detected: {graph.Cycles.map((c) => c.join(" → ")).join("; ")}
+    {graph.cycles.length} dependency cycle(s) detected: {graph.cycles.map((c) => c.join(" → ")).join("; ")}
   </p>
 {/if}
 
@@ -120,14 +120,14 @@
 <section aria-labelledby="dependency-list-heading" class="fallback">
   <h3 id="dependency-list-heading">Dependency List</h3>
   <p class="hint">A text equivalent of the diagram above, for screen readers and quick scanning.</p>
-  {#if graph.Edges.length === 0}
+  {#if graph.edges.length === 0}
     <p>No dependencies recorded.</p>
   {:else}
     <ul>
-      {#each graph.Edges as edge, i (i)}
+      {#each graph.edges as edge, i (i)}
         <li>
-          <strong>{edge.From}</strong> depends on <strong>{edge.To}</strong>
-          {#if nodeById(edge.To)}({nodeById(edge.To)?.status}){:else}(external reference){/if}
+          <strong>{edge.from}</strong> depends on <strong>{edge.to}</strong>
+          {#if nodeById(edge.to)}({nodeById(edge.to)?.status}){:else}(external reference){/if}
         </li>
       {/each}
     </ul>
@@ -136,15 +136,15 @@
 
 <style>
   .cycle-warning {
-    background: #fdecea;
-    color: #c62828;
+    background: var(--color-accent-soft);
+    color: var(--color-danger);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem;
   }
   .graph-scroll {
     overflow-x: auto;
-    border: 1px solid #eee;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 1rem;
   }
@@ -164,11 +164,11 @@
     overflow: visible;
   }
   .connectors line {
-    stroke: #bbb;
+    stroke: var(--color-border-strong);
     stroke-width: 1.5;
   }
   .connectors line.cyclic {
-    stroke: #c62828;
+    stroke: var(--color-danger);
     stroke-dasharray: 4 3;
   }
   .column {
@@ -178,10 +178,10 @@
     min-width: 160px;
   }
   .node {
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.5rem 0.6rem;
-    background: white;
+    background: var(--color-surface);
     display: grid;
     gap: 0.15rem;
     text-align: left;
@@ -190,15 +190,15 @@
   }
   .node-external {
     cursor: default;
-    background: #f5f5f5;
+    background: var(--color-surface-subtle);
     border-style: dashed;
   }
   .node.cyclic {
-    border-color: #c62828;
+    border-color: var(--color-danger);
   }
   .node-id {
     font-size: 0.7rem;
-    color: #666;
+    color: var(--color-text-muted);
   }
   .node-title {
     font-size: 0.85rem;
@@ -208,13 +208,13 @@
     text-transform: capitalize;
   }
   .node-ready .node-state {
-    color: #1e7d32;
+    color: var(--color-success);
   }
   .node-blocked .node-state {
-    color: #c62828;
+    color: var(--color-danger);
   }
   .node-active .node-state {
-    color: #3949ab;
+    color: var(--color-accent);
   }
   .fallback {
     margin-top: 1rem;
@@ -224,7 +224,7 @@
     margin-bottom: 0.15rem;
   }
   .hint {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
     margin-top: 0;
   }

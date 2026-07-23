@@ -24,7 +24,12 @@ type CreateWorkflowRunInput struct {
 
 func createWorkflowRunHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CreateWorkflowRunInput) (*mcp.CallToolResult, protocol.WorkflowRun, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CreateWorkflowRunInput) (*mcp.CallToolResult, protocol.WorkflowRun, error) {
-		run := workflow.New(in.RunId, a.Workspace.ID, protocol.WorkflowRunWorkflowName(in.WorkflowName), time.Now().UTC())
+		workflowName, err := validateWorkflowName(in.WorkflowName)
+		if err != nil {
+			return nil, protocol.WorkflowRun{}, err
+		}
+
+		run := workflow.New(in.RunId, a.Workspace.ID, workflowName, time.Now().UTC())
 		if err := a.Workflow.Append(run); err != nil {
 			return nil, protocol.WorkflowRun{}, fmt.Errorf("mcpserver: create workflow run: %w", err)
 		}

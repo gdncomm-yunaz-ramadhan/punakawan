@@ -31,20 +31,20 @@
   .card {
     width: 100%;
     text-align: left;
-    border: 1px solid #ddd;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.6rem 0.7rem;
-    background: white;
+    background: var(--color-surface);
     cursor: pointer;
     font: inherit;
     display: grid;
     gap: 0.25rem;
   }
   .card:hover {
-    border-color: #3949ab;
+    border-color: var(--color-accent);
   }
   .card.stale {
-    border-left: 3px solid #9a6700;
+    border-left: 3px solid var(--color-warning);
   }
   .row {
     display: flex;
@@ -54,12 +54,12 @@
   }
   .id {
     font-size: 0.75rem;
-    color: #666;
+    color: var(--color-text-muted);
   }
   .priority {
     font-size: 0.7rem;
     font-weight: 600;
-    color: #3949ab;
+    color: var(--color-accent);
   }
   .title {
     margin: 0;
@@ -71,22 +71,22 @@
   }
   .chip {
     font-size: 0.7rem;
-    background: #f0f0f0;
+    background: var(--color-surface-subtle);
     padding: 0.1rem 0.4rem;
     border-radius: 4px;
   }
   .stale-chip {
-    background: #fff4e5;
-    color: #9a6700;
+    background: var(--color-accent-soft);
+    color: var(--color-warning);
   }
   .blocking {
     margin: 0;
     font-size: 0.75rem;
-    color: #c62828;
+    color: var(--color-danger);
   }
   .updated {
     margin: 0;
     font-size: 0.7rem;
-    color: #999;
+    color: var(--color-text-muted);
   }
 </style>

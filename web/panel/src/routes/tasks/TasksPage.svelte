@@ -108,17 +108,17 @@
     gap: 0.3rem;
   }
   .views button {
-    border: 1px solid #ddd;
-    background: white;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
     padding: 0.3rem 0.7rem;
     border-radius: 6px;
     font-size: 0.85rem;
     cursor: pointer;
   }
   .views button.active {
-    background: #e8eaf6;
-    border-color: #3949ab;
-    color: #3949ab;
+    background: var(--color-accent-soft);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
   }
   .filters {
     display: flex;
@@ -128,10 +128,10 @@
   .filters select {
     font-size: 0.85rem;
     padding: 0.3rem 0.5rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
 </style>

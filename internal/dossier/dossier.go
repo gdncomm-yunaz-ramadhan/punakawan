@@ -94,6 +94,17 @@ func Build(ctx context.Context, ws *workspace.Workspace, sup *tools.Supervisor, 
 		}
 	}
 
+	// These lists were previously every api/data-contract and every decision
+	// in the whole store, unscoped and unbounded (punokawan-nmw). Scope each
+	// to the dossier's affected repositories (records that name a different
+	// repository are dropped; unscoped, cross-cutting records are kept) and
+	// cap the totals, so the dossier stays proportional to its subject rather
+	// than growing with the entire knowledge store.
+	repoSet := make(map[string]bool, len(repoIDs))
+	for _, id := range repoIDs {
+		repoSet[id] = true
+	}
+
 	var apiAndDataContracts []string
 	for _, t := range []protocol.KnowledgeRecordType{
 		protocol.KnowledgeRecordTypeApiContract,
@@ -103,9 +114,7 @@ func Build(ctx context.Context, ws *workspace.Workspace, sup *tools.Supervisor, 
 		if err != nil {
 			return protocol.KnowledgeRecord{}, fmt.Errorf("dossier: list knowledge records of type %s: %w", t, err)
 		}
-		for _, r := range recs {
-			apiAndDataContracts = append(apiAndDataContracts, summarize(r))
-		}
+		apiAndDataContracts = appendScopedSummaries(apiAndDataContracts, recs, repoSet, maxApiAndDataContracts)
 	}
 
 	var relevantPreviousDecisions []string
@@ -113,9 +122,7 @@ func Build(ctx context.Context, ws *workspace.Workspace, sup *tools.Supervisor, 
 	if err != nil {
 		return protocol.KnowledgeRecord{}, fmt.Errorf("dossier: list decision records: %w", err)
 	}
-	for _, r := range decisions {
-		relevantPreviousDecisions = append(relevantPreviousDecisions, summarize(r))
-	}
+	relevantPreviousDecisions = appendScopedSummaries(relevantPreviousDecisions, decisions, repoSet, maxRelevantPreviousDecisions)
 
 	title := in.UserGoal
 	if title == "" {
@@ -172,6 +179,40 @@ func Build(ctx context.Context, ws *workspace.Workspace, sup *tools.Supervisor, 
 		ContextDossier: cd,
 	}
 	return rec, nil
+}
+
+// Caps bounding the store-derived dossier lists (punokawan-nmw): finite so a
+// large knowledge store cannot balloon a single dossier, but generous enough
+// to carry a run's genuinely relevant contracts and decisions.
+const (
+	maxApiAndDataContracts       = 25
+	maxRelevantPreviousDecisions = 25
+)
+
+// appendScopedSummaries appends summaries of recs to dst, skipping records
+// scoped to a repository outside repoSet, until dst reaches cap.
+func appendScopedSummaries(dst []string, recs []protocol.KnowledgeRecord, repoSet map[string]bool, cap int) []string {
+	for _, r := range recs {
+		if len(dst) >= cap {
+			break
+		}
+		if !inAffectedRepositories(r.Scope, repoSet) {
+			continue
+		}
+		dst = append(dst, summarize(r))
+	}
+	return dst
+}
+
+// inAffectedRepositories reports whether a record with recScope belongs to one
+// of the dossier's affected repositories. A record that declares no repository
+// (or none at all) is cross-cutting and kept; one that names a repository
+// outside repoSet is dropped.
+func inAffectedRepositories(recScope *protocol.KnowledgeRecordScope, repoSet map[string]bool) bool {
+	if recScope == nil || recScope.Repository == nil || *recScope.Repository == "" {
+		return true
+	}
+	return repoSet[*recScope.Repository]
 }
 
 // summarize produces a short human-readable reference to a knowledge record

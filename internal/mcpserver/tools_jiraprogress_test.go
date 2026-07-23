@@ -232,6 +232,46 @@ func TestUpdateJiraTaskProgressEnqueuesFailureForRetry(t *testing.T) {
 	}
 }
 
+func TestUpdateJiraTaskProgressReturnsPartialSuccessOnLaterFailure(t *testing.T) {
+	// punokawan-4tw: when an earlier write succeeds but a later one fails, the
+	// call returns a NON-error result recording what completed and which step
+	// failed, so the caller does not re-run and duplicate the earlier
+	// non-dedup writes. Here estimate+worklog succeed, comment fails.
+	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
+	approveOp(t, gate, "run-1", "atlassian.editJiraIssueFields")
+	fc.failOps = map[string]bool{"atlassian.addJiraComment": true}
+
+	explicit := 4.0
+	worklog := 1.0
+	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", OriginalEstimateHours: &explicit, WorklogHours: &worklog, Comment: "done", RequestedBy: "petruk"}
+	cfg := &jiraworkflow.Config{}
+
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	if err != nil {
+		t.Fatalf("updateJiraTaskProgress returned an error, want a non-error partial-success result: %v", err)
+	}
+	if !out.EstimateUpdated || !out.WorklogAdded {
+		t.Errorf("out = %+v, want EstimateUpdated and WorklogAdded true (they succeeded before the failure)", out)
+	}
+	if out.CommentPosted {
+		t.Error("CommentPosted = true, want false (the comment write failed)")
+	}
+	if out.FailedStep != "comment" || out.FailedError == "" {
+		t.Errorf("out = %+v, want FailedStep=comment with a non-empty FailedError", out)
+	}
+	_ = fc
+}
+
+func TestUpdateJiraTaskProgressRejectsInvalidRequestedBy(t *testing.T) {
+	// punokawan-mkm: requested_by is validated against the protocol enum.
+	gate, _ := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
+	worklog := 1.0
+	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, RequestedBy: "boss"}
+	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, &jiraworkflow.Config{}, in); err == nil {
+		t.Fatal("expected an error for an invalid requested_by")
+	}
+}
+
 func TestFormatJiraDuration(t *testing.T) {
 	cases := []struct {
 		hours float64

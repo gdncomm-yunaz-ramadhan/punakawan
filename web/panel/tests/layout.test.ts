@@ -8,8 +8,8 @@ describe("layoutGraph", () => {
     const { levels, maxLevel } = layoutGraph(
       ["a", "b", "c"],
       [
-        { From: "a", To: "b" },
-        { From: "b", To: "c" },
+        { from: "a", to: "b" },
+        { from: "b", to: "c" },
       ],
     );
     expect(levels.get("c")).toBe(0);
@@ -22,15 +22,15 @@ describe("layoutGraph", () => {
     const { levels } = layoutGraph(
       ["a", "b"],
       [
-        { From: "a", To: "b" },
-        { From: "b", To: "a" },
+        { from: "a", to: "b" },
+        { from: "b", to: "a" },
       ],
     );
     expect(levels.size).toBe(2);
   });
 
   it("counts an external reference as one level without a matching node", () => {
-    const { levels } = layoutGraph(["a"], [{ From: "a", To: "external:other-project:cap" }]);
+    const { levels } = layoutGraph(["a"], [{ from: "a", to: "external:other-project:cap" }]);
     expect(levels.get("a")).toBe(1);
   });
 });
@@ -40,14 +40,14 @@ describe("externalRefs", () => {
     const refs = externalRefs(
       ["a", "b"],
       [
-        { From: "a", To: "b" },
-        { From: "a", To: "external:proj:cap" },
+        { from: "a", to: "b" },
+        { from: "a", to: "external:proj:cap" },
       ],
     );
     expect(refs).toEqual(["external:proj:cap"]);
   });
 
   it("returns nothing when every target is a known node", () => {
-    expect(externalRefs(["a", "b"], [{ From: "a", To: "b" }])).toEqual([]);
+    expect(externalRefs(["a", "b"], [{ from: "a", to: "b" }])).toEqual([]);
   });
 });

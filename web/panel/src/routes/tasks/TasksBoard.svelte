@@ -59,18 +59,18 @@
     font-size: 0.85rem;
     display: flex;
     justify-content: space-between;
-    color: #444;
+    color: var(--color-text-muted);
     margin: 0 0 0.5rem;
   }
   .count {
-    color: #999;
+    color: var(--color-text-muted);
   }
   .cards {
     display: grid;
     gap: 0.5rem;
   }
   .empty {
-    color: #999;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
     margin: 0;
   }
