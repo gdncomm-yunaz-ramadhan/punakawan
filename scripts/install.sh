@@ -57,6 +57,56 @@ else
   log "go already installed ($(command -v go))"
 fi
 
+# --- 1b. Optional security scanners (Sonar / CVE / OSV) ---------------------
+# Punakawan's knowledge search indexes CVE, GHSA, and Sonar-rule identifiers
+# as first-class tokens (internal/search/identifiers.go), and the architecture
+# roadmap ingests findings from these scanners as evidence. Installing them is
+# OPTIONAL and never fatal: a failed scanner install warns and continues.
+#
+# Control non-interactively with PUNAKAWAN_INSTALL_SCANNERS=yes|no (default:
+# prompt). PUNAKAWAN_DRY_RUN=1 prints the brew commands without running them.
+
+SCANNER_CHOICE="${PUNAKAWAN_INSTALL_SCANNERS:-}"
+if [[ -z "$SCANNER_CHOICE" ]]; then
+  cat <<'EOF'
+
+Optional: install security/quality scanners whose output Punakawan can index
+(CVE/GHSA/Sonar-rule identifiers become searchable knowledge):
+  - trivy         (container/dependency CVE scanning)
+  - osv-scanner   (OSV/GHSA vulnerability scanning)
+  - sonar-scanner (SonarQube/SonarCloud static analysis)
+EOF
+  read -rp "Install these optional scanners now? [y/N]: " SCANNER_REPLY
+  case "${SCANNER_REPLY:-N}" in
+    y | Y | yes | YES) SCANNER_CHOICE="yes" ;;
+    *) SCANNER_CHOICE="no" ;;
+  esac
+fi
+
+install_scanner() {
+  local cmd="$1" formula="$2"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    log "$cmd already installed ($(command -v "$cmd"))"
+    return 0
+  fi
+  if [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
+    log "[dry-run] brew install $formula (provides $cmd)"
+    return 0
+  fi
+  log "Installing $formula (provides $cmd)"
+  if ! brew install "$formula"; then
+    echo "Warning: failed to install $formula - skipping (Punakawan still works without it)." >&2
+  fi
+}
+
+if [[ "$SCANNER_CHOICE" == "yes" ]]; then
+  install_scanner trivy trivy
+  install_scanner osv-scanner osv-scanner
+  install_scanner sonar-scanner sonar-scanner
+else
+  log "Skipping optional scanners (set PUNAKAWAN_INSTALL_SCANNERS=yes to install later)"
+fi
+
 # --- 2. Build Punakawan (once, from this checkout) --------------------------
 
 log "Building Punakawan (go build + pnpm -r build)"
