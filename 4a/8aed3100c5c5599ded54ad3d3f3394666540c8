@@ -1,0 +1,59 @@
+internal/recipe/store_test.go
+  3415a4432044e41f 1-219
+internal/panel/server/server.go
+  3415a4432044e41f 18,129-145,168-169,172,178,180,183-185
+internal/panel/api/artifact_handler.go
+  3415a4432044e41f 21-27,29-31,36-37,45
+internal/panel/api/comment_handler_test.go
+  3415a4432044e41f 55,76,99,118
+internal/panel/api/artifact_stores_test.go
+  3415a4432044e41f 1-74
+internal/recipe/store.go
+  3415a4432044e41f 1-8,10-56,68-312
+internal/artifact/store.go
+  3415a4432044e41f 1-33,39-41
+internal/artifact/blockid.go
+  3415a4432044e41f 96-100,103-117
+internal/panel/api/review_handler_test.go
+  3415a4432044e41f 35,62,79,96
+protocol/artifactreference.schema.json
+  3415a4432044e41f 19-23
+internal/panel/api/comment_handler.go
+  3415a4432044e41f 13-23,28-34,39,72,90-91,94
+internal/artifact/recipefieldpath.go
+  3415a4432044e41f 1-40
+internal/panel/api/proposal_handler.go
+  3415a4432044e41f 70-72,95-100,245-248,261-271,292,305-315,338-342,360-364,382,400,534,547-552
+internal/panel/api/recipe_review_e2e_test.go
+  3415a4432044e41f 1-282
+protocol/artifactcomment.schema.json
+  3415a4432044e41f 5,25,29-33
+internal/panel/api/review_handler.go
+  3415a4432044e41f 27-30,32-34,45-46,70
+internal/panel/api/artifact_stores.go
+  3415a4432044e41f 1-73
+internal/artifact/recipefieldpath_test.go
+  3415a4432044e41f 1-102
+internal/panel/api/artifact_handler_test.go
+  3415a4432044e41f 22,42,55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4a8aed3100c5c5599ded54ad3d3f3394666540c8",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1345,
+      "total_deletions": 122,
+      "accepted_lines": 1296,
+      "overriden_lines": 0
+    }
+  }
+}
