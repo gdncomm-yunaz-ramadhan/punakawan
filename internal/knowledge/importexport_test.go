@@ -103,6 +103,70 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 }
 
+func TestExportImportYAMLRoundTrip(t *testing.T) {
+	store := newTestStore(t)
+
+	target := validRecord()
+	target.Id = "pkw:req/fixture/REQ-target"
+	target.Type = protocol.KnowledgeRecordTypeRequirement
+	if err := store.Put(target); err != nil {
+		t.Fatalf("Put target: %v", err)
+	}
+
+	source := validRecord()
+	source.Id = "pkw:req/fixture/REQ-source"
+	source.Type = protocol.KnowledgeRecordTypeRequirement
+	source.Relations = []protocol.KnowledgeRecordRelationsElem{
+		{Type: protocol.KnowledgeRecordRelationsElemTypeDependsOn, Target: target.Id},
+	}
+	if err := store.Put(source); err != nil {
+		t.Fatalf("Put source: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := store.ExportYAML(&buf); err != nil {
+		t.Fatalf("ExportYAML: %v", err)
+	}
+	if !strings.Contains(buf.String(), "records:") {
+		t.Fatalf("expected a top-level records: key in the YAML export, got:\n%s", buf.String())
+	}
+
+	fresh := newTestStore(t)
+	if err := fresh.ImportYAML(bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatalf("ImportYAML: %v", err)
+	}
+
+	gotTarget, err := fresh.Get(target.Id)
+	if err != nil {
+		t.Fatalf("Get target after ImportYAML: %v", err)
+	}
+	if gotTarget.Title != target.Title {
+		t.Fatalf("imported target mismatch: %+v", gotTarget)
+	}
+
+	gotSource, err := fresh.Get(source.Id)
+	if err != nil {
+		t.Fatalf("Get source after ImportYAML: %v", err)
+	}
+	if len(gotSource.Relations) != 1 || gotSource.Relations[0].Target != target.Id {
+		t.Fatalf("imported source relations mismatch: %+v", gotSource.Relations)
+	}
+}
+
+func TestExportYAMLOnEmptyStoreProducesEmptyRecordsList(t *testing.T) {
+	store := newTestStore(t)
+
+	var buf bytes.Buffer
+	if err := store.ExportYAML(&buf); err != nil {
+		t.Fatalf("ExportYAML: %v", err)
+	}
+
+	fresh := newTestStore(t)
+	if err := fresh.ImportYAML(bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatalf("ImportYAML of an empty export: %v", err)
+	}
+}
+
 func TestImportRejectsMalformedLine(t *testing.T) {
 	store := newTestStore(t)
 

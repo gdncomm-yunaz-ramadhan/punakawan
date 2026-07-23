@@ -1615,6 +1615,11 @@ type KnowledgeRecord struct {
 	// Structural conventions, present on convention-profile records. See §27.3.
 	Structure *KnowledgeRecordStructure `json:"structure,omitempty,omitzero" yaml:"structure,omitempty" mapstructure:"structure,omitempty"`
 
+	// The id of the knowledge record that supersedes this one, set by Store.Supersede
+	// without deleting or overwriting this record. See
+	// punakawan-architecture-enhancement-plan.md §10.4.
+	SupersededBy *string `json:"superseded_by,omitempty,omitzero" yaml:"superseded_by,omitempty" mapstructure:"superseded_by,omitempty"`
+
 	// Title corresponds to the JSON schema field "title".
 	Title string `json:"title" yaml:"title" mapstructure:"title"`
 

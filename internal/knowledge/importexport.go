@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -16,28 +18,87 @@ import (
 // transport, per §7.5 ("Import and export"; "JSONL is not the canonical
 // relation graph" - Dolt remains canonical, this is a transport format).
 func (s *Store) Export(w io.Writer) error {
-	rows, err := s.db.Query(`SELECT data FROM knowledge_records ORDER BY id`)
+	records, err := s.allRecords()
 	if err != nil {
-		return fmt.Errorf("knowledge: export query: %w", err)
+		return err
 	}
-	defer rows.Close()
 
 	enc := json.NewEncoder(w)
-	for rows.Next() {
-		var data []byte
-		if err := rows.Scan(&data); err != nil {
-			return fmt.Errorf("knowledge: export scan record: %w", err)
-		}
-		var rec protocol.KnowledgeRecord
-		if err := json.Unmarshal(data, &rec); err != nil {
-			return fmt.Errorf("knowledge: export decode record: %w", err)
-		}
+	for _, rec := range records {
 		if err := enc.Encode(rec); err != nil {
 			return fmt.Errorf("knowledge: export encode %s: %w", rec.Id, err)
 		}
 	}
+	return nil
+}
+
+// allRecords returns every knowledge record currently in the store, ordered
+// by id, shared by Export and ExportYAML so both formats stay in sync.
+func (s *Store) allRecords() ([]protocol.KnowledgeRecord, error) {
+	rows, err := s.db.Query(`SELECT data FROM knowledge_records ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("knowledge: export query: %w", err)
+	}
+	defer rows.Close()
+
+	var records []protocol.KnowledgeRecord
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, fmt.Errorf("knowledge: export scan record: %w", err)
+		}
+		var rec protocol.KnowledgeRecord
+		if err := json.Unmarshal(data, &rec); err != nil {
+			return nil, fmt.Errorf("knowledge: export decode record: %w", err)
+		}
+		records = append(records, rec)
+	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("knowledge: export iterate records: %w", err)
+		return nil, fmt.Errorf("knowledge: export iterate records: %w", err)
+	}
+	return records, nil
+}
+
+// PortableExport is the top-level shape of .punakawan/portable/knowledge.yaml
+// per punakawan-architecture-enhancement-plan.md §10.1/§10.2: a human-
+// readable export a person (not just Punakawan) can open and read, distinct
+// from Export's JSONL transport format.
+type PortableExport struct {
+	Records []protocol.KnowledgeRecord `yaml:"records"`
+}
+
+// ExportYAML writes every knowledge record as a single portable YAML
+// document, ordered by id for the same reproducibility guarantee as Export.
+func (s *Store) ExportYAML(w io.Writer) error {
+	records, err := s.allRecords()
+	if err != nil {
+		return err
+	}
+	if records == nil {
+		records = []protocol.KnowledgeRecord{}
+	}
+
+	enc := yaml.NewEncoder(w)
+	defer enc.Close()
+	if err := enc.Encode(PortableExport{Records: records}); err != nil {
+		return fmt.Errorf("knowledge: export yaml: %w", err)
+	}
+	return nil
+}
+
+// ImportYAML reads a PortableExport document produced by ExportYAML (or any
+// equivalent hand-authored YAML of the same shape) and calls Put for each
+// record, with the same fail-fast provenance enforcement as Import.
+func (s *Store) ImportYAML(r io.Reader) error {
+	var doc PortableExport
+	if err := yaml.NewDecoder(r).Decode(&doc); err != nil {
+		return fmt.Errorf("knowledge: import yaml: decode: %w", err)
+	}
+
+	for i, rec := range doc.Records {
+		if err := s.Put(rec); err != nil {
+			return fmt.Errorf("knowledge: import yaml record %d (id %s): %w (%d record(s) imported before failure)", i+1, rec.Id, err, i)
+		}
 	}
 	return nil
 }

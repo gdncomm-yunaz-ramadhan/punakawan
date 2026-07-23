@@ -53,7 +53,42 @@ ON DUPLICATE KEY UPDATE
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	return s.emitEvent(Event{
+		Type:       EventTypePut,
+		RecordId:   rec.Id,
+		RecordType: rec.Type,
+		Timestamp:  time.Now().UTC(),
+	})
+}
+
+// Supersede marks id's record as superseded by supersededBy without deleting
+// it: it sets SupersededBy and validity.state=superseded, then Puts the
+// record back through the same §7.3/§7.4 provenance checks as any other
+// write. The record referenced by supersededBy is not required to already
+// exist - Supersede does not itself create it, mirroring how a "supersedes"
+// relation on the new record is the caller's own separate write.
+func (s *Store) Supersede(id, supersededBy string) error {
+	rec, err := s.Get(id)
+	if err != nil {
+		return fmt.Errorf("knowledge: supersede %s: %w", id, err)
+	}
+	rec.SupersededBy = &supersededBy
+	rec.Validity.State = protocol.KnowledgeRecordValidityStateSuperseded
+	if err := s.Put(rec); err != nil {
+		return err
+	}
+
+	return s.emitEvent(Event{
+		Type:         EventTypeSupersede,
+		RecordId:     rec.Id,
+		RecordType:   rec.Type,
+		SupersededBy: supersededBy,
+		Timestamp:    time.Now().UTC(),
+	})
 }
 
 // Get returns a single knowledge record by id.

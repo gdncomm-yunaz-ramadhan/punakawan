@@ -160,6 +160,44 @@ func TestKnowledgeRelationsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSupersedeMarksRecordWithoutDeletingIt(t *testing.T) {
+	store := newTestStore(t)
+
+	rec := validRecord()
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	newer := validRecord()
+	newer.Id = "pkw:req/fixture/REQ-2"
+	if err := store.Put(newer); err != nil {
+		t.Fatalf("Put newer: %v", err)
+	}
+
+	if err := store.Supersede(rec.Id, newer.Id); err != nil {
+		t.Fatalf("Supersede: %v", err)
+	}
+
+	got, err := store.Get(rec.Id)
+	if err != nil {
+		t.Fatalf("Get after Supersede: %v", err)
+	}
+	if got.SupersededBy == nil || *got.SupersededBy != newer.Id {
+		t.Fatalf("SupersededBy = %v, want %q", got.SupersededBy, newer.Id)
+	}
+	if got.Validity.State != protocol.KnowledgeRecordValidityStateSuperseded {
+		t.Fatalf("Validity.State = %q, want superseded", got.Validity.State)
+	}
+}
+
+func TestSupersedeReturnsErrNotFoundForMissingRecord(t *testing.T) {
+	store := newTestStore(t)
+
+	if err := store.Supersede("pkw:req/fixture/does-not-exist", "pkw:req/fixture/REQ-2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestOpenReusesExistingDoltServer(t *testing.T) {
 	if _, err := exec.LookPath("dolt"); err != nil {
 		t.Skip("dolt not installed")

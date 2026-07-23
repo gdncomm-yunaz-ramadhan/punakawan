@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -26,6 +27,9 @@ import (
 type Store struct {
 	db     *sql.DB
 	server *tools.BackgroundProcess
+
+	eventsPath string
+	eventsMu   sync.Mutex
 }
 
 // Open ensures dataDir is an initialized Dolt repository, starts a Dolt
@@ -36,12 +40,20 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 	}
 	dbName := filepath.Base(dataDir)
 
+	// Per §10.2's directory layout, knowledge-events.jsonl lives in events/
+	// alongside (not inside) the knowledge/ Dolt data directory.
+	eventsDir := filepath.Join(filepath.Dir(dataDir), "events")
+	if err := os.MkdirAll(eventsDir, 0o755); err != nil {
+		return nil, fmt.Errorf("knowledge: create %s: %w", eventsDir, err)
+	}
+	eventsPath := filepath.Join(eventsDir, "knowledge-events.jsonl")
+
 	// A prior MCP host may have exited without getting a chance to stop its
 	// child Dolt process. Dolt deliberately keeps that healthy server alive
 	// and records its port in sql-server.info, so reuse it instead of starting
 	// a second server that can only fail on the repository's write lock.
 	if db, err := connectExistingServer(dataDir, dbName, 750*time.Millisecond); err == nil {
-		store := &Store{db: db}
+		store := &Store{db: db, eventsPath: eventsPath}
 		if err := store.migrate(); err != nil {
 			_ = store.Close()
 			return nil, err
@@ -73,7 +85,7 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		// startup. If the other process won the Dolt lock, its info file now
 		// points at the server we should share.
 		if existing, existingErr := connectExistingServer(dataDir, dbName, 2*time.Second); existingErr == nil {
-			store := &Store{db: existing}
+			store := &Store{db: existing, eventsPath: eventsPath}
 			if migrateErr := store.migrate(); migrateErr != nil {
 				_ = store.Close()
 				return nil, migrateErr
@@ -83,7 +95,7 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("knowledge: connect to dolt sql-server: %w%s", err, startupLogSuffix(logPath))
 	}
 
-	store := &Store{db: db, server: server}
+	store := &Store{db: db, server: server, eventsPath: eventsPath}
 	if err := store.migrate(); err != nil {
 		_ = store.Close()
 		return nil, err

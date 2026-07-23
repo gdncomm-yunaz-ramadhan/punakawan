@@ -59,6 +59,10 @@
         "verified_at": { "type": "string", "format": "date-time" }
       }
     },
+    "superseded_by": {
+      "description": "The id of the knowledge record that supersedes this one, set by Store.Supersede without deleting or overwriting this record. See punakawan-architecture-enhancement-plan.md §10.4.",
+      "type": "string"
+    },
     "relations": {
       "type": "array",
       "items": {
