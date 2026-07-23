@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
@@ -79,10 +80,27 @@ func (w *WorkspaceSource) List(ctx context.Context) ([]contract.WorkspaceSummary
 		return []contract.WorkspaceSummary{detail.WorkspaceSummary}, nil
 	}
 
-	out := make([]contract.WorkspaceSummary, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, w.summaryFor(ctx, e))
+	// Each entry's summary is independent (a non-primary workspace is
+	// app.Load'd fresh and its bd/dolt/git health probed in isolation), so
+	// describing them sequentially made List O(workspaces) in wall-clock -
+	// ~10s for a handful of workspaces, since every entry shells out to
+	// `bd list` + `bd ready` and opens a Dolt store (punokawan-d9h). Fan the
+	// per-entry work out with a bounded worker pool and reassemble in the
+	// registry's original order.
+	out := make([]contract.WorkspaceSummary, len(entries))
+	const maxConcurrent = 4
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	for i, e := range entries {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, e protocol.PanelWorkspaceRegistryEntry) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			out[i] = w.summaryFor(ctx, e)
+		}(i, e)
 	}
+	wg.Wait()
 	return out, nil
 }
 

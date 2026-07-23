@@ -55,12 +55,18 @@ type createProposalRequest struct {
 	Content            string                                                           `json:"content"`
 	ChangeSummary      string                                                           `json:"change_summary,omitempty"`
 	CommentResolutions []protocol.ArtifactRevisionProposalResultsCommentResolutionsElem `json:"comment_resolutions,omitempty"`
+	// ConsistencyAttestations is the revising agent's §11 consistency
+	// self-report (punokawan-apy.6.1). It is optional on the wire so existing
+	// callers keep working, but when supplied it is validated for completeness
+	// and any declared violation blocks acceptance.
+	ConsistencyAttestations []validation.ConsistencyAttestation `json:"consistency_attestations,omitempty"`
 }
 
 type createProposalResponse struct {
-	Proposal   protocol.ArtifactRevisionProposal `json:"proposal"`
-	Structural validation.StructuralReport       `json:"structural"`
-	Compliance validation.ReviewComplianceReport `json:"compliance"`
+	Proposal    protocol.ArtifactRevisionProposal `json:"proposal"`
+	Structural  validation.StructuralReport       `json:"structural"`
+	Compliance  validation.ReviewComplianceReport `json:"compliance"`
+	Consistency validation.ConsistencyReport      `json:"consistency"`
 }
 
 // CreateProposalHandler serves POST /api/v1/reviews/{reviewId}/proposals:
@@ -111,9 +117,16 @@ func CreateProposalHandler(reviews *artifact.ReviewStore, stores ArtifactStores)
 			return
 		}
 		compliance := validation.ValidateReviewCompliance(latestComments, req.CommentResolutions)
+		consistency := validation.ValidateConsistency(req.ConsistencyAttestations)
 
 		validationStatus := protocol.ArtifactRevisionProposalResultsValidationStatusPassed
-		if !structural.Passed || !compliance.Passed {
+		// A missing self-report (Attested=false) is surfaced but does not yet
+		// hard-block, so existing callers keep working; once the agent DOES
+		// attest, an incomplete report or a declared violation fails validation
+		// (punokawan-apy.6.1). Making attestation itself mandatory is a
+		// deliberate follow-up.
+		consistencyBlocks := consistency.Attested && !consistency.Passed
+		if !structural.Passed || !compliance.Passed || consistencyBlocks {
 			validationStatus = protocol.ArtifactRevisionProposalResultsValidationStatusFailed
 		}
 
@@ -189,7 +202,7 @@ func CreateProposalHandler(reviews *artifact.ReviewStore, stores ArtifactStores)
 			return
 		}
 
-		writeJSON(w, http.StatusCreated, createProposalResponse{Proposal: proposal, Structural: structural, Compliance: compliance})
+		writeJSON(w, http.StatusCreated, createProposalResponse{Proposal: proposal, Structural: structural, Compliance: compliance, Consistency: consistency})
 	}
 }
 
