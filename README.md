@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/punakawan-colored.png" alt="Punakawan" width="520" />
+  <img src="assets/punakawan-colored.png" alt="Punakawan" width="300" />
 </p>
 
 <h1 align="center">Punakawan</h1>
@@ -88,12 +88,73 @@ care that the result is trustworthy:
 ticket, no review, and no need for a durable trail. Punakawan is scaffolding for
 work that deserves scaffolding.
 
-## The Panel
+## How it works
 
-<p align="center">
-  <img src="assets/punakawan-black.png#gh-light-mode-only" alt="Punakawan Panel" width="150" />
-  <img src="assets/punakawan-white.png#gh-dark-mode-only" alt="Punakawan Panel" width="150" />
-</p>
+Punakawan sits between your agent client and your systems of record. The agent
+reasons; Punakawan validates, persists, gates writes, and keeps the output
+token-efficient.
+
+```mermaid
+flowchart LR
+  You([You]) -->|prompt| Agent[LLM agent client<br/>Claude Code / Codex]
+  Agent <-->|MCP / STDIO| PK[Punakawan core - Go]
+
+  subgraph Roles [Role prompts + submit_* tools]
+    Semar[Semar - orchestrate]
+    Gareng[Gareng - risk]
+    Petruk[Petruk - plan]
+    Bagong[Bagong - review]
+  end
+
+  PK --- Roles
+  PK -->|normalize| ADP[TS adapters] -->|REST v3| Jira[(Jira / Confluence)]
+  PK -->|BM25F| KN[(Knowledge store<br/>Dolt + Bleve)]
+  PK -->|task graph| BD[(Beads)]
+  PK -->|compress cmd output| RTK[RTK]
+  PK -->|embedded| Panel[[Panel UI]]
+  PK -.->|approval gate| You
+```
+
+### Example workflow
+
+Working a Jira ticket end to end. Each external write waits on **one** human
+approval per run; the agent runs its shell/dev commands through **RTK** to keep
+command output compact.
+
+```mermaid
+sequenceDiagram
+  actor U as You
+  participant A as LLM agent
+  participant P as Punakawan
+  participant J as Jira
+
+  U->>A: "Use Punakawan to work PAY-123"
+  A->>P: call_adapter_operation (getJiraIssue, compact)
+  P->>J: REST v3 read
+  J-->>P: planning fields only
+  P-->>A: compact issue (no raw envelope)
+  A->>P: semar/gareng prompts -> submit_jira_assessment
+  A->>P: petruk prompt -> submit_petruk_plan
+  A->>P: submit_task_graph (durable Beads work items)
+  A->>P: sync_jira_subtasks (deduped) [WRITE]
+  P-->>A: approval required (run-scoped)
+  A->>U: Approve / Deny?
+  U-->>A: Approve
+  A->>P: respond_to_adapter_approval -> retry
+  P->>J: create subtasks + set estimates
+  Note over A,P: implement -> run_tests (RTK-compressed) -> bagong review -> commit_task
+```
+
+Concretely, ask your agent:
+
+> Use Punakawan to read PAY-123, assess feasibility and risks with Semar and
+> Gareng, produce an implementation plan with Petruk, create the Beads tasks and
+> non-duplicate Jira subtasks, and set the original estimates.
+
+Watch it happen in the [Panel](#the-panel), and approve the single write gate
+when prompted.
+
+## The Panel
 
 Punakawan ships a local, loopback-only **visual tracker**:
 
@@ -101,12 +162,23 @@ Punakawan ships a local, loopback-only **visual tracker**:
 punakawan panel
 ```
 
+<p align="center">
+  <img src="assets/panel-overview.png" alt="Punakawan Panel — Overview" width="820" />
+</p>
+
 It renders an overview of sessions, the Beads task graph and dependencies,
 knowledge records, pending approvals, and a review mode for diffs and plans —
 theme-aware (light/dark), keyboard-accessible, and served entirely from the Go
 binary (the Svelte frontend is embedded via `go:embed`). Nothing leaves your
 machine; the listener binds to loopback and mutating routes are session- and
 CSRF-gated.
+
+The UI is one design system — theme, accent, cards, charts, tables, and the
+review flow all share the same tokens (light and dark):
+
+<p align="center">
+  <img src="assets/panel-showcase.png" alt="Punakawan Panel — component/theme system" width="820" />
+</p>
 
 ## Architecture in one line
 
@@ -139,9 +211,27 @@ for the full engineering plan, architecture, and milestone roadmap.
 | Knowledge store | **Dolt** (versioned SQL); **Bleve** for BM25F search |
 | Task graph | **Beads (bd)** — durable, syncable issue tracker |
 | Protocol | **MCP (Model Context Protocol)** over STDIO; JSON-Schema-generated Go structs + TS/Zod types |
+| Token efficiency | **RTK (Rust Token Killer)** — compresses command output; installed by default and urged on the agent |
 | Integrations | **Jira Cloud REST v3** and **Confluence** direct (no Rovo MCP); roadmap: Sonar, Trivy, OSV |
 
 The reasoning is **BYO-LLM**: Punakawan is deliberately model-agnostic.
+
+### Token efficiency &amp; RTK
+
+Model context is the scarce resource, so Punakawan spends it deliberately:
+
+- **Compact by default** — Jira reads request only planning fields, JQL results
+  are capped, ADF is flattened to plain text, and raw REST envelopes are omitted
+  unless you ask for `includeRaw: true`.
+- **RTK-native** — **RTK (Rust Token Killer)** is installed by
+  the setup script and wired in as Punakawan's command-output compressor: dev and
+  test commands Punakawan runs are routed through RTK so their output costs 60–90%
+  fewer tokens. Punakawan also **urges the connected agent to run its own shell
+  commands through RTK** (via the MCP server instructions), so the savings extend
+  to everything the agent does in the session. If `rtk` is not on `PATH`,
+  Punakawan degrades gracefully to raw output.
+- **Bounded knowledge** — search results, task context, and dossiers are
+  scope-filtered and capped rather than dumping the whole store into context.
 
 ## Install on macOS
 
@@ -177,6 +267,20 @@ project permissions. It also asks for the site host (for example
 `yourteam.atlassian.net`) and derives the cloud ID automatically. No per-project
 Punakawan file is required; an optional `.punakawan/workspace.yaml` can override
 global defaults.
+
+### Other platforms
+
+- **macOS** — fully supported via `scripts/install.sh` (Homebrew-based).
+- **Linux** — supported by building from source (`make bootstrap && make build`).
+  The installer script is macOS-only, but the Go core, TS adapters, and panel
+  are portable; `os.UserConfigDir()` resolves config to `~/.config/punakawan`.
+  A native Linux installer is not yet provided — register the MCP launcher with
+  your client manually (see `scripts/configure-agent.sh`).
+- **Windows** — **not yet supported.** The tool supervisor uses POSIX
+  process-group termination (`internal/tools/supervisor.go`) and will not compile
+  under `GOOS=windows` in its current form. Config resolution (`%AppData%`) and
+  the panel are already portable; Windows support is tracked as follow-up work
+  (a Windows supervisor backend + a PowerShell installer). WSL2 works today.
 
 ### Jira authentication
 
