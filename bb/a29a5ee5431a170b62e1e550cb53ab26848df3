@@ -1,0 +1,69 @@
+web/panel/tests/ApprovalsList.test.ts
+  6c4a5633395342b7 1-64
+web/panel/src/routes/workspaces/WorkspaceSummary.svelte
+  6c4a5633395342b7 91-99
+web/panel/src/routes/approvals/ApprovalsList.svelte
+  6c4a5633395342b7 1-226
+internal/panel/server/server_test.go
+  6c4a5633395342b7 18,481-602
+internal/panel/api/evidence_handler.go
+  6c4a5633395342b7 1-77
+internal/panel/contract/readers.go
+  6c4a5633395342b7 176-180,184-213
+internal/redact/redact_test.go
+  6c4a5633395342b7 1-48
+internal/panel/sources/sources_test.go
+  6c4a5633395342b7 14,759-922
+internal/panel/api/approval_handler_test.go
+  6c4a5633395342b7 1-89
+internal/panel/api/evidence_handler_test.go
+  6c4a5633395342b7 1-154
+internal/redact/redact.go
+  6c4a5633395342b7 1-41
+web/panel/src/routes/system/SystemPage.svelte
+  6c4a5633395342b7 1-83
+internal/panel/api/approval_handler.go
+  6c4a5633395342b7 1-48
+web/panel/src/lib/components/EvidenceItem.svelte
+  6c4a5633395342b7 1-150
+internal/panel/sources/evidence_source.go
+  6c4a5633395342b7 4-5,8-12,16-17,21-41,105-310
+web/panel/src/routes/sessions/SessionDetail.svelte
+  6c4a5633395342b7 6,10,13,23,33,35,95-107,363-368
+web/panel/tests/SessionDetail.test.ts
+  6c4a5633395342b7 1,73,89-131
+web/panel/src/lib/components/Sidebar.svelte
+  6c4a5633395342b7 8
+internal/panel/sources/workspace_source.go
+  6c4a5633395342b7 10-11,202-204,230-299
+internal/panel/server/server.go
+  6c4a5633395342b7 117-120
+web/panel/src/lib/api/client.ts
+  6c4a5633395342b7 76-85,454-544
+web/panel/tests/SystemPage.test.ts
+  6c4a5633395342b7 1-40
+web/panel/src/App.svelte
+  6c4a5633395342b7 16-17,36,54-58
+internal/adapters/registry.go
+  6c4a5633395342b7 89-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "bba29a5ee5431a170b62e1e550cb53ab26848df3",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1862,
+      "overriden_lines": 0
+    }
+  }
+}
