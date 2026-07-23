@@ -29,7 +29,7 @@ func SessionsHandler(reader contract.SessionReader) http.HandlerFunc {
 
 		sessions, err := reader.List(r.Context(), r.PathValue("workspaceId"), filter)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeError(w, listErrorStatus(err), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": sessions})
@@ -45,21 +45,5 @@ func SessionHandler(reader contract.SessionReader) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, detail)
-	}
-}
-
-// SessionTimelineHandler serves
-// GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}/timeline: the
-// same event list SessionHandler embeds in its response, exposed as its
-// own endpoint per §11.3 for a caller that wants the timeline without the
-// rest of the session detail.
-func SessionTimelineHandler(reader contract.SessionReader) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		detail, err := reader.Get(r.Context(), r.PathValue("workspaceId"), r.PathValue("sessionId"))
-		if err != nil {
-			writeError(w, http.StatusNotFound, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": detail.Timeline})
 	}
 }

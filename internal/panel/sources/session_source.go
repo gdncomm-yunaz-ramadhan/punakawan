@@ -3,9 +3,9 @@ package sources
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/sessionsummary"
@@ -20,15 +20,20 @@ type SessionSource struct {
 
 func (s *SessionSource) checkWorkspace(workspaceID string) error {
 	if workspaceID != s.App.Workspace.ID {
-		return fmt.Errorf("sources: workspace %q is not available (only %q is)", workspaceID, s.App.Workspace.ID)
+		return fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, s.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 	return nil
 }
 
 // counts derives sessionsummary.Counts for run from its own evidence
-// ledger/journal plus a workspace-wide bd snapshot (see
-// PanelSessionSummary.task_counts's documented caveat: it is not
-// run-scoped).
+// ledger and event journal.
+//
+// It deliberately does NOT populate TaskCounts: bd issues carry no run_id,
+// so the only bd data available is a workspace-wide snapshot that is
+// identical for every run. Attaching that same total to every session
+// summary misrepresented workspace-wide counts as per-session ones, so the
+// field is now omitted (the protocol keeps it optional) rather than filled
+// with a misleading value.
 func (s *SessionSource) counts(ctx context.Context, run protocol.WorkflowRun) sessionsummary.Counts {
 	var counts sessionsummary.Counts
 
@@ -51,28 +56,6 @@ func (s *SessionSource) counts(ctx context.Context, run protocol.WorkflowRun) se
 		}
 	}
 
-	if beads.Available(ctx, s.App.Supervisor, s.App.Workspace.Root) {
-		if issues, err := beads.List(ctx, s.App.Supervisor, s.App.Workspace.Root, beads.ListOptions{}); err == nil {
-			tc := protocol.PanelSessionSummaryTaskCounts{}
-			total, open, inProgress, blocked, closed := 0, 0, 0, 0, 0
-			for _, issue := range issues {
-				total++
-				switch issue.Status {
-				case "open":
-					open++
-				case "in_progress":
-					inProgress++
-				case "blocked":
-					blocked++
-				case "closed":
-					closed++
-				}
-			}
-			tc.Total, tc.Open, tc.InProgress, tc.Blocked, tc.Closed = &total, &open, &inProgress, &blocked, &closed
-			counts.TaskCounts = &tc
-		}
-	}
-
 	return counts
 }
 
@@ -86,7 +69,12 @@ func (s *SessionSource) List(ctx context.Context, workspaceID string, filter con
 		return nil, fmt.Errorf("sources: list sessions: %w", err)
 	}
 
-	out := []protocol.PanelSessionSummary{}
+	// Workflow.Current returns a map, whose iteration order Go randomizes;
+	// collect the filtered runs and sort them newest-first (by UpdatedAt,
+	// falling back to CreatedAt) so that both this list and the Overview's
+	// derived "recent sessions" are deterministic and actually recent,
+	// rather than an arbitrary sample of the map cut off by Limit.
+	runs := make([]protocol.WorkflowRun, 0, len(current))
 	for _, run := range current {
 		if filter.Status != "" && string(run.State) != filter.Status {
 			continue
@@ -97,6 +85,22 @@ func (s *SessionSource) List(ctx context.Context, workspaceID string, filter con
 		if filter.Role != "" && (run.ActiveRole == nil || string(*run.ActiveRole) != filter.Role) {
 			continue
 		}
+		runs = append(runs, run)
+	}
+	sort.SliceStable(runs, func(i, j int) bool {
+		ti := runs[i].UpdatedAt
+		if ti.IsZero() {
+			ti = runs[i].CreatedAt
+		}
+		tj := runs[j].UpdatedAt
+		if tj.IsZero() {
+			tj = runs[j].CreatedAt
+		}
+		return ti.After(tj)
+	})
+
+	out := []protocol.PanelSessionSummary{}
+	for _, run := range runs {
 		out = append(out, sessionsummary.Build(run, s.counts(ctx, run)))
 		if filter.Limit > 0 && len(out) >= filter.Limit {
 			break

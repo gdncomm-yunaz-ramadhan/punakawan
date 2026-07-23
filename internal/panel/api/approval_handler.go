@@ -28,7 +28,7 @@ func ApprovalsHandler(reader contract.ApprovalReader) http.HandlerFunc {
 		filter := contract.ApprovalFilter{Status: r.URL.Query().Get("status")}
 		recs, err := reader.List(r.Context(), r.PathValue("workspaceId"), filter)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeError(w, listErrorStatus(err), err)
 			return
 		}
 

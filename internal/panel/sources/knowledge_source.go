@@ -20,7 +20,7 @@ type KnowledgeSource struct {
 
 func (k *KnowledgeSource) checkWorkspace(workspaceID string) error {
 	if workspaceID != k.App.Workspace.ID {
-		return fmt.Errorf("sources: workspace %q is not available (only %q is)", workspaceID, k.App.Workspace.ID)
+		return fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, k.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 	return nil
 }

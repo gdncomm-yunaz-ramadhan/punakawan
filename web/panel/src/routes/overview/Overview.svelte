@@ -39,9 +39,15 @@
     pending_approval: "Pending approval",
     blocked_tasks: "Blocked tasks",
     unavailable_workspace: "Unavailable workspace",
-    source_failure: "Source failure",
     stale_session: "Stale session",
   };
+
+  // Recent sessions are shown newest-first (updated_at desc) so the table's
+  // default order is deterministic and actually recent. The backend already
+  // sorts them this way; this keeps the guarantee if that ever changes.
+  function sortRecent(list: PanelSessionSummary[]): PanelSessionSummary[] {
+    return [...list].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  }
 
   const recentSessionColumns: Column<PanelSessionSummary>[] = [
     { key: "objective", label: "Objective", primary: true, render: (s) => s.objective || s.id },
@@ -80,6 +86,9 @@
     />
     <TableCard title="Active Now" size="wide" state={ov.active_sessions.length === 0 ? "empty" : "default"} emptyMessage="No active sessions.">
       {#snippet children()}
+        {#if ov.primary_workspace_id}
+          <p class="scope-note">Sessions and approvals below are scoped to the primary workspace ({ov.primary_workspace_id}).</p>
+        {/if}
         <ul class="sessions">
           {#each ov.active_sessions as s (s.id)}
             <li>
@@ -117,7 +126,7 @@
       {#snippet children()}
         <DataTable
           columns={recentSessionColumns}
-          rows={ov.recent_sessions}
+          rows={sortRecent(ov.recent_sessions)}
           page={recentSessionsPage}
           pageSize={5}
           onPageChange={(p) => (recentSessionsPage = p)}
@@ -150,6 +159,11 @@
 <style>
   .muted {
     color: var(--color-text-muted);
+  }
+  .scope-note {
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    margin: 0 0 0.5rem;
   }
   .error {
     color: var(--color-danger);

@@ -48,7 +48,7 @@
   nav {
     width: 220px;
     flex-shrink: 0;
-    border-right: 1px solid #e0e0e0;
+    border-right: 1px solid var(--color-border);
     padding: 1rem 0.5rem;
   }
   .brand {
@@ -59,7 +59,7 @@
     margin-bottom: 0.5rem;
     text-decoration: none;
     color: inherit;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--color-border);
   }
   .brand-name {
     font-size: 1.05rem;
@@ -83,18 +83,18 @@
     padding: 0.4rem 0.6rem;
     border-radius: 6px;
     text-decoration: none;
-    color: #333;
+    color: var(--color-text);
   }
   .link:hover {
-    background: #f0f0f0;
+    background: var(--color-surface-subtle);
   }
   .link.active {
-    background: #e8eaf6;
-    color: #3949ab;
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
     font-weight: 600;
   }
   .link.disabled {
-    color: #aaa;
+    color: var(--color-text-muted);
     cursor: default;
   }
 
@@ -102,7 +102,7 @@
     nav {
       width: 100%;
       border-right: none;
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 1px solid var(--color-border);
       padding: 0.5rem;
     }
     ul {

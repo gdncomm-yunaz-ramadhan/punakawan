@@ -198,7 +198,7 @@
     word-break: break-all;
   }
   .meta {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
     margin: 0.15rem 0;
   }
@@ -206,7 +206,7 @@
     font-size: 0.95rem;
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
   h2 {
     font-size: 1rem;
@@ -218,7 +218,7 @@
     margin: 0.5rem 0 1.25rem;
   }
   .card {
-    border: 1px solid #ddd;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.6rem 0.8rem;
     display: grid;
@@ -228,14 +228,14 @@
     font-size: 1.3rem;
   }
   .card span {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
   }
   .status {
     font-size: 0.8rem;
     padding: 0.1rem 0.4rem;
     border-radius: 4px;
-    background: #eee;
+    background: var(--color-surface-subtle);
   }
   ol.timeline {
     list-style: none;
@@ -247,18 +247,18 @@
     display: flex;
     gap: 0.6rem;
     align-items: center;
-    border: 1px solid #eee;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.4rem 0.6rem;
     font-size: 0.85rem;
   }
   ol.timeline li.failure,
   ul.errors li {
-    border-color: #f3c2c2;
-    background: #fff8f8;
+    border-color: var(--color-danger);
+    background: var(--color-accent-soft);
   }
   .time {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
     min-width: 5.5rem;
   }
@@ -266,24 +266,24 @@
     flex: 1;
   }
   .role {
-    color: #3949ab;
+    color: var(--color-accent);
     font-size: 0.8rem;
   }
   .result {
     font-size: 0.75rem;
     padding: 0.05rem 0.4rem;
     border-radius: 4px;
-    background: #eee;
+    background: var(--color-surface-subtle);
   }
   .result-failure,
   .result-timeout,
   .result-cancelled {
-    background: #fdecea;
-    color: #c62828;
+    background: var(--color-accent-soft);
+    color: var(--color-danger);
   }
   .result-success {
-    background: #e6f4ea;
-    color: #1e7d32;
+    background: var(--color-accent-soft);
+    color: var(--color-success);
   }
   .lanes {
     display: grid;
@@ -291,7 +291,7 @@
     gap: 0.75rem;
   }
   .lane {
-    border: 1px solid #eee;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.5rem 0.6rem;
     min-width: 0;
@@ -310,10 +310,10 @@
     font-size: 0.8rem;
   }
   .lane li.failure {
-    color: #c62828;
+    color: var(--color-danger);
   }
   .empty {
-    color: #999;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
     margin: 0;
   }
@@ -324,7 +324,7 @@
     gap: 0.5rem;
   }
   ul.capsules li {
-    border: 1px solid #eee;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
   }
@@ -335,11 +335,11 @@
     text-transform: capitalize;
   }
   .digest {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.75rem;
   }
   .refs {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
     margin: 0.2rem 0 0;
   }
@@ -357,7 +357,7 @@
     font-size: 0.85rem;
   }
   .hint {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
   }
   ul.evidence {

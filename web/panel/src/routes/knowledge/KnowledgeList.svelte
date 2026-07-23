@@ -3,6 +3,7 @@
   import { listKnowledge, type KnowledgeRecord, type SearchResult } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
 
   interface Props {
     workspaceId: string;
@@ -62,6 +63,17 @@
     observed: "Observed",
     stale: "Stale",
   };
+
+  const validityVariants: Record<string, BadgeVariant> = {
+    verified: "success",
+    disputed: "danger",
+    invalid: "danger",
+    superseded: "warning",
+    stale: "warning",
+    assumed: "info",
+    inferred: "info",
+    observed: "info",
+  };
 </script>
 
 <div class="layout">
@@ -114,8 +126,11 @@
               <div class="row-head">
                 <span class="type">{row.record.type}</span>
                 <strong>{row.record.title}</strong>
-                <span class="validity validity-{row.record.validity.state}">
-                  {validityLabels[row.record.validity.state] ?? row.record.validity.state}
+                <span class="validity">
+                  <StatusBadge
+                    variant={validityVariants[row.record.validity.state] ?? "neutral"}
+                    label={validityLabels[row.record.validity.state] ?? row.record.validity.state}
+                  />
                 </span>
               </div>
               {#if row.record.summary}<p class="summary">{row.record.summary}</p>{/if}
@@ -153,14 +168,16 @@
     display: grid;
     gap: 0.2rem;
     font-size: 0.8rem;
-    color: #444;
+    color: var(--color-text-muted);
   }
   .filters input,
   .filters select {
     font-size: 0.85rem;
     padding: 0.3rem 0.4rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
   }
   .checkbox {
     flex-direction: row;
@@ -177,17 +194,18 @@
   .row {
     width: 100%;
     text-align: left;
-    border: 1px solid #ddd;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.6rem 0.8rem;
-    background: white;
+    background: var(--color-surface);
+    color: var(--color-text);
     cursor: pointer;
     font: inherit;
     display: grid;
     gap: 0.2rem;
   }
   .row:hover {
-    border-color: #3949ab;
+    border-color: var(--color-accent);
   }
   .row-head {
     display: flex;
@@ -196,53 +214,29 @@
   }
   .type {
     font-size: 0.7rem;
-    color: #666;
+    color: var(--color-text-muted);
     text-transform: uppercase;
   }
   .validity {
     margin-left: auto;
-    font-size: 0.75rem;
-    padding: 0.05rem 0.4rem;
-    border-radius: 4px;
-    background: #eee;
-  }
-  .validity-verified {
-    background: #e6f4ea;
-    color: #1e7d32;
-  }
-  .validity-disputed,
-  .validity-invalid {
-    background: #fdecea;
-    color: #c62828;
-  }
-  .validity-superseded,
-  .validity-stale {
-    background: #fff4e5;
-    color: #9a6700;
-  }
-  .validity-assumed,
-  .validity-inferred,
-  .validity-observed {
-    background: #e8eaf6;
-    color: #3949ab;
   }
   .summary {
     margin: 0;
     font-size: 0.85rem;
-    color: #333;
+    color: var(--color-text);
   }
   .meta {
     margin: 0;
     font-size: 0.75rem;
-    color: #888;
+    color: var(--color-text-muted);
   }
   .explanation {
     margin: 0;
     font-size: 0.75rem;
-    color: #3949ab;
+    color: var(--color-accent);
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
 
   @media (max-width: 720px) {

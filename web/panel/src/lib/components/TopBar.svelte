@@ -40,7 +40,7 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--color-border);
   }
   .logo {
     display: block;
@@ -62,11 +62,11 @@
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
-    background: #eee;
+    background: var(--color-surface-subtle);
   }
   .version,
   time {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
   }
   .connection {
@@ -74,15 +74,15 @@
     align-items: center;
     gap: 0.3rem;
     font-size: 0.8rem;
-    color: #666;
+    color: var(--color-text-muted);
   }
   .connection-open {
-    color: #1e7d32;
+    color: var(--color-success);
   }
   .connection-error {
-    color: #c62828;
+    color: var(--color-danger);
   }
   .connection-connecting {
-    color: #9a6700;
+    color: var(--color-warning);
   }
 </style>

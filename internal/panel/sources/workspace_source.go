@@ -91,7 +91,7 @@ func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract
 		return w.describe(ctx, w.App, nil)
 	}
 	if w.Registry == nil {
-		return contract.WorkspaceDetail{}, fmt.Errorf("sources: workspace %q is not available (only %q is)", workspaceID, w.App.Workspace.ID)
+		return contract.WorkspaceDetail{}, fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, w.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 
 	entry, err := w.Registry.Get(workspaceID)
@@ -173,13 +173,28 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 	if !beads.Available(ctx, a.Supervisor, a.Workspace.Root) {
 		msg := "bd binary not found or not initialized in this workspace"
 		health = append(health, protocol.PanelSourceHealth{Source: "bd", Availability: protocol.PanelSourceHealthAvailabilityUnavailable, Message: &msg, CheckedAt: now})
-	} else if issues, err := beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{}); err != nil {
+	} else if issues, err := beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{Limit: -1}); err != nil {
 		health = append(health, healthDown("bd", err, now))
 	} else {
+		// The blocked count must match the status board's boardStatus,
+		// which treats an "open" issue bd does not currently consider ready
+		// (an unmet "blocks" dependency) as blocked - bd does not flip such
+		// an issue's stored Status to "blocked". Counting only
+		// Status=="blocked" under-reports against the board and overview, so
+		// fold in the same readiness set boardStatus uses (bd ready).
+		ready := map[string]bool{}
+		if readyIssues, err := beads.Ready(ctx, a.Supervisor, a.Workspace.Root, beads.ReadyOptions{}); err == nil {
+			for _, ri := range readyIssues {
+				ready[ri.ID] = true
+			}
+		}
 		for _, issue := range issues {
 			switch issue.Status {
 			case "open":
 				openTasks++
+				if !ready[issue.ID] {
+					blockedTasks++
+				}
 			case "blocked":
 				blockedTasks++
 			}
@@ -223,6 +238,7 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 		KnowledgeCount:     knowledgeCount,
 		LastActivityAt:     now,
 		Pinned:             pinned,
+		Primary:            a.Workspace.ID == w.App.Workspace.ID,
 	}
 	return contract.WorkspaceDetail{WorkspaceSummary: summary, Health: health}, nil
 }

@@ -32,7 +32,7 @@ func TasksHandler(reader contract.TaskReader) http.HandlerFunc {
 
 		issues, err := reader.List(r.Context(), r.PathValue("workspaceId"), filter)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeError(w, listErrorStatus(err), err)
 			return
 		}
 		// blocked=true filters by BoardStatus rather than passing
@@ -70,7 +70,7 @@ func TaskGraphHandler(reader contract.TaskReader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		graph, err := reader.Dependencies(r.Context(), r.PathValue("workspaceId"))
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeError(w, listErrorStatus(err), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, graph)
