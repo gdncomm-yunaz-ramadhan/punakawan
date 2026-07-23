@@ -3,11 +3,13 @@
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import StickyActionBar from "../../lib/components/StickyActionBar.svelte";
   import BottomSheet from "../../lib/components/overlay/BottomSheet.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import PlanDocument, { type SectionCommentRequest } from "../../lib/components/review/PlanDocument.svelte";
   import CommentRail from "../../lib/components/review/CommentRail.svelte";
   import AddCommentPopover from "../../lib/components/review/AddCommentPopover.svelte";
   import ReviewInstructionPanel from "../../lib/components/review/ReviewInstructionPanel.svelte";
+  import ActiveRevisionSummary from "../../lib/components/review/ActiveRevisionSummary.svelte";
   import { parseDocument, groupIntoSections, buildAnchor } from "../../lib/review/markdown";
   import {
     getArtifactCurrent,
@@ -17,11 +19,21 @@
     createComment,
     updateComment,
     deleteComment,
+    submitReview,
+    cancelReview,
+    getTimeline,
     type ArtifactContent,
     type ArtifactReview,
     type ArtifactComment,
+    type ArtifactRevisionRequest,
+    type RunReference,
   } from "../../lib/review/api";
   import { SessionExpiredError } from "../../lib/session";
+
+  // Statuses nothing further will change - once observed, polling stops
+  // (§4 "don't poll indefinitely ... since nothing further will change").
+  const TERMINAL_STATUSES = new Set(["accepted", "rejected", "cancelled", "failed"]);
+  const TIMELINE_POLL_MS = 8000;
 
   interface Props {
     reviewId: string;
@@ -59,6 +71,16 @@
 
   let instructionPanel: ReviewInstructionPanel | undefined = $state();
 
+  // Submit/cancel/timeline state (Phase 4: submit and retrigger).
+  let submitting = $state(false);
+  let submitError = $state<string | null>(null);
+  let cancelling = $state(false);
+  let cancelError = $state<string | null>(null);
+  let cancelConfirmOpen = $state(false);
+  let revisionRequest = $state<ArtifactRevisionRequest | null>(null);
+  let run = $state<RunReference | null>(null);
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
+
   const sections = $derived(artifact ? groupIntoSections(parseDocument(artifact.content)) : []);
   const documentHeadingOrder = $derived(sections.map((s) => s.headingPath.join(" › ")));
 
@@ -85,11 +107,50 @@
       ]);
       artifact = content;
       comments = commentList.items;
+      if (r.metadata.status !== "draft") {
+        startPollingIfNeeded();
+      }
     } catch (e) {
       loadError = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
     }
+  }
+
+  function stopPolling() {
+    if (pollTimer !== undefined) {
+      clearInterval(pollTimer);
+      pollTimer = undefined;
+    }
+  }
+
+  // Polls GET .../timeline on an interval so status changes made outside
+  // this tab (or by a future agent) show up without a manual reload -
+  // stops once a terminal status is observed, since nothing further will
+  // change (§4). Restarting navigation to this route always re-fetches
+  // from scratch (§5 "restart recovery"), so there is no separate
+  // client-only state to reconnect to.
+  async function pollTimeline() {
+    try {
+      const t = await getTimeline(reviewId);
+      review = t.review;
+      revisionRequest = t.revision_request ?? null;
+      run = t.run ?? null;
+      const commentList = await listComments(reviewId);
+      comments = commentList.items;
+      if (TERMINAL_STATUSES.has(t.review.metadata.status)) {
+        stopPolling();
+      }
+    } catch {
+      // A transient poll failure isn't worth surfacing as a page-level
+      // error - the next tick (or a manual reload) tries again.
+    }
+  }
+
+  function startPollingIfNeeded() {
+    if (pollTimer !== undefined) return;
+    if (!review || TERMINAL_STATUSES.has(review.metadata.status)) return;
+    pollTimer = setInterval(pollTimeline, TIMELINE_POLL_MS);
   }
 
   function beforeUnloadHandler(e: BeforeUnloadEvent) {
@@ -113,6 +174,7 @@
       window.removeEventListener("resize", updateObservedWidth);
       window.removeEventListener("beforeunload", beforeUnloadHandler);
     }
+    stopPolling();
   });
 
   async function saveInstruction(instruction: string) {
@@ -191,6 +253,88 @@
       busyCommentId = null;
     }
   }
+
+  // Submits the review's current comment/instruction state for revision
+  // (§8's Automatic Retrigger Flow). Guarded by `submitting` so a
+  // double-click can't fire two requests - the backend is idempotent
+  // either way, but this avoids redundant network chatter and a
+  // confusing double-toast. Both 200 (idempotent replay) and 201 (fresh
+  // submission) transition into the active-revision view identically.
+  async function submitForRevision() {
+    if (submitting || !review) return;
+    submitting = true;
+    submitError = null;
+    try {
+      const result = await submitReview(reviewId);
+      revisionRequest = result.revision_request;
+      run = result.run;
+      // The backend flips status to "queued" on a fresh submit (and an
+      // idempotent replay may have already advanced further) - refetch
+      // via the timeline endpoint, the same real source of truth the
+      // poll below uses, rather than assuming a status client-side.
+      const t = await getTimeline(reviewId);
+      review = t.review;
+      revisionRequest = t.revision_request ?? revisionRequest;
+      run = t.run ?? run;
+      startPollingIfNeeded();
+    } catch (e) {
+      if (e instanceof SessionExpiredError) {
+        sessionExpired = true;
+      } else {
+        submitError = e instanceof Error ? e.message : String(e);
+      }
+    } finally {
+      submitting = false;
+    }
+  }
+
+  function openCancelConfirm() {
+    cancelError = null;
+    cancelConfirmOpen = true;
+  }
+
+  function closeCancelConfirm() {
+    cancelConfirmOpen = false;
+  }
+
+  async function confirmCancel() {
+    if (cancelling) return;
+    cancelling = true;
+    cancelError = null;
+    try {
+      review = await cancelReview(reviewId);
+      cancelConfirmOpen = false;
+      stopPolling();
+    } catch (e) {
+      if (e instanceof SessionExpiredError) {
+        sessionExpired = true;
+        cancelConfirmOpen = false;
+      } else {
+        cancelError = e instanceof Error ? e.message : String(e);
+      }
+    } finally {
+      cancelling = false;
+    }
+  }
+
+  // Answers a clarification question by reusing the existing comment
+  // PATCH endpoint (no new comment-editing machinery) - "resolved_by_user"
+  // is the status transition modeling "the user answered."
+  async function answerClarification(commentId: string, body: string) {
+    busyCommentId = commentId;
+    try {
+      const updated = await updateComment(reviewId, commentId, { body, status: "resolved_by_user" });
+      comments = comments.map((c) => (c.id === commentId ? updated : c));
+    } catch (e) {
+      if (e instanceof SessionExpiredError) {
+        sessionExpired = true;
+      } else {
+        commentError = e instanceof Error ? e.message : String(e);
+      }
+    } finally {
+      busyCommentId = null;
+    }
+  }
 </script>
 
 <div data-testid="review-mode" data-layout={isDesktop ? "desktop" : "mobile"}>
@@ -210,41 +354,81 @@
     />
 
     {#if !isDraft}
-      <p class="readonly-note" role="status">
-        This review is {review.metadata.status.replace(/_/g, " ")} and is read-only in this phase's UI.
-      </p>
-    {/if}
-
-    {#if commentDraftDirty && pendingAnchor}
-      <AddCommentPopover
-        headingPath={pendingAnchor.headingPath}
-        quotedText={pendingAnchor.quotedText}
-        submitting={submittingComment}
-        onsubmit={submitComment}
-        oncancel={cancelComment}
+      <!-- Submitted (or later) - the document + comment-editing UI no
+      longer applies (§8's freeze on submit), so this renders the
+      active-revision status view instead. -->
+      <ActiveRevisionSummary
+        status={review.metadata.status}
+        baseVersion={review.artifact.version}
+        baseRevisionHash={review.artifact.revision_hash}
+        {comments}
+        {revisionRequest}
+        {run}
+        busy={cancelling}
+        oncancel={openCancelConfirm}
+        onanswerClarification={answerClarification}
       />
-    {/if}
-    {#if commentError}
-      <p class="error" role="alert">{commentError}</p>
-    {/if}
+      {#if cancelError}
+        <p class="error" role="alert">{cancelError}</p>
+      {/if}
+    {:else}
+      {#if commentDraftDirty && pendingAnchor}
+        <AddCommentPopover
+          headingPath={pendingAnchor.headingPath}
+          quotedText={pendingAnchor.quotedText}
+          submitting={submittingComment}
+          onsubmit={submitComment}
+          oncancel={cancelComment}
+        />
+      {/if}
+      {#if commentError}
+        <p class="error" role="alert">{commentError}</p>
+      {/if}
 
-    <ReviewInstructionPanel
-      bind:this={instructionPanel}
-      instruction={review.review.instruction ?? ""}
-      onsave={saveInstruction}
-    />
+      <ReviewInstructionPanel
+        bind:this={instructionPanel}
+        instruction={review.review.instruction ?? ""}
+        onsave={saveInstruction}
+      />
 
-    {#if isDesktop}
-      <div class="two-pane">
-        <div class="document-pane">
+      {#if isDesktop}
+        <div class="two-pane">
+          <div class="document-pane">
+            <PlanDocument
+              content={artifact.content}
+              onCommentSection={openSectionComment}
+              onCommentSelection={openSectionComment}
+            />
+          </div>
+          <div class="comment-pane">
+            <h2 class="rail-heading">Comments ({openCommentCount})</h2>
+            <CommentRail
+              {comments}
+              {documentHeadingOrder}
+              editable={isDraft}
+              {busyCommentId}
+              onEditComment={editComment}
+              onDeleteComment={removeComment}
+            />
+          </div>
+        </div>
+      {:else}
+        <div class="mobile-document">
           <PlanDocument
             content={artifact.content}
             onCommentSection={openSectionComment}
             onCommentSelection={openSectionComment}
           />
         </div>
-        <div class="comment-pane">
-          <h2 class="rail-heading">Comments ({openCommentCount})</h2>
+        <button
+          type="button"
+          class="fab"
+          data-testid="view-comments-toggle"
+          onclick={() => (mobileSheetOpen = true)}
+        >
+          View Comments ({openCommentCount})
+        </button>
+        <BottomSheet open={mobileSheetOpen} title="Comments" onclose={() => (mobileSheetOpen = false)}>
           <CommentRail
             {comments}
             {documentHeadingOrder}
@@ -253,53 +437,41 @@
             onEditComment={editComment}
             onDeleteComment={removeComment}
           />
-        </div>
-      </div>
-    {:else}
-      <div class="mobile-document">
-        <PlanDocument
-          content={artifact.content}
-          onCommentSection={openSectionComment}
-          onCommentSelection={openSectionComment}
-        />
-      </div>
-      <button
-        type="button"
-        class="fab"
-        data-testid="view-comments-toggle"
-        onclick={() => (mobileSheetOpen = true)}
-      >
-        View Comments ({openCommentCount})
-      </button>
-      <BottomSheet open={mobileSheetOpen} title="Comments" onclose={() => (mobileSheetOpen = false)}>
-        <CommentRail
-          {comments}
-          {documentHeadingOrder}
-          editable={isDraft}
-          {busyCommentId}
-          onEditComment={editComment}
-          onDeleteComment={removeComment}
-        />
-      </BottomSheet>
-    {/if}
+        </BottomSheet>
+      {/if}
 
-    <StickyActionBar>
-      <button type="button" class="submit-review" disabled title="Submitting is implemented in the next phase">
-        Submit Review
-      </button>
-    </StickyActionBar>
+      {#if submitError}
+        <p class="error" role="alert">{submitError}</p>
+      {/if}
+
+      <StickyActionBar>
+        <button type="button" class="submit-review" disabled={submitting} onclick={submitForRevision}>
+          {submitting ? "Submitting…" : "Submit Review"}
+        </button>
+      </StickyActionBar>
+    {/if}
   {/if}
 </div>
 
+<Dialog open={cancelConfirmOpen} title="Cancel this review?" onclose={closeCancelConfirm}>
+  <p>
+    This will mark the review as cancelled. You can always start a new review for this artifact later, but this
+    specific submission's tracked run will stop being followed.
+  </p>
+  {#if cancelError}
+    <p class="error" role="alert">{cancelError}</p>
+  {/if}
+  <div class="dialog-actions">
+    <button type="button" class="secondary-button" onclick={closeCancelConfirm} disabled={cancelling}>
+      Keep Review
+    </button>
+    <button type="button" class="danger-button" onclick={confirmCancel} disabled={cancelling}>
+      {cancelling ? "Cancelling…" : "Cancel Review"}
+    </button>
+  </div>
+</Dialog>
+
 <style>
-  .readonly-note {
-    background: var(--color-accent-soft);
-    color: var(--color-text);
-    border-radius: 6px;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-    margin: 0 0 1rem;
-  }
   .error {
     color: var(--color-danger);
     font-size: 0.85rem;
@@ -357,11 +529,47 @@
   .submit-review {
     border: none;
     border-radius: 6px;
-    background: var(--color-border-strong);
-    color: var(--color-surface);
+    background: var(--color-accent);
+    color: var(--color-accent-contrast);
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
-    cursor: not-allowed;
+    cursor: pointer;
     min-height: 40px;
+  }
+  .submit-review:disabled {
+    background: var(--color-border-strong);
+    color: var(--color-surface);
+    cursor: not-allowed;
+  }
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  .secondary-button {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    min-height: 40px;
+  }
+  .danger-button {
+    border: none;
+    border-radius: 6px;
+    background: var(--color-danger);
+    color: var(--color-accent-contrast);
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    min-height: 40px;
+  }
+  .secondary-button:disabled,
+  .danger-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>
