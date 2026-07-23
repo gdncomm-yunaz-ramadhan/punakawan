@@ -1,0 +1,25 @@
+internal/panel/server/server.go
+  3415a4432044e41f 46,206,208-211,221-231,237-241
+internal/app/app.go
+  3415a4432044e41f 9,51-60,159-171,179-181,188-192,227-229,236-237,252-255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "b46c3ad6d895b04f9e7df1300914c2f999d1ebfd",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 66,
+      "total_deletions": 1,
+      "accepted_lines": 63,
+      "overriden_lines": 0
+    }
+  }
+}
