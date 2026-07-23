@@ -43,6 +43,7 @@ type Server struct {
 
 	hub                *events.Hub
 	stopReconciliation context.CancelFunc
+	reconcileDone      chan struct{}
 
 	sessions     *session.Manager
 	bootstrapURL string
@@ -202,8 +203,12 @@ func (s *Server) Start() error {
 
 	reconcileCtx, cancel := context.WithCancel(context.Background())
 	s.stopReconciliation = cancel
+	s.reconcileDone = make(chan struct{})
 	reconciler := &events.Reconciler{Hub: s.hub, Readers: s.readers, WorkspaceID: s.app.Workspace.ID}
-	go reconciler.Run(reconcileCtx)
+	go func() {
+		defer close(s.reconcileDone)
+		reconciler.Run(reconcileCtx)
+	}()
 
 	s.logger.Info("panel server started", "addr", listener.Addr().String())
 	return nil
@@ -213,10 +218,27 @@ func (s *Server) Start() error {
 // in-flight requests are given ctx's deadline to finish rather than being
 // dropped. Stopping never modifies canonical workspace state (§30) - this
 // server only reads from the stores behind its readers.
+//
+// It also waits (bounded by ctx) for the background reconciler goroutine
+// started in Start to actually exit, not just for its context to be
+// cancelled. Cancelling reconcileCtx alone does not stop reconcileOnce
+// synchronously - without this wait, the goroutine can still be mid-poll
+// (or start one more poll) after Shutdown returns and after the caller
+// proceeds to close/dispose of App, which raced with test cleanup: a poll
+// that calls a.OpenKnowledge() after App.Close has already run and nil'd
+// out its memoized store would silently start a brand new, un-tracked Dolt
+// sql-server process writing into a directory the caller believes is now
+// quiescent (root cause of punokawan-q9r.6.1's flaky TempDir cleanup).
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.sessions.InvalidateAll()
 	if s.stopReconciliation != nil {
 		s.stopReconciliation()
+	}
+	if s.reconcileDone != nil {
+		select {
+		case <-s.reconcileDone:
+		case <-ctx.Done():
+		}
 	}
 	if s.httpServer == nil {
 		return nil

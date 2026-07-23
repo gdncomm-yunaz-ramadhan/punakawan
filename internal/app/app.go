@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"time"
@@ -46,6 +47,16 @@ type App struct {
 
 	searchIndexMu sync.Mutex
 	searchIndex   *search.Index
+
+	// closed is set by Close, under closedMu, so that a lazy-open call
+	// (OpenKnowledge, OpenSearchIndex) racing with or arriving after Close
+	// - e.g. a background goroutine a caller started but did not fully
+	// join before calling Close, per punokawan-q9r.6.1 - fails loudly
+	// instead of silently starting a brand new, untracked external
+	// process (Dolt's sql-server) that Close will never get a chance to
+	// stop.
+	closedMu sync.Mutex
+	closed   bool
 
 	jiraWorkflowMu     sync.Mutex
 	jiraWorkflowConfig *jiraworkflow.Config
@@ -145,6 +156,19 @@ func (a *App) RepoPath(repoID string) (string, error) {
 	return a.Workspace.RepositoryPath(repoID)
 }
 
+// errAppClosed is returned by lazy-open accessors once Close has run, so a
+// stray caller (typically a background goroutine a caller failed to fully
+// join before calling Close) gets a clear error instead of silently
+// starting a fresh, un-tracked external process or file handle nothing
+// will ever release.
+var errAppClosed = errors.New("app: already closed")
+
+func (a *App) isClosed() bool {
+	a.closedMu.Lock()
+	defer a.closedMu.Unlock()
+	return a.closed
+}
+
 // OpenKnowledge lazily starts the Dolt-backed knowledge store rooted at
 // .punakawan/knowledge under the workspace, memoizing the result. This is
 // deferred rather than wired eagerly in Load because it starts an external
@@ -152,11 +176,20 @@ func (a *App) RepoPath(repoID string) (string, error) {
 // lifecycle, doctor) never touch durable knowledge and should not pay that
 // startup cost on every invocation.
 func (a *App) OpenKnowledge() (*knowledge.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
 	a.knowledgeMu.Lock()
 	defer a.knowledgeMu.Unlock()
 
 	if a.knowledgeStore != nil {
 		return a.knowledgeStore, nil
+	}
+	// Re-check under knowledgeMu: Close acquires knowledgeMu too, so this
+	// closes the window between the isClosed check above and this lock
+	// being acquired.
+	if a.isClosed() {
+		return nil, errAppClosed
 	}
 	store, err := knowledge.Open(a.Supervisor, filepath.Join(a.Workspace.Root, ".punakawan", "knowledge"))
 	if err != nil {
@@ -191,11 +224,17 @@ func (a *App) JiraWorkflow() (*jiraworkflow.Config, error) {
 // OpenKnowledge's Store, so callers searching it should call search.Rebuild
 // first rather than assume it is already current.
 func (a *App) OpenSearchIndex() (*search.Index, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
 	a.searchIndexMu.Lock()
 	defer a.searchIndexMu.Unlock()
 
 	if a.searchIndex != nil {
 		return a.searchIndex, nil
+	}
+	if a.isClosed() {
+		return nil, errAppClosed
 	}
 	ix, err := search.OpenIndex(filepath.Join(a.Workspace.Root, ".punakawan", "index", "bm25"))
 	if err != nil {
@@ -210,6 +249,10 @@ func (a *App) OpenSearchIndex() (*search.Index, error) {
 // ever called) and shuts down any adapter processes the AdapterRegistry has
 // started.
 func (a *App) Close() error {
+	a.closedMu.Lock()
+	a.closed = true
+	a.closedMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	adapterErr := a.AdapterRegistry.Close(ctx)
