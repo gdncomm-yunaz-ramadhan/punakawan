@@ -137,6 +137,13 @@ func (s *Store) ListByType(recordType protocol.KnowledgeRecordType) ([]protocol.
 // Delete removes a knowledge record by id, along with any relation edges
 // pointing to or from it. It does not error if the id does not exist.
 func (s *Store) Delete(id string) error {
+	var recordType string
+	err := s.db.QueryRow(`SELECT type FROM knowledge_records WHERE id = ?`, id).Scan(&recordType)
+	existed := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("knowledge: delete %s: check existence: %w", id, err)
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("knowledge: begin tx: %w", err)
@@ -149,7 +156,19 @@ func (s *Store) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ? OR to_id = ?`, id, id); err != nil {
 		return fmt.Errorf("knowledge: delete relations for %s: %w", id, err)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	if !existed {
+		return nil
+	}
+	return s.emitEvent(Event{
+		Type:       EventTypeDelete,
+		RecordId:   id,
+		RecordType: protocol.KnowledgeRecordType(recordType),
+		Timestamp:  time.Now().UTC(),
+	})
 }
 
 // Related returns every knowledge record that declares a relation targeting

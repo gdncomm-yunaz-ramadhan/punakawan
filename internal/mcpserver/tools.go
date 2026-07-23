@@ -225,4 +225,14 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "search_knowledge",
 		Description: "Search the durable knowledge store locally (§11): exact structured identifiers (CVE/GHSA/Sonar rule/Jira key/git hash/...) and aliases outrank BM25F keyword matches, which fall back to fuzzy matching only when keyword search finds nothing. project/repository/module/path only bias ranking (§11.10's scope bonus) - they never filter results out; use types/tags for that. Every result carries an explanation (§11.13) of why it matched. No embeddings, no external model calls: this is a local index over knowledge Punakawan already has, not new reasoning.",
 	}, searchKnowledgeHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_knowledge",
+		Description: "Bulk-delete specific knowledge records by id, e.g. ones a search_knowledge call surfaced as stale, superseded, or wrong - so a future search does not keep returning dirty context. Deletes are permanent (no fold-latest, no undo); ids not found in the store are reported separately and are not an error.",
+	}, deleteKnowledgeHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reset_project_knowledge",
+		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module (an empty scope would match everything). Defaults to a dry run: returns the matching record ids without deleting anything unless confirm=true.",
+	}, resetProjectKnowledgeHandler(a))
 }

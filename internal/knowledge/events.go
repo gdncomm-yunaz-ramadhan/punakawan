@@ -17,6 +17,7 @@ type EventType string
 const (
 	EventTypePut       EventType = "put"
 	EventTypeSupersede EventType = "supersede"
+	EventTypeDelete    EventType = "delete"
 )
 
 // Event is one line of .punakawan/events/knowledge-events.jsonl, per

@@ -91,20 +91,37 @@ func (ix *Index) DeleteRecord(id string) error {
 	return ix.bleve.Delete(id)
 }
 
-// Rebuild re-indexes every record currently in store, in one batch. This is
-// both §11.11's "full rebuild" (called once against an empty new index) and
-// the simplest correct way to keep the index in sync incrementally (Bleve's
-// Index() call is an upsert, so re-indexing an unchanged record is a no-op
-// in effect) - Rebuild is deliberately the one code path both cases share,
-// rather than maintaining a separate change-diffing mechanism that could
-// drift out of sync with the canonical Dolt store.
+// Rebuild syncs the index to exactly match store's current records, in one
+// batch: every current record is upserted (Bleve's Index() call is an
+// upsert, so re-indexing an unchanged record is a no-op in effect), and any
+// indexed id no longer present in store - e.g. after knowledge.Store.Delete
+// - is removed. Pruning matters as much as upserting here: a stale index
+// entry for a deleted record is exactly the "dirty context" a search result
+// must not surface. This one code path serves both §11.11's "full rebuild"
+// (an empty new index) and ongoing incremental sync, rather than
+// maintaining a separate change-diffing mechanism that could drift out of
+// sync with the canonical Dolt store.
 func Rebuild(store *knowledge.Store, ix *Index) error {
 	records, err := store.AllWithUpdatedAt()
 	if err != nil {
 		return fmt.Errorf("search: rebuild: list records: %w", err)
 	}
+	current := make(map[string]bool, len(records))
+	for _, rec := range records {
+		current[rec.Record.Id] = true
+	}
+
+	indexedIDs, err := ix.allDocIDs()
+	if err != nil {
+		return fmt.Errorf("search: rebuild: list indexed ids: %w", err)
+	}
 
 	batch := ix.bleve.NewBatch()
+	for _, id := range indexedIDs {
+		if !current[id] {
+			batch.Delete(id)
+		}
+	}
 	for _, rec := range records {
 		if err := batch.Index(rec.Record.Id, BuildDocument(rec.Record, rec.UpdatedAt)); err != nil {
 			return fmt.Errorf("search: rebuild: batch index %s: %w", rec.Record.Id, err)
@@ -114,4 +131,26 @@ func Rebuild(store *knowledge.Store, ix *Index) error {
 		return fmt.Errorf("search: rebuild: execute batch: %w", err)
 	}
 	return nil
+}
+
+// allDocIDs returns every document id currently in the Bleve index.
+func (ix *Index) allDocIDs() ([]string, error) {
+	count, err := ix.bleve.DocCount()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, nil
+	}
+
+	sr := bleve.NewSearchRequestOptions(bleve.NewMatchAllQuery(), int(count), 0, false)
+	res, err := ix.bleve.Search(sr)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(res.Hits))
+	for _, hit := range res.Hits {
+		ids = append(ids, hit.ID)
+	}
+	return ids, nil
 }

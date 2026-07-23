@@ -236,3 +236,38 @@ func TestRebuildIndexesEveryStoreRecord(t *testing.T) {
 		t.Fatalf("results = %+v, want %s after Rebuild", results, rec.Id)
 	}
 }
+
+func TestRebuildPrunesEntriesDeletedFromTheStore(t *testing.T) {
+	store := newTestStore(t)
+	ix := newTestIndex(t)
+
+	rec := newRecord(t, "REQ-6")
+	rec.Title = "Ephemeral cache invalidation note"
+	putAndIndex(t, store, ix, rec)
+
+	preDelete, err := Search(store, ix, Request{Query: "ephemeral cache invalidation"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(preDelete) == 0 || preDelete[0].Id != rec.Id {
+		t.Fatalf("results = %+v, want %s before deletion", preDelete, rec.Id)
+	}
+
+	if err := store.Delete(rec.Id); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if err := Rebuild(store, ix); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	postDelete, err := Search(store, ix, Request{Query: "ephemeral cache invalidation"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	for _, r := range postDelete {
+		if r.Id == rec.Id {
+			t.Fatalf("results = %+v, want %s pruned from the index after Store.Delete + Rebuild", postDelete, rec.Id)
+		}
+	}
+}
