@@ -24,11 +24,18 @@ export interface ArtifactRevisionProposal {
     version: number;
     content_hash: string;
     content_location: string;
+    change_summary?: string;
   };
   results?: {
     addressed_comments?: number;
     partially_addressed_comments?: number;
     unresolved_comments?: number;
     validation_status?: "pending" | "passed" | "failed";
+    comment_resolutions?: {
+      comment_id: string;
+      status: "addressed" | "partially_addressed" | "rejected" | "not_applicable";
+      explanation?: string;
+      changed_block_ids?: string[];
+    }[];
   };
 }

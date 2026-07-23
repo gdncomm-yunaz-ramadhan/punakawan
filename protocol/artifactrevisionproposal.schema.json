@@ -39,7 +39,8 @@
       "properties": {
         "version": { "type": "integer", "minimum": 1 },
         "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "content_location": { "type": "string" }
+        "content_location": { "type": "string" },
+        "change_summary": { "type": "string" }
       }
     },
     "results": {
@@ -49,7 +50,24 @@
         "addressed_comments": { "type": "integer", "minimum": 0 },
         "partially_addressed_comments": { "type": "integer", "minimum": 0 },
         "unresolved_comments": { "type": "integer", "minimum": 0 },
-        "validation_status": { "type": "string", "enum": ["pending", "passed", "failed"] }
+        "validation_status": { "type": "string", "enum": ["pending", "passed", "failed"] },
+        "comment_resolutions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["comment_id", "status"],
+            "additionalProperties": false,
+            "properties": {
+              "comment_id": { "type": "string" },
+              "status": {
+                "type": "string",
+                "enum": ["addressed", "partially_addressed", "rejected", "not_applicable"]
+              },
+              "explanation": { "type": "string" },
+              "changed_block_ids": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
       }
     }
   }

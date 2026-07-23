@@ -1146,6 +1146,9 @@ func (j *ArtifactRevisionProposalMetadata) UnmarshalJSON(value []byte) error {
 }
 
 type ArtifactRevisionProposalProposed struct {
+	// ChangeSummary corresponds to the JSON schema field "change_summary".
+	ChangeSummary *string `json:"change_summary,omitempty,omitzero" yaml:"change_summary,omitempty" mapstructure:"change_summary,omitempty"`
+
 	// ContentHash corresponds to the JSON schema field "content_hash".
 	ContentHash string `json:"content_hash" yaml:"content_hash" mapstructure:"content_hash"`
 
@@ -1190,6 +1193,9 @@ type ArtifactRevisionProposalResults struct {
 	// AddressedComments corresponds to the JSON schema field "addressed_comments".
 	AddressedComments *int `json:"addressed_comments,omitempty,omitzero" yaml:"addressed_comments,omitempty" mapstructure:"addressed_comments,omitempty"`
 
+	// CommentResolutions corresponds to the JSON schema field "comment_resolutions".
+	CommentResolutions []ArtifactRevisionProposalResultsCommentResolutionsElem `json:"comment_resolutions,omitempty,omitzero" yaml:"comment_resolutions,omitempty" mapstructure:"comment_resolutions,omitempty"`
+
 	// PartiallyAddressedComments corresponds to the JSON schema field
 	// "partially_addressed_comments".
 	PartiallyAddressedComments *int `json:"partially_addressed_comments,omitempty,omitzero" yaml:"partially_addressed_comments,omitempty" mapstructure:"partially_addressed_comments,omitempty"`
@@ -1199,6 +1205,75 @@ type ArtifactRevisionProposalResults struct {
 
 	// ValidationStatus corresponds to the JSON schema field "validation_status".
 	ValidationStatus *ArtifactRevisionProposalResultsValidationStatus `json:"validation_status,omitempty,omitzero" yaml:"validation_status,omitempty" mapstructure:"validation_status,omitempty"`
+}
+
+type ArtifactRevisionProposalResultsCommentResolutionsElem struct {
+	// ChangedBlockIds corresponds to the JSON schema field "changed_block_ids".
+	ChangedBlockIds []string `json:"changed_block_ids,omitempty,omitzero" yaml:"changed_block_ids,omitempty" mapstructure:"changed_block_ids,omitempty"`
+
+	// CommentId corresponds to the JSON schema field "comment_id".
+	CommentId string `json:"comment_id" yaml:"comment_id" mapstructure:"comment_id"`
+
+	// Explanation corresponds to the JSON schema field "explanation".
+	Explanation *string `json:"explanation,omitempty,omitzero" yaml:"explanation,omitempty" mapstructure:"explanation,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status ArtifactRevisionProposalResultsCommentResolutionsElemStatus `json:"status" yaml:"status" mapstructure:"status"`
+}
+
+type ArtifactRevisionProposalResultsCommentResolutionsElemStatus string
+
+const ArtifactRevisionProposalResultsCommentResolutionsElemStatusAddressed ArtifactRevisionProposalResultsCommentResolutionsElemStatus = "addressed"
+const ArtifactRevisionProposalResultsCommentResolutionsElemStatusNotApplicable ArtifactRevisionProposalResultsCommentResolutionsElemStatus = "not_applicable"
+const ArtifactRevisionProposalResultsCommentResolutionsElemStatusPartiallyAddressed ArtifactRevisionProposalResultsCommentResolutionsElemStatus = "partially_addressed"
+const ArtifactRevisionProposalResultsCommentResolutionsElemStatusRejected ArtifactRevisionProposalResultsCommentResolutionsElemStatus = "rejected"
+
+var enumValues_ArtifactRevisionProposalResultsCommentResolutionsElemStatus = []interface{}{
+	"addressed",
+	"partially_addressed",
+	"rejected",
+	"not_applicable",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalResultsCommentResolutionsElemStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactRevisionProposalResultsCommentResolutionsElemStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactRevisionProposalResultsCommentResolutionsElemStatus, v)
+	}
+	*j = ArtifactRevisionProposalResultsCommentResolutionsElemStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalResultsCommentResolutionsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["comment_id"]; raw != nil && !ok {
+		return fmt.Errorf("field comment_id in ArtifactRevisionProposalResultsCommentResolutionsElem: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in ArtifactRevisionProposalResultsCommentResolutionsElem: required")
+	}
+	type Plain ArtifactRevisionProposalResultsCommentResolutionsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ArtifactRevisionProposalResultsCommentResolutionsElem(plain)
+	return nil
 }
 
 type ArtifactRevisionProposalResultsValidationStatus string
