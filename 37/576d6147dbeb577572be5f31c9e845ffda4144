@@ -1,0 +1,27 @@
+web/panel/src/lib/components/Sidebar.svelte
+  76c7b28fab141eab 20-23,54-73
+web/panel/index.html
+  76c7b28fab141eab 6
+web/panel/src/lib/components/TopBar.svelte
+  76c7b28fab141eab 21,45-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "37576d6147dbeb577572be5f31c9e845ffda4144",
+  "prompts": {
+    "76c7b28fab141eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38d4d1e8-5b04-4c5b-8dc1-aaf4dbe006cf",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 85,
+      "overriden_lines": 0
+    }
+  }
+}
