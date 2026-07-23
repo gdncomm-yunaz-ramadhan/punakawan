@@ -476,6 +476,7 @@
   <textarea
     class="instruction-input"
     placeholder="Additional guidance for the next attempt (optional)…"
+    aria-label="Additional guidance for the next attempt"
     bind:value={requestChangesInstruction}
     data-testid="request-changes-input"
   ></textarea>
@@ -627,7 +628,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   .secondary-button {
     border: 1px solid var(--color-border);
@@ -637,7 +638,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   .danger-button {
     border: none;
@@ -647,7 +648,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   .primary-button:disabled,
   .secondary-button:disabled,

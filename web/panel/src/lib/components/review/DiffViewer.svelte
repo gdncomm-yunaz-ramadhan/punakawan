@@ -104,6 +104,7 @@
     type="search"
     class="search-input"
     placeholder="Search diff…"
+    aria-label="Search diff"
     data-testid="diff-search"
     bind:value={searchTerm}
   />
@@ -218,6 +219,8 @@
     font-size: 0.85rem;
     background: var(--color-surface);
     color: var(--color-text);
+    min-height: 44px;
+    box-sizing: border-box;
   }
   .side-by-side {
     display: grid;
@@ -270,6 +273,8 @@
     color: var(--color-text-muted);
     font-size: 0.8rem;
     padding: 0.35rem 0.5rem;
+    min-height: 44px;
+    box-sizing: border-box;
     cursor: pointer;
   }
   .collapsed-spacer {

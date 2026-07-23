@@ -576,7 +576,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   .submit-review:disabled {
     background: var(--color-border-strong);
@@ -597,7 +597,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   .danger-button {
     border: none;
@@ -607,7 +607,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   .secondary-button:disabled,
   .danger-button:disabled {

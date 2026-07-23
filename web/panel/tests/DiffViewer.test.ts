@@ -87,4 +87,36 @@ describe("DiffViewer", () => {
     const mark = document.querySelector("mark");
     expect(mark?.textContent).toBe("quick");
   });
+
+  // Responsive "visual regression" per apy.7's hardening pass: jsdom has
+  // no layout engine, so pixel screenshots aren't feasible here (see the
+  // plan doc's acknowledgment of that limitation). Instead this asserts
+  // the right DOM structure renders for each of the plan's four
+  // breakpoints (360/768px -> mobile/unified, 1024/wide -> desktop/
+  // side-by-side), mirroring the forceWidth-driven isDesktop seam
+  // ReviewMode.svelte already uses deterministically in its own tests.
+  describe("breakpoint-driven layout (360/768 -> unified, 1024/wide -> side-by-side)", () => {
+    const lines: DiffLine[] = [
+      { Kind: "removed", Text: "old line" },
+      { Kind: "added", Text: "new line" },
+    ];
+
+    it.each([
+      { label: "360px (mobile)", isDesktop: false },
+      { label: "768px (tablet)", isDesktop: false },
+    ])("renders unified diff at $label", ({ isDesktop }) => {
+      render(DiffViewer, { props: { lines, isDesktop } });
+      expect(screen.getByTestId("diff-unified")).toBeTruthy();
+      expect(screen.queryByTestId("diff-side-by-side")).toBeNull();
+    });
+
+    it.each([
+      { label: "1024px (desktop)", isDesktop: true },
+      { label: "1440px+ (wide)", isDesktop: true },
+    ])("renders side-by-side diff at $label", ({ isDesktop }) => {
+      render(DiffViewer, { props: { lines, isDesktop } });
+      expect(screen.getByTestId("diff-side-by-side")).toBeTruthy();
+      expect(screen.queryByTestId("diff-unified")).toBeNull();
+    });
+  });
 });

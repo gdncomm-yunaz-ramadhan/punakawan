@@ -218,6 +218,40 @@ describe("ReviewMode", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
+  // Responsive "visual regression" per apy.7's hardening pass (§21 "usable
+  // at 360px, 768px, 1024px, and wide desktop widths"): jsdom has no
+  // layout engine, so this asserts DOM structure via the forceWidth seam
+  // at each of the plan's four named breakpoints, rather than pixel
+  // screenshots (not feasible in this environment).
+  describe("breakpoint matrix (360 / 768 / 1024 / wide)", () => {
+    it.each([
+      { label: "360px", width: 360 },
+      { label: "768px", width: 768 },
+    ])("renders the mobile document + bottom-sheet comment rail at $label", async ({ width }) => {
+      render(ReviewMode, { props: { reviewId: "review-1", forceWidth: width } });
+
+      await waitFor(() => expect(screen.getByTestId("view-comments-toggle")).toBeTruthy());
+      expect(screen.getByTestId("review-mode").getAttribute("data-layout")).toBe("mobile");
+      expect(screen.getByTestId("plan-document")).toBeTruthy();
+      expect(screen.queryByTestId("comment-rail")).toBeNull();
+
+      await fireEvent.click(screen.getByTestId("view-comments-toggle"));
+      expect(within(screen.getByRole("dialog")).getByTestId("comment-rail")).toBeTruthy();
+    });
+
+    it.each([
+      { label: "1024px", width: 1024 },
+      { label: "1440px+ (wide)", width: 1600 },
+    ])("renders the desktop two-pane document + comment rail at $label", async ({ width }) => {
+      render(ReviewMode, { props: { reviewId: "review-1", forceWidth: width } });
+
+      await waitFor(() => expect(screen.getByTestId("plan-document")).toBeTruthy());
+      expect(screen.getByTestId("review-mode").getAttribute("data-layout")).toBe("desktop");
+      expect(screen.getByTestId("comment-rail")).toBeTruthy();
+      expect(screen.queryByTestId("view-comments-toggle")).toBeNull();
+    });
+  });
+
   it("shows an enabled Submit Review button for a draft review", async () => {
     render(ReviewMode, { props: { reviewId: "review-1", forceWidth: 1280 } });
 

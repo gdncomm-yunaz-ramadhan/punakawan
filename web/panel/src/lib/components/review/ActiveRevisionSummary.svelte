@@ -149,12 +149,14 @@
           <p class="clarification-body">{comment.body}</p>
           <textarea
             class="clarification-input"
+            aria-label={`Answer: ${comment.body}`}
             data-testid={`clarification-input-${comment.id}`}
             value={draftFor(comment)}
             oninput={(e) => updateDraft(comment.id, (e.target as HTMLTextAreaElement).value)}
           ></textarea>
           <button
             type="button"
+            class="clarification-save"
             data-testid={`clarification-save-${comment.id}`}
             disabled={busy}
             onclick={() => submitClarification(comment)}
@@ -227,7 +229,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   .cancel-button:disabled {
     opacity: 0.6;
@@ -266,6 +268,20 @@
     color: var(--color-text);
     background: var(--color-surface);
     resize: vertical;
+  }
+  .clarification-save {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .clarification-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
   .revision-request h3 {
     margin: 0 0 0.5rem;

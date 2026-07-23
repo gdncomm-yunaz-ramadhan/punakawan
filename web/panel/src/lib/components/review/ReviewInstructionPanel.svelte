@@ -63,7 +63,7 @@
 
 <div class="panel" data-testid="review-instruction-panel">
   <div class="head">
-    <h2>Review Instruction</h2>
+    <h2 id="review-instruction-heading">Review Instruction</h2>
     {#if saving}
       <span class="status saving" data-testid="instruction-status">Saving…</span>
     {:else if dirty}
@@ -75,6 +75,7 @@
   <textarea
     class="instruction-input"
     placeholder="General instructions for this review (not anchored to any section)…"
+    aria-labelledby="review-instruction-heading"
     value={draft}
     oninput={handleInput}
     data-testid="instruction-input"

@@ -159,12 +159,27 @@
     padding: 0.15rem 0.5rem;
     font-size: 0.75rem;
     cursor: pointer;
-    opacity: 0;
-    transition: opacity 120ms ease;
+    min-height: 44px;
   }
-  .heading-row:hover .add-comment-affordance,
-  .add-comment-affordance:focus-visible {
-    opacity: 1;
+  /* Hover-reveal is a nice-to-have declutter on pointer-capable/hover
+     devices only (§13.4 "no essential action depends on hover") - touch
+     devices (and any device without a fine hover pointer) always show
+     the affordance instead of gating it behind an interaction they can't
+     perform. The opacity transition itself is nonessential motion, so it
+     only applies for users who haven't asked for reduced motion. */
+  @media (hover: hover) and (pointer: fine) {
+    .add-comment-affordance {
+      opacity: 0;
+    }
+    .heading-row:hover .add-comment-affordance,
+    .add-comment-affordance:focus-visible {
+      opacity: 1;
+    }
+  }
+  @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    .add-comment-affordance {
+      transition: opacity 120ms ease;
+    }
   }
   p {
     color: var(--color-text);
@@ -186,5 +201,6 @@
     padding: 0.35rem 0.6rem;
     font-size: 0.8rem;
     cursor: pointer;
+    min-height: 44px;
   }
 </style>

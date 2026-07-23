@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { tick } from "svelte";
 
   interface Props {
     open: boolean;
@@ -10,8 +11,61 @@
   let { open, title, children, onclose }: Props = $props();
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") onclose();
+    if (e.key === "Escape") {
+      onclose();
+      return;
+    }
+    if (e.key === "Tab") trapTab(e);
   }
+
+  let sheetEl: HTMLDivElement | undefined = $state();
+  // Element focused immediately before this sheet opened - restored on
+  // close per §13.13 "mobile bottom sheets trap focus and restore it on
+  // close".
+  let previouslyFocused: HTMLElement | null = null;
+
+  function focusableElements(): HTMLElement[] {
+    if (!sheetEl) return [];
+    // See Dialog.svelte's identical helper for why there's no
+    // offsetParent-based visibility filter here.
+    return Array.from(
+      sheetEl.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+  }
+
+  function trapTab(e: KeyboardEvent) {
+    const focusable = focusableElements();
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey) {
+      if (active === first || !sheetEl?.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (active === last || !sheetEl?.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
+  $effect(() => {
+    if (open) {
+      previouslyFocused = document.activeElement as HTMLElement | null;
+      tick().then(() => {
+        const focusable = focusableElements();
+        (focusable[0] ?? sheetEl)?.focus();
+      });
+    } else if (previouslyFocused) {
+      previouslyFocused.focus();
+      previouslyFocused = null;
+    }
+  });
 </script>
 
 <!--
@@ -25,7 +79,7 @@
 
 {#if open}
   <div class="backdrop" role="presentation" onclick={onclose}></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label={title ?? "Sheet"}>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label={title ?? "Sheet"} tabindex="-1" bind:this={sheetEl}>
     <div class="handle" aria-hidden="true"></div>
     <div class="sheet-head">
       {#if title}<h2>{title}</h2>{/if}

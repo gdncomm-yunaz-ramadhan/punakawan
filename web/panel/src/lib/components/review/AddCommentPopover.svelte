@@ -39,6 +39,7 @@
   <textarea
     class="body-input"
     placeholder="Add your comment…"
+    aria-label="Comment body"
     value={body}
     oninput={handleInput}
     data-testid="comment-body-input"
@@ -112,7 +113,7 @@
     padding: 0.4rem 0.75rem;
     font-size: 0.85rem;
     cursor: pointer;
-    min-height: 36px;
+    min-height: 44px;
   }
   .cancel {
     border: 1px solid var(--color-border);

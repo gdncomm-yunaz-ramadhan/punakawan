@@ -406,6 +406,62 @@ describe("ProposalReview", () => {
     });
   });
 
+  // Responsive "visual regression" per apy.7's hardening pass: jsdom has
+  // no layout engine, so pixel screenshots aren't feasible (see the plan
+  // doc's own acknowledgment of that limitation). This asserts the right
+  // DOM structure for each of the plan's four breakpoints via the
+  // isDesktop seam ProposalReview already exposes - 360/768px map to the
+  // unified-diff/mobile branch, 1024/wide map to the side-by-side/desktop
+  // branch - matching DiffViewer's own breakpoint tests.
+  describe("breakpoint-driven layout (360/768 -> unified diff, 1024/wide -> side-by-side diff)", () => {
+    it.each([
+      { label: "360px (mobile)", isDesktop: false },
+      { label: "768px (tablet)", isDesktop: false },
+    ])("renders the unified diff mode at $label", async ({ isDesktop }) => {
+      mockAll();
+      render(ProposalReview, {
+        props: { reviewId: "review-1", review: review(), comments: [comment()], isDesktop, onreviewChanged: vi.fn() },
+      });
+
+      await waitFor(() => expect(screen.getByTestId("diff-viewer")).toBeTruthy());
+      expect(screen.getByTestId("diff-unified")).toBeTruthy();
+      expect(screen.queryByTestId("diff-side-by-side")).toBeNull();
+    });
+
+    it.each([
+      { label: "1024px (desktop)", isDesktop: true },
+      { label: "1440px+ (wide)", isDesktop: true },
+    ])("renders the side-by-side diff mode at $label", async ({ isDesktop }) => {
+      mockAll();
+      render(ProposalReview, {
+        props: { reviewId: "review-1", review: review(), comments: [comment()], isDesktop, onreviewChanged: vi.fn() },
+      });
+
+      await waitFor(() => expect(screen.getByTestId("diff-viewer")).toBeTruthy());
+      expect(screen.getByTestId("diff-side-by-side")).toBeTruthy();
+      expect(screen.queryByTestId("diff-unified")).toBeNull();
+    });
+
+    it("keeps Accept/Reject/Request Changes reachable at every breakpoint via StickyActionBar", async () => {
+      mockAll();
+      for (const isDesktop of [false, true]) {
+        const { unmount } = render(ProposalReview, {
+          props: {
+            reviewId: "review-1",
+            review: review(),
+            comments: [comment()],
+            isDesktop,
+            onreviewChanged: vi.fn(),
+          },
+        });
+        await waitFor(() => expect(screen.getByTestId("accept-button")).toBeTruthy());
+        expect(screen.getByTestId("reject-button")).toBeTruthy();
+        expect(screen.getByTestId("request-changes-button")).toBeTruthy();
+        unmount();
+      }
+    });
+  });
+
   describe("revision_requested (in-flight)", () => {
     it("shows the previous proposal read-only with an in-flight banner and no actions", async () => {
       mockAll();

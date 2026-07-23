@@ -69,7 +69,12 @@
   {/if}
 
   {#if editing}
-    <textarea class="edit-input" bind:value={draft} data-testid="comment-edit-input"></textarea>
+    <textarea
+      class="edit-input"
+      aria-label="Edit comment"
+      bind:value={draft}
+      data-testid="comment-edit-input"
+    ></textarea>
     <div class="actions">
       <button type="button" onclick={cancelEdit} disabled={busy}>Cancel</button>
       <button type="button" onclick={saveEdit} disabled={busy || !draft.trim()}>Save</button>
@@ -149,6 +154,8 @@
     padding: 0.25rem 0.55rem;
     font-size: 0.78rem;
     cursor: pointer;
+    min-height: 44px;
+    min-width: 44px;
   }
   .actions button.delete {
     color: var(--color-danger);

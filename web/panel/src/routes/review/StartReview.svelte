@@ -122,7 +122,7 @@
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
   }
   button:disabled {
     opacity: 0.5;
