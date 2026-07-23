@@ -1,0 +1,35 @@
+internal/recipe/operation.go
+  3415a4432044e41f 63-71,108-127,132-135,186-223
+internal/recipe/schema_drift_test.go
+  3415a4432044e41f 1-187
+internal/recipe/repository.go
+  3415a4432044e41f 45-58,69-77
+internal/recipe/validation.go
+  3415a4432044e41f 54-60,106,285
+internal/recipe/validation_test.go
+  3415a4432044e41f 175
+internal/recipe/lifecycle.go
+  3415a4432044e41f 78-84
+internal/recipe/schema_drift.go
+  3415a4432044e41f 1-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "9602014dd5a671b51165db93c200c1b332a53dae",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 414,
+      "total_deletions": 25,
+      "accepted_lines": 414,
+      "overriden_lines": 0
+    }
+  }
+}
