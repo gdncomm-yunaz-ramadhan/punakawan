@@ -1,0 +1,27 @@
+internal/panel/api/artifact_handler.go
+  6c4a5633395342b7 1-49
+internal/panel/server/server.go
+  6c4a5633395342b7 148
+internal/panel/api/artifact_handler_test.go
+  6c4a5633395342b7 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2f0e30e8cd9df9df8485ad2d1c4a37acc298939d",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 110,
+      "total_deletions": 0,
+      "accepted_lines": 110,
+      "overriden_lines": 0
+    }
+  }
+}
