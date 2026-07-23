@@ -259,9 +259,9 @@ func (e *Executor) recordLastExecution(rec protocol.KnowledgeRecord, runID, task
 	// reject one of them with a transient 1213 conflict rather than
 	// silently corrupting anything (confirmed by
 	// TestConcurrentResolveAndExecuteAgainstVerifiedRecipeDoesNotRace).
-	// Retry that specific, well-understood transient case rather than
-	// failing an otherwise-successful execution.
-	return putWithConflictRetry(e.Repo.Store.Put, rec)
+	// knowledge.Store.Put itself retries that specific, well-understood
+	// transient case rather than failing an otherwise-successful execution.
+	return e.Repo.Store.Put(rec)
 }
 
 // recordExecutionEvidence appends an evidence record for one execution

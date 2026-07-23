@@ -26,34 +26,36 @@ func (s *Store) Put(rec protocol.KnowledgeRecord) error {
 		return fmt.Errorf("knowledge: marshal record: %w", err)
 	}
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("knowledge: begin tx: %w", err)
-	}
-	defer tx.Rollback()
+	if err := withConflictRetry(func() error {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("knowledge: begin tx: %w", err)
+		}
+		defer tx.Rollback()
 
-	_, err = tx.Exec(`
+		_, err = tx.Exec(`
 INSERT INTO knowledge_records (id, type, status, validity_state, data, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   type = VALUES(type), status = VALUES(status), validity_state = VALUES(validity_state),
   data = VALUES(data), updated_at = VALUES(updated_at)`,
-		rec.Id, string(rec.Type), rec.Status, string(rec.Validity.State), data, time.Now().UTC())
-	if err != nil {
-		return fmt.Errorf("knowledge: put %s: %w", rec.Id, err)
-	}
-
-	if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ?`, rec.Id); err != nil {
-		return fmt.Errorf("knowledge: clear relations for %s: %w", rec.Id, err)
-	}
-	for _, rel := range rec.Relations {
-		if _, err := tx.Exec(`INSERT INTO knowledge_relations (from_id, type, to_id) VALUES (?, ?, ?)`,
-			rec.Id, string(rel.Type), rel.Target); err != nil {
-			return fmt.Errorf("knowledge: index relation %s -> %s: %w", rec.Id, rel.Target, err)
+			rec.Id, string(rec.Type), rec.Status, string(rec.Validity.State), data, time.Now().UTC())
+		if err != nil {
+			return fmt.Errorf("knowledge: put %s: %w", rec.Id, err)
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
+		if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ?`, rec.Id); err != nil {
+			return fmt.Errorf("knowledge: clear relations for %s: %w", rec.Id, err)
+		}
+		for _, rel := range rec.Relations {
+			if _, err := tx.Exec(`INSERT INTO knowledge_relations (from_id, type, to_id) VALUES (?, ?, ?)`,
+				rec.Id, string(rel.Type), rel.Target); err != nil {
+				return fmt.Errorf("knowledge: index relation %s -> %s: %w", rec.Id, rel.Target, err)
+			}
+		}
+
+		return tx.Commit()
+	}); err != nil {
 		return err
 	}
 
@@ -144,19 +146,21 @@ func (s *Store) Delete(id string) error {
 		return fmt.Errorf("knowledge: delete %s: check existence: %w", id, err)
 	}
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("knowledge: begin tx: %w", err)
-	}
-	defer tx.Rollback()
+	if err := withConflictRetry(func() error {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("knowledge: begin tx: %w", err)
+		}
+		defer tx.Rollback()
 
-	if _, err := tx.Exec(`DELETE FROM knowledge_records WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("knowledge: delete %s: %w", id, err)
-	}
-	if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ? OR to_id = ?`, id, id); err != nil {
-		return fmt.Errorf("knowledge: delete relations for %s: %w", id, err)
-	}
-	if err := tx.Commit(); err != nil {
+		if _, err := tx.Exec(`DELETE FROM knowledge_records WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("knowledge: delete %s: %w", id, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ? OR to_id = ?`, id, id); err != nil {
+			return fmt.Errorf("knowledge: delete relations for %s: %w", id, err)
+		}
+		return tx.Commit()
+	}); err != nil {
 		return err
 	}
 
