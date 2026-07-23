@@ -1,0 +1,79 @@
+web/panel/tsconfig.json
+  6c4a5633395342b7 1-16
+internal/panel/api/system_handler.go
+  6c4a5633395342b7 1-77
+cmd/punakawan/main.go
+  6c4a5633395342b7 32
+cmd/punakawan/workspace_cmd.go
+  6c4a5633395342b7 6,11,17,20-24,28-136
+web/panel/src/lib/api/client.ts
+  6c4a5633395342b7 1-58
+internal/panel/assets/dist/index.html
+  6c4a5633395342b7 1-4,6,9-10,12-13
+internal/panel/assets/assets.go
+  6c4a5633395342b7 1-16
+internal/panel/server/server_test.go
+  6c4a5633395342b7 1-269
+web/panel/index.html
+  6c4a5633395342b7 1-12
+web/panel/svelte.config.js
+  6c4a5633395342b7 1
+internal/panel/server/static.go
+  6c4a5633395342b7 1-41
+internal/panel/server/server.go
+  6c4a5633395342b7 1-139
+cmd/punakawan/panel_cmd.go
+  6c4a5633395342b7 1-102
+Makefile
+  6c4a5633395342b7 1,47-63
+pnpm-workspace.yaml
+  6c4a5633395342b7 3,5
+internal/panel/contract/readers.go
+  6c4a5633395342b7 21-23,25-35,42
+web/panel/package.json
+  6c4a5633395342b7 1-27
+internal/panel/deps.go
+  6c4a5633395342b7 1-40
+internal/panel/api/overview_handler.go
+  6c4a5633395342b7 1-89
+web/panel/src/App.svelte
+  6c4a5633395342b7 1-109
+internal/panel/server/security.go
+  6c4a5633395342b7 1-100
+web/panel/vitest.config.ts
+  6c4a5633395342b7 1-13
+internal/panel/registry/registry.go
+  6c4a5633395342b7 1-285
+internal/panel/api/workspace_handler.go
+  6c4a5633395342b7 1-32
+cmd/punakawan/workspace_cmd_test.go
+  6c4a5633395342b7 1-100
+internal/panel/registry/registry_test.go
+  6c4a5633395342b7 1-171
+web/panel/src/main.ts
+  6c4a5633395342b7 1-9
+web/panel/tests/App.test.ts
+  6c4a5633395342b7 1-105
+web/panel/vite.config.ts
+  6c4a5633395342b7 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "300268cef66f164827640bba3c1d62a9cf4cfb41",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2045,
+      "total_deletions": 59,
+      "accepted_lines": 1997,
+      "overriden_lines": 1
+    }
+  }
+}
