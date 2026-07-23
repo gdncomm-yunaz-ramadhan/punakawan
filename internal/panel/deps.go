@@ -8,6 +8,7 @@ package panel
 import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/panel/contract"
+	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 )
 
@@ -27,10 +28,12 @@ type Readers struct {
 }
 
 // NewReaders builds Readers backed by internal/panel/sources'
-// implementations over a.
-func NewReaders(a *app.App) Readers {
+// implementations over a. reg is the global workspace registry
+// (WorkspaceReader uses it to describe every registered workspace, not
+// just a's own).
+func NewReaders(a *app.App, reg *registry.Store) Readers {
 	return Readers{
-		Workspace: &sources.WorkspaceSource{App: a},
+		Workspace: &sources.WorkspaceSource{App: a, Registry: reg},
 		Session:   &sources.SessionSource{App: a},
 		Task:      &sources.TaskSource{App: a},
 		Knowledge: &sources.KnowledgeSource{App: a},

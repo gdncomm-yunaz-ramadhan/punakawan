@@ -57,7 +57,7 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 	return &Server{
 		app:      a,
 		registry: reg,
-		readers:  panel.NewReaders(a),
+		readers:  panel.NewReaders(a, reg),
 		opts:     opts,
 		logger:   logger,
 	}

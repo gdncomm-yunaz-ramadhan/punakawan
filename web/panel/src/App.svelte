@@ -1,109 +1,77 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getSystem, listWorkspaces, type SystemInfo, type WorkspaceSummary } from "./lib/api/client";
+  import { getSystem, type SystemInfo } from "./lib/api/client";
+  import { getPath } from "./lib/router/router.svelte";
+  import Sidebar from "./lib/components/Sidebar.svelte";
+  import TopBar from "./lib/components/TopBar.svelte";
+  import Overview from "./routes/overview/Overview.svelte";
+  import WorkspacesList from "./routes/workspaces/WorkspacesList.svelte";
+  import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
 
   let system: SystemInfo | null = $state(null);
-  let workspaces: WorkspaceSummary[] = $state([]);
-  let error: string | null = $state(null);
-  let loading = $state(true);
+  let systemError: string | null = $state(null);
 
-  async function load() {
-    loading = true;
-    error = null;
+  onMount(async () => {
     try {
-      const [sys, ws] = await Promise.all([getSystem(), listWorkspaces()]);
-      system = sys;
-      workspaces = ws.items;
+      system = await getSystem();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
+      systemError = e instanceof Error ? e.message : String(e);
     }
-  }
+  });
 
-  onMount(load);
+  const workspaceDetailPath = /^\/workspaces\/([^/]+)$/;
 </script>
 
-<main>
-  <header>
-    <h1>Punakawan Panel</h1>
-    {#if system}
-      <span class="badge" data-testid="read-only-badge">
-        {system.read_only ? "Read-only" : "Read-write"}
-      </span>
-      <span class="version">v{system.panel_version}</span>
-    {/if}
-  </header>
+<div class="shell">
+  <Sidebar />
+  <div class="content-area">
+    <TopBar {system} />
+    <main>
+      {#if systemError}
+        <p role="alert" class="error">Failed to reach the panel server: {systemError}</p>
+      {/if}
 
-  {#if loading}
-    <p>Loading…</p>
-  {:else if error}
-    <p role="alert" class="error">Failed to load the panel: {error}</p>
-  {:else if workspaces.length === 0}
-    <div class="empty">
-      <p>No Punakawan workspaces are registered.</p>
-      <pre>punakawan workspace register /path/to/project</pre>
-    </div>
-  {:else}
-    <ul class="workspaces" aria-label="Registered workspaces">
-      {#each workspaces as ws (ws.id)}
-        <li>
-          <strong>{ws.display_name || ws.id}</strong>
-          <span class="path">{ws.path}</span>
-          <span class="availability availability-{ws.availability}">{ws.availability}</span>
-          <span class="counts">
-            {ws.open_task_count} open · {ws.blocked_task_count} blocked · {ws.active_session_count} active session(s)
-          </span>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</main>
+      {#if getPath() === "/" || getPath() === ""}
+        <Overview />
+      {:else if getPath() === "/workspaces"}
+        <WorkspacesList />
+      {:else if workspaceDetailPath.exec(getPath())}
+        {@const match = workspaceDetailPath.exec(getPath())}
+        <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+      {:else}
+        <p>Not found.</p>
+      {/if}
+    </main>
+  </div>
+</div>
 
 <style>
-  main {
+  :global(body) {
+    margin: 0;
     font-family: system-ui, sans-serif;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 1rem;
+    color: #1a1a1a;
   }
-  header {
+  .shell {
     display: flex;
-    align-items: baseline;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    min-height: 100vh;
   }
-  .badge {
-    font-size: 0.75rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    background: #eee;
+  .content-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
-  .version {
-    color: #666;
-    font-size: 0.85rem;
+  main {
+    padding: 1rem 1.5rem;
+    max-width: 1100px;
   }
   .error {
     color: #b00020;
   }
-  ul.workspaces {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    gap: 0.75rem;
-  }
-  ul.workspaces li {
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-    display: grid;
-    gap: 0.25rem;
-  }
-  .path {
-    color: #666;
-    font-size: 0.85rem;
-  }
-  .counts {
-    font-size: 0.85rem;
+
+  @media (max-width: 720px) {
+    .shell {
+      flex-direction: column;
+    }
   }
 </style>

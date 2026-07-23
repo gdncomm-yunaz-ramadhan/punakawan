@@ -11,6 +11,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/panel/contract"
+	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
@@ -137,6 +138,120 @@ func TestWorkspaceSourceListReturnsOneEntry(t *testing.T) {
 
 func newTestRun(a *app.App, id string) protocol.WorkflowRun {
 	return workflow.New(id, a.Workspace.ID, protocol.WorkflowRunWorkflowNameFeatureDelivery, time.Now().UTC())
+}
+
+func openTestRegistry(t *testing.T) *registry.Store {
+	t.Helper()
+	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	if err != nil {
+		t.Fatalf("registry.OpenAt: %v", err)
+	}
+	return reg
+}
+
+func TestWorkspaceSourceListWithRegistryDescribesAllEntries(t *testing.T) {
+	a := newTestApp(t)
+	reg := openTestRegistry(t)
+	if _, err := reg.Register(a.Workspace.ID, a.Workspace.Root, "", time.Now().UTC()); err != nil {
+		t.Fatalf("Register (current): %v", err)
+	}
+
+	otherDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(otherDir, ".punakawan"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, ".punakawan", "workspace.yaml"),
+		[]byte("version: punakawan.workspace/v1\nid: other\nname: Other\nrepositories:\n  - id: r\n    path: .\n"), 0o644); err != nil {
+		t.Fatalf("write workspace.yaml: %v", err)
+	}
+	runGit(t, otherDir, "init", "-q", "-b", "main")
+	runGit(t, otherDir, "config", "user.email", "test@example.com")
+	runGit(t, otherDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(otherDir, "f.txt"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatalf("write f.txt: %v", err)
+	}
+	runGit(t, otherDir, "add", "f.txt")
+	runGit(t, otherDir, "commit", "-q", "-m", "init")
+	if _, err := reg.Register("other", otherDir, "Other", time.Now().UTC()); err != nil {
+		t.Fatalf("Register (other): %v", err)
+	}
+
+	ws := &WorkspaceSource{App: a, Registry: reg}
+	summaries, err := ws.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("List = %+v, want 2 entries", summaries)
+	}
+
+	var ids []string
+	for _, s := range summaries {
+		ids = append(ids, s.ID)
+	}
+	if !contains(ids, a.Workspace.ID) || !contains(ids, "other") {
+		t.Fatalf("ids = %v, want both %q and \"other\"", ids, a.Workspace.ID)
+	}
+}
+
+func contains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func TestWorkspaceSourceListDegradesBrokenPathToUnavailable(t *testing.T) {
+	a := newTestApp(t)
+	reg := openTestRegistry(t)
+	if _, err := reg.Register(a.Workspace.ID, a.Workspace.Root, "", time.Now().UTC()); err != nil {
+		t.Fatalf("Register (current): %v", err)
+	}
+
+	// Register a second workspace, then delete its directory so its path
+	// becomes broken - List must still return the current workspace's
+	// summary, marking the broken one unavailable instead of erroring.
+	brokenDir := t.TempDir()
+	if _, err := reg.Register("broken", brokenDir, "Broken", time.Now().UTC()); err != nil {
+		t.Fatalf("Register (broken): %v", err)
+	}
+	if err := os.RemoveAll(brokenDir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+
+	ws := &WorkspaceSource{App: a, Registry: reg}
+	summaries, err := ws.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("List = %+v, want 2 entries (one degraded, not dropped)", summaries)
+	}
+
+	var broken *contract.WorkspaceSummary
+	for i := range summaries {
+		if summaries[i].ID == "broken" {
+			broken = &summaries[i]
+		}
+	}
+	if broken == nil {
+		t.Fatalf("List = %+v, want a \"broken\" entry", summaries)
+	}
+	if broken.Availability != protocol.PanelSourceHealthAvailabilityUnavailable {
+		t.Fatalf("broken.Availability = %q, want unavailable", broken.Availability)
+	}
+}
+
+func TestWorkspaceSourceGetUnknownIDErrorsEvenWithRegistry(t *testing.T) {
+	a := newTestApp(t)
+	reg := openTestRegistry(t)
+	ws := &WorkspaceSource{App: a, Registry: reg}
+
+	if _, err := ws.Get(context.Background(), "no-such-workspace"); err == nil {
+		t.Fatal("expected an error for a workspace that is not in the registry at all")
+	}
 }
 
 func TestSessionSourceListAndGet(t *testing.T) {
