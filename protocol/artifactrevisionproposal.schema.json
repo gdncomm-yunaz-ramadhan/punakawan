@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/artifactrevisionproposal.schema.json",
+  "title": "ArtifactRevisionProposal",
+  "description": "One revision attempt's result, not yet a new canonical version. See punakawan-artifact-review-plan-mutation-plan-v2.md §5.4/§9. base.revision_hash is compared against the artifact's current canonical hash at acceptance time (§12); a mismatch means the review is conflicted, never a silent overwrite.",
+  "type": "object",
+  "required": ["metadata", "base", "proposed"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["id", "review_id", "revision_request_id", "attempt", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "review_id": { "type": "string" },
+        "revision_request_id": { "type": "string" },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "ready", "failed", "superseded"]
+        }
+      }
+    },
+    "base": {
+      "type": "object",
+      "required": ["artifact_id", "version", "revision_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "revision_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "proposed": {
+      "type": "object",
+      "required": ["version", "content_hash", "content_location"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "content_location": { "type": "string" }
+      }
+    },
+    "results": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "addressed_comments": { "type": "integer", "minimum": 0 },
+        "partially_addressed_comments": { "type": "integer", "minimum": 0 },
+        "unresolved_comments": { "type": "integer", "minimum": 0 },
+        "validation_status": { "type": "string", "enum": ["pending", "passed", "failed"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/artifactreview.schema.json",
+  "title": "ArtifactReview",
+  "description": "A review session against one artifact version. See punakawan-artifact-review-plan-mutation-plan-v2.md §5.1.",
+  "type": "object",
+  "required": ["metadata", "artifact", "review"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["id", "workspace_id", "status", "created_by", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "workspace_id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft", "submitted", "queued", "revising", "awaiting_clarification",
+            "proposal_ready", "revision_requested", "accepted", "rejected",
+            "cancelled", "failed", "conflicted"
+          ]
+        },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["type", "id", "version", "revision_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["plan", "retrieval_recipe"] },
+        "id": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "revision_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "instruction": { "type": "string" },
+        "comment_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

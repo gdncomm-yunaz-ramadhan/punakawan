@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/artifactcomment.schema.json",
+  "title": "ArtifactComment",
+  "description": "One anchored review comment. See punakawan-artifact-review-plan-mutation-plan-v2.md §5.2/§6. anchor.block_id/base_revision_hash/heading_path/quoted_text together drive the 5-step anchor resolution order (§6): exact block ID, exact content hash, heading path plus quoted text, heading path plus fuzzy quoted text, or conflicted.",
+  "type": "object",
+  "required": ["id", "review_id", "author", "status", "anchor", "body"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "review_id": { "type": "string" },
+    "author": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open", "addressed", "partially_addressed", "rejected_by_agent",
+        "needs_clarification", "obsolete", "resolved_by_user"
+      ]
+    },
+    "anchor": {
+      "type": "object",
+      "required": ["kind", "base_revision_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "enum": ["markdown_block"] },
+        "block_id": { "type": "string" },
+        "heading_path": { "type": "array", "items": { "type": "string" } },
+        "base_revision_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "quoted_text": { "type": "string" }
+      }
+    },
+    "body": { "type": "string" }
+  }
+}

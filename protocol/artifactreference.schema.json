@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/artifactreference.schema.json",
+  "title": "ArtifactReference",
+  "description": "Points at one immutable version of a reviewable artifact. See punakawan-artifact-review-plan-mutation-plan-v2.md §4. Every artifact type this record can point at must provide a version reader, stable anchor resolver, proposal renderer, diff generator, validator, and acceptance handler (§4) - this schema only carries the pointer, not that behavior.",
+  "type": "object",
+  "required": ["type", "id", "version", "revision_hash", "workspace_id", "format"],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "description": "Artifact type. Only \"plan\" is implemented by this plan; \"retrieval_recipe\" is reserved for punakawan-procedural-knowledge-retrieval-recipe-plan-final.md's own review/mutation reuse once its compiler and validation lifecycle exist (§4), not enabled here.",
+      "type": "string",
+      "enum": ["plan", "retrieval_recipe"]
+    },
+    "id": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "revision_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "workspace_id": { "type": "string" },
+    "format": { "type": "string", "enum": ["markdown"] },
+    "canonical_location": {
+      "description": "Path to this version's immutable content, e.g. .punakawan/plans/<id>/versions/<version>.md (§7). Absent for a retrieval_recipe artifact, whose canonical version lives in durable knowledge instead (§7).",
+      "type": "string"
+    }
+  }
+}

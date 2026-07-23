@@ -459,6 +459,1090 @@ func (j *ApprovalRecord) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// One anchored review comment. See
+// punakawan-artifact-review-plan-mutation-plan-v2.md §5.2/§6.
+// anchor.block_id/base_revision_hash/heading_path/quoted_text together drive the
+// 5-step anchor resolution order (§6): exact block ID, exact content hash, heading
+// path plus quoted text, heading path plus fuzzy quoted text, or conflicted.
+type ArtifactComment struct {
+	// Anchor corresponds to the JSON schema field "anchor".
+	Anchor ArtifactCommentAnchor `json:"anchor" yaml:"anchor" mapstructure:"anchor"`
+
+	// Author corresponds to the JSON schema field "author".
+	Author string `json:"author" yaml:"author" mapstructure:"author"`
+
+	// Body corresponds to the JSON schema field "body".
+	Body string `json:"body" yaml:"body" mapstructure:"body"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// ReviewId corresponds to the JSON schema field "review_id".
+	ReviewId string `json:"review_id" yaml:"review_id" mapstructure:"review_id"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status ArtifactCommentStatus `json:"status" yaml:"status" mapstructure:"status"`
+}
+
+type ArtifactCommentAnchor struct {
+	// BaseRevisionHash corresponds to the JSON schema field "base_revision_hash".
+	BaseRevisionHash string `json:"base_revision_hash" yaml:"base_revision_hash" mapstructure:"base_revision_hash"`
+
+	// BlockId corresponds to the JSON schema field "block_id".
+	BlockId *string `json:"block_id,omitempty,omitzero" yaml:"block_id,omitempty" mapstructure:"block_id,omitempty"`
+
+	// HeadingPath corresponds to the JSON schema field "heading_path".
+	HeadingPath []string `json:"heading_path,omitempty,omitzero" yaml:"heading_path,omitempty" mapstructure:"heading_path,omitempty"`
+
+	// Kind corresponds to the JSON schema field "kind".
+	Kind ArtifactCommentAnchorKind `json:"kind" yaml:"kind" mapstructure:"kind"`
+
+	// QuotedText corresponds to the JSON schema field "quoted_text".
+	QuotedText *string `json:"quoted_text,omitempty,omitzero" yaml:"quoted_text,omitempty" mapstructure:"quoted_text,omitempty"`
+}
+
+type ArtifactCommentAnchorKind string
+
+const ArtifactCommentAnchorKindMarkdownBlock ArtifactCommentAnchorKind = "markdown_block"
+
+var enumValues_ArtifactCommentAnchorKind = []interface{}{
+	"markdown_block",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactCommentAnchorKind) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactCommentAnchorKind {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactCommentAnchorKind, v)
+	}
+	*j = ArtifactCommentAnchorKind(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactCommentAnchor) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["base_revision_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field base_revision_hash in ArtifactCommentAnchor: required")
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in ArtifactCommentAnchor: required")
+	}
+	type Plain ArtifactCommentAnchor
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.BaseRevisionHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "BaseRevisionHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	*j = ArtifactCommentAnchor(plain)
+	return nil
+}
+
+type ArtifactCommentStatus string
+
+const ArtifactCommentStatusAddressed ArtifactCommentStatus = "addressed"
+const ArtifactCommentStatusNeedsClarification ArtifactCommentStatus = "needs_clarification"
+const ArtifactCommentStatusObsolete ArtifactCommentStatus = "obsolete"
+const ArtifactCommentStatusOpen ArtifactCommentStatus = "open"
+const ArtifactCommentStatusPartiallyAddressed ArtifactCommentStatus = "partially_addressed"
+const ArtifactCommentStatusRejectedByAgent ArtifactCommentStatus = "rejected_by_agent"
+const ArtifactCommentStatusResolvedByUser ArtifactCommentStatus = "resolved_by_user"
+
+var enumValues_ArtifactCommentStatus = []interface{}{
+	"open",
+	"addressed",
+	"partially_addressed",
+	"rejected_by_agent",
+	"needs_clarification",
+	"obsolete",
+	"resolved_by_user",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactCommentStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactCommentStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactCommentStatus, v)
+	}
+	*j = ArtifactCommentStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactComment) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["anchor"]; raw != nil && !ok {
+		return fmt.Errorf("field anchor in ArtifactComment: required")
+	}
+	if _, ok := raw["author"]; raw != nil && !ok {
+		return fmt.Errorf("field author in ArtifactComment: required")
+	}
+	if _, ok := raw["body"]; raw != nil && !ok {
+		return fmt.Errorf("field body in ArtifactComment: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ArtifactComment: required")
+	}
+	if _, ok := raw["review_id"]; raw != nil && !ok {
+		return fmt.Errorf("field review_id in ArtifactComment: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in ArtifactComment: required")
+	}
+	type Plain ArtifactComment
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ArtifactComment(plain)
+	return nil
+}
+
+// Points at one immutable version of a reviewable artifact. See
+// punakawan-artifact-review-plan-mutation-plan-v2.md §4. Every artifact type this
+// record can point at must provide a version reader, stable anchor resolver,
+// proposal renderer, diff generator, validator, and acceptance handler (§4) - this
+// schema only carries the pointer, not that behavior.
+type ArtifactReference struct {
+	// Path to this version's immutable content, e.g.
+	// .punakawan/plans/<id>/versions/<version>.md (§7). Absent for a retrieval_recipe
+	// artifact, whose canonical version lives in durable knowledge instead (§7).
+	CanonicalLocation *string `json:"canonical_location,omitempty,omitzero" yaml:"canonical_location,omitempty" mapstructure:"canonical_location,omitempty"`
+
+	// Format corresponds to the JSON schema field "format".
+	Format ArtifactReferenceFormat `json:"format" yaml:"format" mapstructure:"format"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// RevisionHash corresponds to the JSON schema field "revision_hash".
+	RevisionHash string `json:"revision_hash" yaml:"revision_hash" mapstructure:"revision_hash"`
+
+	// Artifact type. Only "plan" is implemented by this plan; "retrieval_recipe" is
+	// reserved for punakawan-procedural-knowledge-retrieval-recipe-plan-final.md's
+	// own review/mutation reuse once its compiler and validation lifecycle exist
+	// (§4), not enabled here.
+	Type ArtifactReferenceType `json:"type" yaml:"type" mapstructure:"type"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version int `json:"version" yaml:"version" mapstructure:"version"`
+
+	// WorkspaceId corresponds to the JSON schema field "workspace_id".
+	WorkspaceId string `json:"workspace_id" yaml:"workspace_id" mapstructure:"workspace_id"`
+}
+
+type ArtifactReferenceFormat string
+
+const ArtifactReferenceFormatMarkdown ArtifactReferenceFormat = "markdown"
+
+var enumValues_ArtifactReferenceFormat = []interface{}{
+	"markdown",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReferenceFormat) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactReferenceFormat {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactReferenceFormat, v)
+	}
+	*j = ArtifactReferenceFormat(v)
+	return nil
+}
+
+type ArtifactReferenceType string
+
+const ArtifactReferenceTypePlan ArtifactReferenceType = "plan"
+const ArtifactReferenceTypeRetrievalRecipe ArtifactReferenceType = "retrieval_recipe"
+
+var enumValues_ArtifactReferenceType = []interface{}{
+	"plan",
+	"retrieval_recipe",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReferenceType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactReferenceType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactReferenceType, v)
+	}
+	*j = ArtifactReferenceType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReference) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["format"]; raw != nil && !ok {
+		return fmt.Errorf("field format in ArtifactReference: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ArtifactReference: required")
+	}
+	if _, ok := raw["revision_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field revision_hash in ArtifactReference: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ArtifactReference: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in ArtifactReference: required")
+	}
+	if _, ok := raw["workspace_id"]; raw != nil && !ok {
+		return fmt.Errorf("field workspace_id in ArtifactReference: required")
+	}
+	type Plain ArtifactReference
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.RevisionHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "RevisionHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	if 1 > plain.Version {
+		return fmt.Errorf("field %s: must be >= %v", "version", 1)
+	}
+	*j = ArtifactReference(plain)
+	return nil
+}
+
+// A review session against one artifact version. See
+// punakawan-artifact-review-plan-mutation-plan-v2.md §5.1.
+type ArtifactReview struct {
+	// Artifact corresponds to the JSON schema field "artifact".
+	Artifact ArtifactReviewArtifact `json:"artifact" yaml:"artifact" mapstructure:"artifact"`
+
+	// Metadata corresponds to the JSON schema field "metadata".
+	Metadata ArtifactReviewMetadata `json:"metadata" yaml:"metadata" mapstructure:"metadata"`
+
+	// Review corresponds to the JSON schema field "review".
+	Review ArtifactReviewReview `json:"review" yaml:"review" mapstructure:"review"`
+}
+
+type ArtifactReviewArtifact struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// RevisionHash corresponds to the JSON schema field "revision_hash".
+	RevisionHash string `json:"revision_hash" yaml:"revision_hash" mapstructure:"revision_hash"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type ArtifactReviewArtifactType `json:"type" yaml:"type" mapstructure:"type"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version int `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+type ArtifactReviewArtifactType string
+
+const ArtifactReviewArtifactTypePlan ArtifactReviewArtifactType = "plan"
+const ArtifactReviewArtifactTypeRetrievalRecipe ArtifactReviewArtifactType = "retrieval_recipe"
+
+var enumValues_ArtifactReviewArtifactType = []interface{}{
+	"plan",
+	"retrieval_recipe",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReviewArtifactType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactReviewArtifactType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactReviewArtifactType, v)
+	}
+	*j = ArtifactReviewArtifactType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReviewArtifact) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ArtifactReviewArtifact: required")
+	}
+	if _, ok := raw["revision_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field revision_hash in ArtifactReviewArtifact: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ArtifactReviewArtifact: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in ArtifactReviewArtifact: required")
+	}
+	type Plain ArtifactReviewArtifact
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.RevisionHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "RevisionHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	if 1 > plain.Version {
+		return fmt.Errorf("field %s: must be >= %v", "version", 1)
+	}
+	*j = ArtifactReviewArtifact(plain)
+	return nil
+}
+
+type ArtifactReviewMetadata struct {
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// CreatedBy corresponds to the JSON schema field "created_by".
+	CreatedBy string `json:"created_by" yaml:"created_by" mapstructure:"created_by"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status ArtifactReviewMetadataStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// UpdatedAt corresponds to the JSON schema field "updated_at".
+	UpdatedAt *time.Time `json:"updated_at,omitempty,omitzero" yaml:"updated_at,omitempty" mapstructure:"updated_at,omitempty"`
+
+	// WorkspaceId corresponds to the JSON schema field "workspace_id".
+	WorkspaceId string `json:"workspace_id" yaml:"workspace_id" mapstructure:"workspace_id"`
+}
+
+type ArtifactReviewMetadataStatus string
+
+const ArtifactReviewMetadataStatusAccepted ArtifactReviewMetadataStatus = "accepted"
+const ArtifactReviewMetadataStatusAwaitingClarification ArtifactReviewMetadataStatus = "awaiting_clarification"
+const ArtifactReviewMetadataStatusCancelled ArtifactReviewMetadataStatus = "cancelled"
+const ArtifactReviewMetadataStatusConflicted ArtifactReviewMetadataStatus = "conflicted"
+const ArtifactReviewMetadataStatusDraft ArtifactReviewMetadataStatus = "draft"
+const ArtifactReviewMetadataStatusFailed ArtifactReviewMetadataStatus = "failed"
+const ArtifactReviewMetadataStatusProposalReady ArtifactReviewMetadataStatus = "proposal_ready"
+const ArtifactReviewMetadataStatusQueued ArtifactReviewMetadataStatus = "queued"
+const ArtifactReviewMetadataStatusRejected ArtifactReviewMetadataStatus = "rejected"
+const ArtifactReviewMetadataStatusRevising ArtifactReviewMetadataStatus = "revising"
+const ArtifactReviewMetadataStatusRevisionRequested ArtifactReviewMetadataStatus = "revision_requested"
+const ArtifactReviewMetadataStatusSubmitted ArtifactReviewMetadataStatus = "submitted"
+
+var enumValues_ArtifactReviewMetadataStatus = []interface{}{
+	"draft",
+	"submitted",
+	"queued",
+	"revising",
+	"awaiting_clarification",
+	"proposal_ready",
+	"revision_requested",
+	"accepted",
+	"rejected",
+	"cancelled",
+	"failed",
+	"conflicted",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReviewMetadataStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactReviewMetadataStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactReviewMetadataStatus, v)
+	}
+	*j = ArtifactReviewMetadataStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReviewMetadata) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in ArtifactReviewMetadata: required")
+	}
+	if _, ok := raw["created_by"]; raw != nil && !ok {
+		return fmt.Errorf("field created_by in ArtifactReviewMetadata: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ArtifactReviewMetadata: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in ArtifactReviewMetadata: required")
+	}
+	if _, ok := raw["workspace_id"]; raw != nil && !ok {
+		return fmt.Errorf("field workspace_id in ArtifactReviewMetadata: required")
+	}
+	type Plain ArtifactReviewMetadata
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ArtifactReviewMetadata(plain)
+	return nil
+}
+
+type ArtifactReviewReview struct {
+	// CommentCount corresponds to the JSON schema field "comment_count".
+	CommentCount *int `json:"comment_count,omitempty,omitzero" yaml:"comment_count,omitempty" mapstructure:"comment_count,omitempty"`
+
+	// Instruction corresponds to the JSON schema field "instruction".
+	Instruction *string `json:"instruction,omitempty,omitzero" yaml:"instruction,omitempty" mapstructure:"instruction,omitempty"`
+
+	// Title corresponds to the JSON schema field "title".
+	Title string `json:"title" yaml:"title" mapstructure:"title"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReviewReview) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["title"]; raw != nil && !ok {
+		return fmt.Errorf("field title in ArtifactReviewReview: required")
+	}
+	type Plain ArtifactReviewReview
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.CommentCount != nil && 0 > *plain.CommentCount {
+		return fmt.Errorf("field %s: must be >= %v", "comment_count", 0)
+	}
+	*j = ArtifactReviewReview(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactReview) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["artifact"]; raw != nil && !ok {
+		return fmt.Errorf("field artifact in ArtifactReview: required")
+	}
+	if _, ok := raw["metadata"]; raw != nil && !ok {
+		return fmt.Errorf("field metadata in ArtifactReview: required")
+	}
+	if _, ok := raw["review"]; raw != nil && !ok {
+		return fmt.Errorf("field review in ArtifactReview: required")
+	}
+	type Plain ArtifactReview
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ArtifactReview(plain)
+	return nil
+}
+
+// One revision attempt's result, not yet a new canonical version. See
+// punakawan-artifact-review-plan-mutation-plan-v2.md §5.4/§9. base.revision_hash
+// is compared against the artifact's current canonical hash at acceptance time
+// (§12); a mismatch means the review is conflicted, never a silent overwrite.
+type ArtifactRevisionProposal struct {
+	// Base corresponds to the JSON schema field "base".
+	Base ArtifactRevisionProposalBase `json:"base" yaml:"base" mapstructure:"base"`
+
+	// Metadata corresponds to the JSON schema field "metadata".
+	Metadata ArtifactRevisionProposalMetadata `json:"metadata" yaml:"metadata" mapstructure:"metadata"`
+
+	// Proposed corresponds to the JSON schema field "proposed".
+	Proposed ArtifactRevisionProposalProposed `json:"proposed" yaml:"proposed" mapstructure:"proposed"`
+
+	// Results corresponds to the JSON schema field "results".
+	Results *ArtifactRevisionProposalResults `json:"results,omitempty,omitzero" yaml:"results,omitempty" mapstructure:"results,omitempty"`
+}
+
+type ArtifactRevisionProposalBase struct {
+	// ArtifactId corresponds to the JSON schema field "artifact_id".
+	ArtifactId string `json:"artifact_id" yaml:"artifact_id" mapstructure:"artifact_id"`
+
+	// RevisionHash corresponds to the JSON schema field "revision_hash".
+	RevisionHash string `json:"revision_hash" yaml:"revision_hash" mapstructure:"revision_hash"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version int `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalBase) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["artifact_id"]; raw != nil && !ok {
+		return fmt.Errorf("field artifact_id in ArtifactRevisionProposalBase: required")
+	}
+	if _, ok := raw["revision_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field revision_hash in ArtifactRevisionProposalBase: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in ArtifactRevisionProposalBase: required")
+	}
+	type Plain ArtifactRevisionProposalBase
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.RevisionHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "RevisionHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	if 1 > plain.Version {
+		return fmt.Errorf("field %s: must be >= %v", "version", 1)
+	}
+	*j = ArtifactRevisionProposalBase(plain)
+	return nil
+}
+
+type ArtifactRevisionProposalMetadata struct {
+	// Attempt corresponds to the JSON schema field "attempt".
+	Attempt int `json:"attempt" yaml:"attempt" mapstructure:"attempt"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// ReviewId corresponds to the JSON schema field "review_id".
+	ReviewId string `json:"review_id" yaml:"review_id" mapstructure:"review_id"`
+
+	// RevisionRequestId corresponds to the JSON schema field "revision_request_id".
+	RevisionRequestId string `json:"revision_request_id" yaml:"revision_request_id" mapstructure:"revision_request_id"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status ArtifactRevisionProposalMetadataStatus `json:"status" yaml:"status" mapstructure:"status"`
+}
+
+type ArtifactRevisionProposalMetadataStatus string
+
+const ArtifactRevisionProposalMetadataStatusFailed ArtifactRevisionProposalMetadataStatus = "failed"
+const ArtifactRevisionProposalMetadataStatusPending ArtifactRevisionProposalMetadataStatus = "pending"
+const ArtifactRevisionProposalMetadataStatusReady ArtifactRevisionProposalMetadataStatus = "ready"
+const ArtifactRevisionProposalMetadataStatusSuperseded ArtifactRevisionProposalMetadataStatus = "superseded"
+
+var enumValues_ArtifactRevisionProposalMetadataStatus = []interface{}{
+	"pending",
+	"ready",
+	"failed",
+	"superseded",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalMetadataStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactRevisionProposalMetadataStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactRevisionProposalMetadataStatus, v)
+	}
+	*j = ArtifactRevisionProposalMetadataStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalMetadata) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["attempt"]; raw != nil && !ok {
+		return fmt.Errorf("field attempt in ArtifactRevisionProposalMetadata: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ArtifactRevisionProposalMetadata: required")
+	}
+	if _, ok := raw["review_id"]; raw != nil && !ok {
+		return fmt.Errorf("field review_id in ArtifactRevisionProposalMetadata: required")
+	}
+	if _, ok := raw["revision_request_id"]; raw != nil && !ok {
+		return fmt.Errorf("field revision_request_id in ArtifactRevisionProposalMetadata: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in ArtifactRevisionProposalMetadata: required")
+	}
+	type Plain ArtifactRevisionProposalMetadata
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 1 > plain.Attempt {
+		return fmt.Errorf("field %s: must be >= %v", "attempt", 1)
+	}
+	*j = ArtifactRevisionProposalMetadata(plain)
+	return nil
+}
+
+type ArtifactRevisionProposalProposed struct {
+	// ContentHash corresponds to the JSON schema field "content_hash".
+	ContentHash string `json:"content_hash" yaml:"content_hash" mapstructure:"content_hash"`
+
+	// ContentLocation corresponds to the JSON schema field "content_location".
+	ContentLocation string `json:"content_location" yaml:"content_location" mapstructure:"content_location"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version int `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalProposed) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["content_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field content_hash in ArtifactRevisionProposalProposed: required")
+	}
+	if _, ok := raw["content_location"]; raw != nil && !ok {
+		return fmt.Errorf("field content_location in ArtifactRevisionProposalProposed: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in ArtifactRevisionProposalProposed: required")
+	}
+	type Plain ArtifactRevisionProposalProposed
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.ContentHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "ContentHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	if 1 > plain.Version {
+		return fmt.Errorf("field %s: must be >= %v", "version", 1)
+	}
+	*j = ArtifactRevisionProposalProposed(plain)
+	return nil
+}
+
+type ArtifactRevisionProposalResults struct {
+	// AddressedComments corresponds to the JSON schema field "addressed_comments".
+	AddressedComments *int `json:"addressed_comments,omitempty,omitzero" yaml:"addressed_comments,omitempty" mapstructure:"addressed_comments,omitempty"`
+
+	// PartiallyAddressedComments corresponds to the JSON schema field
+	// "partially_addressed_comments".
+	PartiallyAddressedComments *int `json:"partially_addressed_comments,omitempty,omitzero" yaml:"partially_addressed_comments,omitempty" mapstructure:"partially_addressed_comments,omitempty"`
+
+	// UnresolvedComments corresponds to the JSON schema field "unresolved_comments".
+	UnresolvedComments *int `json:"unresolved_comments,omitempty,omitzero" yaml:"unresolved_comments,omitempty" mapstructure:"unresolved_comments,omitempty"`
+
+	// ValidationStatus corresponds to the JSON schema field "validation_status".
+	ValidationStatus *ArtifactRevisionProposalResultsValidationStatus `json:"validation_status,omitempty,omitzero" yaml:"validation_status,omitempty" mapstructure:"validation_status,omitempty"`
+}
+
+type ArtifactRevisionProposalResultsValidationStatus string
+
+const ArtifactRevisionProposalResultsValidationStatusFailed ArtifactRevisionProposalResultsValidationStatus = "failed"
+const ArtifactRevisionProposalResultsValidationStatusPassed ArtifactRevisionProposalResultsValidationStatus = "passed"
+const ArtifactRevisionProposalResultsValidationStatusPending ArtifactRevisionProposalResultsValidationStatus = "pending"
+
+var enumValues_ArtifactRevisionProposalResultsValidationStatus = []interface{}{
+	"pending",
+	"passed",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalResultsValidationStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactRevisionProposalResultsValidationStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactRevisionProposalResultsValidationStatus, v)
+	}
+	*j = ArtifactRevisionProposalResultsValidationStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposalResults) UnmarshalJSON(value []byte) error {
+	type Plain ArtifactRevisionProposalResults
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.AddressedComments != nil && 0 > *plain.AddressedComments {
+		return fmt.Errorf("field %s: must be >= %v", "addressed_comments", 0)
+	}
+	if plain.PartiallyAddressedComments != nil && 0 > *plain.PartiallyAddressedComments {
+		return fmt.Errorf("field %s: must be >= %v", "partially_addressed_comments", 0)
+	}
+	if plain.UnresolvedComments != nil && 0 > *plain.UnresolvedComments {
+		return fmt.Errorf("field %s: must be >= %v", "unresolved_comments", 0)
+	}
+	*j = ArtifactRevisionProposalResults(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionProposal) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["base"]; raw != nil && !ok {
+		return fmt.Errorf("field base in ArtifactRevisionProposal: required")
+	}
+	if _, ok := raw["metadata"]; raw != nil && !ok {
+		return fmt.Errorf("field metadata in ArtifactRevisionProposal: required")
+	}
+	if _, ok := raw["proposed"]; raw != nil && !ok {
+		return fmt.Errorf("field proposed in ArtifactRevisionProposal: required")
+	}
+	type Plain ArtifactRevisionProposal
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ArtifactRevisionProposal(plain)
+	return nil
+}
+
+// An immutable snapshot created when a review is submitted for revision. See
+// punakawan-artifact-review-plan-mutation-plan-v2.md §5.3/§8.
+// comments.snapshot_hash freezes the comment set at submission time - later
+// comment edits do not retroactively change what an in-flight revision run is
+// working from.
+type ArtifactRevisionRequest struct {
+	// BaseArtifact corresponds to the JSON schema field "base_artifact".
+	BaseArtifact ArtifactRevisionRequestBaseArtifact `json:"base_artifact" yaml:"base_artifact" mapstructure:"base_artifact"`
+
+	// Comments corresponds to the JSON schema field "comments".
+	Comments ArtifactRevisionRequestComments `json:"comments" yaml:"comments" mapstructure:"comments"`
+
+	// Metadata corresponds to the JSON schema field "metadata".
+	Metadata ArtifactRevisionRequestMetadata `json:"metadata" yaml:"metadata" mapstructure:"metadata"`
+
+	// Workflow corresponds to the JSON schema field "workflow".
+	Workflow ArtifactRevisionRequestWorkflow `json:"workflow" yaml:"workflow" mapstructure:"workflow"`
+}
+
+type ArtifactRevisionRequestBaseArtifact struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// RevisionHash corresponds to the JSON schema field "revision_hash".
+	RevisionHash string `json:"revision_hash" yaml:"revision_hash" mapstructure:"revision_hash"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type ArtifactRevisionRequestBaseArtifactType `json:"type" yaml:"type" mapstructure:"type"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version int `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+type ArtifactRevisionRequestBaseArtifactType string
+
+const ArtifactRevisionRequestBaseArtifactTypePlan ArtifactRevisionRequestBaseArtifactType = "plan"
+const ArtifactRevisionRequestBaseArtifactTypeRetrievalRecipe ArtifactRevisionRequestBaseArtifactType = "retrieval_recipe"
+
+var enumValues_ArtifactRevisionRequestBaseArtifactType = []interface{}{
+	"plan",
+	"retrieval_recipe",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionRequestBaseArtifactType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactRevisionRequestBaseArtifactType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactRevisionRequestBaseArtifactType, v)
+	}
+	*j = ArtifactRevisionRequestBaseArtifactType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionRequestBaseArtifact) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ArtifactRevisionRequestBaseArtifact: required")
+	}
+	if _, ok := raw["revision_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field revision_hash in ArtifactRevisionRequestBaseArtifact: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ArtifactRevisionRequestBaseArtifact: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in ArtifactRevisionRequestBaseArtifact: required")
+	}
+	type Plain ArtifactRevisionRequestBaseArtifact
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.RevisionHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "RevisionHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	if 1 > plain.Version {
+		return fmt.Errorf("field %s: must be >= %v", "version", 1)
+	}
+	*j = ArtifactRevisionRequestBaseArtifact(plain)
+	return nil
+}
+
+type ArtifactRevisionRequestComments struct {
+	// Count corresponds to the JSON schema field "count".
+	Count int `json:"count" yaml:"count" mapstructure:"count"`
+
+	// SnapshotHash corresponds to the JSON schema field "snapshot_hash".
+	SnapshotHash string `json:"snapshot_hash" yaml:"snapshot_hash" mapstructure:"snapshot_hash"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionRequestComments) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["count"]; raw != nil && !ok {
+		return fmt.Errorf("field count in ArtifactRevisionRequestComments: required")
+	}
+	if _, ok := raw["snapshot_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field snapshot_hash in ArtifactRevisionRequestComments: required")
+	}
+	type Plain ArtifactRevisionRequestComments
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Count {
+		return fmt.Errorf("field %s: must be >= %v", "count", 0)
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.SnapshotHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "SnapshotHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	*j = ArtifactRevisionRequestComments(plain)
+	return nil
+}
+
+type ArtifactRevisionRequestMetadata struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// ReviewId corresponds to the JSON schema field "review_id".
+	ReviewId string `json:"review_id" yaml:"review_id" mapstructure:"review_id"`
+
+	// SubmittedAt corresponds to the JSON schema field "submitted_at".
+	SubmittedAt time.Time `json:"submitted_at" yaml:"submitted_at" mapstructure:"submitted_at"`
+
+	// SubmittedBy corresponds to the JSON schema field "submitted_by".
+	SubmittedBy string `json:"submitted_by" yaml:"submitted_by" mapstructure:"submitted_by"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionRequestMetadata) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ArtifactRevisionRequestMetadata: required")
+	}
+	if _, ok := raw["review_id"]; raw != nil && !ok {
+		return fmt.Errorf("field review_id in ArtifactRevisionRequestMetadata: required")
+	}
+	if _, ok := raw["submitted_at"]; raw != nil && !ok {
+		return fmt.Errorf("field submitted_at in ArtifactRevisionRequestMetadata: required")
+	}
+	if _, ok := raw["submitted_by"]; raw != nil && !ok {
+		return fmt.Errorf("field submitted_by in ArtifactRevisionRequestMetadata: required")
+	}
+	type Plain ArtifactRevisionRequestMetadata
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ArtifactRevisionRequestMetadata(plain)
+	return nil
+}
+
+type ArtifactRevisionRequestWorkflow struct {
+	// AutoStart corresponds to the JSON schema field "auto_start".
+	AutoStart *bool `json:"auto_start,omitempty,omitzero" yaml:"auto_start,omitempty" mapstructure:"auto_start,omitempty"`
+
+	// MaxRevisionAttempts corresponds to the JSON schema field
+	// "max_revision_attempts".
+	MaxRevisionAttempts *int `json:"max_revision_attempts,omitempty,omitzero" yaml:"max_revision_attempts,omitempty" mapstructure:"max_revision_attempts,omitempty"`
+
+	// RequireFinalAcceptance corresponds to the JSON schema field
+	// "require_final_acceptance".
+	RequireFinalAcceptance *bool `json:"require_final_acceptance,omitempty,omitzero" yaml:"require_final_acceptance,omitempty" mapstructure:"require_final_acceptance,omitempty"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type ArtifactRevisionRequestWorkflowType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+type ArtifactRevisionRequestWorkflowType string
+
+const ArtifactRevisionRequestWorkflowTypeRevisePlanFromReview ArtifactRevisionRequestWorkflowType = "revise_plan_from_review"
+const ArtifactRevisionRequestWorkflowTypeReviseRetrievalRecipeFromReview ArtifactRevisionRequestWorkflowType = "revise_retrieval_recipe_from_review"
+
+var enumValues_ArtifactRevisionRequestWorkflowType = []interface{}{
+	"revise_plan_from_review",
+	"revise_retrieval_recipe_from_review",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionRequestWorkflowType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ArtifactRevisionRequestWorkflowType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ArtifactRevisionRequestWorkflowType, v)
+	}
+	*j = ArtifactRevisionRequestWorkflowType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionRequestWorkflow) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ArtifactRevisionRequestWorkflow: required")
+	}
+	type Plain ArtifactRevisionRequestWorkflow
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.MaxRevisionAttempts != nil && 1 > *plain.MaxRevisionAttempts {
+		return fmt.Errorf("field %s: must be >= %v", "max_revision_attempts", 1)
+	}
+	*j = ArtifactRevisionRequestWorkflow(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ArtifactRevisionRequest) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["base_artifact"]; raw != nil && !ok {
+		return fmt.Errorf("field base_artifact in ArtifactRevisionRequest: required")
+	}
+	if _, ok := raw["comments"]; raw != nil && !ok {
+		return fmt.Errorf("field comments in ArtifactRevisionRequest: required")
+	}
+	if _, ok := raw["metadata"]; raw != nil && !ok {
+		return fmt.Errorf("field metadata in ArtifactRevisionRequest: required")
+	}
+	if _, ok := raw["workflow"]; raw != nil && !ok {
+		return fmt.Errorf("field workflow in ArtifactRevisionRequest: required")
+	}
+	type Plain ArtifactRevisionRequest
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ArtifactRevisionRequest(plain)
+	return nil
+}
+
 // A normalized, semantic browser flow recorded by the human-guided recorder. See
 // punakawan-go-typescript-detailed-plan.md §12.9.
 type BrowserFlow struct {

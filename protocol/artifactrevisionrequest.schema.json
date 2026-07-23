@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/artifactrevisionrequest.schema.json",
+  "title": "ArtifactRevisionRequest",
+  "description": "An immutable snapshot created when a review is submitted for revision. See punakawan-artifact-review-plan-mutation-plan-v2.md §5.3/§8. comments.snapshot_hash freezes the comment set at submission time - later comment edits do not retroactively change what an in-flight revision run is working from.",
+  "type": "object",
+  "required": ["metadata", "base_artifact", "workflow", "comments"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["id", "review_id", "submitted_at", "submitted_by"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "review_id": { "type": "string" },
+        "submitted_at": { "type": "string", "format": "date-time" },
+        "submitted_by": { "type": "string" }
+      }
+    },
+    "base_artifact": {
+      "type": "object",
+      "required": ["type", "id", "version", "revision_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["plan", "retrieval_recipe"] },
+        "id": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "revision_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["revise_plan_from_review", "revise_retrieval_recipe_from_review"]
+        },
+        "auto_start": { "type": "boolean" },
+        "require_final_acceptance": { "type": "boolean" },
+        "max_revision_attempts": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "comments": {
+      "type": "object",
+      "required": ["snapshot_hash", "count"],
+      "additionalProperties": false,
+      "properties": {
+        "snapshot_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
