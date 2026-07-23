@@ -1,0 +1,51 @@
+web/panel/src/lib/review/recipe.ts
+  3415a4432044e41f 1-70
+web/panel/src/App.svelte
+  3415a4432044e41f 40,58-60
+web/panel/src/routes/review/StartReview.svelte
+  3415a4432044e41f 12-39,46,53,70,79-86
+web/panel/src/routes/knowledge/KnowledgeDetail.svelte
+  3415a4432044e41f 11-13,21-71,73-101,105-109,152-159,177-366,579-656
+web/panel/tests/recipe.test.ts
+  3415a4432044e41f 1-56
+web/panel/src/lib/components/review/CommentThread.svelte
+  3415a4432044e41f 61-62
+web/panel/src/lib/components/review/AddCommentPopover.svelte
+  3415a4432044e41f 3-6,8-12,20-29,49-60
+web/panel/src/lib/review/api.ts
+  3415a4432044e41f 16-19,74,79-82
+web/panel/tests/KnowledgeDetail.test.ts
+  3415a4432044e41f 50-95
+web/panel/src/routes/review/ReviewMode.svelte
+  3415a4432044e41f 9,16,67-70,90-104,219-225,237-246,448-464,479-487,503-511
+web/panel/tests/RecipeDocument.test.ts
+  3415a4432044e41f 1-53
+web/panel/src/lib/api/client.ts
+  3415a4432044e41f 322-405,443-445
+web/panel/tests/ReviewMode.test.ts
+  3415a4432044e41f 526-592
+web/panel/src/lib/components/review/RecipeDocument.svelte
+  3415a4432044e41f 1-173
+web/panel/src/lib/components/review/CommentRail.svelte
+  3415a4432044e41f 7-11,30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e924af1a9a894069ef64112eefcd7b1b8be7baab",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1097,
+      "total_deletions": 63,
+      "accepted_lines": 1087,
+      "overriden_lines": 0
+    }
+  }
+}
