@@ -74,14 +74,23 @@ func TestConcurrentResolveAndExecuteAgainstStaleRecipeDoesNotRace(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ForTask: %v", err)
 	}
-	// Each goroutine revalidates (1 Search call) then executes (1 Search
-	// call) = 2 calls each; only the execute half logs execution
-	// evidence, so we expect exactly `goroutines` evidence records.
+	// Each goroutine executes exactly once (1 Search call), so we expect
+	// exactly `goroutines` evidence records regardless of how many of
+	// them also revalidated first.
 	if len(all) != goroutines {
 		t.Fatalf("evidence count = %d, want %d (one execution record per goroutine, none lost or duplicated)", len(all), goroutines)
 	}
-	if search.calls.Load() != int64(goroutines)*2 {
-		t.Fatalf("search.calls = %d, want %d (revalidate+execute per goroutine)", search.calls.Load(), goroutines*2)
+	// Each goroutine's own execute is 1 Search call; a goroutine only
+	// adds a second, revalidation Search call if it still observed stale
+	// state when it checked. Since knowledge.Store now serializes all of
+	// this process's DB access through a single connection (fixing
+	// punokawan-q9r.6.1's Close orphaning bug), goroutines scheduled
+	// later are more likely to observe an already-verified record from
+	// an earlier goroutine's revalidation and skip their own - fewer
+	// redundant provider calls, not a race or a lost/duplicated one. So
+	// this is a range, not an exact `goroutines*2`.
+	if calls := search.calls.Load(); calls < int64(goroutines) || calls > int64(goroutines)*2 {
+		t.Fatalf("search.calls = %d, want between %d (every goroutine's own execute) and %d (every goroutine also revalidated)", calls, goroutines, goroutines*2)
 	}
 }
 

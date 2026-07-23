@@ -191,6 +191,16 @@ func waitForConnection(dsn string, timeout time.Duration, server *tools.Backgrou
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
+		// Close's "is another process still using this shared server"
+		// check counts PROCESSLIST rows other than its own query's
+		// connection - which only distinguishes a genuinely different
+		// process if this *sql.DB can never itself hold more than one
+		// open connection. database/sql's default (unlimited) pool would
+		// otherwise let concurrent callers open a second connection from
+		// this same process, making that check see it as "another
+		// process" and skip stopping the server - orphaning it even on a
+		// clean, non-crashing exit.
+		db.SetMaxOpenConns(1)
 		return db, nil
 	}
 	return nil, fmt.Errorf("timed out waiting for dolt sql-server to accept connections: %w", lastErr)
