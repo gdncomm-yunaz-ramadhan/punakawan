@@ -1,0 +1,45 @@
+cmd/punakawan/panel_cmd.go
+  6c4a5633395342b7 27-30,66-67,69
+internal/panel/session/manager_test.go
+  6c4a5633395342b7 1-79
+internal/panel/server/server_test.go
+  6c4a5633395342b7 4,10-11,20,164-165,711-831
+internal/panel/api/review_handler_test.go
+  6c4a5633395342b7 1-188
+internal/panel/session/handler.go
+  6c4a5633395342b7 1-81
+internal/panel/api/ids.go
+  6c4a5633395342b7 1-18
+internal/panel/api/comment_handler.go
+  6c4a5633395342b7 1-253
+internal/panel/session/manager.go
+  6c4a5633395342b7 1-129
+internal/panel/session/handler_test.go
+  6c4a5633395342b7 1-154
+internal/panel/api/review_handler.go
+  6c4a5633395342b7 1-33,35-40,42-126,128-137,139-155
+internal/panel/api/comment_handler_test.go
+  6c4a5633395342b7 1-139,141-164,166-205,207-248
+internal/panel/server/server.go
+  6c4a5633395342b7 12,17,45-47,73,86-93,111-116,120,124-125,145-155,183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e2fa3bf0cc9bf8370a7b9036e4a963476960b42a",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1020,
+      "total_deletions": 14,
+      "accepted_lines": 1469,
+      "overriden_lines": 7
+    }
+  }
+}
