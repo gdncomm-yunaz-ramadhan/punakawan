@@ -9,6 +9,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/capsule"
+	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -32,6 +33,18 @@ type RequestCapsuleInput struct {
 
 	ExpectedOutput string `json:"expected_output,omitempty"`
 	TokenBudget    *int   `json:"token_budget,omitempty"`
+
+	// RetrievalQuery, if set, runs Semar's knowledge-retrieval-to-capsule
+	// pipeline (AEP-M7 §11.2/§6.4): search_knowledge's full pipeline against
+	// this query, filtered to what role may receive and to TokenBudget, with
+	// each result's search explanation recorded as its relevant_knowledge
+	// reason - added alongside (not replacing) any explicit KnowledgeIds.
+	RetrievalQuery      string   `json:"retrieval_query,omitempty"`
+	RetrievalProject    string   `json:"retrieval_project,omitempty"`
+	RetrievalRepository string   `json:"retrieval_repository,omitempty"`
+	RetrievalModule     string   `json:"retrieval_module,omitempty"`
+	RetrievalPath       string   `json:"retrieval_path,omitempty"`
+	RetrievalTypes      []string `json:"retrieval_types,omitempty"`
 }
 
 func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RequestCapsuleInput) (*mcp.CallToolResult, protocol.ContextCapsule, error) {
@@ -44,7 +57,7 @@ func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		role := protocol.ContextCapsuleRole(in.Role)
 		id := fmt.Sprintf("cap-%s-%s-%d", role, in.TaskId, time.Now().UnixNano())
 
-		c, err := capsule.Build(store, id, time.Now().UTC(), capsule.BuildInput{
+		buildInput := capsule.BuildInput{
 			TaskID:              in.TaskId,
 			Role:                role,
 			Objective:           in.Objective,
@@ -59,7 +72,41 @@ func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 			ForbiddenActions:    in.ForbiddenActions,
 			ExpectedOutput:      in.ExpectedOutput,
 			TokenBudget:         in.TokenBudget,
-		})
+		}
+
+		var c protocol.ContextCapsule
+		if in.RetrievalQuery == "" {
+			c, err = capsule.Build(store, id, time.Now().UTC(), buildInput)
+		} else {
+			ix, ixErr := a.OpenSearchIndex()
+			if ixErr != nil {
+				return nil, protocol.ContextCapsule{}, fmt.Errorf("mcpserver: open search index: %w", ixErr)
+			}
+			if rebuildErr := search.Rebuild(store, ix); rebuildErr != nil {
+				return nil, protocol.ContextCapsule{}, fmt.Errorf("mcpserver: rebuild search index: %w", rebuildErr)
+			}
+
+			retrievalInput := capsule.RetrievalInput{
+				BuildInput: buildInput,
+				Query:      in.RetrievalQuery,
+				Scope: search.Scope{
+					Project:    in.RetrievalProject,
+					Repository: in.RetrievalRepository,
+					Module:     in.RetrievalModule,
+					Path:       in.RetrievalPath,
+				},
+				Types:          in.RetrievalTypes,
+				ReconcileRunID: in.TaskId,
+				// Resolved lazily by BuildFromRetrieval, and only if some
+				// retrieved candidate actually needs it - opening a Gate
+				// spawns the atlassian adapter's subprocess, a cost a
+				// capsule build with nothing to reconcile should not pay.
+				ReconcileGate: func() (capsule.AdapterGate, error) {
+					return a.AdapterRegistry.Gate(ctx, "atlassian")
+				},
+			}
+			c, err = capsule.BuildFromRetrieval(ctx, store, ix, id, time.Now().UTC(), retrievalInput)
+		}
 		if err != nil {
 			return nil, protocol.ContextCapsule{}, fmt.Errorf("mcpserver: build capsule: %w", err)
 		}

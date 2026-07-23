@@ -38,7 +38,11 @@
         "additionalProperties": false,
         "properties": {
           "id": { "type": "string" },
-          "summary": { "type": "string" }
+          "summary": { "type": "string" },
+          "reason": {
+            "description": "Why this item was selected for this capsule, e.g. a search_knowledge match explanation. Set only when the item came from Semar's automatic knowledge-retrieval pipeline (AEP-M7); manually-cited items may omit it. See punakawan-architecture-enhancement-plan.md §11.13.",
+            "type": "string"
+          }
         }
       }
     },

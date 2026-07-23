@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -38,6 +39,51 @@ func TestRequestCapsuleEndToEnd(t *testing.T) {
 	}
 	if got.Objective != "implement the refund flow" {
 		t.Fatalf("persisted Objective = %q, want %q", got.Objective, "implement the refund flow")
+	}
+}
+
+func TestRequestCapsuleWithRetrievalQueryPopulatesRelevantKnowledge(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	rec := protocol.KnowledgeRecord{
+		Id:     "pkw:req/fixture/REQ-1",
+		Type:   protocol.KnowledgeRecordTypeRequirement,
+		Status: "active",
+		Title:  "Refund settles same day for approved orders",
+		Source: protocol.KnowledgeRecordSource{Provider: "test", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{
+			Method: protocol.KnowledgeRecordExtractionMethodManual,
+		},
+		Validity: protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateObserved},
+	}
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	var out map[string]any
+	callTool(t, cs, "request_capsule", map[string]any{
+		"task_id":         "bd-task-1",
+		"role":            "petruk",
+		"objective":       "implement the refund flow",
+		"retrieval_query": "refund settles same day approved orders",
+	}, &out)
+
+	relevant, _ := out["relevant_knowledge"].([]any)
+	if len(relevant) != 1 {
+		t.Fatalf("relevant_knowledge = %v, want one retrieved reference", relevant)
+	}
+	ref := relevant[0].(map[string]any)
+	if ref["id"] != rec.Id {
+		t.Fatalf("relevant_knowledge[0].id = %v, want %s", ref["id"], rec.Id)
+	}
+	if reason, _ := ref["reason"].(string); reason == "" {
+		t.Fatal("expected a non-empty reason on the retrieved knowledge reference")
 	}
 }
 

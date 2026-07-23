@@ -862,6 +862,12 @@ type ContextCapsuleRelevantKnowledgeElem struct {
 	// Id corresponds to the JSON schema field "id".
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
+	// Why this item was selected for this capsule, e.g. a search_knowledge match
+	// explanation. Set only when the item came from Semar's automatic
+	// knowledge-retrieval pipeline (AEP-M7); manually-cited items may omit it. See
+	// punakawan-architecture-enhancement-plan.md §11.13.
+	Reason *string `json:"reason,omitempty,omitzero" yaml:"reason,omitempty" mapstructure:"reason,omitempty"`
+
 	// Summary corresponds to the JSON schema field "summary".
 	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
 }

@@ -30,6 +30,12 @@ type BuildInput struct {
 	// subject to ForbiddenKnowledgeTypes.
 	EvidenceIDs []string
 
+	// KnowledgeReasons optionally maps a KnowledgeIDs entry to why it was
+	// selected (e.g. a search_knowledge match explanation), recorded on the
+	// capsule's relevant_knowledge item. Entries not present here get no
+	// reason - a caller manually citing an id doesn't need to explain why.
+	KnowledgeReasons map[string]string
+
 	AcceptanceCriteria  []string
 	Constraints         []string
 	Assumptions         []string
@@ -86,7 +92,7 @@ func Build(store *knowledge.Store, id string, now time.Time, in BuildInput) (pro
 		Requirements:        toRequirementRefs(requirements),
 		AcceptanceCriteria:  in.AcceptanceCriteria,
 		Constraints:         in.Constraints,
-		RelevantKnowledge:   toKnowledgeRefs(knowledgeRefs),
+		RelevantKnowledge:   toKnowledgeRefs(knowledgeRefs, in.KnowledgeReasons),
 		Evidence:            evidence,
 		Assumptions:         in.Assumptions,
 		UnresolvedQuestions: in.UnresolvedQuestions,
@@ -142,13 +148,17 @@ func toRequirementRefs(recs []protocol.KnowledgeRecord) []protocol.ContextCapsul
 	return out
 }
 
-func toKnowledgeRefs(recs []protocol.KnowledgeRecord) []protocol.ContextCapsuleRelevantKnowledgeElem {
+func toKnowledgeRefs(recs []protocol.KnowledgeRecord, reasons map[string]string) []protocol.ContextCapsuleRelevantKnowledgeElem {
 	if recs == nil {
 		return nil
 	}
 	out := make([]protocol.ContextCapsuleRelevantKnowledgeElem, len(recs))
 	for i, r := range recs {
-		out[i] = protocol.ContextCapsuleRelevantKnowledgeElem{Id: r.Id, Summary: summaryPtr(r)}
+		ref := protocol.ContextCapsuleRelevantKnowledgeElem{Id: r.Id, Summary: summaryPtr(r)}
+		if reason, ok := reasons[r.Id]; ok && reason != "" {
+			ref.Reason = &reason
+		}
+		out[i] = ref
 	}
 	return out
 }
