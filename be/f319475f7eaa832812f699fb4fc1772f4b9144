@@ -1,0 +1,35 @@
+internal/mcpserver/tools.go
+  6c4a5633395342b7 29
+internal/capsule/build.go
+  6c4a5633395342b7 33-38,95,151,157-161
+internal/mcpserver/tools_capsule_test.go
+  6c4a5633395342b7 5,45-89
+internal/capsule/retrieve_test.go
+  6c4a5633395342b7 1-151
+protocol/capsule.schema.json
+  6c4a5633395342b7 41-45
+internal/capsule/retrieve.go
+  6c4a5633395342b7 1-169
+internal/mcpserver/tools_capsule.go
+  6c4a5633395342b7 12,36-47,60,75-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "bef319475f7eaa832812f699fb4fc1772f4b9144",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 477,
+      "total_deletions": 50,
+      "accepted_lines": 434,
+      "overriden_lines": 0
+    }
+  }
+}
