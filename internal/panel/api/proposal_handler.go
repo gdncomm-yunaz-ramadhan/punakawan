@@ -191,6 +191,26 @@ func parseAttempt(r *http.Request) (int, error) {
 	return strconv.Atoi(r.PathValue("proposalId"))
 }
 
+// ListProposalsHandler serves GET /api/v1/reviews/{reviewId}/proposals:
+// every attempt stored for the review, in order. Attempts are numbered
+// densely starting at 1 (nextAttempt never skips a number), so reading
+// until the first miss is a correct, if linear, way to enumerate them
+// without a separate index file to keep in sync.
+func ListProposalsHandler(reviews *artifact.ReviewStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reviewID := r.PathValue("reviewId")
+		var items []protocol.ArtifactRevisionProposal
+		for attempt := 1; ; attempt++ {
+			_, proposal, err := reviews.GetProposal(reviewID, attempt)
+			if err != nil {
+				break
+			}
+			items = append(items, proposal)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	}
+}
+
 // ProposalHandler serves
 // GET /api/v1/reviews/{reviewId}/proposals/{proposalId}.
 func ProposalHandler(reviews *artifact.ReviewStore) http.HandlerFunc {

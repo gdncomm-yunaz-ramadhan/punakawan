@@ -393,3 +393,47 @@ func TestRebaseHandlerRepointsAConflictedReviewAtTheLatestVersion(t *testing.T) 
 		t.Fatalf("rebased = %+v, want version 2 and status draft", rebased)
 	}
 }
+
+func TestListProposalsHandlerListsAllAttempts(t *testing.T) {
+	reviewID, plans, reviews := seedQueuedReviewWithComment(t)
+	createProposal(t, reviews, plans, reviewID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reviews/"+reviewID+"/proposals", nil)
+	req.SetPathValue("reviewId", reviewID)
+	rec := httptest.NewRecorder()
+	ListProposalsHandler(reviews)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		Items []protocol.ArtifactRevisionProposal `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(out.Items))
+	}
+}
+
+func TestListProposalsHandlerReturnsEmptyForNoProposals(t *testing.T) {
+	reviewID, _, reviews := seedQueuedReviewWithComment(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reviews/"+reviewID+"/proposals", nil)
+	req.SetPathValue("reviewId", reviewID)
+	rec := httptest.NewRecorder()
+	ListProposalsHandler(reviews)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		Items []protocol.ArtifactRevisionProposal `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Items) != 0 {
+		t.Fatalf("items = %d, want 0", len(out.Items))
+	}
+}

@@ -160,6 +160,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/rebase", session.RequireSession(s.sessions, api.RebaseHandler(reviews, plans)))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/timeline", api.TimelineHandler(reviews))
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals", session.RequireSession(s.sessions, api.CreateProposalHandler(reviews, plans)))
+	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals", api.ListProposalsHandler(reviews))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}", api.ProposalHandler(reviews))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/diff", api.ProposalDiffHandler(reviews, plans))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/validation", api.ProposalValidationHandler(reviews, plans))
