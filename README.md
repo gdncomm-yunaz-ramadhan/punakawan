@@ -168,13 +168,14 @@ punakawan panel
 
 It renders an overview of sessions, the Beads task graph and dependencies,
 knowledge records, pending approvals, and a review mode for diffs and plans —
-theme-aware (light/dark), keyboard-accessible, and served entirely from the Go
-binary (the Svelte frontend is embedded via `go:embed`). Nothing leaves your
-machine; the listener binds to loopback and mutating routes are session- and
-CSRF-gated.
+keyboard-accessible and served entirely from the Go binary (the Svelte frontend
+is embedded via `go:embed`). Nothing leaves your machine; the listener binds to
+loopback and mutating routes are session- and CSRF-gated.
 
-The UI is one design system — theme, accent, cards, charts, tables, and the
-review flow all share the same tokens (light and dark):
+The interface is a single design system themed on the wayang batik palette drawn
+from the artwork above — gold, teal, terracotta, and indigo — with accented
+metric tiles, status pills, charts, and modals that all read from the same
+tokens in both light and dark:
 
 <p align="center">
   <img src="assets/panel-showcase.png" alt="Punakawan Panel — component/theme system" width="820" />
