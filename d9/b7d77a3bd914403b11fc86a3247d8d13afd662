@@ -1,0 +1,53 @@
+internal/search/identifiers_test.go
+  6c4a5633395342b7 1-61
+protocol/knowledge.schema.json
+  6c4a5633395342b7 25-55
+internal/search/document.go
+  6c4a5633395342b7 1-80
+internal/search/tokenize_test.go
+  6c4a5633395342b7 1-94
+internal/search/tokenize.go
+  6c4a5633395342b7 1-131
+internal/search/search_helpers_test.go
+  6c4a5633395342b7 1-78
+internal/knowledge/importexport.go
+  6c4a5633395342b7 8,63-98
+internal/search/search.go
+  6c4a5633395342b7 1-202,204-224,226-251,253-422
+internal/mcpserver/tools_knowledgesearch_test.go
+  6c4a5633395342b7 1-118
+internal/search/index.go
+  6c4a5633395342b7 1-117
+internal/search/identifiers.go
+  6c4a5633395342b7 1-171
+internal/mcpserver/tools_knowledgesearch.go
+  6c4a5633395342b7 1-113
+internal/app/app.go
+  6c4a5633395342b7 21,45-47,180-199,201-203,209-216,221-224,231-232
+internal/search/analyzer.go
+  6c4a5633395342b7 1-48
+internal/mcpserver/tools.go
+  6c4a5633395342b7 223-227
+internal/search/search_test.go
+  6c4a5633395342b7 1-14,16-39,41-44,46-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "d9b7d77a3bd914403b11fc86a3247d8d13afd662",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1837,
+      "total_deletions": 54,
+      "accepted_lines": 1780,
+      "overriden_lines": 6
+    }
+  }
+}
