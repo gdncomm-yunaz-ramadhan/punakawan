@@ -220,6 +220,45 @@ type ReadyIssue struct {
 	StartedAt    string            `json:"started_at"`
 }
 
+// RelatedIssue is one entry of Issue.Dependents (bd show --json's
+// "dependents" and "dependencies" arrays, when they nest a full issue
+// summary rather than a bare edge - verified empirically against bd
+// version 1.0.4: bd list/ready --json emit dependencies as flat
+// {issue_id,depends_on_id,type} edges (ReadyDependency), but bd show --json
+// nests the related issue's own summary fields plus dependency_type).
+type RelatedIssue struct {
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Status         string `json:"status"`
+	Priority       int    `json:"priority"`
+	IssueType      string `json:"issue_type"`
+	DependencyType string `json:"dependency_type"`
+}
+
+// Issue is the subset of `bd show --json`'s and `bd list --json`'s
+// per-issue output this package needs beyond ReadyIssue: the full (not
+// ready-filtered) issue detail, including Parent, Dependents, and
+// AcceptanceCriteria, which bd ready --json does not emit.
+type Issue struct {
+	ID                 string         `json:"id"`
+	Title              string         `json:"title"`
+	Description        string         `json:"description"`
+	AcceptanceCriteria string         `json:"acceptance_criteria"`
+	Status             string         `json:"status"`
+	Priority           int            `json:"priority"`
+	IssueType          string         `json:"issue_type"`
+	Owner              string         `json:"owner"`
+	Assignee           string         `json:"assignee"`
+	Labels             []string       `json:"labels,omitempty"`
+	Parent             string         `json:"parent"`
+	Dependencies       []RelatedIssue `json:"dependencies,omitempty"`
+	Dependents         []RelatedIssue `json:"dependents,omitempty"`
+	CreatedAt          string         `json:"created_at"`
+	CreatedBy          string         `json:"created_by"`
+	UpdatedAt          string         `json:"updated_at"`
+	ClosedAt           string         `json:"closed_at"`
+}
+
 // ReadyDependency is the subset of a ReadyIssue's "dependencies" entries
 // this package needs, matching depResult's field naming for consistency.
 type ReadyDependency struct {
@@ -331,4 +370,64 @@ func Ready(ctx context.Context, sup *tools.Supervisor, dir string, opts ReadyOpt
 func ClaimReady(ctx context.Context, sup *tools.Supervisor, dir string, opts ReadyOptions) ([]ReadyIssue, error) {
 	args := append([]string{"ready", "--claim", "--json"}, readyArgs(opts)...)
 	return decodeReadyIssues(ctx, sup, dir, args)
+}
+
+// ListOptions holds the optional `bd list` filters this package exposes.
+// Unlike ReadyOptions, List is not restricted to unblocked issues: it is
+// the panel's task reader's route to "every task regardless of state"
+// (punakawan-panel-implementation-plan.md §8.2).
+type ListOptions struct {
+	Status   string
+	Priority string
+	Type     string
+	Assignee string
+	// Limit overrides bd's own default of 50. 0 defers to that default,
+	// matching ReadyOptions' convention; List does not expose bd's
+	// --limit=0 ("unlimited") passthrough today.
+	Limit int
+}
+
+// List runs `bd list --json` in dir, filtered per opts, and returns every
+// matching issue regardless of ready/blocked/closed state. dir has the
+// same requirements as Ready's.
+func List(ctx context.Context, sup *tools.Supervisor, dir string, opts ListOptions) ([]ReadyIssue, error) {
+	args := []string{"list", "--json"}
+	if opts.Status != "" {
+		args = append(args, "--status", opts.Status)
+	}
+	if opts.Priority != "" {
+		args = append(args, "--priority", opts.Priority)
+	}
+	if opts.Type != "" {
+		args = append(args, "--type", opts.Type)
+	}
+	if opts.Assignee != "" {
+		args = append(args, "--assignee", opts.Assignee)
+	}
+	if opts.Limit > 0 {
+		args = append(args, "--limit", fmt.Sprintf("%d", opts.Limit))
+	}
+	return decodeReadyIssues(ctx, sup, dir, args)
+}
+
+// Show runs `bd show --json` in dir for a single issue ID and returns its
+// full detail, including Dependents and AcceptanceCriteria, which List and
+// Ready do not emit.
+func Show(ctx context.Context, sup *tools.Supervisor, dir, id string) (Issue, error) {
+	res, err := sup.Run(ctx, tools.Spec{Name: "bd", Args: []string{"show", id, "--json"}, Dir: dir, Timeout: 30 * time.Second})
+	if err != nil {
+		return Issue{}, fmt.Errorf("beads: bd show %s: %w", id, err)
+	}
+	if res.ExitCode != 0 {
+		return Issue{}, fmt.Errorf("beads: bd show %s failed: %s", id, strings.TrimSpace(string(res.Stderr)))
+	}
+
+	var out []Issue
+	if err := json.Unmarshal(res.Stdout, &out); err != nil {
+		return Issue{}, fmt.Errorf("beads: decode bd show %s output: %w", id, err)
+	}
+	if len(out) == 0 {
+		return Issue{}, fmt.Errorf("beads: bd show %s: issue not found", id)
+	}
+	return out[0], nil
 }

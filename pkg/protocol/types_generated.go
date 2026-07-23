@@ -2514,6 +2514,428 @@ func (j *MissingContextRequest) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// SSE envelope pushed to the Punakawan Panel frontend at GET /api/v1/events, per
+// punakawan-panel-implementation-plan.md §12. Distinct from Event
+// (event.schema.json), which is the per-run execution journal this envelope is
+// often derived from.
+type PanelEvent struct {
+	// EntityId corresponds to the JSON schema field "entity_id".
+	EntityId *string `json:"entity_id,omitempty,omitzero" yaml:"entity_id,omitempty" mapstructure:"entity_id,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// OccurredAt corresponds to the JSON schema field "occurred_at".
+	OccurredAt time.Time `json:"occurred_at" yaml:"occurred_at" mapstructure:"occurred_at"`
+
+	// Payload corresponds to the JSON schema field "payload".
+	Payload PanelEventPayload `json:"payload,omitempty,omitzero" yaml:"payload,omitempty" mapstructure:"payload,omitempty"`
+
+	// Revision corresponds to the JSON schema field "revision".
+	Revision *int `json:"revision,omitempty,omitzero" yaml:"revision,omitempty" mapstructure:"revision,omitempty"`
+
+	// SessionId corresponds to the JSON schema field "session_id".
+	SessionId *string `json:"session_id,omitempty,omitzero" yaml:"session_id,omitempty" mapstructure:"session_id,omitempty"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type PanelEventType `json:"type" yaml:"type" mapstructure:"type"`
+
+	// WorkspaceId corresponds to the JSON schema field "workspace_id".
+	WorkspaceId *string `json:"workspace_id,omitempty,omitzero" yaml:"workspace_id,omitempty" mapstructure:"workspace_id,omitempty"`
+}
+
+type PanelEventPayload map[string]interface{}
+
+type PanelEventType string
+
+const PanelEventTypeAdapterHealthChanged PanelEventType = "adapter.health_changed"
+const PanelEventTypeApprovalRequested PanelEventType = "approval.requested"
+const PanelEventTypeApprovalResolved PanelEventType = "approval.resolved"
+const PanelEventTypeEvidenceCreated PanelEventType = "evidence.created"
+const PanelEventTypeGitStateChanged PanelEventType = "git.state_changed"
+const PanelEventTypeKnowledgeCreated PanelEventType = "knowledge.created"
+const PanelEventTypeKnowledgeSuperseded PanelEventType = "knowledge.superseded"
+const PanelEventTypeKnowledgeUpdated PanelEventType = "knowledge.updated"
+const PanelEventTypeSessionCompleted PanelEventType = "session.completed"
+const PanelEventTypeSessionFailed PanelEventType = "session.failed"
+const PanelEventTypeSessionPhaseChanged PanelEventType = "session.phase_changed"
+const PanelEventTypeSessionProgress PanelEventType = "session.progress"
+const PanelEventTypeSessionStarted PanelEventType = "session.started"
+const PanelEventTypeSystemReady PanelEventType = "system.ready"
+const PanelEventTypeSystemWarning PanelEventType = "system.warning"
+const PanelEventTypeTaskBlocked PanelEventType = "task.blocked"
+const PanelEventTypeTaskCompleted PanelEventType = "task.completed"
+const PanelEventTypeTaskCreated PanelEventType = "task.created"
+const PanelEventTypeTaskUpdated PanelEventType = "task.updated"
+const PanelEventTypeWorkspaceAvailabilityChanged PanelEventType = "workspace.availability_changed"
+const PanelEventTypeWorkspaceRegistered PanelEventType = "workspace.registered"
+const PanelEventTypeWorkspaceUpdated PanelEventType = "workspace.updated"
+
+var enumValues_PanelEventType = []interface{}{
+	"system.ready",
+	"system.warning",
+	"workspace.registered",
+	"workspace.updated",
+	"workspace.availability_changed",
+	"session.started",
+	"session.phase_changed",
+	"session.progress",
+	"session.completed",
+	"session.failed",
+	"task.created",
+	"task.updated",
+	"task.blocked",
+	"task.completed",
+	"knowledge.created",
+	"knowledge.updated",
+	"knowledge.superseded",
+	"approval.requested",
+	"approval.resolved",
+	"evidence.created",
+	"git.state_changed",
+	"adapter.health_changed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelEventType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_PanelEventType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_PanelEventType, v)
+	}
+	*j = PanelEventType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelEvent) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in PanelEvent: required")
+	}
+	if _, ok := raw["occurred_at"]; raw != nil && !ok {
+		return fmt.Errorf("field occurred_at in PanelEvent: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in PanelEvent: required")
+	}
+	type Plain PanelEvent
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Revision != nil && 0 > *plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	*j = PanelEvent(plain)
+	return nil
+}
+
+// Compact per-run summary written to .punakawan/runs/<run-id>/summary.yaml as part
+// of normal run checkpointing, per punakawan-panel-implementation-plan.md §8.3.
+// Backs the panel's session list/overview and CLI recovery inspection; not
+// panel-specific persistence.
+type PanelSessionSummary struct {
+	// ActiveRole corresponds to the JSON schema field "active_role".
+	ActiveRole *PanelSessionSummaryActiveRole `json:"active_role,omitempty,omitzero" yaml:"active_role,omitempty" mapstructure:"active_role,omitempty"`
+
+	// ErrorCount corresponds to the JSON schema field "error_count".
+	ErrorCount *int `json:"error_count,omitempty,omitzero" yaml:"error_count,omitempty" mapstructure:"error_count,omitempty"`
+
+	// EvidenceCount corresponds to the JSON schema field "evidence_count".
+	EvidenceCount *int `json:"evidence_count,omitempty,omitzero" yaml:"evidence_count,omitempty" mapstructure:"evidence_count,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Initiator corresponds to the JSON schema field "initiator".
+	Initiator *string `json:"initiator,omitempty,omitzero" yaml:"initiator,omitempty" mapstructure:"initiator,omitempty"`
+
+	// Objective corresponds to the JSON schema field "objective".
+	Objective *string `json:"objective,omitempty,omitzero" yaml:"objective,omitempty" mapstructure:"objective,omitempty"`
+
+	// StartedAt corresponds to the JSON schema field "started_at".
+	StartedAt time.Time `json:"started_at" yaml:"started_at" mapstructure:"started_at"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status string `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Best-effort workspace-wide bd task counts as of this checkpoint. Not scoped to
+	// this run: bd issues are not tagged per-run today.
+	TaskCounts *PanelSessionSummaryTaskCounts `json:"task_counts,omitempty,omitzero" yaml:"task_counts,omitempty" mapstructure:"task_counts,omitempty"`
+
+	// UpdatedAt corresponds to the JSON schema field "updated_at".
+	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at" mapstructure:"updated_at"`
+
+	// WarningCount corresponds to the JSON schema field "warning_count".
+	WarningCount *int `json:"warning_count,omitempty,omitzero" yaml:"warning_count,omitempty" mapstructure:"warning_count,omitempty"`
+
+	// Workflow corresponds to the JSON schema field "workflow".
+	Workflow string `json:"workflow" yaml:"workflow" mapstructure:"workflow"`
+
+	// WorkspaceId corresponds to the JSON schema field "workspace_id".
+	WorkspaceId string `json:"workspace_id" yaml:"workspace_id" mapstructure:"workspace_id"`
+}
+
+type PanelSessionSummaryActiveRole string
+
+const PanelSessionSummaryActiveRoleBagong PanelSessionSummaryActiveRole = "bagong"
+const PanelSessionSummaryActiveRoleGareng PanelSessionSummaryActiveRole = "gareng"
+const PanelSessionSummaryActiveRolePetruk PanelSessionSummaryActiveRole = "petruk"
+const PanelSessionSummaryActiveRoleSemar PanelSessionSummaryActiveRole = "semar"
+
+var enumValues_PanelSessionSummaryActiveRole = []interface{}{
+	"semar",
+	"gareng",
+	"petruk",
+	"bagong",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelSessionSummaryActiveRole) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_PanelSessionSummaryActiveRole {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_PanelSessionSummaryActiveRole, v)
+	}
+	*j = PanelSessionSummaryActiveRole(v)
+	return nil
+}
+
+// Best-effort workspace-wide bd task counts as of this checkpoint. Not scoped to
+// this run: bd issues are not tagged per-run today.
+type PanelSessionSummaryTaskCounts struct {
+	// Blocked corresponds to the JSON schema field "blocked".
+	Blocked *int `json:"blocked,omitempty,omitzero" yaml:"blocked,omitempty" mapstructure:"blocked,omitempty"`
+
+	// Closed corresponds to the JSON schema field "closed".
+	Closed *int `json:"closed,omitempty,omitzero" yaml:"closed,omitempty" mapstructure:"closed,omitempty"`
+
+	// InProgress corresponds to the JSON schema field "in_progress".
+	InProgress *int `json:"in_progress,omitempty,omitzero" yaml:"in_progress,omitempty" mapstructure:"in_progress,omitempty"`
+
+	// Open corresponds to the JSON schema field "open".
+	Open *int `json:"open,omitempty,omitzero" yaml:"open,omitempty" mapstructure:"open,omitempty"`
+
+	// Total corresponds to the JSON schema field "total".
+	Total *int `json:"total,omitempty,omitzero" yaml:"total,omitempty" mapstructure:"total,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelSessionSummaryTaskCounts) UnmarshalJSON(value []byte) error {
+	type Plain PanelSessionSummaryTaskCounts
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Blocked != nil && 0 > *plain.Blocked {
+		return fmt.Errorf("field %s: must be >= %v", "blocked", 0)
+	}
+	if plain.Closed != nil && 0 > *plain.Closed {
+		return fmt.Errorf("field %s: must be >= %v", "closed", 0)
+	}
+	if plain.InProgress != nil && 0 > *plain.InProgress {
+		return fmt.Errorf("field %s: must be >= %v", "in_progress", 0)
+	}
+	if plain.Open != nil && 0 > *plain.Open {
+		return fmt.Errorf("field %s: must be >= %v", "open", 0)
+	}
+	if plain.Total != nil && 0 > *plain.Total {
+		return fmt.Errorf("field %s: must be >= %v", "total", 0)
+	}
+	*j = PanelSessionSummaryTaskCounts(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelSessionSummary) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in PanelSessionSummary: required")
+	}
+	if _, ok := raw["started_at"]; raw != nil && !ok {
+		return fmt.Errorf("field started_at in PanelSessionSummary: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in PanelSessionSummary: required")
+	}
+	if _, ok := raw["updated_at"]; raw != nil && !ok {
+		return fmt.Errorf("field updated_at in PanelSessionSummary: required")
+	}
+	if _, ok := raw["workflow"]; raw != nil && !ok {
+		return fmt.Errorf("field workflow in PanelSessionSummary: required")
+	}
+	if _, ok := raw["workspace_id"]; raw != nil && !ok {
+		return fmt.Errorf("field workspace_id in PanelSessionSummary: required")
+	}
+	type Plain PanelSessionSummary
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.ErrorCount != nil && 0 > *plain.ErrorCount {
+		return fmt.Errorf("field %s: must be >= %v", "error_count", 0)
+	}
+	if plain.EvidenceCount != nil && 0 > *plain.EvidenceCount {
+		return fmt.Errorf("field %s: must be >= %v", "evidence_count", 0)
+	}
+	if plain.WarningCount != nil && 0 > *plain.WarningCount {
+		return fmt.Errorf("field %s: must be >= %v", "warning_count", 0)
+	}
+	*j = PanelSessionSummary(plain)
+	return nil
+}
+
+// Health/availability of one data source (Dolt, BD, Git, an adapter, ...) backing
+// a workspace's panel view, per punakawan-panel-implementation-plan.md §9's
+// WorkspaceAvailability enum. Failure of one source must not fail the whole
+// workspace view.
+type PanelSourceHealth struct {
+	// Availability corresponds to the JSON schema field "availability".
+	Availability PanelSourceHealthAvailability `json:"availability" yaml:"availability" mapstructure:"availability"`
+
+	// CheckedAt corresponds to the JSON schema field "checked_at".
+	CheckedAt time.Time `json:"checked_at" yaml:"checked_at" mapstructure:"checked_at"`
+
+	// Message corresponds to the JSON schema field "message".
+	Message *string `json:"message,omitempty,omitzero" yaml:"message,omitempty" mapstructure:"message,omitempty"`
+
+	// Source corresponds to the JSON schema field "source".
+	Source string `json:"source" yaml:"source" mapstructure:"source"`
+}
+
+type PanelSourceHealthAvailability string
+
+const PanelSourceHealthAvailabilityAvailable PanelSourceHealthAvailability = "available"
+const PanelSourceHealthAvailabilityBusy PanelSourceHealthAvailability = "busy"
+const PanelSourceHealthAvailabilityInvalid PanelSourceHealthAvailability = "invalid"
+const PanelSourceHealthAvailabilityPartiallyAvailable PanelSourceHealthAvailability = "partially_available"
+const PanelSourceHealthAvailabilityUnavailable PanelSourceHealthAvailability = "unavailable"
+
+var enumValues_PanelSourceHealthAvailability = []interface{}{
+	"available",
+	"partially_available",
+	"busy",
+	"unavailable",
+	"invalid",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelSourceHealthAvailability) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_PanelSourceHealthAvailability {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_PanelSourceHealthAvailability, v)
+	}
+	*j = PanelSourceHealthAvailability(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelSourceHealth) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["availability"]; raw != nil && !ok {
+		return fmt.Errorf("field availability in PanelSourceHealth: required")
+	}
+	if _, ok := raw["checked_at"]; raw != nil && !ok {
+		return fmt.Errorf("field checked_at in PanelSourceHealth: required")
+	}
+	if _, ok := raw["source"]; raw != nil && !ok {
+		return fmt.Errorf("field source in PanelSourceHealth: required")
+	}
+	type Plain PanelSourceHealth
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = PanelSourceHealth(plain)
+	return nil
+}
+
+// One entry in the global Punakawan Panel workspace registry (workspaces.yaml at
+// an OS-specific config path), per punakawan-panel-implementation-plan.md §7.
+// Stores panel discovery metadata only; canonical workspace configuration remains
+// in the workspace's own .punakawan/workspace.yaml.
+type PanelWorkspaceRegistryEntry struct {
+	// DisplayName corresponds to the JSON schema field "display_name".
+	DisplayName *string `json:"display_name,omitempty,omitzero" yaml:"display_name,omitempty" mapstructure:"display_name,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// LastSeenAt corresponds to the JSON schema field "last_seen_at".
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty,omitzero" yaml:"last_seen_at,omitempty" mapstructure:"last_seen_at,omitempty"`
+
+	// Path corresponds to the JSON schema field "path".
+	Path string `json:"path" yaml:"path" mapstructure:"path"`
+
+	// Pinned corresponds to the JSON schema field "pinned".
+	Pinned *bool `json:"pinned,omitempty,omitzero" yaml:"pinned,omitempty" mapstructure:"pinned,omitempty"`
+
+	// RegisteredAt corresponds to the JSON schema field "registered_at".
+	RegisteredAt time.Time `json:"registered_at" yaml:"registered_at" mapstructure:"registered_at"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *PanelWorkspaceRegistryEntry) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in PanelWorkspaceRegistryEntry: required")
+	}
+	if _, ok := raw["path"]; raw != nil && !ok {
+		return fmt.Errorf("field path in PanelWorkspaceRegistryEntry: required")
+	}
+	if _, ok := raw["registered_at"]; raw != nil && !ok {
+		return fmt.Errorf("field registered_at in PanelWorkspaceRegistryEntry: required")
+	}
+	type Plain PanelWorkspaceRegistryEntry
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = PanelWorkspaceRegistryEntry(plain)
+	return nil
+}
+
 // One deduplicated, prioritized finding from review_pr's pipeline: Gareng/Petruk
 // build independent review capsules, Bagong verifies findings against the diff and
 // evidence, Semar deduplicates and prioritizes. See
@@ -2869,6 +3291,10 @@ func (j *TaskContract) UnmarshalJSON(value []byte) error {
 // A running or completed workflow instance and its state-machine position. See
 // punakawan-go-typescript-detailed-plan.md §9, §18.1.
 type WorkflowRun struct {
+	// The Punakawan role currently driving this run, as reported by the calling
+	// agent.
+	ActiveRole *WorkflowRunActiveRole `json:"active_role,omitempty,omitzero" yaml:"active_role,omitempty" mapstructure:"active_role,omitempty"`
+
 	// Checkpoints corresponds to the JSON schema field "checkpoints".
 	Checkpoints []WorkflowRunCheckpointsElem `json:"checkpoints,omitempty,omitzero" yaml:"checkpoints,omitempty" mapstructure:"checkpoints,omitempty"`
 
@@ -2877,6 +3303,16 @@ type WorkflowRun struct {
 
 	// Id corresponds to the JSON schema field "id".
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Who or what started this run (e.g. "user", "scheduled", an agent identifier).
+	// Set by the calling agent, not inferred.
+	Initiator *string `json:"initiator,omitempty,omitzero" yaml:"initiator,omitempty" mapstructure:"initiator,omitempty"`
+
+	// Human-readable goal of this run, set by the calling agent at creation or
+	// advance time. Used by the panel's session summary
+	// (punakawan-panel-implementation-plan.md §8.3); Punakawan never infers or edits
+	// this itself.
+	Objective *string `json:"objective,omitempty,omitzero" yaml:"objective,omitempty" mapstructure:"objective,omitempty"`
 
 	// State corresponds to the JSON schema field "state".
 	State WorkflowRunState `json:"state" yaml:"state" mapstructure:"state"`
@@ -2889,6 +3325,40 @@ type WorkflowRun struct {
 
 	// Workspace corresponds to the JSON schema field "workspace".
 	Workspace string `json:"workspace" yaml:"workspace" mapstructure:"workspace"`
+}
+
+type WorkflowRunActiveRole string
+
+const WorkflowRunActiveRoleBagong WorkflowRunActiveRole = "bagong"
+const WorkflowRunActiveRoleGareng WorkflowRunActiveRole = "gareng"
+const WorkflowRunActiveRolePetruk WorkflowRunActiveRole = "petruk"
+const WorkflowRunActiveRoleSemar WorkflowRunActiveRole = "semar"
+
+var enumValues_WorkflowRunActiveRole = []interface{}{
+	"semar",
+	"gareng",
+	"petruk",
+	"bagong",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunActiveRole) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_WorkflowRunActiveRole {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_WorkflowRunActiveRole, v)
+	}
+	*j = WorkflowRunActiveRole(v)
+	return nil
 }
 
 type WorkflowRunCheckpointsElem struct {

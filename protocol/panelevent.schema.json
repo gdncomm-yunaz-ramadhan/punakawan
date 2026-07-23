@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/panelevent.schema.json",
+  "title": "PanelEvent",
+  "description": "SSE envelope pushed to the Punakawan Panel frontend at GET /api/v1/events, per punakawan-panel-implementation-plan.md §12. Distinct from Event (event.schema.json), which is the per-run execution journal this envelope is often derived from.",
+  "type": "object",
+  "required": ["id", "type", "occurred_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "system.ready", "system.warning",
+        "workspace.registered", "workspace.updated", "workspace.availability_changed",
+        "session.started", "session.phase_changed", "session.progress", "session.completed", "session.failed",
+        "task.created", "task.updated", "task.blocked", "task.completed",
+        "knowledge.created", "knowledge.updated", "knowledge.superseded",
+        "approval.requested", "approval.resolved",
+        "evidence.created",
+        "git.state_changed",
+        "adapter.health_changed"
+      ]
+    },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "workspace_id": { "type": "string" },
+    "session_id": { "type": "string" },
+    "entity_id": { "type": "string" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "payload": { "type": "object" }
+  }
+}

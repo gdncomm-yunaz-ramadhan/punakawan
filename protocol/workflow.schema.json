@@ -37,6 +37,19 @@
     },
     "created_at": { "type": "string", "format": "date-time" },
     "updated_at": { "type": "string", "format": "date-time" },
+    "objective": {
+      "type": "string",
+      "description": "Human-readable goal of this run, set by the calling agent at creation or advance time. Used by the panel's session summary (punakawan-panel-implementation-plan.md §8.3); Punakawan never infers or edits this itself."
+    },
+    "initiator": {
+      "type": "string",
+      "description": "Who or what started this run (e.g. \"user\", \"scheduled\", an agent identifier). Set by the calling agent, not inferred."
+    },
+    "active_role": {
+      "type": "string",
+      "enum": ["semar", "gareng", "petruk", "bagong"],
+      "description": "The Punakawan role currently driving this run, as reported by the calling agent."
+    },
     "checkpoints": {
       "type": "array",
       "items": {

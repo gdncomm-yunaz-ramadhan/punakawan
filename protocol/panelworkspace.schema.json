@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/panelworkspace.schema.json",
+  "title": "PanelWorkspaceRegistryEntry",
+  "description": "One entry in the global Punakawan Panel workspace registry (workspaces.yaml at an OS-specific config path), per punakawan-panel-implementation-plan.md §7. Stores panel discovery metadata only; canonical workspace configuration remains in the workspace's own .punakawan/workspace.yaml.",
+  "type": "object",
+  "required": ["id", "path", "registered_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "path": { "type": "string" },
+    "display_name": { "type": "string" },
+    "pinned": { "type": "boolean" },
+    "registered_at": { "type": "string", "format": "date-time" },
+    "last_seen_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/panelsessionsummary.schema.json",
+  "title": "PanelSessionSummary",
+  "description": "Compact per-run summary written to .punakawan/runs/<run-id>/summary.yaml as part of normal run checkpointing, per punakawan-panel-implementation-plan.md §8.3. Backs the panel's session list/overview and CLI recovery inspection; not panel-specific persistence.",
+  "type": "object",
+  "required": ["id", "workspace_id", "workflow", "status", "started_at", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "workspace_id": { "type": "string" },
+    "workflow": { "type": "string" },
+    "status": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "initiator": { "type": "string" },
+    "objective": { "type": "string" },
+    "active_role": {
+      "type": "string",
+      "enum": ["semar", "gareng", "petruk", "bagong"]
+    },
+    "task_counts": {
+      "type": "object",
+      "description": "Best-effort workspace-wide bd task counts as of this checkpoint. Not scoped to this run: bd issues are not tagged per-run today.",
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "open": { "type": "integer", "minimum": 0 },
+        "in_progress": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 },
+        "closed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evidence_count": { "type": "integer", "minimum": 0 },
+    "warning_count": { "type": "integer", "minimum": 0 },
+    "error_count": { "type": "integer", "minimum": 0 }
+  }
+}

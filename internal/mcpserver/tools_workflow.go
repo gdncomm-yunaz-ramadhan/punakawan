@@ -11,6 +11,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -26,6 +27,9 @@ func createWorkflowRunHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		run := workflow.New(in.RunId, a.Workspace.ID, protocol.WorkflowRunWorkflowName(in.WorkflowName), time.Now().UTC())
 		if err := a.Workflow.Append(run); err != nil {
 			return nil, protocol.WorkflowRun{}, fmt.Errorf("mcpserver: create workflow run: %w", err)
+		}
+		if err := sources.WriteSessionSummary(ctx, a, run); err != nil {
+			return nil, protocol.WorkflowRun{}, fmt.Errorf("mcpserver: create workflow run: write summary.yaml: %w", err)
 		}
 		return nil, run, nil
 	}
@@ -77,6 +81,9 @@ func advanceWorkflowHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 
 		if err := a.Workflow.Append(run); err != nil {
 			return nil, protocol.WorkflowRun{}, fmt.Errorf("mcpserver: persist workflow advance: %w", err)
+		}
+		if err := sources.WriteSessionSummary(ctx, a, run); err != nil {
+			return nil, protocol.WorkflowRun{}, fmt.Errorf("mcpserver: advance workflow: write summary.yaml: %w", err)
 		}
 		return nil, run, nil
 	}

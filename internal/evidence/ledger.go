@@ -60,6 +60,24 @@ func (l *Ledger) Append(rec protocol.EvidenceRecord) error {
 // ForTask returns every record in the ledger whose TaskId matches taskID,
 // in append order.
 func (l *Ledger) ForTask(taskID string) ([]protocol.EvidenceRecord, error) {
+	all, err := l.List()
+	if err != nil {
+		return nil, err
+	}
+	var out []protocol.EvidenceRecord
+	for _, rec := range all {
+		if rec.TaskId != nil && *rec.TaskId == taskID {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
+}
+
+// List returns every record in the ledger, in append order. This is the
+// run's evidence manifest: the panel (and anything else wanting to
+// enumerate a run's evidence without already knowing task IDs) reads it
+// via this method rather than the bundle's file-naming convention.
+func (l *Ledger) List() ([]protocol.EvidenceRecord, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -84,9 +102,7 @@ func (l *Ledger) ForTask(taskID string) ([]protocol.EvidenceRecord, error) {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return nil, fmt.Errorf("evidence: decode record: %w", err)
 		}
-		if rec.TaskId != nil && *rec.TaskId == taskID {
-			out = append(out, rec)
-		}
+		out = append(out, rec)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("evidence: scan %s: %w", l.path, err)
