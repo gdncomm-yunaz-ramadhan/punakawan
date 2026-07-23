@@ -58,7 +58,7 @@ func postProposal(t *testing.T, reviews *artifact.ReviewStore, plans *artifact.P
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewID+"/proposals", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateProposalHandler(reviews, plans)(rec, req)
+	CreateProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("postProposal(%s) status = %d, want 201: %s", reviewID, rec.Code, rec.Body)
 	}
@@ -74,7 +74,7 @@ func acceptProposal(reviews *artifact.ReviewStore, plans *artifact.PlanStore, re
 	req.SetPathValue("reviewId", reviewID)
 	req.SetPathValue("proposalId", strconv.Itoa(attempt))
 	rec := httptest.NewRecorder()
-	AcceptProposalHandler(reviews, plans)(rec, req)
+	AcceptProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 	return rec
 }
 
@@ -175,7 +175,7 @@ func TestConflictedReviewRebaseThenAcceptSucceedsAgainstNewBase(t *testing.T) {
 	rebaseReq := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewB+"/rebase", nil)
 	rebaseReq.SetPathValue("reviewId", reviewB)
 	rebaseRec := httptest.NewRecorder()
-	RebaseHandler(reviews, plans)(rebaseRec, rebaseReq)
+	RebaseHandler(reviews, ArtifactStores{Plans: plans})(rebaseRec, rebaseReq)
 	if rebaseRec.Code != http.StatusOK {
 		t.Fatalf("rebase status = %d, want 200: %s", rebaseRec.Code, rebaseRec.Body)
 	}
@@ -210,7 +210,7 @@ func TestConflictedReviewRebaseThenAcceptSucceedsAgainstNewBase(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewB+"/proposals", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewB)
 	rec := httptest.NewRecorder()
-	CreateProposalHandler(reviews, plans)(rec, req)
+	CreateProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("second proposal status = %d, want 201: %s", rec.Code, rec.Body)
 	}
@@ -219,7 +219,7 @@ func TestConflictedReviewRebaseThenAcceptSucceedsAgainstNewBase(t *testing.T) {
 	acceptReq.SetPathValue("reviewId", reviewB)
 	acceptReq.SetPathValue("proposalId", "2")
 	acceptRec := httptest.NewRecorder()
-	AcceptProposalHandler(reviews, plans)(acceptRec, acceptReq)
+	AcceptProposalHandler(reviews, ArtifactStores{Plans: plans})(acceptRec, acceptReq)
 	if acceptRec.Code != http.StatusOK {
 		t.Fatalf("accept after rebase status = %d, want 200: %s", acceptRec.Code, acceptRec.Body)
 	}
