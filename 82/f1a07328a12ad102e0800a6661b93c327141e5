@@ -1,0 +1,41 @@
+internal/panel/api/failure_recovery_test.go
+  3415a4432044e41f 1-53,55-74,76-128,130-140
+internal/panel/api/proposal_handler.go
+  3415a4432044e41f 330-343
+internal/artifact/keyedmutex.go
+  3415a4432044e41f 1-42
+internal/artifact/anchor_precedence_test.go
+  3415a4432044e41f 1-142
+internal/panel/api/submit_handler.go
+  3415a4432044e41f 58-67
+internal/panel/api/submit_handler_concurrency_test.go
+  3415a4432044e41f 1-244
+internal/artifact/review_store.go
+  3415a4432044e41f 10,40-59
+internal/panel/session/security_test.go
+  3415a4432044e41f 1-266
+internal/artifact/plan_store.go
+  3415a4432044e41f 10,43-61
+internal/panel/api/proposal_handler_concurrency_test.go
+  3415a4432044e41f 1-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "82f1a07328a12ad102e0800a6661b93c327141e5",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1276,
+      "total_deletions": 55,
+      "accepted_lines": 1214,
+      "overriden_lines": 3
+    }
+  }
+}
