@@ -1,0 +1,35 @@
+internal/panel/server/server.go
+  3415a4432044e41f 18,127,158-160
+internal/panel/server/server_test.go
+  3415a4432044e41f 832-893
+internal/revision/dispatcher.go
+  3415a4432044e41f 1-57
+internal/revision/bd_dispatcher.go
+  3415a4432044e41f 1-135
+internal/revision/bd_dispatcher_test.go
+  3415a4432044e41f 1-99
+internal/panel/api/submit_handler.go
+  3415a4432044e41f 1-256
+internal/panel/api/submit_handler_test.go
+  3415a4432044e41f 1-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "23f645ceb3d2e1e0482af4a602dd7b5e19836e57",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 893,
+      "total_deletions": 27,
+      "accepted_lines": 866,
+      "overriden_lines": 0
+    }
+  }
+}
