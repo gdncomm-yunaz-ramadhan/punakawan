@@ -1,0 +1,73 @@
+internal/panel/sources/approval_source.go
+  6c4a5633395342b7 32
+internal/panel/events/hub_test.go
+  6c4a5633395342b7 1-96
+internal/panel/events/reconciler_test.go
+  6c4a5633395342b7 1-169
+web/panel/src/lib/components/TopBar.svelte
+  6c4a5633395342b7 3,16-17,29-32,62-77
+internal/panel/server/server_test.go
+  6c4a5633395342b7 17,19-20,252-368
+web/panel/src/routes/sessions/SessionDetail.svelte
+  6c4a5633395342b7 1-351
+internal/panel/events/reconciler.go
+  6c4a5633395342b7 1-121
+internal/panel/sources/session_source.go
+  6c4a5633395342b7 89
+internal/panel/events/sse.go
+  6c4a5633395342b7 1-87
+internal/capsule/store_test.go
+  6c4a5633395342b7 61-110
+web/panel/tests/SessionsList.test.ts
+  6c4a5633395342b7 1-63
+internal/panel/api/overview_handler.go
+  6c4a5633395342b7 110
+internal/capsule/store.go
+  6c4a5633395342b7 59-95
+internal/panel/api/session_handler.go
+  6c4a5633395342b7 1-65
+internal/panel/events/sse_test.go
+  6c4a5633395342b7 1-65
+internal/panel/server/server.go
+  6c4a5633395342b7 14,40-42,67,104,107-110,124-127,138-140
+web/panel/src/lib/api/client.ts
+  6c4a5633395342b7 103-136,173-206
+web/panel/src/App.svelte
+  6c4a5633395342b7 10-11,25-26,42-50
+web/panel/src/routes/workspaces/WorkspaceSummary.svelte
+  6c4a5633395342b7 5-6,30-33,51-57,123-128
+web/panel/src/routes/overview/Overview.svelte
+  6c4a5633395342b7 6,24-27
+web/panel/src/routes/workspaces/WorkspacesList.svelte
+  6c4a5633395342b7 6,24-27
+web/panel/tests/SessionDetail.test.ts
+  6c4a5633395342b7 1-97
+internal/panel/events/hub.go
+  6c4a5633395342b7 1-113
+web/panel/src/lib/events/sse.svelte.ts
+  6c4a5633395342b7 1-38
+internal/panel/api/capsule_handler.go
+  6c4a5633395342b7 1-38
+web/panel/src/routes/sessions/SessionsList.svelte
+  6c4a5633395342b7 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "67d99a6f45e13061ecc9d789ddd7e525c178b75e",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1814,
+      "total_deletions": 50,
+      "accepted_lines": 1773,
+      "overriden_lines": 0
+    }
+  }
+}
