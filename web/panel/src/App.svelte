@@ -15,6 +15,8 @@
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
   import Showcase from "./routes/showcase/Showcase.svelte";
+  import StartReview from "./routes/review/StartReview.svelte";
+  import ReviewMode from "./routes/review/ReviewMode.svelte";
 
   let system: SystemInfo | null = $state(null);
   let systemError: string | null = $state(null);
@@ -34,6 +36,7 @@
   const knowledgeListPath = /^\/workspaces\/([^/]+)\/knowledge$/;
   const knowledgeDetailPath = /^\/workspaces\/([^/]+)\/knowledge\/([^/]+)$/;
   const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
+  const reviewModePath = /^\/reviews\/([^/]+)$/;
 </script>
 
 <AppShell {system}>
@@ -51,6 +54,11 @@
     <SystemPage />
   {:else if getPath() === "/showcase"}
     <Showcase />
+  {:else if getPath() === "/artifacts/plan/review/new"}
+    <StartReview />
+  {:else if reviewModePath.exec(getPath())}
+    {@const match = reviewModePath.exec(getPath())}
+    <ReviewMode reviewId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if approvalsPath.exec(getPath())}
     {@const match = approvalsPath.exec(getPath())}
     <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
