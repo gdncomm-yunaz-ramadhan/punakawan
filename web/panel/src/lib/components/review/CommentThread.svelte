@@ -58,6 +58,8 @@
     <span class="heading-path">
       {#if comment.anchor.heading_path?.length}
         {comment.anchor.heading_path.join(" › ")}
+      {:else if comment.anchor.field_path}
+        {comment.anchor.field_path}
       {:else}
         (unanchored)
       {/if}

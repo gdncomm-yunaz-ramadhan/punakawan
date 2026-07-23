@@ -13,7 +13,10 @@ export interface ArtifactReference {
   version: number;
   revision_hash: string;
   workspace_id: string;
-  format: "markdown";
+  // "markdown" is a plan's format; "json" is a retrieval_recipe's
+  // canonical serialization (internal/recipe.RecipeStore.MarshalCanonical
+  // - indented JSON matching `punakawan knowledge recipe show`).
+  format: "markdown" | "json";
   canonical_location?: string;
 }
 
@@ -68,11 +71,15 @@ export type CommentStatus =
   | "resolved_by_user";
 
 export interface ArtifactCommentAnchor {
-  kind: "markdown_block";
+  kind: "markdown_block" | "recipe_field_path";
   block_id?: string;
   heading_path?: string[];
   base_revision_hash: string;
   quoted_text?: string;
+  // recipe_field_path anchors only: a dotted gjson-syntax path into the
+  // recipe's canonical JSON (e.g. "retrieval_recipe.selector.all.0.value.literal").
+  // See internal/artifact/recipefieldpath.go.
+  field_path?: string;
 }
 
 export interface ArtifactComment {

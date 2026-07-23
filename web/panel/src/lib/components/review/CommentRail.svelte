@@ -4,10 +4,11 @@
 
   interface Props {
     comments: ArtifactComment[];
-    // Full ordered list of heading paths (as joined strings) as they
-    // appear in the document, so comments can be grouped/ordered by
-    // position rather than creation order (§13.10 "grouped/ordered by
-    // their position in the document if practical").
+    // Full ordered list of anchor position keys (joined heading paths for
+    // a plan, field_paths for a recipe) as they appear in the document, so
+    // comments can be grouped/ordered by position rather than creation
+    // order (§13.10 "grouped/ordered by their position in the document if
+    // practical").
     documentHeadingOrder: string[];
     editable: boolean;
     busyCommentId?: string | null;
@@ -26,7 +27,7 @@
   }: Props = $props();
 
   function orderKey(comment: ArtifactComment): number {
-    const path = (comment.anchor.heading_path ?? []).join(" › ");
+    const path = comment.anchor.field_path ?? (comment.anchor.heading_path ?? []).join(" › ");
     const idx = documentHeadingOrder.indexOf(path);
     return idx === -1 ? documentHeadingOrder.length : idx;
   }

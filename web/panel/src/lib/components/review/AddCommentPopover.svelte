@@ -1,7 +1,15 @@
 <script lang="ts">
   interface Props {
-    headingPath: string[];
+    // Markdown anchor context (plan review). Leave both undefined for a
+    // recipe's field_path context instead - the two are mutually
+    // exclusive per artifact type, never combined.
+    headingPath?: string[];
     quotedText?: string;
+    // recipe_field_path anchor context (retrieval_recipe review):
+    // RecipeDocument's clicked field path and a preview of its value,
+    // shown in place of the markdown heading-path/quoted-text context.
+    fieldPath?: string;
+    fieldPreview?: string;
     submitting?: boolean;
     onsubmit: (body: string) => void;
     oncancel: () => void;
@@ -9,7 +17,16 @@
     // indicator (§13.10 "unsaved-change indicator").
     ondraftchange?: (body: string) => void;
   }
-  let { headingPath, quotedText, submitting = false, onsubmit, oncancel, ondraftchange }: Props = $props();
+  let {
+    headingPath = [],
+    quotedText,
+    fieldPath,
+    fieldPreview,
+    submitting = false,
+    onsubmit,
+    oncancel,
+    ondraftchange,
+  }: Props = $props();
 
   let body = $state("");
 
@@ -29,11 +46,18 @@
 
 <div class="popover" data-testid="add-comment-popover">
   <div class="anchor-context">
-    {#if headingPath.length > 0}
-      <span class="heading-path">{headingPath.join(" › ")}</span>
-    {/if}
-    {#if quotedText}
-      <blockquote class="quoted">&ldquo;{quotedText}&rdquo;</blockquote>
+    {#if fieldPath}
+      <span class="heading-path">{fieldPath}</span>
+      {#if fieldPreview}
+        <blockquote class="quoted">{fieldPreview}</blockquote>
+      {/if}
+    {:else}
+      {#if headingPath.length > 0}
+        <span class="heading-path">{headingPath.join(" › ")}</span>
+      {/if}
+      {#if quotedText}
+        <blockquote class="quoted">&ldquo;{quotedText}&rdquo;</blockquote>
+      {/if}
     {/if}
   </div>
   <textarea

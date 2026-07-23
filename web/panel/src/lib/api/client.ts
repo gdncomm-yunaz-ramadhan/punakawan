@@ -319,6 +319,90 @@ export interface KnowledgeRelation {
   type: string;
 }
 
+// RetrievalRecipeSelectorClause mirrors
+// pkg/protocol.KnowledgeRecordRetrievalRecipeSelectorAllElem (and its
+// Any-side sibling) structurally: go-jsonschema explodes each nesting
+// level into its own named Go type, but every level shares this same
+// field/operator/value-or-nested-group shape, so one recursive TS type
+// covers the whole two-level-bounded AST rather than naming each level.
+export interface RetrievalRecipeSelectorClause {
+  field?: string;
+  operator?: "equals" | "not_equals" | "phrase_contains" | "contains" | "in" | "not_in" | "greater_than" | "less_than";
+  value?: unknown;
+  all?: RetrievalRecipeSelectorClause[];
+  any?: RetrievalRecipeSelectorClause[];
+}
+
+export interface RetrievalRecipeSelector {
+  all?: RetrievalRecipeSelectorClause[];
+  any?: RetrievalRecipeSelectorClause[];
+}
+
+export interface RetrievalRecipeInput {
+  name: string;
+  type: string;
+  required?: boolean;
+  default?: string;
+}
+
+export interface RetrievalRecipeOrdering {
+  field: string;
+  direction: "ascending" | "descending";
+}
+
+export interface RetrievalRecipeOutput {
+  entity_type: string;
+  identity_field: string;
+  fields: string[];
+}
+
+export interface RetrievalRecipeLastExecution {
+  status?: "success" | "failure";
+  executed_at?: string;
+  result_count?: number;
+  compiled_query_hash?: string;
+  evidence_id?: string;
+  provider_request_id?: string;
+  session_id?: string;
+  task_id?: string;
+  bindings?: Record<string, unknown>;
+}
+
+export interface RetrievalRecipeValidation {
+  status?: "pending" | "passed" | "failed";
+  validation_id?: string;
+  compiled_query_hash?: string;
+  sample_size?: number;
+  accepted_at?: string;
+  accepted_by?: string;
+  accepted_result_count?: number;
+  provider_instance_fingerprint?: string;
+  evidence_ids?: string[];
+}
+
+// RetrievalRecipe mirrors pkg/protocol.KnowledgeRecordRetrievalRecipe -
+// present on KnowledgeRecord.retrieval_recipe when
+// KnowledgeRecord.type === "retrieval_recipe".
+export interface RetrievalRecipe {
+  capability: string;
+  intent: string;
+  provider: string;
+  resource: string;
+  operation: string;
+  read_only: boolean;
+  recipe_version?: number;
+  selector: RetrievalRecipeSelector;
+  inputs?: RetrievalRecipeInput[];
+  ordering?: RetrievalRecipeOrdering[];
+  output: RetrievalRecipeOutput;
+  applies_to?: {
+    workspace_ids?: string[];
+    repository_ids?: string[];
+  };
+  last_execution?: RetrievalRecipeLastExecution;
+  validation?: RetrievalRecipeValidation;
+}
+
 export interface KnowledgeRecord {
   id: string;
   type: string;
@@ -356,6 +440,9 @@ export interface KnowledgeRecord {
   };
   relations?: KnowledgeRelation[];
   superseded_by?: string;
+  // Present when type === "retrieval_recipe" (punakawan-procedural-
+  // knowledge-retrieval-recipe-plan-final.md Phase 0/5).
+  retrieval_recipe?: RetrievalRecipe;
 }
 
 export interface KnowledgeEvent {

@@ -37,6 +37,7 @@
   const knowledgeDetailPath = /^\/workspaces\/([^/]+)\/knowledge\/([^/]+)$/;
   const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
   const reviewModePath = /^\/reviews\/([^/]+)$/;
+  const startReviewPath = /^\/artifacts\/(plan|retrieval_recipe)\/review\/new$/;
 </script>
 
 <AppShell {system}>
@@ -54,8 +55,9 @@
     <SystemPage />
   {:else if getPath() === "/showcase"}
     <Showcase />
-  {:else if getPath() === "/artifacts/plan/review/new"}
-    <StartReview />
+  {:else if startReviewPath.exec(getPath())}
+    {@const match = startReviewPath.exec(getPath())}
+    <StartReview artifactType={(match?.[1] as "plan" | "retrieval_recipe") ?? "plan"} />
   {:else if reviewModePath.exec(getPath())}
     {@const match = reviewModePath.exec(getPath())}
     <ReviewMode reviewId={decodeURIComponent(match?.[1] ?? "")} />

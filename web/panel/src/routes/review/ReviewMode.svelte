@@ -6,12 +6,14 @@
   import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import PlanDocument, { type SectionCommentRequest } from "../../lib/components/review/PlanDocument.svelte";
+  import RecipeDocument, { type FieldCommentRequest } from "../../lib/components/review/RecipeDocument.svelte";
   import CommentRail from "../../lib/components/review/CommentRail.svelte";
   import AddCommentPopover from "../../lib/components/review/AddCommentPopover.svelte";
   import ReviewInstructionPanel from "../../lib/components/review/ReviewInstructionPanel.svelte";
   import ActiveRevisionSummary from "../../lib/components/review/ActiveRevisionSummary.svelte";
   import ProposalReview from "../../lib/components/review/ProposalReview.svelte";
   import { parseDocument, groupIntoSections, buildAnchor } from "../../lib/review/markdown";
+  import { buildFieldPathAnchor, allFieldPaths } from "../../lib/review/recipe";
   import {
     getArtifactCurrent,
     getReview,
@@ -62,7 +64,10 @@
   let artifact = $state<ArtifactContent | null>(null);
   let comments = $state<ArtifactComment[]>([]);
 
-  let pendingAnchor = $state<SectionCommentRequest | null>(null);
+  // A pending comment's anchor context: SectionCommentRequest for a plan
+  // review, FieldCommentRequest for a retrieval_recipe review - never
+  // both, gated by isRecipe below.
+  let pendingAnchor = $state<SectionCommentRequest | FieldCommentRequest | null>(null);
   let commentDraftDirty = $state(false);
   let submittingComment = $state(false);
   let commentError = $state<string | null>(null);
@@ -82,8 +87,21 @@
   let run = $state<RunReference | null>(null);
   let pollTimer: ReturnType<typeof setInterval> | undefined;
 
-  const sections = $derived(artifact ? groupIntoSections(parseDocument(artifact.content)) : []);
-  const documentHeadingOrder = $derived(sections.map((s) => s.headingPath.join(" › ")));
+  // A retrieval_recipe review renders RecipeDocument's field-click
+  // interaction instead of PlanDocument's markdown section/selection
+  // affordances - the two artifact types share every other part of this
+  // component (submit/cancel/timeline/proposal review), per punokawan-q9r.6's
+  // "reuse the existing protocol, don't build a second review UI".
+  const isRecipe = $derived(review?.artifact.type === "retrieval_recipe");
+
+  const sections = $derived(artifact && !isRecipe ? groupIntoSections(parseDocument(artifact.content)) : []);
+  const documentHeadingOrder = $derived(
+    isRecipe && artifact ? allFieldPaths(artifact.content) : sections.map((s) => s.headingPath.join(" › ")),
+  );
+
+  function isFieldCommentRequest(req: SectionCommentRequest | FieldCommentRequest): req is FieldCommentRequest {
+    return "fieldPath" in req;
+  }
 
   const isDraft = $derived(review?.metadata.status === "draft");
   // Once a proposal exists, ProposalReview takes over from
@@ -198,6 +216,13 @@
     mobileSheetOpen = true;
   }
 
+  function openFieldComment(req: FieldCommentRequest) {
+    pendingAnchor = req;
+    commentDraftDirty = true;
+    commentError = null;
+    mobileSheetOpen = true;
+  }
+
   function cancelComment() {
     pendingAnchor = null;
     commentDraftDirty = false;
@@ -209,11 +234,16 @@
     submittingComment = true;
     commentError = null;
     const clientId = crypto.randomUUID();
-    const anchor = buildAnchor({
-      baseRevisionHash: artifact.reference.revision_hash,
-      headingPath: pendingAnchor.headingPath,
-      quotedText: pendingAnchor.quotedText,
-    });
+    const anchor = isFieldCommentRequest(pendingAnchor)
+      ? buildFieldPathAnchor({
+          baseRevisionHash: artifact.reference.revision_hash,
+          fieldPath: pendingAnchor.fieldPath,
+        })
+      : buildAnchor({
+          baseRevisionHash: artifact.reference.revision_hash,
+          headingPath: pendingAnchor.headingPath,
+          quotedText: pendingAnchor.quotedText,
+        });
     try {
       const comment = await createComment(reviewId, { id: clientId, anchor, body });
       comments = [...comments, comment];
@@ -415,13 +445,23 @@
       {/if}
     {:else}
       {#if commentDraftDirty && pendingAnchor}
-        <AddCommentPopover
-          headingPath={pendingAnchor.headingPath}
-          quotedText={pendingAnchor.quotedText}
-          submitting={submittingComment}
-          onsubmit={submitComment}
-          oncancel={cancelComment}
-        />
+        {#if isFieldCommentRequest(pendingAnchor)}
+          <AddCommentPopover
+            fieldPath={pendingAnchor.fieldPath}
+            fieldPreview={pendingAnchor.preview}
+            submitting={submittingComment}
+            onsubmit={submitComment}
+            oncancel={cancelComment}
+          />
+        {:else}
+          <AddCommentPopover
+            headingPath={pendingAnchor.headingPath}
+            quotedText={pendingAnchor.quotedText}
+            submitting={submittingComment}
+            onsubmit={submitComment}
+            oncancel={cancelComment}
+          />
+        {/if}
       {/if}
       {#if commentError}
         <p class="error" role="alert">{commentError}</p>
@@ -436,11 +476,15 @@
       {#if isDesktop}
         <div class="two-pane">
           <div class="document-pane">
-            <PlanDocument
-              content={artifact.content}
-              onCommentSection={openSectionComment}
-              onCommentSelection={openSectionComment}
-            />
+            {#if isRecipe}
+              <RecipeDocument content={artifact.content} onCommentField={openFieldComment} />
+            {:else}
+              <PlanDocument
+                content={artifact.content}
+                onCommentSection={openSectionComment}
+                onCommentSelection={openSectionComment}
+              />
+            {/if}
           </div>
           <div class="comment-pane">
             <h2 class="rail-heading">Comments ({openCommentCount})</h2>
@@ -456,11 +500,15 @@
         </div>
       {:else}
         <div class="mobile-document">
-          <PlanDocument
-            content={artifact.content}
-            onCommentSection={openSectionComment}
-            onCommentSelection={openSectionComment}
-          />
+          {#if isRecipe}
+            <RecipeDocument content={artifact.content} onCommentField={openFieldComment} />
+          {:else}
+            <PlanDocument
+              content={artifact.content}
+              onCommentSection={openSectionComment}
+              onCommentSelection={openSectionComment}
+            />
+          {/if}
         </div>
         <button
           type="button"

@@ -9,22 +9,48 @@
   // There is no "browse all plans" page yet (explicitly out of scope for
   // this phase), so plan id / title / instruction are simple form
   // fields rather than a picker - the point of this phase is the review
-  // mode experience itself, not plan discovery.
-  let planId = $state("");
+  // mode experience itself, not plan discovery. Extended by
+  // punokawan-q9r.6 to also open a retrieval_recipe review (the
+  // "Request a correction to this recipe" entry point from the recipe
+  // detail view) - same handler, per artifact.type's union, only the
+  // label copy and pre-filled id differ.
+  interface Props {
+    artifactType?: "plan" | "retrieval_recipe";
+  }
+  let { artifactType = "plan" }: Props = $props();
+
+  const isRecipe = $derived(artifactType === "retrieval_recipe");
+  const idLabel = $derived(isRecipe ? "Recipe ID" : "Plan ID");
+  const idPlaceholder = $derived(isRecipe ? "pkw:recipe/..." : "plan-panel");
+  const description = $derived(
+    isRecipe
+      ? "Open a draft review requesting a correction to this recipe's current version."
+      : "Open a draft review against a plan's current version.",
+  );
+
+  // Pre-fills the id field when linked from a detail view
+  // (?id=<artifact-id>) - the field stays editable either way, since
+  // there is still no artifact picker in this phase.
+  function idFromQuery(): string {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("id") ?? "";
+  }
+
+  let artifactId = $state(idFromQuery());
   let title = $state("");
   let instruction = $state("");
   let submitting = $state(false);
   let error = $state<string | null>(null);
   let sessionExpired = $state(false);
 
-  const canSubmit = $derived(planId.trim().length > 0 && title.trim().length > 0 && !submitting);
+  const canSubmit = $derived(artifactId.trim().length > 0 && title.trim().length > 0 && !submitting);
 
   async function submit() {
     if (!canSubmit) return;
     submitting = true;
     error = null;
     try {
-      const review = await createReview("plan", planId.trim(), {
+      const review = await createReview(artifactType, artifactId.trim(), {
         title: title.trim(),
         instruction: instruction.trim() || undefined,
       });
@@ -41,7 +67,7 @@
   }
 </script>
 
-<PageHeader title="Start Review" description="Open a draft review against a plan's current version." />
+<PageHeader title="Start Review" {description} />
 
 {#if sessionExpired}
   <ErrorStateCard
@@ -50,8 +76,14 @@
   />
 {:else}
   <form class="start-form" onsubmit={(e) => (e.preventDefault(), submit())}>
-    <label for="plan-id">Plan ID</label>
-    <input id="plan-id" type="text" bind:value={planId} placeholder="plan-panel" data-testid="plan-id-input" />
+    <label for="artifact-id">{idLabel}</label>
+    <input
+      id="artifact-id"
+      type="text"
+      bind:value={artifactId}
+      placeholder={idPlaceholder}
+      data-testid="plan-id-input"
+    />
 
     <label for="review-title">Title</label>
     <input

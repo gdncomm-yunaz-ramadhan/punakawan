@@ -523,4 +523,71 @@ describe("ReviewMode", () => {
       await waitFor(() => expect(screen.queryByTestId("accept-button")).toBeNull());
     });
   });
+
+  describe("retrieval_recipe review", () => {
+    const recipeReview: reviewApi.ArtifactReview = {
+      metadata: {
+        id: "review-2",
+        workspace_id: "ws-1",
+        status: "draft",
+        created_by: "local",
+        created_at: "2026-07-23T00:00:00Z",
+      },
+      artifact: {
+        type: "retrieval_recipe",
+        id: "pkw:recipe/affiliate-api/jira-next-sprint",
+        version: 1,
+        revision_hash: "sha256:0123456789abcdef",
+      },
+      review: { title: "Tighten the project filter" },
+    };
+    const recipeContent: reviewApi.ArtifactContent = {
+      content: JSON.stringify(
+        { id: "pkw:recipe/affiliate-api/jira-next-sprint", retrieval_recipe: { capability: "jira.issue.search" } },
+        null,
+        2,
+      ),
+      reference: {
+        type: "retrieval_recipe",
+        id: "pkw:recipe/affiliate-api/jira-next-sprint",
+        version: 1,
+        revision_hash: "sha256:0123456789abcdef",
+        workspace_id: "ws-1",
+        format: "json",
+      },
+    };
+
+    it("renders RecipeDocument (not PlanDocument) and comments with a recipe_field_path anchor", async () => {
+      (reviewApi.getReview as ReturnType<typeof vi.fn>).mockResolvedValue(recipeReview);
+      (reviewApi.getArtifactCurrent as ReturnType<typeof vi.fn>).mockResolvedValue(recipeContent);
+      (reviewApi.listComments as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [] });
+
+      render(ReviewMode, { props: { reviewId: "review-2", forceWidth: 1280 } });
+
+      await waitFor(() => expect(screen.getByTestId("recipe-document")).toBeTruthy());
+      expect(screen.queryByTestId("plan-document")).toBeNull();
+
+      const capabilityNode = screen
+        .getAllByTestId("recipe-field-node")
+        .find((n) => n.getAttribute("data-field-path") === "retrieval_recipe.capability");
+      expect(capabilityNode).toBeTruthy();
+      await fireEvent.click(capabilityNode!.querySelector('[data-testid="comment-field-button"]')!);
+
+      const popover = await screen.findByTestId("add-comment-popover");
+      expect(within(popover).getByText("retrieval_recipe.capability")).toBeTruthy();
+
+      await fireEvent.input(screen.getByTestId("comment-body-input"), {
+        target: { value: "This should be AFFILIATE, not AFF." },
+      });
+      await fireEvent.click(screen.getByRole("button", { name: "Add Comment" }));
+
+      await waitFor(() => expect(reviewApi.createComment).toHaveBeenCalled());
+      const [, req] = (reviewApi.createComment as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(req.anchor).toEqual({
+        kind: "recipe_field_path",
+        base_revision_hash: "sha256:0123456789abcdef",
+        field_path: "retrieval_recipe.capability",
+      });
+    });
+  });
 });
