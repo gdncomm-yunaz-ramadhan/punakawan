@@ -1,92 +1,52 @@
 <script lang="ts">
   import type { TaskSummary } from "../../lib/api/client";
+  import DataTable from "../../lib/components/data/DataTable.svelte";
+  import type { Column, RowAction } from "../../lib/components/data/types";
 
   interface Props {
     tasks: TaskSummary[];
     onselect: (id: string) => void;
   }
   let { tasks, onselect }: Props = $props();
+
+  let page = $state(1);
+  let pageSize = $state(10);
+
+  const priorityLabels: Record<number, string> = { 0: "P0", 1: "P1", 2: "P2", 3: "P3", 4: "P4" };
+
+  const columns: Column<TaskSummary>[] = [
+    { key: "id", label: "ID", primary: true },
+    { key: "title", label: "Title", sortable: true },
+    { key: "board_status", label: "Status", sortable: true, render: (t) => (t.stale ? `${t.board_status} (stale)` : t.board_status) },
+    { key: "priority", label: "Priority", sortable: true, render: (t) => priorityLabels[t.priority] ?? `P${t.priority}` },
+    { key: "dependencies", label: "Dependencies", align: "right", render: (t) => String(t.dependencies?.length ?? 0) },
+    { key: "external_ref", label: "External ref", render: (t) => t.external_ref ?? "—" },
+    { key: "updated_at", label: "Updated", sortable: true, render: (t) => new Date(t.updated_at).toLocaleDateString() },
+  ];
+
+  const rowAction: RowAction<TaskSummary> = {
+    label: "Open",
+    onSelect: (task) => onselect(task.id),
+  };
 </script>
 
-{#if tasks.length === 0}
-  <p>No tasks match these filters.</p>
-{:else}
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">ID</th>
-        <th scope="col">Title</th>
-        <th scope="col">Status</th>
-        <th scope="col">Priority</th>
-        <th scope="col">Dependencies</th>
-        <th scope="col">External ref</th>
-        <th scope="col">Updated</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each tasks as t (t.id)}
-        <tr class="row" onclick={() => onselect(t.id)}>
-          <td>{t.id}</td>
-          <td>{t.title}</td>
-          <td>
-            <span class="status status-{t.board_status}">{t.board_status}</span>
-            {#if t.stale}<span class="stale-tag">stale</span>{/if}
-          </td>
-          <td>P{t.priority}</td>
-          <td>{t.dependencies?.length ?? 0}</td>
-          <td>{t.external_ref ?? "—"}</td>
-          <td>{new Date(t.updated_at).toLocaleDateString()}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
-
-<style>
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.9rem;
-  }
-  th {
-    text-align: left;
-    color: #666;
-    font-weight: 500;
-    font-size: 0.8rem;
-    padding: 0.4rem 0.6rem;
-    border-bottom: 1px solid #ddd;
-  }
-  td {
-    padding: 0.5rem 0.6rem;
-    border-bottom: 1px solid #eee;
-  }
-  .row {
-    cursor: pointer;
-  }
-  .row:hover {
-    background: #f7f7f7;
-  }
-  .status {
-    font-size: 0.75rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    background: #eee;
-  }
-  .status-ready {
-    background: #e6f4ea;
-    color: #1e7d32;
-  }
-  .status-blocked {
-    background: #fdecea;
-    color: #c62828;
-  }
-  .status-active {
-    background: #e8eaf6;
-    color: #3949ab;
-  }
-  .stale-tag {
-    margin-left: 0.35rem;
-    font-size: 0.7rem;
-    color: #9a6700;
-  }
-</style>
+<!--
+  Migrated (UI-011/UI-017) to the shared DataTable instead of a bespoke
+  <table>: gains sorting, pagination, column visibility, sticky header,
+  and a mobile card-list fallback for free, and its status/priority
+  formatting now goes through DataTable's column.render + row actions
+  rather than one-off markup.
+-->
+<DataTable
+  {columns}
+  rows={tasks}
+  {page}
+  {pageSize}
+  onPageChange={(p) => (page = p)}
+  onPageSizeChange={(s) => {
+    pageSize = s;
+    page = 1;
+  }}
+  {rowAction}
+  emptyMessage="No tasks match these filters."
+/>

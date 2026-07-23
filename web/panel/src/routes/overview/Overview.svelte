@@ -1,14 +1,21 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getOverview, type Overview } from "../../lib/api/client";
+  import { getOverview, type Overview, type PanelSessionSummary } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
+  import MetricCard from "../../lib/components/cards/MetricCard.svelte";
+  import StatusCard from "../../lib/components/cards/StatusCard.svelte";
+  import TableCard from "../../lib/components/cards/TableCard.svelte";
+  import DataTable from "../../lib/components/data/DataTable.svelte";
+  import type { Column } from "../../lib/components/data/types";
 
   let overview: Overview | null = $state(null);
   let error: string | null = $state(null);
   let loading = $state(true);
+  let recentSessionsPage = $state(1);
 
   async function load() {
     loading = true;
@@ -35,6 +42,18 @@
     source_failure: "Source failure",
     stale_session: "Stale session",
   };
+
+  const recentSessionColumns: Column<PanelSessionSummary>[] = [
+    { key: "objective", label: "Objective", primary: true, render: (s) => s.objective || s.id },
+    { key: "workflow", label: "Workflow", sortable: true },
+    { key: "status", label: "Status", sortable: true },
+    {
+      key: "updated_at",
+      label: "Updated",
+      sortable: true,
+      render: (s) => new Date(s.updated_at).toLocaleString(),
+    },
+  ];
 </script>
 
 <PageHeader title="Overview" description="Everything currently active or needing attention across workspaces." />
@@ -44,153 +63,110 @@
 {:else if error}
   <p role="alert" class="error">Failed to load the overview: {error}</p>
 {:else if overview}
-  <section class="cards" aria-label="Summary">
-    <div class="card">
-      <strong>{overview.active_sessions.length}</strong>
-      <span>Active sessions</span>
-    </div>
-    <div class="card">
-      <strong>{overview.blocked_tasks}</strong>
-      <span>Blocked tasks</span>
-    </div>
-    <div class="card">
-      <strong>{overview.pending_approvals.length}</strong>
-      <span>Pending approvals</span>
-    </div>
-    <div class="card">
-      <strong>{overview.available_workspaces}</strong>
-      <span>Available workspaces</span>
-    </div>
-  </section>
+  {@const ov = overview}
+  <BentoGrid>
+    <MetricCard label="Active sessions" value={ov.active_sessions.length} size="small" />
+    <MetricCard label="Blocked tasks" value={ov.blocked_tasks} size="small" />
+    <MetricCard label="Pending approvals" value={ov.pending_approvals.length} size="small" />
+    <MetricCard label="Available workspaces" value={ov.available_workspaces} size="small" />
 
-  <section aria-labelledby="active-now-heading">
-    <h2 id="active-now-heading">Active Now</h2>
-    {#if overview.active_sessions.length === 0}
-      <p class="muted">No active sessions.</p>
-    {:else}
-      <ul class="sessions">
-        {#each overview.active_sessions as s (s.id)}
-          <li>
-            <strong>{s.objective || s.id}</strong>
-            <span class="muted">{s.workflow} · {s.status}{s.active_role ? ` · ${s.active_role}` : ""}</span>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
-
-  <section aria-labelledby="needs-attention-heading">
-    <h2 id="needs-attention-heading">Needs Attention</h2>
-    {#if overview.needs_attention.length === 0}
-      <p class="muted">Nothing needs attention.</p>
-    {:else}
-      <ol class="attention">
-        {#each overview.needs_attention as item, i (i)}
-          <li>
-            <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
-            <span>{item.message}</span>
-            <button
-              type="button"
-              class="link-button"
-              onclick={() => navigate(`/workspaces/${encodeURIComponent(item.workspace_id)}`)}
-            >
-              {item.workspace_id}
-            </button>
-          </li>
-        {/each}
-      </ol>
-    {/if}
-  </section>
-
-  <section aria-labelledby="recent-sessions-heading">
-    <h2 id="recent-sessions-heading">Recent Sessions</h2>
-    {#if overview.recent_sessions.length === 0}
-      <p class="muted">No sessions yet.</p>
-    {:else}
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Objective</th>
-            <th scope="col">Workflow</th>
-            <th scope="col">Status</th>
-            <th scope="col">Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each overview.recent_sessions as s (s.id)}
-            <tr>
-              <td>{s.objective || s.id}</td>
-              <td>{s.workflow}</td>
-              <td>{s.status}</td>
-              <td>{new Date(s.updated_at).toLocaleString()}</td>
-            </tr>
+    <StatusCard
+      size="wide"
+      variant={ov.needs_attention.length === 0 ? "success" : "warning"}
+      label={ov.needs_attention.length === 0 ? "Nothing needs attention" : "Needs attention"}
+      description={ov.needs_attention.length === 0
+        ? "All workspaces are healthy."
+        : `${ov.needs_attention.length} item(s) across workspaces.`}
+    />
+    <TableCard title="Active Now" size="wide" state={ov.active_sessions.length === 0 ? "empty" : "default"} emptyMessage="No active sessions.">
+      {#snippet children()}
+        <ul class="sessions">
+          {#each ov.active_sessions as s (s.id)}
+            <li>
+              <strong>{s.objective || s.id}</strong>
+              <span class="muted">{s.workflow} · {s.status}{s.active_role ? ` · ${s.active_role}` : ""}</span>
+            </li>
           {/each}
-        </tbody>
-      </table>
-    {/if}
-  </section>
+        </ul>
+      {/snippet}
+    </TableCard>
 
-  <section aria-labelledby="workspace-health-heading">
-    <h2 id="workspace-health-heading">Workspaces</h2>
-    <ul class="workspaces">
-      {#each overview.workspace_health as ws (ws.id)}
-        <li>
-          <button type="button" class="link-button" onclick={() => navigate(`/workspaces/${encodeURIComponent(ws.id)}`)}>
-            {ws.display_name || ws.id}
-          </button>
-          <StatusBadge availability={ws.availability} />
-        </li>
-      {/each}
-    </ul>
-  </section>
+    {#if ov.needs_attention.length > 0}
+      <TableCard title="Needs Attention" size="full">
+        {#snippet children()}
+          <ol class="attention">
+            {#each ov.needs_attention as item, i (i)}
+              <li>
+                <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
+                <span>{item.message}</span>
+                <button
+                  type="button"
+                  class="link-button"
+                  onclick={() => navigate(`/workspaces/${encodeURIComponent(item.workspace_id)}`)}
+                >
+                  {item.workspace_id}
+                </button>
+              </li>
+            {/each}
+          </ol>
+        {/snippet}
+      </TableCard>
+    {/if}
+
+    <TableCard title="Recent Sessions" size="full">
+      {#snippet children()}
+        <DataTable
+          columns={recentSessionColumns}
+          rows={ov.recent_sessions}
+          page={recentSessionsPage}
+          pageSize={5}
+          onPageChange={(p) => (recentSessionsPage = p)}
+          emptyMessage="No sessions yet."
+        />
+      {/snippet}
+    </TableCard>
+
+    <TableCard title="Workspaces" size="full">
+      {#snippet children()}
+        <ul class="workspaces">
+          {#each ov.workspace_health as ws (ws.id)}
+            <li>
+              <button
+                type="button"
+                class="link-button"
+                onclick={() => navigate(`/workspaces/${encodeURIComponent(ws.id)}`)}
+              >
+                {ws.display_name || ws.id}
+              </button>
+              <StatusBadge availability={ws.availability} />
+            </li>
+          {/each}
+        </ul>
+      {/snippet}
+    </TableCard>
+  </BentoGrid>
 {/if}
 
 <style>
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-  }
-  .card {
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-    display: grid;
-    gap: 0.15rem;
-  }
-  .card strong {
-    font-size: 1.5rem;
-  }
-  .card span {
-    color: #666;
-    font-size: 0.85rem;
-  }
-  section {
-    margin-bottom: 1.5rem;
-  }
-  h2 {
-    font-size: 1rem;
-    margin-bottom: 0.5rem;
-  }
   .muted {
-    color: #666;
+    color: var(--color-text-muted);
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
   ul.sessions,
   ol.attention,
   ul.workspaces {
     list-style: none;
     padding: 0;
+    margin: 0;
     display: grid;
     gap: 0.4rem;
   }
   ul.sessions li,
   ol.attention li,
   ul.workspaces li {
-    border: 1px solid #eee;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
     display: flex;
@@ -201,31 +177,15 @@
   .kind {
     font-weight: 600;
     font-size: 0.85rem;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  th,
-  td {
-    text-align: left;
-    padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid #eee;
-    font-size: 0.9rem;
+    color: var(--color-text);
   }
   .link-button {
     background: none;
     border: none;
     padding: 0;
-    color: #3949ab;
+    color: var(--color-accent);
     cursor: pointer;
     font-size: inherit;
     text-decoration: underline;
-  }
-
-  @media (max-width: 640px) {
-    .cards {
-      grid-template-columns: 1fr 1fr;
-    }
   }
 </style>

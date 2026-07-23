@@ -1,10 +1,24 @@
 <script lang="ts">
   import type { Availability } from "../api/client";
 
-  interface Props {
+  // Generic semantic variants for callers that aren't rendering a
+  // workspace Availability (e.g. DataTable status cells, ReviewCard).
+  // Kept distinct from Availability's own five states so existing call
+  // sites (WorkspacesList, WorkspaceSummary, Overview) are untouched.
+  export type BadgeVariant = "success" | "warning" | "danger" | "info" | "neutral";
+
+  interface AvailabilityProps {
     availability: Availability;
+    variant?: undefined;
+    label?: undefined;
   }
-  let { availability }: Props = $props();
+  interface VariantProps {
+    availability?: undefined;
+    variant: BadgeVariant;
+    label: string;
+  }
+  type Props = AvailabilityProps | VariantProps;
+  let { availability, variant, label }: Props = $props();
 
   const labels: Record<Availability, string> = {
     available: "Available",
@@ -21,15 +35,30 @@
     unavailable: "✕",
     invalid: "?",
   };
+
+  const variantIcons: Record<BadgeVariant, string> = {
+    success: "✓",
+    warning: "⚠",
+    danger: "✕",
+    info: "ℹ",
+    neutral: "●",
+  };
+
+  const resolvedClass = $derived(availability ? `status-${availability}` : `status-variant-${variant}`);
+  const resolvedIcon = $derived(availability ? icons[availability] : variantIcons[variant as BadgeVariant]);
+  const resolvedLabel = $derived(availability ? labels[availability] : label);
 </script>
 
 <!--
   Per §15: color must never be the only signal. Every badge pairs a
-  status class (color) with an icon glyph and text label.
+  status class (color) with an icon glyph and text label. Extended
+  (UI-011) with a generic variant+label mode for DataTable/ReviewCard
+  status cells that aren't workspace Availability values, rather than
+  creating a second competing badge component.
 -->
-<span class="status status-{availability}">
-  <span aria-hidden="true">{icons[availability]}</span>
-  {labels[availability]}
+<span class="status {resolvedClass}">
+  <span aria-hidden="true">{resolvedIcon}</span>
+  {resolvedLabel}
 </span>
 
 <style>
@@ -58,5 +87,26 @@
   .status-invalid {
     background: #fdecea;
     color: #c62828;
+  }
+
+  .status-variant-success {
+    background: var(--color-accent-soft);
+    color: var(--color-success);
+  }
+  .status-variant-warning {
+    background: var(--color-accent-soft);
+    color: var(--color-warning);
+  }
+  .status-variant-danger {
+    background: var(--color-accent-soft);
+    color: var(--color-danger);
+  }
+  .status-variant-info {
+    background: var(--color-accent-soft);
+    color: var(--color-info);
+  }
+  .status-variant-neutral {
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted);
   }
 </style>

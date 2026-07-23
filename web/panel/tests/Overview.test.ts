@@ -59,7 +59,11 @@ describe("Overview", () => {
     await waitFor(() => {
       expect(screen.getByText("No active sessions.")).toBeTruthy();
     });
-    expect(screen.getByText("Nothing needs attention.")).toBeTruthy();
+    // Migrated to a StatusCard (UI-010/UI-017): "Nothing needs attention"
+    // is now the card's label, with a separate description sentence,
+    // rather than one combined sentence.
+    expect(screen.getByText("Nothing needs attention")).toBeTruthy();
+    expect(screen.getByText("All workspaces are healthy.")).toBeTruthy();
     expect(screen.getByText("No sessions yet.")).toBeTruthy();
   });
 

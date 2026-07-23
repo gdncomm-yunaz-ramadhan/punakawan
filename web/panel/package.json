@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
+    "cytoscape": "^3.34.0",
     "svelte": "^5.15.0"
   },
   "devDependencies": {
