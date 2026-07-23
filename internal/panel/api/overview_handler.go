@@ -107,7 +107,7 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 			return
 		}
 		var failed, stale []NeedsAttentionItem
-		var activeSessions []protocol.PanelSessionSummary
+		activeSessions := []protocol.PanelSessionSummary{}
 		now := time.Now().UTC()
 		for _, s := range sessions {
 			switch {

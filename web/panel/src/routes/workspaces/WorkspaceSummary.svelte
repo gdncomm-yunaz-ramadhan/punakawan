@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { getWorkspace, type WorkspaceDetail } from "../../lib/api/client";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
+  import { navigate } from "../../lib/router/router.svelte";
+  import { onPanelEvent } from "../../lib/events/sse.svelte";
 
   interface Props {
     workspaceId: string;
@@ -25,7 +27,10 @@
     }
   }
 
-  onMount(() => load(workspaceId));
+  onMount(() => {
+    load(workspaceId);
+    return onPanelEvent(() => load(workspaceId));
+  });
   $effect(() => {
     load(workspaceId);
   });
@@ -43,7 +48,13 @@
   <p class="path">{detail.path}</p>
 
   <section class="cards" aria-label="Summary">
-    <div class="card">
+    <div
+      class="card clickable"
+      role="button"
+      tabindex="0"
+      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/sessions`)}
+      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/sessions`)}
+    >
       <strong>{detail.active_session_count}</strong>
       <span>Active sessions</span>
     </div>
@@ -108,6 +119,12 @@
   }
   .card strong {
     font-size: 1.5rem;
+  }
+  .card.clickable {
+    cursor: pointer;
+  }
+  .card.clickable:hover {
+    background: #f7f7f7;
   }
   .card span {
     color: #666;

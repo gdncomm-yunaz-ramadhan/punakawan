@@ -11,6 +11,7 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
+	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 )
 
@@ -36,6 +37,9 @@ type Server struct {
 	logger    *slog.Logger
 	startedAt time.Time
 
+	hub                *events.Hub
+	stopReconciliation context.CancelFunc
+
 	httpServer *http.Server
 	listener   net.Listener
 }
@@ -60,6 +64,7 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 		readers:  panel.NewReaders(a, reg),
 		opts:     opts,
 		logger:   logger,
+		hub:      events.NewHub(),
 	}
 }
 
@@ -96,8 +101,13 @@ func (s *Server) Start() error {
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
+	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
 	mux.HandleFunc("GET /api/v1/workspaces", api.WorkspacesHandler(s.readers.Workspace))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}", api.WorkspaceHandler(s.readers.Workspace))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions", api.SessionsHandler(s.readers.Session))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}", api.SessionHandler(s.readers.Session))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}/timeline", api.SessionTimelineHandler(s.readers.Session))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/capsules", api.CapsulesHandler(s.app.Capsules))
 	mux.Handle("/", static)
 
 	s.httpServer = &http.Server{
@@ -111,6 +121,11 @@ func (s *Server) Start() error {
 		}
 	}()
 
+	reconcileCtx, cancel := context.WithCancel(context.Background())
+	s.stopReconciliation = cancel
+	reconciler := &events.Reconciler{Hub: s.hub, Readers: s.readers, WorkspaceID: s.app.Workspace.ID}
+	go reconciler.Run(reconcileCtx)
+
 	s.logger.Info("panel server started", "addr", listener.Addr().String())
 	return nil
 }
@@ -120,6 +135,9 @@ func (s *Server) Start() error {
 // dropped. Stopping never modifies canonical workspace state (§30) - this
 // server only reads from the stores behind its readers.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.stopReconciliation != nil {
+		s.stopReconciliation()
+	}
 	if s.httpServer == nil {
 		return nil
 	}

@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/workflow"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 func runGit(t *testing.T, dir string, args ...string) {
@@ -243,6 +246,123 @@ func TestServerStaticFallbackServesIndexForUnknownPath(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "Punakawan Panel") {
 		t.Fatalf("body = %s, want it to contain the panel's index.html", body)
+	}
+}
+
+func TestServerSessionsEndpoints(t *testing.T) {
+	s, a := startTestServer(t)
+
+	run := workflow.New("run-test-1", a.Workspace.ID, protocol.WorkflowRunWorkflowNameFeatureDelivery, time.Now().UTC())
+	if err := a.Workflow.Append(run); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+
+	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ := body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want 1", items)
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/run-test-1")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if body["id"] != "run-test-1" {
+		t.Fatalf("id = %v, want run-test-1", body["id"])
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/run-test-1/timeline")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if _, ok := body["items"]; !ok {
+		t.Fatalf("expected an items field: %+v", body)
+	}
+}
+
+func TestServerSessionsEndpointUnknownSessionReturns404(t *testing.T) {
+	s, a := startTestServer(t)
+	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/no-such-run")
+	if status != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", status)
+	}
+}
+
+func TestServerCapsulesEndpoint(t *testing.T) {
+	s, a := startTestServer(t)
+
+	c := protocol.ContextCapsule{
+		Id:               "cap-1",
+		TaskId:           "bd-task-1",
+		CreatedAt:        time.Now().UTC(),
+		Role:             protocol.ContextCapsuleRolePetruk,
+		Objective:        "implement the feature",
+		AllowedTools:     []string{},
+		ForbiddenActions: []string{},
+	}
+	digest, err := capsule.Digest(c)
+	if err != nil {
+		t.Fatalf("capsule.Digest: %v", err)
+	}
+	c.Digest = digest
+	if err := a.Capsules.Put(c); err != nil {
+		t.Fatalf("Capsules.Put: %v", err)
+	}
+
+	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/capsules?task_id=bd-task-1")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ := body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want 1", items)
+	}
+
+	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/capsules?task_id=no-such-task")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	items, _ = body["items"].([]any)
+	if len(items) != 0 {
+		t.Fatalf("items = %+v, want 0 for an unrelated task id", items)
+	}
+}
+
+// TestServerEventsEndpointStreamsSystemReadyOnConnect proves a fresh SSE
+// connection (no Last-Event-ID) always receives its own system.ready
+// frame immediately, per §12 - the frontend's connection indicator relies
+// on this, so it must not depend on catching a global startup event that
+// existed before the client subscribed.
+func TestServerEventsEndpointStreamsSystemReadyOnConnect(t *testing.T) {
+	s, _ := startTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/api/v1/events", s.Addr()), nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	buf := make([]byte, 4096)
+	n, err := resp.Body.Read(buf)
+	if err != nil && n == 0 {
+		t.Fatalf("Read: %v", err)
+	}
+	if !strings.Contains(string(buf[:n]), "system.ready") {
+		t.Fatalf("first SSE frame = %q, want it to contain system.ready", buf[:n])
 	}
 }
 

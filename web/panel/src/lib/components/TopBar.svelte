@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { SystemInfo } from "../api/client";
+  import { getConnectionStatus } from "../events/sse.svelte";
 
   interface Props {
     system: SystemInfo | null;
@@ -12,6 +13,8 @@
       now = new Date();
     }, 1000);
   }
+
+  const connectionLabels = { connecting: "Connecting…", open: "Live", error: "Reconnecting…" };
 </script>
 
 <header>
@@ -23,8 +26,10 @@
     </span>
     <span class="version">v{system.panel_version}</span>
   {/if}
-  <!-- SSE-backed live connection status arrives in Phase 3; until then
-       this is intentionally omitted rather than showing a fake indicator. -->
+  <span class="connection connection-{getConnectionStatus()}" data-testid="connection-indicator">
+    <span aria-hidden="true">●</span>
+    {connectionLabels[getConnectionStatus()]}
+  </span>
   <time>{now.toLocaleTimeString()}</time>
 </header>
 
@@ -53,5 +58,21 @@
   time {
     color: #666;
     font-size: 0.85rem;
+  }
+  .connection {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    color: #666;
+  }
+  .connection-open {
+    color: #1e7d32;
+  }
+  .connection-error {
+    color: #c62828;
+  }
+  .connection-connecting {
+    color: #9a6700;
   }
 </style>

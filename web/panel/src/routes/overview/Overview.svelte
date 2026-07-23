@@ -3,6 +3,7 @@
   import { getOverview, type Overview } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
+  import { onPanelEvent } from "../../lib/events/sse.svelte";
 
   let overview: Overview | null = $state(null);
   let error: string | null = $state(null);
@@ -20,7 +21,10 @@
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    load();
+    return onPanelEvent(load);
+  });
 
   const attentionLabels: Record<string, string> = {
     failed_session: "Failed session",

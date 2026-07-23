@@ -86,7 +86,7 @@ func (s *SessionSource) List(ctx context.Context, workspaceID string, filter con
 		return nil, fmt.Errorf("sources: list sessions: %w", err)
 	}
 
-	var out []protocol.PanelSessionSummary
+	out := []protocol.PanelSessionSummary{}
 	for _, run := range current {
 		if filter.Status != "" && string(run.State) != filter.Status {
 			continue

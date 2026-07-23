@@ -100,6 +100,40 @@ export interface Overview {
   recent_sessions: PanelSessionSummary[];
 }
 
+export interface TimelineEvent {
+  id: string;
+  run_id: string;
+  timestamp: string;
+  operation: string;
+  type: string;
+  result: "success" | "failure" | "cancelled" | "timeout";
+  role?: "semar" | "gareng" | "petruk" | "bagong";
+  task?: string;
+  tool?: string;
+  adapter?: string;
+  approval_id?: string;
+  duration_ms?: number;
+  repository?: string;
+}
+
+export interface SessionDetail extends PanelSessionSummary {
+  Timeline?: TimelineEvent[] | null;
+}
+
+export interface ContextCapsule {
+  id: string;
+  task_id: string;
+  created_at: string;
+  digest: string;
+  role: "semar" | "gareng" | "petruk" | "bagong";
+  objective: string;
+  allowed_tools: string[];
+  forbidden_actions: string[];
+  relevant_knowledge?: { id: string; summary?: string }[];
+  evidence?: { id: string; summary?: string }[];
+  token_budget?: number;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -135,4 +169,38 @@ export function getWorkspace(id: string): Promise<WorkspaceDetail> {
 
 export function getOverview(): Promise<Overview> {
   return getJSON<Overview>("/overview");
+}
+
+export interface SessionFilter {
+  status?: string;
+  workflow?: string;
+  role?: string;
+  limit?: number;
+}
+
+export function listSessions(
+  workspaceId: string,
+  filter: SessionFilter = {},
+): Promise<{ items: PanelSessionSummary[] }> {
+  const params = new URLSearchParams();
+  if (filter.status) params.set("status", filter.status);
+  if (filter.workflow) params.set("workflow", filter.workflow);
+  if (filter.role) params.set("role", filter.role);
+  if (filter.limit) params.set("limit", String(filter.limit));
+  const qs = params.toString();
+  return getJSON<{ items: PanelSessionSummary[] }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/sessions${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getSession(workspaceId: string, sessionId: string): Promise<SessionDetail> {
+  return getJSON<SessionDetail>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`,
+  );
+}
+
+export function listCapsules(workspaceId: string, taskId: string): Promise<{ items: ContextCapsule[] }> {
+  return getJSON<{ items: ContextCapsule[] }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/capsules?task_id=${encodeURIComponent(taskId)}`,
+  );
 }

@@ -56,6 +56,43 @@ func (s *Store) Put(c protocol.ContextCapsule) error {
 // ErrNotFound is returned by Get when no capsule exists for the given id.
 var ErrNotFound = fmt.Errorf("capsule: not found")
 
+// List returns every capsule ever issued, in append order. Capsules key
+// by TaskId, not by run/session id (ContextCapsule has no such field), so
+// a caller wanting a task's capsules filters this slice itself; there is
+// no per-run or per-session capsule index today.
+func (s *Store) List() ([]protocol.ContextCapsule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, err := os.Open(s.path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("capsule: open %s: %w", s.path, err)
+	}
+	defer f.Close()
+
+	var out []protocol.ContextCapsule
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var c protocol.ContextCapsule
+		if err := json.Unmarshal(line, &c); err != nil {
+			return nil, fmt.Errorf("capsule: decode record: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("capsule: scan %s: %w", s.path, err)
+	}
+	return out, nil
+}
+
 // Get returns the capsule with the given id.
 func (s *Store) Get(id string) (protocol.ContextCapsule, error) {
 	s.mu.Lock()

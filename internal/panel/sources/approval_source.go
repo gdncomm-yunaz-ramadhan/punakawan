@@ -29,7 +29,7 @@ func (a *ApprovalSource) List(ctx context.Context, workspaceID string, filter co
 		return recs, nil
 	}
 
-	var out []protocol.ApprovalRecord
+	out := []protocol.ApprovalRecord{}
 	for _, rec := range recs {
 		if string(rec.Status) == filter.Status {
 			out = append(out, rec)

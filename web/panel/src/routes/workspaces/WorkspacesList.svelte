@@ -3,6 +3,7 @@
   import { listWorkspaces, type WorkspaceSummary } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
+  import { onPanelEvent } from "../../lib/events/sse.svelte";
 
   let workspaces: WorkspaceSummary[] = $state([]);
   let error: string | null = $state(null);
@@ -20,7 +21,10 @@
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    load();
+    return onPanelEvent(load);
+  });
 </script>
 
 <h1>Workspaces</h1>
