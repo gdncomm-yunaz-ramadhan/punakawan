@@ -1,0 +1,57 @@
+internal/recipe/secrets_test.go
+  3415a4432044e41f 1-192
+internal/recipe/validation_test.go
+  3415a4432044e41f 16-20,24
+internal/recipe/secrets.go
+  3415a4432044e41f 1-102
+internal/recipe/operation.go
+  3415a4432044e41f 57-62,86-98,102-106,117-124,126-127,154-172,204-217,235-246,257-264
+internal/recipe/retry_test.go
+  3415a4432044e41f 1-162
+internal/recipe/repository_test.go
+  3415a4432044e41f 14-17
+internal/recipe/retry.go
+  3415a4432044e41f 1-188
+internal/recipe/concurrency_test.go
+  3415a4432044e41f 1-132
+internal/recipe/fingerprint_test.go
+  3415a4432044e41f 1-113
+internal/recipe/lifecycle.go
+  3415a4432044e41f 92-96
+internal/recipe/repository_bench_test.go
+  3415a4432044e41f 1-56
+internal/recipe/fingerprint.go
+  3415a4432044e41f 1-111
+internal/knowledge/retrievalrecipe_importexport_test.go
+  3415a4432044e41f 1-163
+internal/recipe/validation.go
+  3415a4432044e41f 33-36
+internal/recipe/operation_hardening_test.go
+  3415a4432044e41f 1-120
+internal/recipe/repository.go
+  3415a4432044e41f 8-73
+internal/recipe/store_retry.go
+  3415a4432044e41f 1-62
+internal/recipe/compiler.go
+  3415a4432044e41f 56-59,432-441
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "0ec166524a08cf734833213f5979def149c80a3d",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1609,
+      "total_deletions": 30,
+      "accepted_lines": 1587,
+      "overriden_lines": 0
+    }
+  }
+}
