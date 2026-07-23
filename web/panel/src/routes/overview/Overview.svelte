@@ -3,6 +3,7 @@
   import { getOverview, type Overview } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
+  import PageHeader from "../../lib/components/PageHeader.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
 
   let overview: Overview | null = $state(null);
@@ -35,6 +36,8 @@
     stale_session: "Stale session",
   };
 </script>
+
+<PageHeader title="Overview" description="Everything currently active or needing attention across workspaces." />
 
 {#if loading}
   <p>Loading…</p>

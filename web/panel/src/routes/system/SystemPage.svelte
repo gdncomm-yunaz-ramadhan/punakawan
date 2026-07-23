@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getSystem, type SystemInfo } from "../../lib/api/client";
+  import PageHeader from "../../lib/components/PageHeader.svelte";
 
   let info: SystemInfo | null = $state(null);
   let error: string | null = $state(null);
@@ -21,11 +22,10 @@
   onMount(load);
 </script>
 
-<h1>System</h1>
-<p class="hint">
-  Local diagnostic info about this panel process. Never shows tokens, secrets, environment variables, or agent
-  reasoning - only the facts below.
-</p>
+<PageHeader
+  title="System"
+  description="Local diagnostic info about this panel process. Never shows tokens, secrets, environment variables, or agent reasoning - only the facts below."
+/>
 
 {#if loading}
   <p>Loading…</p>
@@ -48,15 +48,6 @@
 {/if}
 
 <style>
-  h1 {
-    font-size: 1.2rem;
-    margin-bottom: 0.2rem;
-  }
-  .hint {
-    color: #666;
-    font-size: 0.85rem;
-    margin-top: 0;
-  }
   dl {
     display: grid;
     gap: 0.4rem;

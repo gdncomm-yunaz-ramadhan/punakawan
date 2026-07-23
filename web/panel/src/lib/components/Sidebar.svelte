@@ -6,6 +6,7 @@
     { path: "/workspaces", label: "Workspaces" },
     { path: "/search", label: "Search" },
     { path: "/system", label: "System" },
+    { path: "/showcase", label: "Showcase" },
   ];
 
   function isActive(path: string): boolean {
@@ -73,7 +74,7 @@
     cursor: default;
   }
 
-  @media (max-width: 720px) {
+  @media (max-width: 639px) {
     nav {
       width: 100%;
       border-right: none;

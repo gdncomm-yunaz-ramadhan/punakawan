@@ -1,0 +1,66 @@
+/* Semantic theme tokens (§13.2). These custom properties are the only
+   source of semantic UI color for new components. Existing components
+   keep their hardcoded colors for now (migration is UI-017, a later
+   phase) - only this global base and NEW components below consume these
+   tokens. */
+
+:root {
+  --color-bg: #f6f7fb;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #eef1f6;
+  --color-surface-raised: #ffffff;
+
+  --color-text: #172033;
+  --color-text-muted: #667085;
+  --color-border: #dce2ea;
+  --color-border-strong: #c7cfdb;
+
+  --color-accent: #5b5bd6;
+  --color-accent-hover: #4b4bc4;
+  --color-accent-soft: #ececfe;
+  --color-accent-contrast: #ffffff;
+
+  --color-secondary: #0f9f9c;
+  --color-success: #16875b;
+  --color-warning: #b76e00;
+  --color-danger: #c7374f;
+  --color-info: #2878c7;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05);
+  --radius-card: 16px;
+}
+
+[data-theme="dark"] {
+  --color-bg: #0c111b;
+  --color-surface: #141b2a;
+  --color-surface-subtle: #1b2435;
+  --color-surface-raised: #192235;
+
+  --color-text: #e8ecf4;
+  --color-text-muted: #99a4b5;
+  --color-border: #293449;
+  --color-border-strong: #3a465d;
+
+  --color-accent: #8b8cf6;
+  --color-accent-hover: #a0a1ff;
+  --color-accent-soft: #29294f;
+  --color-accent-contrast: #101321;
+
+  --color-secondary: #35c7c4;
+  --color-success: #46bd86;
+  --color-warning: #e5a940;
+  --color-danger: #ee6b80;
+  --color-info: #65a9ef;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28);
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  margin: 0;
+}

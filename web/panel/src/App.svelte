@@ -2,8 +2,7 @@
   import { onMount } from "svelte";
   import { getSystem, type SystemInfo } from "./lib/api/client";
   import { getPath } from "./lib/router/router.svelte";
-  import Sidebar from "./lib/components/Sidebar.svelte";
-  import TopBar from "./lib/components/TopBar.svelte";
+  import AppShell from "./lib/components/AppShell.svelte";
   import Overview from "./routes/overview/Overview.svelte";
   import WorkspacesList from "./routes/workspaces/WorkspacesList.svelte";
   import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
@@ -15,6 +14,7 @@
   import GlobalSearch from "./routes/search/GlobalSearch.svelte";
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
+  import Showcase from "./routes/showcase/Showcase.svelte";
 
   let system: SystemInfo | null = $state(null);
   let systemError: string | null = $state(null);
@@ -36,84 +36,59 @@
   const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
 </script>
 
-<div class="shell">
-  <Sidebar />
-  <div class="content-area">
-    <TopBar {system} />
-    <main>
-      {#if systemError}
-        <p role="alert" class="error">Failed to reach the panel server: {systemError}</p>
-      {/if}
+<AppShell {system}>
+  {#if systemError}
+    <p role="alert" class="error">Failed to reach the panel server: {systemError}</p>
+  {/if}
 
-      {#if getPath() === "/" || getPath() === ""}
-        <Overview />
-      {:else if getPath() === "/workspaces"}
-        <WorkspacesList />
-      {:else if getPath() === "/search"}
-        <GlobalSearch />
-      {:else if getPath() === "/system"}
-        <SystemPage />
-      {:else if approvalsPath.exec(getPath())}
-        {@const match = approvalsPath.exec(getPath())}
-        <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-      {:else if knowledgeDetailPath.exec(getPath())}
-        {@const match = knowledgeDetailPath.exec(getPath())}
-        <KnowledgeDetail
-          workspaceId={decodeURIComponent(match?.[1] ?? "")}
-          knowledgeId={decodeURIComponent(match?.[2] ?? "")}
-        />
-      {:else if knowledgeListPath.exec(getPath())}
-        {@const match = knowledgeListPath.exec(getPath())}
-        <KnowledgeList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-      {:else if sessionDetailPath.exec(getPath())}
-        {@const match = sessionDetailPath.exec(getPath())}
-        <SessionDetail
-          workspaceId={decodeURIComponent(match?.[1] ?? "")}
-          sessionId={decodeURIComponent(match?.[2] ?? "")}
-        />
-      {:else if sessionsListPath.exec(getPath())}
-        {@const match = sessionsListPath.exec(getPath())}
-        <SessionsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-      {:else if tasksPath.exec(getPath())}
-        {@const match = tasksPath.exec(getPath())}
-        <TasksPage workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-      {:else if workspaceDetailPath.exec(getPath())}
-        {@const match = workspaceDetailPath.exec(getPath())}
-        <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-      {:else}
-        <p>Not found.</p>
-      {/if}
-    </main>
-  </div>
-</div>
+  {#if getPath() === "/" || getPath() === ""}
+    <Overview />
+  {:else if getPath() === "/workspaces"}
+    <WorkspacesList />
+  {:else if getPath() === "/search"}
+    <GlobalSearch />
+  {:else if getPath() === "/system"}
+    <SystemPage />
+  {:else if getPath() === "/showcase"}
+    <Showcase />
+  {:else if approvalsPath.exec(getPath())}
+    {@const match = approvalsPath.exec(getPath())}
+    <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else if knowledgeDetailPath.exec(getPath())}
+    {@const match = knowledgeDetailPath.exec(getPath())}
+    <KnowledgeDetail
+      workspaceId={decodeURIComponent(match?.[1] ?? "")}
+      knowledgeId={decodeURIComponent(match?.[2] ?? "")}
+    />
+  {:else if knowledgeListPath.exec(getPath())}
+    {@const match = knowledgeListPath.exec(getPath())}
+    <KnowledgeList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else if sessionDetailPath.exec(getPath())}
+    {@const match = sessionDetailPath.exec(getPath())}
+    <SessionDetail
+      workspaceId={decodeURIComponent(match?.[1] ?? "")}
+      sessionId={decodeURIComponent(match?.[2] ?? "")}
+    />
+  {:else if sessionsListPath.exec(getPath())}
+    {@const match = sessionsListPath.exec(getPath())}
+    <SessionsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else if tasksPath.exec(getPath())}
+    {@const match = tasksPath.exec(getPath())}
+    <TasksPage workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else if workspaceDetailPath.exec(getPath())}
+    {@const match = workspaceDetailPath.exec(getPath())}
+    <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else}
+    <p>Not found.</p>
+  {/if}
+</AppShell>
 
 <style>
   :global(body) {
     margin: 0;
     font-family: system-ui, sans-serif;
-    color: #1a1a1a;
-  }
-  .shell {
-    display: flex;
-    min-height: 100vh;
-  }
-  .content-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  main {
-    padding: 1rem 1.5rem;
-    max-width: 1100px;
   }
   .error {
-    color: #b00020;
-  }
-
-  @media (max-width: 720px) {
-    .shell {
-      flex-direction: column;
-    }
+    color: var(--color-danger);
   }
 </style>
