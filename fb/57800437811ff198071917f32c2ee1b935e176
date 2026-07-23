@@ -1,0 +1,59 @@
+internal/panel/api/overview_handler_test.go
+  6c4a5633395342b7 1-105
+web/panel/src/lib/api/client.ts
+  6c4a5633395342b7 17-18,23,33-100,131-138
+web/panel/src/lib/components/Sidebar.svelte
+  6c4a5633395342b7 1-89
+web/panel/src/routes/workspaces/WorkspacesList.svelte
+  6c4a5633395342b7 1-107
+web/panel/tests/WorkspacesList.test.ts
+  6c4a5633395342b7 1-67
+web/panel/src/routes/overview/Overview.svelte
+  6c4a5633395342b7 1-224
+web/panel/src/lib/components/StatusBadge.svelte
+  6c4a5633395342b7 1-62
+web/panel/src/App.svelte
+  6c4a5633395342b7 3-9,12,14,16,18,20,22,25-32,34-46,49-50,52,54,56,58-62,64-66,71-75
+web/panel/vitest.config.ts
+  6c4a5633395342b7 12-15
+internal/panel/api/overview_handler.go
+  6c4a5633395342b7 5-6,13-51,56-57,66-69,80,82,85-101,109-111,113-120,129-151,154,157-159,165-169
+web/panel/src/lib/router/router.svelte.ts
+  6c4a5633395342b7 1-26
+web/panel/src/routes/workspaces/WorkspaceSummary.svelte
+  6c4a5633395342b7 1-141
+internal/panel/sources/sources_test.go
+  6c4a5633395342b7 14,143-256
+web/panel/src/lib/components/TopBar.svelte
+  6c4a5633395342b7 1-57
+web/panel/tests/Overview.test.ts
+  6c4a5633395342b7 1-75
+web/panel/tests/router.test.ts
+  6c4a5633395342b7 1-15
+internal/panel/sources/workspace_source.go
+  6c4a5633395342b7 15,19-31,34,60-68,70-77,79-82,84,88-92,95-127,129-151,153-156,161,171,174,189,200-206,210-212,214,220
+internal/panel/server/server.go
+  6c4a5633395342b7 60
+internal/panel/deps.go
+  6c4a5633395342b7 11,31-34,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "fb57800437811ff198071917f32c2ee1b935e176",
+  "prompts": {
+    "6c4a5633395342b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "245826c0-74de-4b89-8b0f-addb47ba7d86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1507,
+      "total_deletions": 174,
+      "accepted_lines": 1467,
+      "overriden_lines": 0
+    }
+  }
+}
