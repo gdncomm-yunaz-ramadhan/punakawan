@@ -1,6 +1,45 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Showcase from "../src/routes/showcase/Showcase.svelte";
+
+// Showcase mounts every chart/graph component with sample data (Phase 2).
+// jsdom has no real <canvas> context or WebGL, so both libraries are
+// mocked here purely to keep this file's output clean - individual
+// chart/graph components each have their own dedicated, more thorough
+// mocked tests elsewhere in this directory.
+vi.mock("chart.js", () => {
+  class FakeChart {
+    constructor(..._args: unknown[]) {}
+    update = vi.fn();
+    destroy = vi.fn();
+    static register = vi.fn();
+  }
+  return {
+    Chart: FakeChart,
+    BarController: class {},
+    BarElement: class {},
+    CategoryScale: class {},
+    Legend: class {},
+    LinearScale: class {},
+    LineController: class {},
+    LineElement: class {},
+    LogarithmicScale: class {},
+    PointElement: class {},
+    Tooltip: class {},
+  };
+});
+
+vi.mock("cytoscape", () => {
+  const factory = vi.fn((..._args: unknown[]) => ({
+    on: vi.fn(),
+    destroy: vi.fn(),
+    style: () => ({ update: vi.fn() }),
+    zoom: vi.fn(() => 1),
+    fit: vi.fn(),
+    layout: () => ({ run: vi.fn() }),
+  }));
+  return { default: factory };
+});
 
 beforeEach(() => {
   localStorage.clear();
