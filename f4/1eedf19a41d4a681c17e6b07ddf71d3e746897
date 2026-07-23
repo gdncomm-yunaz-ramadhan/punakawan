@@ -1,0 +1,31 @@
+internal/knowledge/retry.go
+  3415a4432044e41f 1-64
+internal/knowledge/service.go
+  3415a4432044e41f 29-34,36,42-45,47-54,57-58,149-154,156-163
+internal/recipe/lifecycle.go
+  3415a4432044e41f 93-97
+internal/recipe/operation.go
+  3415a4432044e41f 262-264
+internal/knowledge/concurrency_test.go
+  3415a4432044e41f 1-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "f41eedf19a41d4a681c17e6b07ddf71d3e746897",
+  "prompts": {
+    "3415a4432044e41f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43f1a6a2-4a2a-4ccb-b6d9-8e28c12272fe",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 229,
+      "total_deletions": 39,
+      "accepted_lines": 229,
+      "overriden_lines": 0
+    }
+  }
+}
