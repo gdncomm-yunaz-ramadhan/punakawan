@@ -67,8 +67,9 @@ type createProposalResponse struct {
 // whichever agent claimed the dispatched BD task graph reports its
 // finished revision here. It is the concrete answer to the gap
 // punokawan-apy.5.1 filed - the "Generate diff and resolution report"
-// child task's output lands here.
-func CreateProposalHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStore) http.HandlerFunc {
+// child task's output lands here. stores dispatches review.Artifact.Type
+// to the matching artifact.Store.
+func CreateProposalHandler(reviews *artifact.ReviewStore, stores ArtifactStores) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reviewID := r.PathValue("reviewId")
 		review, err := reviews.GetReview(reviewID)
@@ -91,7 +92,12 @@ func CreateProposalHandler(reviews *artifact.ReviewStore, plans *artifact.PlanSt
 			return
 		}
 
-		baseContent, _, err := plans.Version(review.Artifact.Id, review.Artifact.Version)
+		store, err := storeFor(stores, review.Artifact.Type)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		baseContent, _, err := store.Version(review.Artifact.Id, review.Artifact.Version)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -236,8 +242,10 @@ type diffResponse struct {
 }
 
 // ProposalDiffHandler serves
-// GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/diff.
-func ProposalDiffHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStore) http.HandlerFunc {
+// GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/diff. stores
+// dispatches the owning review's Artifact.Type to the matching
+// artifact.Store.
+func ProposalDiffHandler(reviews *artifact.ReviewStore, stores ArtifactStores) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reviewID := r.PathValue("reviewId")
 		attempt, err := parseAttempt(r)
@@ -250,7 +258,17 @@ func ProposalDiffHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStor
 			writeError(w, http.StatusNotFound, err)
 			return
 		}
-		baseContent, _, err := plans.Version(proposal.Base.ArtifactId, proposal.Base.Version)
+		review, err := reviews.GetReview(reviewID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		store, err := storeFor(stores, review.Artifact.Type)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		baseContent, _, err := store.Version(proposal.Base.ArtifactId, proposal.Base.Version)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -271,7 +289,7 @@ type validationResponse struct {
 // - only the coarse passed/failed ValidationStatus is persisted, so
 // re-deriving the detailed issue list from the same deterministic inputs
 // is simpler than inventing a second on-disk shape for it.
-func ProposalValidationHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStore) http.HandlerFunc {
+func ProposalValidationHandler(reviews *artifact.ReviewStore, stores ArtifactStores) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reviewID := r.PathValue("reviewId")
 		attempt, err := parseAttempt(r)
@@ -284,7 +302,17 @@ func ProposalValidationHandler(reviews *artifact.ReviewStore, plans *artifact.Pl
 			writeError(w, http.StatusNotFound, err)
 			return
 		}
-		baseContent, _, err := plans.Version(proposal.Base.ArtifactId, proposal.Base.Version)
+		review, err := reviews.GetReview(reviewID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		store, err := storeFor(stores, review.Artifact.Type)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		baseContent, _, err := store.Version(proposal.Base.ArtifactId, proposal.Base.Version)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -307,8 +335,11 @@ func ProposalValidationHandler(reviews *artifact.ReviewStore, plans *artifact.Pl
 }
 
 // AcceptProposalHandler serves
-// POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/accept.
-func AcceptProposalHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStore) http.HandlerFunc {
+// POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/accept. stores
+// dispatches review.Artifact.Type to the matching artifact.Store, whose
+// CreateVersion becomes the acceptance handler §4 requires each artifact
+// type to provide.
+func AcceptProposalHandler(reviews *artifact.ReviewStore, stores ArtifactStores) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reviewID := r.PathValue("reviewId")
 		attempt, err := parseAttempt(r)
@@ -326,6 +357,11 @@ func AcceptProposalHandler(reviews *artifact.ReviewStore, plans *artifact.PlanSt
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		store, err := storeFor(stores, review.Artifact.Type)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 
 		// Serialize this whole read-compare-write sequence per artifact
 		// id: §12's conflict check ("current canonical hash == proposal
@@ -338,10 +374,12 @@ func AcceptProposalHandler(reviews *artifact.ReviewStore, plans *artifact.PlanSt
 		// base, which is exactly the "never silently overwrite the newer
 		// version" outcome §12 forbids - only one of two concurrent
 		// accepts against the same base may win; the other must observe
-		// the winner's new version and conflict.
-		defer plans.LockArtifact(proposal.Base.ArtifactId)()
+		// the winner's new version and conflict. store.LockArtifact
+		// (not a package-level lock) so plan and recipe artifact ids
+		// serialize independently of each other.
+		defer store.LockArtifact(proposal.Base.ArtifactId)()
 
-		current, err := plans.Current(proposal.Base.ArtifactId)
+		current, err := store.Current(proposal.Base.ArtifactId)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -359,7 +397,7 @@ func AcceptProposalHandler(reviews *artifact.ReviewStore, plans *artifact.PlanSt
 			return
 		}
 
-		newRef, err := plans.CreateVersion(proposal.Base.ArtifactId, review.Metadata.WorkspaceId, content, time.Now())
+		newRef, err := store.CreateVersion(proposal.Base.ArtifactId, review.Metadata.WorkspaceId, content, time.Now())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -493,7 +531,7 @@ func RequestChangesHandler(reviews *artifact.ReviewStore, dispatcher revision.Di
 // fallback-resolution chain's job the next time a comment is created
 // against the refreshed content) or re-run a revision automatically -
 // the user reviews the refreshed document and resubmits explicitly.
-func RebaseHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStore) http.HandlerFunc {
+func RebaseHandler(reviews *artifact.ReviewStore, stores ArtifactStores) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reviewID := r.PathValue("reviewId")
 		review, err := reviews.GetReview(reviewID)
@@ -506,7 +544,12 @@ func RebaseHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStore) htt
 			return
 		}
 
-		current, err := plans.Current(review.Artifact.Id)
+		store, err := storeFor(stores, review.Artifact.Type)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		current, err := store.Current(review.Artifact.Id)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return

@@ -42,7 +42,7 @@ type PlanStore struct {
 	WorkspaceRoot string
 
 	locksOnce sync.Once
-	locks     *keyedMutex
+	locks     *KeyedMutex
 }
 
 // LockArtifact serializes callers' multi-step read-check-write sequences
@@ -57,7 +57,7 @@ type PlanStore struct {
 // across different artifact ids. Call the returned func to release,
 // typically via `defer plans.LockArtifact(id)()`.
 func (s *PlanStore) LockArtifact(artifactID string) func() {
-	s.locksOnce.Do(func() { s.locks = newKeyedMutex() })
+	s.locksOnce.Do(func() { s.locks = NewKeyedMutex() })
 	return s.locks.Lock(artifactID)
 }
 

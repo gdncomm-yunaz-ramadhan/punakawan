@@ -93,15 +93,28 @@ const (
 	AnchorResolvedByContentHash AnchorResolution = "content_hash"
 	AnchorResolvedByHeadingText AnchorResolution = "heading_and_quoted_text"
 	AnchorResolvedByFuzzyText   AnchorResolution = "heading_and_fuzzy_text"
-	AnchorConflicted            AnchorResolution = "conflicted"
+	// AnchorResolvedByFieldPath is a recipe_field_path anchor's only
+	// resolution outcome short of AnchorConflicted - structured content
+	// has no fuzzy-match equivalent (see resolveRecipeFieldPathAnchor).
+	AnchorResolvedByFieldPath AnchorResolution = "field_path"
+	AnchorConflicted          AnchorResolution = "conflicted"
 )
 
-// ResolveAnchor implements §6's anchor resolution order against
-// markdown's current blocks. It never guesses past AnchorConflicted -
-// a conflicted result means the comment needs a human to re-anchor it,
-// not a best-effort placement.
-func ResolveAnchor(markdown string, anchor protocol.ArtifactCommentAnchor) (Block, AnchorResolution) {
-	blocks := ExtractBlocks(markdown)
+// ResolveAnchor is the single resolution entrypoint every artifact type's
+// comment anchor goes through, dispatching on anchor.Kind rather than
+// forking a parallel resolution path per type. For markdown_block, content
+// is Markdown and this runs §6's 5-step order against ExtractBlocks. For
+// recipe_field_path (Phase 5 of the retrieval-recipe plan), content is a
+// recipe's canonical JSON serialization and resolution is a single exact
+// field_path lookup - see resolveRecipeFieldPathAnchor. It never guesses
+// past AnchorConflicted - a conflicted result means the comment needs a
+// human to re-anchor it, not a best-effort placement.
+func ResolveAnchor(content string, anchor protocol.ArtifactCommentAnchor) (Block, AnchorResolution) {
+	if anchor.Kind == protocol.ArtifactCommentAnchorKindRecipeFieldPath {
+		return resolveRecipeFieldPathAnchor(content, anchor)
+	}
+
+	blocks := ExtractBlocks(content)
 
 	if anchor.BlockId != nil {
 		if b, ok := blocks[*anchor.BlockId]; ok {

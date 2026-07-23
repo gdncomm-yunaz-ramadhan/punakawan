@@ -1,11 +1,8 @@
 package api
 
 import (
-	"errors"
-	"fmt"
 	"net/http"
 
-	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -21,17 +18,23 @@ type artifactContentResponse struct {
 // covers review/comment/proposal mutation and inspection) - it is an
 // honest addition, not a fabrication of the plan doc, since the review UI
 // cannot exist without a way to fetch the content it displays.
-func ArtifactCurrentHandler(plans *artifact.PlanStore) http.HandlerFunc {
+//
+// stores dispatches by the {type} path segment to the matching
+// artifact.Store (see resolveArtifactType) rather than being compiled
+// against one concrete store - the same handler now serves both "plan"
+// and "retrieval_recipe" artifacts, per punokawan-q9r.6's instruction to
+// extend the existing protocol rather than fork a parallel one.
+func ArtifactCurrentHandler(stores ArtifactStores) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		artifactType := r.PathValue("type")
-		if artifactType != string(protocol.ArtifactReviewArtifactTypePlan) {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("unsupported artifact type %q (only %q is implemented)", artifactType, protocol.ArtifactReviewArtifactTypePlan))
+		store, _, err := resolveArtifactType(stores, r.PathValue("type"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
 			return
 		}
 		artifactID := r.PathValue("id")
 
-		ref, err := plans.Current(artifactID)
-		if errors.Is(err, artifact.ErrPlanNotFound) {
+		ref, err := store.Current(artifactID)
+		if isArtifactNotFound(err) {
 			writeError(w, http.StatusNotFound, err)
 			return
 		}
@@ -39,7 +42,7 @@ func ArtifactCurrentHandler(plans *artifact.PlanStore) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		content, _, err := plans.Version(artifactID, ref.Version)
+		content, _, err := store.Version(artifactID, ref.Version)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return

@@ -460,10 +460,16 @@ func (j *ApprovalRecord) UnmarshalJSON(value []byte) error {
 }
 
 // One anchored review comment. See
-// punakawan-artifact-review-plan-mutation-plan-v2.md §5.2/§6.
-// anchor.block_id/base_revision_hash/heading_path/quoted_text together drive the
+// punakawan-artifact-review-plan-mutation-plan-v2.md §5.2/§6. For a markdown_block
+// anchor, block_id/base_revision_hash/heading_path/quoted_text together drive the
 // 5-step anchor resolution order (§6): exact block ID, exact content hash, heading
-// path plus quoted text, heading path plus fuzzy quoted text, or conflicted.
+// path plus quoted text, heading path plus fuzzy quoted text, or conflicted. For a
+// recipe_field_path anchor
+// (punakawan-procedural-knowledge-retrieval-recipe-plan-final.md Phase 5),
+// field_path plus base_revision_hash locate an exact field/condition in a
+// retrieval_recipe's structured content instead: structured data either has the
+// exact path against the reviewed revision or it does not, so no fuzzy fallback
+// chain applies.
 type ArtifactComment struct {
 	// Anchor corresponds to the JSON schema field "anchor".
 	Anchor ArtifactCommentAnchor `json:"anchor" yaml:"anchor" mapstructure:"anchor"`
@@ -491,6 +497,13 @@ type ArtifactCommentAnchor struct {
 	// BlockId corresponds to the JSON schema field "block_id".
 	BlockId *string `json:"block_id,omitempty,omitzero" yaml:"block_id,omitempty" mapstructure:"block_id,omitempty"`
 
+	// recipe_field_path anchors only: a dotted path (gjson syntax: object keys and
+	// array indices both separated by ".", e.g. "selector.all.0.value" or
+	// "inputs.1.required") into the recipe's canonical JSON serialization. Resolved
+	// by exact match against the reviewed revision's serialized content - see
+	// internal/artifact's recipe field-path resolver.
+	FieldPath *string `json:"field_path,omitempty,omitzero" yaml:"field_path,omitempty" mapstructure:"field_path,omitempty"`
+
 	// HeadingPath corresponds to the JSON schema field "heading_path".
 	HeadingPath []string `json:"heading_path,omitempty,omitzero" yaml:"heading_path,omitempty" mapstructure:"heading_path,omitempty"`
 
@@ -504,9 +517,11 @@ type ArtifactCommentAnchor struct {
 type ArtifactCommentAnchorKind string
 
 const ArtifactCommentAnchorKindMarkdownBlock ArtifactCommentAnchorKind = "markdown_block"
+const ArtifactCommentAnchorKindRecipeFieldPath ArtifactCommentAnchorKind = "recipe_field_path"
 
 var enumValues_ArtifactCommentAnchorKind = []interface{}{
 	"markdown_block",
+	"recipe_field_path",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -637,7 +652,12 @@ type ArtifactReference struct {
 	// artifact, whose canonical version lives in durable knowledge instead (§7).
 	CanonicalLocation *string `json:"canonical_location,omitempty,omitzero" yaml:"canonical_location,omitempty" mapstructure:"canonical_location,omitempty"`
 
-	// Format corresponds to the JSON schema field "format".
+	// Content encoding of the version this reference points at. "markdown" is a
+	// plan's format. "json" is a retrieval_recipe's canonical serialization: indented
+	// JSON matching `punakawan knowledge recipe show`'s existing rendering, chosen so
+	// the artifact-review diff generator's line-based LCS diff
+	// (internal/artifact/diff.go) produces a stable, human-readable comparison
+	// without inventing a second recipe text format.
 	Format ArtifactReferenceFormat `json:"format" yaml:"format" mapstructure:"format"`
 
 	// Id corresponds to the JSON schema field "id".
@@ -661,10 +681,12 @@ type ArtifactReference struct {
 
 type ArtifactReferenceFormat string
 
+const ArtifactReferenceFormatJson ArtifactReferenceFormat = "json"
 const ArtifactReferenceFormatMarkdown ArtifactReferenceFormat = "markdown"
 
 var enumValues_ArtifactReferenceFormat = []interface{}{
 	"markdown",
+	"json",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

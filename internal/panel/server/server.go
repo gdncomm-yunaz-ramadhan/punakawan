@@ -15,6 +15,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/session"
+	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
 )
 
@@ -125,6 +126,23 @@ func (s *Server) Start() error {
 	plans := &artifact.PlanStore{WorkspaceRoot: s.app.Workspace.Root}
 	reviews := &artifact.ReviewStore{WorkspaceRoot: s.app.Workspace.Root}
 	dispatcher := &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: s.app.Workspace.Root}
+
+	// Recipes is resolved lazily (see ArtifactStores' own doc comment):
+	// opening the knowledge store starts an external Dolt server process,
+	// which every plan-only request (the overwhelming majority) should
+	// never pay for. App.OpenKnowledge memoizes its own result, so this
+	// closure only actually starts Dolt once, on the first
+	// retrieval_recipe-typed request this server instance receives.
+	stores := api.ArtifactStores{
+		Plans: plans,
+		Recipes: func() (*recipe.RecipeStore, error) {
+			knowledgeStore, err := s.app.OpenKnowledge()
+			if err != nil {
+				return nil, err
+			}
+			return &recipe.RecipeStore{Repo: &recipe.Repository{Store: knowledgeStore}}, nil
+		},
+	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
 	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
@@ -147,24 +165,24 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("POST /api/v1/session/exchange", session.ExchangeHandler(s.sessions))
 
-	mux.HandleFunc("GET /api/v1/artifacts/{type}/{id}/current", api.ArtifactCurrentHandler(plans))
-	mux.HandleFunc("POST /api/v1/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, api.CreateReviewHandler(plans, reviews, s.app.Workspace.ID)))
+	mux.HandleFunc("GET /api/v1/artifacts/{type}/{id}/current", api.ArtifactCurrentHandler(stores))
+	mux.HandleFunc("POST /api/v1/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, api.CreateReviewHandler(stores, reviews, s.app.Workspace.ID)))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}", api.ReviewHandler(reviews))
 	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}", session.RequireSession(s.sessions, api.UpdateReviewHandler(reviews)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/comments", session.RequireSession(s.sessions, api.CreateCommentHandler(reviews, plans)))
+	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/comments", session.RequireSession(s.sessions, api.CreateCommentHandler(reviews, stores)))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/comments", api.CommentsHandler(reviews))
 	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.UpdateCommentHandler(reviews)))
 	mux.HandleFunc("DELETE /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.DeleteCommentHandler(reviews)))
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/submit", session.RequireSession(s.sessions, api.SubmitHandler(reviews, dispatcher)))
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/cancel", session.RequireSession(s.sessions, api.CancelHandler(reviews)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/rebase", session.RequireSession(s.sessions, api.RebaseHandler(reviews, plans)))
+	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/rebase", session.RequireSession(s.sessions, api.RebaseHandler(reviews, stores)))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/timeline", api.TimelineHandler(reviews))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals", session.RequireSession(s.sessions, api.CreateProposalHandler(reviews, plans)))
+	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals", session.RequireSession(s.sessions, api.CreateProposalHandler(reviews, stores)))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals", api.ListProposalsHandler(reviews))
 	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}", api.ProposalHandler(reviews))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/diff", api.ProposalDiffHandler(reviews, plans))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/validation", api.ProposalValidationHandler(reviews, plans))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/accept", session.RequireSession(s.sessions, api.AcceptProposalHandler(reviews, plans)))
+	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/diff", api.ProposalDiffHandler(reviews, stores))
+	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/validation", api.ProposalValidationHandler(reviews, stores))
+	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/accept", session.RequireSession(s.sessions, api.AcceptProposalHandler(reviews, stores)))
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/reject", session.RequireSession(s.sessions, api.RejectProposalHandler(reviews)))
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/request-changes", session.RequireSession(s.sessions, api.RequestChangesHandler(reviews, dispatcher)))
 

@@ -39,7 +39,7 @@ type ReviewStore struct {
 	WorkspaceRoot string
 
 	locksOnce sync.Once
-	locks     *keyedMutex
+	locks     *KeyedMutex
 }
 
 // LockReview serializes callers' multi-step read-check-write sequences
@@ -55,7 +55,7 @@ type ReviewStore struct {
 // first use rather than requiring a constructor - a struct literal
 // (as most of this codebase's tests use) still works correctly.
 func (s *ReviewStore) LockReview(reviewID string) func() {
-	s.locksOnce.Do(func() { s.locks = newKeyedMutex() })
+	s.locksOnce.Do(func() { s.locks = NewKeyedMutex() })
 	return s.locks.Lock(reviewID)
 }
 

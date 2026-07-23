@@ -17,18 +17,24 @@ import "sync"
 // This is a single-process, in-memory lock only - it does not (and, per
 // §17's "local, single-user tool" scope, does not need to) coordinate
 // across multiple panel processes sharing one workspace directory.
-type keyedMutex struct {
+//
+// Exported (KeyedMutex/NewKeyedMutex) so other artifact.Store
+// implementations outside this package - e.g. internal/recipe's
+// RecipeStore - can give their own CreateVersion/Current sequences the
+// same per-artifact-id serialization PlanStore's LockArtifact provides,
+// without duplicating this type.
+type KeyedMutex struct {
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
 }
 
-func newKeyedMutex() *keyedMutex {
-	return &keyedMutex{locks: make(map[string]*sync.Mutex)}
+func NewKeyedMutex() *KeyedMutex {
+	return &KeyedMutex{locks: make(map[string]*sync.Mutex)}
 }
 
 // Lock blocks until key's lock is held and returns a func that releases
 // it - intended to be used as `defer m.Lock(id)()`.
-func (m *keyedMutex) Lock(key string) func() {
+func (m *KeyedMutex) Lock(key string) func() {
 	m.mu.Lock()
 	l, ok := m.locks[key]
 	if !ok {

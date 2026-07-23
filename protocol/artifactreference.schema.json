@@ -16,7 +16,11 @@
     "version": { "type": "integer", "minimum": 1 },
     "revision_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "workspace_id": { "type": "string" },
-    "format": { "type": "string", "enum": ["markdown"] },
+    "format": {
+      "description": "Content encoding of the version this reference points at. \"markdown\" is a plan's format. \"json\" is a retrieval_recipe's canonical serialization: indented JSON matching `punakawan knowledge recipe show`'s existing rendering, chosen so the artifact-review diff generator's line-based LCS diff (internal/artifact/diff.go) produces a stable, human-readable comparison without inventing a second recipe text format.",
+      "type": "string",
+      "enum": ["markdown", "json"]
+    },
     "canonical_location": {
       "description": "Path to this version's immutable content, e.g. .punakawan/plans/<id>/versions/<version>.md (§7). Absent for a retrieval_recipe artifact, whose canonical version lives in durable knowledge instead (§7).",
       "type": "string"

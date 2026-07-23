@@ -19,7 +19,7 @@ func TestArtifactCurrentHandlerReturnsLatestContent(t *testing.T) {
 	req.SetPathValue("type", "plan")
 	req.SetPathValue("id", "plan-panel")
 	rec := httptest.NewRecorder()
-	ArtifactCurrentHandler(plans)(rec, req)
+	ArtifactCurrentHandler(ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
@@ -39,7 +39,7 @@ func TestArtifactCurrentHandlerReturns404ForUnknownPlan(t *testing.T) {
 	req.SetPathValue("type", "plan")
 	req.SetPathValue("id", "no-such-plan")
 	rec := httptest.NewRecorder()
-	ArtifactCurrentHandler(plans)(rec, req)
+	ArtifactCurrentHandler(ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
@@ -52,7 +52,7 @@ func TestArtifactCurrentHandlerRejectsUnknownType(t *testing.T) {
 	req.SetPathValue("type", "retrieval_recipe")
 	req.SetPathValue("id", "r-1")
 	rec := httptest.NewRecorder()
-	ArtifactCurrentHandler(plans)(rec, req)
+	ArtifactCurrentHandler(ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)

@@ -62,7 +62,7 @@ func TestCreateProposalHandlerStoresAPassingProposal(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewID+"/proposals", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateProposalHandler(reviews, plans)(rec, req)
+	CreateProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body)
@@ -94,7 +94,7 @@ func TestCreateProposalHandlerFlagsAnUnresolvedComment(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewID+"/proposals", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateProposalHandler(reviews, plans)(rec, req)
+	CreateProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (a failing validation is still stored): %s", rec.Code, rec.Body)
@@ -125,7 +125,7 @@ func TestCreateProposalHandlerRejectsADraftReview(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/review-1/proposals", bytes.NewReader(body))
 	req.SetPathValue("reviewId", "review-1")
 	rec := httptest.NewRecorder()
-	CreateProposalHandler(reviews, plans)(rec, req)
+	CreateProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", rec.Code)
@@ -138,7 +138,7 @@ func createProposal(t *testing.T, reviews *artifact.ReviewStore, plans *artifact
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewID+"/proposals", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateProposalHandler(reviews, plans)(rec, req)
+	CreateProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("createProposal status = %d: %s", rec.Code, rec.Body)
 	}
@@ -179,7 +179,7 @@ func TestProposalDiffHandlerReportsAddedAndRemovedLines(t *testing.T) {
 	req.SetPathValue("reviewId", reviewID)
 	req.SetPathValue("proposalId", "1")
 	rec := httptest.NewRecorder()
-	ProposalDiffHandler(reviews, plans)(rec, req)
+	ProposalDiffHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
@@ -201,7 +201,7 @@ func TestProposalValidationHandlerRecomputesLiveReports(t *testing.T) {
 	req.SetPathValue("reviewId", reviewID)
 	req.SetPathValue("proposalId", "1")
 	rec := httptest.NewRecorder()
-	ProposalValidationHandler(reviews, plans)(rec, req)
+	ProposalValidationHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
@@ -223,7 +223,7 @@ func TestAcceptProposalHandlerCreatesANewCanonicalVersion(t *testing.T) {
 	req.SetPathValue("reviewId", reviewID)
 	req.SetPathValue("proposalId", "1")
 	rec := httptest.NewRecorder()
-	AcceptProposalHandler(reviews, plans)(rec, req)
+	AcceptProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
@@ -268,7 +268,7 @@ func TestAcceptProposalHandlerDetectsConflict(t *testing.T) {
 	req.SetPathValue("reviewId", reviewID)
 	req.SetPathValue("proposalId", "1")
 	rec := httptest.NewRecorder()
-	AcceptProposalHandler(reviews, plans)(rec, req)
+	AcceptProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", rec.Code)
@@ -291,7 +291,7 @@ func TestAcceptProposalHandlerRefusesAFailedValidation(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewID+"/proposals", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateProposalHandler(reviews, plans)(rec, req)
+	CreateProposalHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("createProposal status = %d: %s", rec.Code, rec.Body)
 	}
@@ -300,7 +300,7 @@ func TestAcceptProposalHandlerRefusesAFailedValidation(t *testing.T) {
 	acceptReq.SetPathValue("reviewId", reviewID)
 	acceptReq.SetPathValue("proposalId", "1")
 	acceptRec := httptest.NewRecorder()
-	AcceptProposalHandler(reviews, plans)(acceptRec, acceptReq)
+	AcceptProposalHandler(reviews, ArtifactStores{Plans: plans})(acceptRec, acceptReq)
 
 	if acceptRec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", acceptRec.Code)
@@ -365,7 +365,7 @@ func TestRebaseHandlerRepointsAConflictedReviewAtTheLatestVersion(t *testing.T) 
 	acceptReq := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/"+reviewID+"/proposals/1/accept", nil)
 	acceptReq.SetPathValue("reviewId", reviewID)
 	acceptReq.SetPathValue("proposalId", "1")
-	AcceptProposalHandler(reviews, plans)(httptest.NewRecorder(), acceptReq)
+	AcceptProposalHandler(reviews, ArtifactStores{Plans: plans})(httptest.NewRecorder(), acceptReq)
 
 	// Simulate a second, now-conflicted review still pinned to version 1.
 	reviews2 := reviews
@@ -380,7 +380,7 @@ func TestRebaseHandlerRepointsAConflictedReviewAtTheLatestVersion(t *testing.T) 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/review-2/rebase", nil)
 	req.SetPathValue("reviewId", "review-2")
 	rec := httptest.NewRecorder()
-	RebaseHandler(reviews, plans)(rec, req)
+	RebaseHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)

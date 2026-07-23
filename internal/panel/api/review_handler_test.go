@@ -32,7 +32,7 @@ func TestCreateReviewHandlerOpensADraftPinnedToTheCurrentVersion(t *testing.T) {
 	req.SetPathValue("type", "plan")
 	req.SetPathValue("id", "plan-panel")
 	rec := httptest.NewRecorder()
-	CreateReviewHandler(plans, reviews, "punakawan")(rec, req)
+	CreateReviewHandler(ArtifactStores{Plans: plans}, reviews, "punakawan")(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body)
@@ -59,7 +59,7 @@ func TestCreateReviewHandlerRejectsUnknownArtifactType(t *testing.T) {
 	req.SetPathValue("type", "retrieval_recipe")
 	req.SetPathValue("id", "r-1")
 	rec := httptest.NewRecorder()
-	CreateReviewHandler(plans, reviews, "punakawan")(rec, req)
+	CreateReviewHandler(ArtifactStores{Plans: plans}, reviews, "punakawan")(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
@@ -76,7 +76,7 @@ func TestCreateReviewHandlerRequiresATitle(t *testing.T) {
 	req.SetPathValue("type", "plan")
 	req.SetPathValue("id", "plan-panel")
 	rec := httptest.NewRecorder()
-	CreateReviewHandler(plans, reviews, "punakawan")(rec, req)
+	CreateReviewHandler(ArtifactStores{Plans: plans}, reviews, "punakawan")(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
@@ -93,7 +93,7 @@ func TestCreateReviewHandlerReturns404ForUnknownPlan(t *testing.T) {
 	req.SetPathValue("type", "plan")
 	req.SetPathValue("id", "no-such-plan")
 	rec := httptest.NewRecorder()
-	CreateReviewHandler(plans, reviews, "punakawan")(rec, req)
+	CreateReviewHandler(ArtifactStores{Plans: plans}, reviews, "punakawan")(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)

@@ -52,7 +52,7 @@ func TestCreateCommentHandlerPersistsAResolvableComment(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/review-1/comments", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateCommentHandler(reviews, plans)(rec, req)
+	CreateCommentHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body)
@@ -73,7 +73,7 @@ func TestCreateCommentHandlerRejectsAStaleBaseRevision(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/review-1/comments", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateCommentHandler(reviews, plans)(rec, req)
+	CreateCommentHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
@@ -96,7 +96,7 @@ func TestCreateCommentHandlerRejectsAnUnresolvableAnchor(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/review-1/comments", bytes.NewReader(body))
 	req.SetPathValue("reviewId", reviewID)
 	rec := httptest.NewRecorder()
-	CreateCommentHandler(reviews, plans)(rec, req)
+	CreateCommentHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
@@ -115,7 +115,7 @@ func TestCreateCommentHandlerIsIdempotentForAClientSuppliedID(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/review-1/comments", bytes.NewReader(body))
 		req.SetPathValue("reviewId", reviewID)
 		rec := httptest.NewRecorder()
-		CreateCommentHandler(reviews, plans)(rec, req)
+		CreateCommentHandler(reviews, ArtifactStores{Plans: plans})(rec, req)
 		return rec
 	}
 

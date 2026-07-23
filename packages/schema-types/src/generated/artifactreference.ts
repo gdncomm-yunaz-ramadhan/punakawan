@@ -16,7 +16,10 @@ export interface ArtifactReference {
   version: number;
   revision_hash: string;
   workspace_id: string;
-  format: "markdown";
+  /**
+   * Content encoding of the version this reference points at. "markdown" is a plan's format. "json" is a retrieval_recipe's canonical serialization: indented JSON matching `punakawan knowledge recipe show`'s existing rendering, chosen so the artifact-review diff generator's line-based LCS diff (internal/artifact/diff.go) produces a stable, human-readable comparison without inventing a second recipe text format.
+   */
+  format: "markdown" | "json";
   /**
    * Path to this version's immutable content, e.g. .punakawan/plans/<id>/versions/<version>.md (§7). Absent for a retrieval_recipe artifact, whose canonical version lives in durable knowledge instead (§7).
    */

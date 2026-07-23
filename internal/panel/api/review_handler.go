@@ -24,14 +24,14 @@ type createReviewRequest struct {
 
 // CreateReviewHandler serves POST /api/v1/artifacts/{type}/{id}/reviews:
 // it opens a new draft review pinned to the artifact's current version,
-// per §5.1. Only the "plan" artifact type has a store today - a
-// retrieval_recipe review is a later phase's honest gap, not silently
-// mishandled here.
-func CreateReviewHandler(plans *artifact.PlanStore, reviews *artifact.ReviewStore, workspaceID string) http.HandlerFunc {
+// per §5.1. stores dispatches {type} to the matching artifact.Store (see
+// resolveArtifactType), so "plan" and "retrieval_recipe" share this one
+// handler instead of a second, recipe-specific copy.
+func CreateReviewHandler(stores ArtifactStores, reviews *artifact.ReviewStore, workspaceID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		artifactType := r.PathValue("type")
-		if artifactType != string(protocol.ArtifactReviewArtifactTypePlan) {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("unsupported artifact type %q (only %q is implemented)", artifactType, protocol.ArtifactReviewArtifactTypePlan))
+		store, artifactType, err := resolveArtifactType(stores, r.PathValue("type"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
 			return
 		}
 		artifactID := r.PathValue("id")
@@ -42,8 +42,8 @@ func CreateReviewHandler(plans *artifact.PlanStore, reviews *artifact.ReviewStor
 			return
 		}
 
-		ref, err := plans.Current(artifactID)
-		if errors.Is(err, artifact.ErrPlanNotFound) {
+		ref, err := store.Current(artifactID)
+		if isArtifactNotFound(err) {
 			writeError(w, http.StatusNotFound, err)
 			return
 		}
@@ -67,7 +67,7 @@ func CreateReviewHandler(plans *artifact.PlanStore, reviews *artifact.ReviewStor
 				CreatedAt:   time.Now().UTC(),
 			},
 			Artifact: protocol.ArtifactReviewArtifact{
-				Type:         protocol.ArtifactReviewArtifactTypePlan,
+				Type:         artifactType,
 				Id:           artifactID,
 				Version:      ref.Version,
 				RevisionHash: ref.RevisionHash,

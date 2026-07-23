@@ -10,19 +10,33 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
+// anchorKindForArtifactType is the one anchor.kind each artifact type
+// accepts - a markdown plan anchors against Markdown blocks, a
+// retrieval_recipe anchors against a structured field_path into its JSON
+// serialization (punakawan-procedural-knowledge-retrieval-recipe-plan-final.md
+// Phase 5). Both still go through the single artifact.ResolveAnchor entry
+// point (dispatching on anchor.Kind itself), not a parallel resolver.
+var anchorKindForArtifactType = map[protocol.ArtifactReviewArtifactType]protocol.ArtifactCommentAnchorKind{
+	protocol.ArtifactReviewArtifactTypePlan:            protocol.ArtifactCommentAnchorKindMarkdownBlock,
+	protocol.ArtifactReviewArtifactTypeRetrievalRecipe: protocol.ArtifactCommentAnchorKindRecipeFieldPath,
+}
+
 // resolveCommentAnchor validates anchor against the exact content the
 // review is pinned to, per §6's resolution chain: a comment whose base
 // revision hash no longer matches the reviewed version, or whose anchor
 // cannot be resolved against it at all, is rejected up front rather than
-// silently persisted pointing at nothing.
-func resolveCommentAnchor(plans *artifact.PlanStore, review protocol.ArtifactReview, anchor protocol.ArtifactCommentAnchor) error {
-	if review.Artifact.Type != protocol.ArtifactReviewArtifactTypePlan {
-		return fmt.Errorf("api: commenting on artifact type %q is not implemented", review.Artifact.Type)
+// silently persisted pointing at nothing. stores dispatches
+// review.Artifact.Type to the matching artifact.Store so both artifact
+// types share this one validation path.
+func resolveCommentAnchor(stores ArtifactStores, review protocol.ArtifactReview, anchor protocol.ArtifactCommentAnchor) error {
+	store, err := storeFor(stores, review.Artifact.Type)
+	if err != nil {
+		return err
 	}
 	if anchor.BaseRevisionHash != review.Artifact.RevisionHash {
 		return fmt.Errorf("api: anchor's base_revision_hash does not match the reviewed version %d - refresh and re-anchor", review.Artifact.Version)
 	}
-	content, _, err := plans.Version(review.Artifact.Id, review.Artifact.Version)
+	content, _, err := store.Version(review.Artifact.Id, review.Artifact.Version)
 	if err != nil {
 		return err
 	}
@@ -55,7 +69,7 @@ type createCommentRequest struct {
 }
 
 // CreateCommentHandler serves POST /api/v1/reviews/{reviewId}/comments.
-func CreateCommentHandler(reviews *artifact.ReviewStore, plans *artifact.PlanStore) http.HandlerFunc {
+func CreateCommentHandler(reviews *artifact.ReviewStore, stores ArtifactStores) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reviewID := r.PathValue("reviewId")
 		review, err := editableReview(reviews, reviewID)
@@ -73,11 +87,11 @@ func CreateCommentHandler(reviews *artifact.ReviewStore, plans *artifact.PlanSto
 			writeError(w, http.StatusBadRequest, fmt.Errorf("api: comment body is required"))
 			return
 		}
-		if req.Anchor.Kind != protocol.ArtifactCommentAnchorKindMarkdownBlock {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("api: anchor.kind must be %q", protocol.ArtifactCommentAnchorKindMarkdownBlock))
+		if wantKind, ok := anchorKindForArtifactType[review.Artifact.Type]; !ok || req.Anchor.Kind != wantKind {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("api: anchor.kind must be %q for artifact type %q", anchorKindForArtifactType[review.Artifact.Type], review.Artifact.Type))
 			return
 		}
-		if err := resolveCommentAnchor(plans, review, req.Anchor); err != nil {
+		if err := resolveCommentAnchor(stores, review, req.Anchor); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
