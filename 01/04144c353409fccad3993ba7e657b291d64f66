@@ -1,0 +1,27 @@
+web/panel/public/theme-init.js
+  76c7b28fab141eab 1-59
+internal/panel/sources/workspace_source.go
+  76c7b28fab141eab 179-197,199-214,217-218,221-223,248-249,251-253,255,260,262,264-272,274-280
+web/panel/index.html
+  76c7b28fab141eab 8-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "0104144c353409fccad3993ba7e657b291d64f66",
+  "prompts": {
+    "76c7b28fab141eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38d4d1e8-5b04-4c5b-8dc1-aaf4dbe006cf",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 137,
+      "total_deletions": 87,
+      "accepted_lines": 127,
+      "overriden_lines": 0
+    }
+  }
+}
