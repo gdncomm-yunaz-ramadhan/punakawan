@@ -15,23 +15,30 @@
   }
 
   const connectionLabels = { connecting: "Connecting…", open: "Live", error: "Reconnecting…" };
+  const versionTitle = $derived(
+    system ? `Panel v${system.panel_version} · Punakawan v${system.punakawan_version}` : "",
+  );
 </script>
 
+<!--
+  Deliberately minimal: the sidebar already carries the brand, so the top
+  bar is only a right-aligned status strip. Version and connection state
+  are compact glyphs whose full text is revealed on hover (title) and to
+  assistive tech (aria-label), rather than always-on chips.
+-->
 <header>
-  <img class="logo" src="/logo.svg" alt="" aria-hidden="true" width="28" height="28" />
-  <h1>Punakawan Panel</h1>
-  <div class="spacer"></div>
   {#if system}
-    <span class="badge" data-testid="read-only-badge">
-      {system.read_only ? "Read-only" : "Read-write"}
-    </span>
-    <span class="version">v{system.panel_version}</span>
+    <span class="info" data-testid="panel-version" title={versionTitle} aria-label={versionTitle}>ⓘ</span>
   {/if}
-  <span class="connection connection-{getConnectionStatus()}" data-testid="connection-indicator">
+  <span
+    class="connection connection-{getConnectionStatus()}"
+    data-testid="connection-indicator"
+    title={connectionLabels[getConnectionStatus()]}
+    aria-label={`Connection: ${connectionLabels[getConnectionStatus()]}`}
+  >
     <span aria-hidden="true">●</span>
-    {connectionLabels[getConnectionStatus()]}
   </span>
-  <time>{now.toLocaleTimeString()}</time>
+  <time title="Local time">{now.toLocaleTimeString()}</time>
 </header>
 
 <style>
@@ -39,8 +46,9 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
+    justify-content: flex-end;
+    gap: 0.85rem;
+    padding: 0.6rem 2rem;
     border-bottom: 1px solid var(--color-border);
     background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-subtle) 100%);
   }
@@ -55,39 +63,23 @@
     height: 3px;
     background: var(--gradient-brand);
   }
-  .logo {
-    display: block;
-    flex-shrink: 0;
+  .info {
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: help;
   }
-  /* Logo art is a monochrome black silhouette; invert it in dark mode so it
-     reads as light-on-dark. data-theme lives on <html> (see index.html). */
-  :global(html[data-theme="dark"]) .logo {
-    filter: invert(1);
-  }
-  h1 {
-    font-size: 1.1rem;
-    margin: 0;
-  }
-  .spacer {
-    flex: 1;
-  }
-  .badge {
-    font-size: 0.75rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    background: var(--color-surface-subtle);
-  }
-  .version,
   time {
     color: var(--color-text-muted);
     font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
   }
   .connection {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     color: var(--color-text-muted);
+    cursor: default;
   }
   .connection-open {
     color: var(--color-success);

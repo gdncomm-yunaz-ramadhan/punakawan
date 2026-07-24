@@ -6,8 +6,12 @@
     workspaceId: string;
     taskId: string;
     onclose: () => void;
+    // Optional override for how the task detail is fetched. Defaults to the
+    // workspace-scoped getTask; the project Tasks tab passes a project-
+    // scoped loader so it works for any project, not just the workspace.
+    fetchTask?: (taskId: string) => Promise<TaskDetail>;
   }
-  let { workspaceId, taskId, onclose }: Props = $props();
+  let { workspaceId, taskId, onclose, fetchTask }: Props = $props();
 
   let detail: TaskDetail | null = $state(null);
   let error: string | null = $state(null);
@@ -18,7 +22,7 @@
     error = null;
     detail = null;
     try {
-      detail = await getTask(workspaceId, id);
+      detail = fetchTask ? await fetchTask(id) : await getTask(workspaceId, id);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

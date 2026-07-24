@@ -79,7 +79,13 @@
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 0.75rem;
+    /* Reflowing bento grid: cards fill the full canvas width and wrap into
+       as many columns as fit, instead of one left-hugging column. */
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
+  }
+  ul.projects li {
+    display: flex;
   }
   .card {
     width: 100%;

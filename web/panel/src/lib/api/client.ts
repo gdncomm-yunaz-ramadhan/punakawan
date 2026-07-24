@@ -309,7 +309,7 @@ export interface TaskFilter {
   limit?: number;
 }
 
-export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
+function taskListQuery(filter: TaskFilter): string {
   const params = new URLSearchParams();
   if (filter.status) params.set("status", filter.status);
   if (filter.priority) params.set("priority", filter.priority);
@@ -318,7 +318,11 @@ export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise
   if (filter.query) params.set("query", filter.query);
   if (filter.limit) params.set("limit", String(filter.limit));
   const qs = params.toString();
-  return getJSON<{ items: TaskSummary[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks${qs ? `?${qs}` : ""}`);
+  return qs ? `?${qs}` : "";
+}
+
+export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
+  return getJSON<{ items: TaskSummary[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks${taskListQuery(filter)}`);
 }
 
 export function getTask(workspaceId: string, taskId: string): Promise<TaskDetail> {
@@ -929,4 +933,56 @@ export function getHealth(id: string): Promise<HealthResponse> {
 
 export function refreshHealth(id: string): Promise<HealthResponse> {
   return mutateJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health/refresh`, { method: "POST" });
+}
+
+// --- Project-scoped task / session / knowledge reads ---------------------
+//
+// The server mounts the SAME handlers used by the /workspaces/{id}/...
+// endpoints under /projects/{id}/... too, so these mirror the workspace
+// reads' response shapes exactly. They let Project Detail's Tasks,
+// Sessions, and Knowledge tabs read real data for ANY project (not only
+// the startup workspace) without routing through the /workspaces/... URLs.
+
+export function listProjectTasks(id: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
+  return getJSON<{ items: TaskSummary[] }>(`/projects/${encodeURIComponent(id)}/tasks${taskListQuery(filter)}`);
+}
+
+export function getProjectTask(id: string, taskId: string): Promise<TaskDetail> {
+  return getJSON<TaskDetail>(`/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`);
+}
+
+export function getProjectTaskGraph(id: string): Promise<TaskGraph> {
+  return getJSON<TaskGraph>(`/projects/${encodeURIComponent(id)}/task-graph`);
+}
+
+export function listProjectSessions(id: string): Promise<{ items: PanelSessionSummary[] }> {
+  return getJSON<{ items: PanelSessionSummary[] }>(`/projects/${encodeURIComponent(id)}/sessions`);
+}
+
+export function getProjectSession(id: string, sessionId: string): Promise<SessionDetail> {
+  return getJSON<SessionDetail>(
+    `/projects/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`,
+  );
+}
+
+export function listProjectKnowledge(
+  id: string,
+  filter: KnowledgeFilter = {},
+): Promise<{ items: (KnowledgeRecord | SearchResult)[] }> {
+  const qs = buildKnowledgeQuery(filter);
+  return getJSON<{ items: (KnowledgeRecord | SearchResult)[] }>(
+    `/projects/${encodeURIComponent(id)}/knowledge${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getProjectKnowledge(id: string, knowledgeId: string): Promise<KnowledgeRecord> {
+  return getJSON<KnowledgeRecord>(
+    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}`,
+  );
+}
+
+export function getProjectKnowledgeRelations(id: string, knowledgeId: string): Promise<{ items: KnowledgeRecord[] }> {
+  return getJSON<{ items: KnowledgeRecord[] }>(
+    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/relations`,
+  );
 }

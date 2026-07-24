@@ -1,13 +1,11 @@
 <script lang="ts">
   import { getPath, navigate } from "../router/router.svelte";
+  import ThemeToggle from "./ThemeToggle.svelte";
 
   const links: { path: string; label: string; disabled?: boolean }[] = [
     { path: "/", label: "Overview" },
     { path: "/projects", label: "Projects" },
-    { path: "/workspaces", label: "Workspaces" },
-    { path: "/search", label: "Search" },
     { path: "/system", label: "System" },
-    { path: "/showcase", label: "Showcase" },
   ];
 
   function isActive(path: string): boolean {
@@ -43,14 +41,42 @@
       </li>
     {/each}
   </ul>
+
+  <div class="footer">
+    <span class="footer-label">Appearance</span>
+    <ThemeToggle />
+  </div>
 </nav>
 
 <style>
   nav {
     width: 220px;
     flex-shrink: 0;
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     border-right: 1px solid var(--color-border);
     padding: 1rem 0.5rem;
+  }
+  .footer {
+    margin-top: auto;
+    padding: 0.75rem 0.6rem 0.25rem;
+    border-top: 1px solid var(--color-border);
+    display: grid;
+    gap: 0.4rem;
+  }
+  .footer-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+  }
+  .footer :global(.segmented) {
+    width: 100%;
+    justify-content: space-between;
   }
   .brand {
     display: flex;

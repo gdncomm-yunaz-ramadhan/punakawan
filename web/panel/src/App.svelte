@@ -6,17 +6,14 @@
   import Overview from "./routes/overview/Overview.svelte";
   import ProjectsList from "./routes/projects/ProjectsList.svelte";
   import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
-  import WorkspacesList from "./routes/workspaces/WorkspacesList.svelte";
   import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
   import SessionsList from "./routes/sessions/SessionsList.svelte";
   import SessionDetail from "./routes/sessions/SessionDetail.svelte";
   import TasksPage from "./routes/tasks/TasksPage.svelte";
   import KnowledgeList from "./routes/knowledge/KnowledgeList.svelte";
   import KnowledgeDetail from "./routes/knowledge/KnowledgeDetail.svelte";
-  import GlobalSearch from "./routes/search/GlobalSearch.svelte";
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
-  import Showcase from "./routes/showcase/Showcase.svelte";
   import StartReview from "./routes/review/StartReview.svelte";
   import ReviewMode from "./routes/review/ReviewMode.svelte";
 
@@ -52,14 +49,8 @@
     <Overview />
   {:else if getPath() === "/projects"}
     <ProjectsList />
-  {:else if getPath() === "/workspaces"}
-    <WorkspacesList />
-  {:else if getPath() === "/search"}
-    <GlobalSearch />
   {:else if getPath() === "/system"}
     <SystemPage />
-  {:else if getPath() === "/showcase"}
-    <Showcase />
   {:else if startReviewPath.exec(getPath())}
     {@const match = startReviewPath.exec(getPath())}
     <StartReview artifactType={(match?.[1] as "plan" | "retrieval_recipe") ?? "plan"} />

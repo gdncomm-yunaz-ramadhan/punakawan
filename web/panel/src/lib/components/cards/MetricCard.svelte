@@ -14,6 +14,8 @@
     trendDirection?: TrendDirection;
     trendDelta?: string;
     size?: BentoSize;
+    /** Column-span override forwarded to BentoCard (e.g. to pack N metrics evenly across a row). */
+    columns?: number;
     state?: CardState;
     emptyMessage?: string;
     accent?: MetricAccent;
@@ -26,6 +28,7 @@
     trendDirection,
     trendDelta,
     size = "small",
+    columns,
     state = "default",
     emptyMessage,
     accent = "none",
@@ -50,7 +53,7 @@
   (UI-010). Used for the overview's "Active revisions" / "Reviews
   needing input" / etc. style metrics (§13.5 row 1).
 -->
-<BentoCard {size} {state} {emptyMessage}>
+<BentoCard {size} {columns} {state} {emptyMessage}>
   {#snippet children()}
     <div
       class="metric"

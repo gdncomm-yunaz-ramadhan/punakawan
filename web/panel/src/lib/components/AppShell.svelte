@@ -45,10 +45,19 @@
     min-width: 0;
   }
   main {
-    padding: 1rem 1.5rem;
-    max-width: 1100px;
+    /* Fill the available canvas (no narrow left-hugging column), but cap
+       line length on very wide monitors and center what remains. */
     width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem 2.5rem;
     box-sizing: border-box;
+  }
+
+  @media (max-width: 1023px) {
+    main {
+      padding: 1.25rem 1.5rem 2rem;
+    }
   }
 
   @media (max-width: 639px) {
@@ -61,7 +70,7 @@
       display: none;
     }
     main {
-      padding: 0.75rem 1rem;
+      padding: 0.75rem 1rem 1.5rem;
     }
   }
 </style>

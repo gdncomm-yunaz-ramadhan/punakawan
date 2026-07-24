@@ -10,6 +10,7 @@
   import StatusCard from "../../lib/components/cards/StatusCard.svelte";
   import ChartCard from "../../lib/components/cards/ChartCard.svelte";
   import TableCard from "../../lib/components/cards/TableCard.svelte";
+  import BlockedTasksChart from "../../lib/components/charts/BlockedTasksChart.svelte";
   import DataTable from "../../lib/components/data/DataTable.svelte";
   import type { Column } from "../../lib/components/data/types";
 
@@ -50,18 +51,6 @@
     return [...list].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
   }
 
-  // Batik categorical palette, cycled per workspace segment in the
-  // per-workspace blocked-task distribution bar below. The distribution
-  // data itself is derived in-template from the narrowed `ov`, where
-  // workspace_health is a concrete WorkspaceSummary[].
-  const batikSegmentColors = [
-    "var(--color-gold)",
-    "var(--color-teal)",
-    "var(--color-terracotta)",
-    "var(--color-indigo)",
-    "var(--color-violet)",
-  ];
-
   const recentSessionColumns: Column<PanelSessionSummary>[] = [
     { key: "objective", label: "Objective", primary: true, render: (s) => s.objective || s.id },
     { key: "workflow", label: "Workflow", sortable: true },
@@ -86,7 +75,6 @@
   {@const blockedByWorkspace = ov.workspace_health
     .filter((w) => w.blocked_task_count > 0)
     .sort((a, b) => b.blocked_task_count - a.blocked_task_count)}
-  {@const totalBlockedCharted = blockedByWorkspace.reduce((sum, w) => sum + w.blocked_task_count, 0)}
   <BentoGrid>
     <MetricCard label="Active sessions" value={ov.active_sessions.length} size="small" accent="indigo" icon="●" />
     <MetricCard label="Blocked tasks" value={ov.blocked_tasks} size="small" accent="terracotta" icon="⚠" />
@@ -101,47 +89,23 @@
       emptyMessage="No blocked tasks across workspaces."
     >
       {#snippet children()}
-        <div
-          class="distribution"
-          role="img"
-          aria-label={`Blocked tasks by workspace: ${blockedByWorkspace
-            .map((w) => `${w.display_name || w.id} ${w.blocked_task_count}`)
-            .join(", ")}.`}
-        >
-          <div class="dist-bar" aria-hidden="true">
-            {#each blockedByWorkspace as ws, i (ws.id)}
-              <span
-                class="dist-seg"
-                style:width={`${(ws.blocked_task_count / totalBlockedCharted) * 100}%`}
-                style:background={batikSegmentColors[i % batikSegmentColors.length]}
-                title={`${ws.display_name || ws.id} · ${ws.blocked_task_count} blocked`}
-              ></span>
-            {/each}
-          </div>
-          <ul class="dist-legend">
-            {#each blockedByWorkspace as ws, i (ws.id)}
-              <li>
-                <span
-                  class="dist-swatch"
-                  aria-hidden="true"
-                  style:background={batikSegmentColors[i % batikSegmentColors.length]}
-                ></span>
-                <span class="dist-label">{ws.display_name || ws.id} · {ws.blocked_task_count} blocked</span>
-              </li>
-            {/each}
-          </ul>
+        <div class="chart-fill">
+          <BlockedTasksChart
+            items={blockedByWorkspace.map((w) => ({ label: w.display_name || w.id, value: w.blocked_task_count }))}
+          />
         </div>
       {/snippet}
     </ChartCard>
 
     <StatusCard
-      size="wide"
+      size="medium"
       variant={ov.needs_attention.length === 0 ? "success" : "warning"}
       label={ov.needs_attention.length === 0 ? "Nothing needs attention" : "Needs attention"}
       description={ov.needs_attention.length === 0
         ? "All workspaces are healthy."
         : `${ov.needs_attention.length} item(s) across workspaces.`}
     />
+
     <TableCard title="Active Now" size="wide" state={ov.active_sessions.length === 0 ? "empty" : "default"} emptyMessage="No active sessions.">
       {#snippet children()}
         {#if ov.primary_workspace_id}
@@ -152,6 +116,25 @@
             <li>
               <strong>{s.objective || s.id}</strong>
               <span class="muted">{s.workflow} · {s.status}{s.active_role ? ` · ${s.active_role}` : ""}</span>
+            </li>
+          {/each}
+        </ul>
+      {/snippet}
+    </TableCard>
+
+    <TableCard title="Workspaces" size="medium" state={ov.workspace_health.length === 0 ? "empty" : "default"} emptyMessage="No workspaces registered.">
+      {#snippet children()}
+        <ul class="workspaces">
+          {#each ov.workspace_health as ws (ws.id)}
+            <li>
+              <button
+                type="button"
+                class="link-button"
+                onclick={() => navigate(`/workspaces/${encodeURIComponent(ws.id)}`)}
+              >
+                {ws.display_name || ws.id}
+              </button>
+              <StatusBadge availability={ws.availability} />
             </li>
           {/each}
         </ul>
@@ -190,25 +173,6 @@
           onPageChange={(p) => (recentSessionsPage = p)}
           emptyMessage="No sessions yet."
         />
-      {/snippet}
-    </TableCard>
-
-    <TableCard title="Workspaces" size="full">
-      {#snippet children()}
-        <ul class="workspaces">
-          {#each ov.workspace_health as ws (ws.id)}
-            <li>
-              <button
-                type="button"
-                class="link-button"
-                onclick={() => navigate(`/workspaces/${encodeURIComponent(ws.id)}`)}
-              >
-                {ws.display_name || ws.id}
-              </button>
-              <StatusBadge availability={ws.availability} />
-            </li>
-          {/each}
-        </ul>
       {/snippet}
     </TableCard>
   </BentoGrid>
@@ -261,47 +225,10 @@
     text-decoration: underline;
   }
 
-  .distribution {
-    display: grid;
-    gap: 0.75rem;
-    align-content: center;
+  /* Let the chart fill the card's content box so it uses the full tile
+     width rather than sitting in a fixed-width island. */
+  .chart-fill {
     width: 100%;
-  }
-  .dist-bar {
-    display: flex;
-    width: 100%;
-    height: 1.6rem;
-    border-radius: 999px;
-    overflow: hidden;
-    background: var(--color-surface-subtle);
-    box-shadow: inset 0 0 0 1px var(--color-border);
-  }
-  .dist-seg {
-    height: 100%;
-    min-width: 3px;
-  }
-  .dist-seg + .dist-seg {
-    border-left: 2px solid var(--color-surface);
-  }
-  .dist-legend {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem 0.9rem;
-  }
-  .dist-legend li {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.82rem;
-    color: var(--color-text);
-  }
-  .dist-swatch {
-    width: 0.7rem;
-    height: 0.7rem;
-    border-radius: 3px;
-    flex-shrink: 0;
+    min-width: 0;
   }
 </style>

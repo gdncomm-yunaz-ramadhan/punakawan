@@ -12,6 +12,9 @@
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
   import ProjectHealth from "./ProjectHealth.svelte";
+  import ProjectTasks from "./ProjectTasks.svelte";
+  import ProjectSessions from "./ProjectSessions.svelte";
+  import ProjectKnowledge from "./ProjectKnowledge.svelte";
 
   interface Props {
     projectId: string;
@@ -22,12 +25,19 @@
   let error: string | null = $state(null);
   let loading = $state(true);
 
-  // Summary, Metadata, Workflows, Plans, and Health are built. The
-  // remaining tabs (Knowledge, Tasks, Sessions) are declared so the tab
-  // bar reflects the project's full information architecture, but they
-  // render an explicit "coming soon" panel - never faked data - because
-  // those phases have not shipped yet.
-  const activeTabs = new Set(["summary", "metadata", "workflows", "plans", "health"]);
+  // Every tab renders real project-scoped data. The tab bar mirrors the
+  // project's full information architecture; each panel reads from the
+  // matching /projects/{id}/... endpoint with its own empty/error states.
+  const activeTabs = new Set([
+    "summary",
+    "metadata",
+    "workflows",
+    "knowledge",
+    "tasks",
+    "plans",
+    "sessions",
+    "health",
+  ]);
   const tabs = [
     { id: "summary", label: "Summary" },
     { id: "metadata", label: "Metadata" },
@@ -115,7 +125,7 @@
     <div id="tabpanel-summary" role="tabpanel" aria-labelledby="tab-summary">
       <BentoGrid>
         {#each metrics as m (m.label)}
-          <MetricCard size="small" label={m.label} value={m.value} accent={m.accent} icon={m.icon} />
+          <MetricCard size="small" columns={2} label={m.label} value={m.value} accent={m.accent} icon={m.icon} />
         {/each}
       </BentoGrid>
     </div>
@@ -126,6 +136,18 @@
   {:else if activeId === "workflows"}
     <div id="tabpanel-workflows" role="tabpanel" aria-labelledby="tab-workflows">
       <ProjectWorkflows {projectId} />
+    </div>
+  {:else if activeId === "knowledge"}
+    <div id="tabpanel-knowledge" role="tabpanel" aria-labelledby="tab-knowledge">
+      <ProjectKnowledge {projectId} />
+    </div>
+  {:else if activeId === "tasks"}
+    <div id="tabpanel-tasks" role="tabpanel" aria-labelledby="tab-tasks">
+      <ProjectTasks {projectId} />
+    </div>
+  {:else if activeId === "sessions"}
+    <div id="tabpanel-sessions" role="tabpanel" aria-labelledby="tab-sessions">
+      <ProjectSessions {projectId} />
     </div>
   {:else if activeId === "plans"}
     <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">

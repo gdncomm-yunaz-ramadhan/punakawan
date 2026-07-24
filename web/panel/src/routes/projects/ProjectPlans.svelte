@@ -27,7 +27,10 @@
     error = null;
     try {
       const res = await listPlans(projectId);
-      plans = res.items;
+      // Guard against a null/absent items array (a Go nil slice marshals to
+      // JSON `null`, not `[]`): a project with no plans must render the
+      // empty state, never trip the catch below into "Failed to load plans".
+      plans = res.items ?? [];
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

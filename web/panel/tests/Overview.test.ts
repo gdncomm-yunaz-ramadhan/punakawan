@@ -33,12 +33,15 @@ describe("Overview", () => {
 
     render(Overview);
 
+    // "3" (blocked-tasks count) and "WS A" now appear both in the metric
+    // tiles / workspace list and in the blocked-tasks chart's accessible
+    // data-table fallback, so assert at-least-one rather than uniqueness.
     await waitFor(() => {
-      expect(screen.getByText("3")).toBeTruthy();
+      expect(screen.getAllByText("3").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("session failed")).toBeTruthy();
     expect(screen.getByText("3 blocked tasks")).toBeTruthy();
-    expect(screen.getByText("WS A")).toBeTruthy();
+    expect(screen.getAllByText("WS A").length).toBeGreaterThan(0);
   });
 
   it("shows empty states when nothing is active or needs attention", async () => {

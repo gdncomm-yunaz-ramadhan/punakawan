@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { getPath, navigate } from "../router/router.svelte";
+  import { applyTheme, getStoredThemePreference, type ThemePreference } from "../theme";
+  import { reapplyStoredAccent } from "../accent";
 
   // Mirrors Sidebar's top-level links (UI-005). Kept as a separate literal
   // rather than importing Sidebar's list, since Sidebar has no exported
@@ -8,8 +11,6 @@
   const links: { path: string; label: string; icon: string }[] = [
     { path: "/", label: "Overview", icon: "⌂" },
     { path: "/projects", label: "Projects", icon: "❖" },
-    { path: "/workspaces", label: "Workspaces", icon: "▦" },
-    { path: "/search", label: "Search", icon: "⚲" },
     { path: "/system", label: "System", icon: "⚙" },
   ];
 
@@ -17,6 +18,25 @@
     const current = getPath();
     if (path === "/") return current === "/";
     return current.startsWith(path);
+  }
+
+  // The sidebar (with its ThemeToggle) is hidden below 640px, so the theme
+  // control lives here too. A single tap cycles System -> Light -> Dark and
+  // reuses the same theme.ts persistence + accent re-apply as ThemeToggle.
+  const order: ThemePreference[] = ["system", "light", "dark"];
+  const themeIcons: Record<ThemePreference, string> = { system: "◐", light: "☀", dark: "☾" };
+  const themeLabels: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
+  let theme: ThemePreference = $state("system");
+
+  onMount(() => {
+    theme = getStoredThemePreference();
+  });
+
+  function cycleTheme() {
+    const next = order[(order.indexOf(theme) + 1) % order.length];
+    theme = next;
+    applyTheme(next);
+    reapplyStoredAccent();
   }
 </script>
 
@@ -40,6 +60,16 @@
       <span class="label">{link.label}</span>
     </a>
   {/each}
+  <button
+    type="button"
+    class="tab theme-tab"
+    onclick={cycleTheme}
+    aria-label={`Theme: ${themeLabels[theme]}. Tap to change.`}
+    title={`Theme: ${themeLabels[theme]}`}
+  >
+    <span class="icon" aria-hidden="true">{themeIcons[theme]}</span>
+    <span class="label">{themeLabels[theme]}</span>
+  </button>
 </nav>
 
 <style>
@@ -75,6 +105,12 @@
     .tab.active {
       color: var(--color-accent);
       font-weight: 600;
+    }
+    .theme-tab {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
     }
     .icon {
       font-size: 1.1rem;

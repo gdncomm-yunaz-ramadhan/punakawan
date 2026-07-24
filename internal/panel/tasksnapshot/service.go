@@ -213,6 +213,9 @@ func BuildSnapshot(projectID string, issues []beads.ReadyIssue, readyIDs map[str
 }
 
 func buildGraph(nodes []contract.TaskSummary, issues []beads.ReadyIssue) contract.TaskGraph {
+	if nodes == nil {
+		nodes = []contract.TaskSummary{}
+	}
 	graph := contract.TaskGraph{Nodes: nodes, Edges: []contract.TaskEdge{}, Cycles: [][]string{}}
 	for _, issue := range issues {
 		for _, dep := range issue.Dependencies {
@@ -334,7 +337,9 @@ func detectCycles(edges []contract.TaskEdge) [][]string {
 	)
 	color := map[string]int{}
 	var stack []string
-	var cycles [][]string
+	// Non-nil so the JSON encoder emits [] not null; the panel reads
+	// graph.cycles.length unconditionally.
+	cycles := [][]string{}
 
 	var visit func(node string)
 	visit = func(node string) {
