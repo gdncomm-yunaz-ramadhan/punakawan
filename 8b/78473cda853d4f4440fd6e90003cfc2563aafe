@@ -1,0 +1,37 @@
+internal/panel/api/overview_bench_test.go
+  d98638225f35480d 1-166
+internal/panel/timing/timing.go
+  d98638225f35480d 1-177
+internal/panel/server/server_test.go
+  d98638225f35480d 11,25,900-982
+internal/panel/timing/timing_test.go
+  d98638225f35480d 1-130
+internal/panel/timing/procspawn.go
+  d98638225f35480d 1-35
+internal/panel/assets/assets_test.go
+  d98638225f35480d 1-52
+internal/panel/api/overview_handler.go
+  d98638225f35480d 10,83-98,100,130,132,152,154,183
+internal/panel/server/server.go
+  d98638225f35480d 9,20,37-42,254-260,262,328-403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8b78473cda853d4f4440fd6e90003cfc2563aafe",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 772,
+      "total_deletions": 13,
+      "accepted_lines": 760,
+      "overriden_lines": 0
+    }
+  }
+}
