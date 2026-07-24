@@ -1,0 +1,63 @@
+web/panel/src/lib/components/AppShell.svelte
+  d98638225f35480d 48-49,51-53,57-62,73
+web/panel/src/routes/projects/ProjectDetail.svelte
+  d98638225f35480d 15-17,28-40,128,140-151
+web/panel/src/routes/tasks/TaskDetailDrawer.svelte
+  d98638225f35480d 9-12,14,25
+web/panel/src/routes/projects/ProjectTasks.svelte
+  d98638225f35480d 1-171
+web/panel/src/lib/components/Sidebar.svelte
+  d98638225f35480d 3,44-48,55-59,63-79
+web/panel/tests/MobileNavigation.test.ts
+  d98638225f35480d 11,19-20,22-32
+web/panel/src/routes/projects/ProjectsList.svelte
+  d98638225f35480d 82-88
+web/panel/src/routes/projects/ProjectKnowledge.svelte
+  d98638225f35480d 1-356
+web/panel/src/lib/components/charts/BlockedTasksChart.svelte
+  d98638225f35480d 1-92
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 312,321-325,937-988
+web/panel/src/lib/components/cards/MetricCard.svelte
+  d98638225f35480d 17-18,31,56
+internal/panel/tasksnapshot/service.go
+  d98638225f35480d 216-218,340-342
+internal/panel/server/server.go
+  d98638225f35480d 253-275
+web/panel/src/lib/components/TopBar.svelte
+  d98638225f35480d 18-20,23-28,31,33-38,41,49-51,66-70,75,80,82
+internal/panel/sources/project_aware.go
+  d98638225f35480d 1-164
+web/panel/src/routes/projects/ProjectSessions.svelte
+  d98638225f35480d 1-274
+web/panel/src/routes/projects/ProjectPlans.svelte
+  d98638225f35480d 30-33
+web/panel/src/lib/components/MobileNavigation.svelte
+  d98638225f35480d 2,4-5,22-40,63-72,109-114
+web/panel/tests/AppShell.test.ts
+  d98638225f35480d 33-36
+web/panel/src/routes/overview/Overview.svelte
+  d98638225f35480d 13,92-95,101,108,125-137,228-230,232
+web/panel/tests/Overview.test.ts
+  d98638225f35480d 36-38,40,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "9b9688a832a4521723d6082a7f42c14228ac6837",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1385,
+      "total_deletions": 210,
+      "accepted_lines": 1356,
+      "overriden_lines": 0
+    }
+  }
+}
