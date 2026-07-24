@@ -46,7 +46,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_bagong_review",
-		Description: "Validate and persist a Bagong independent final review (§8.4) as durable knowledge. Requires capsule_id from a prior request_capsule call for role bagong.",
+		Description: "Validate and persist a Bagong independent final review (§8.4) as durable knowledge. Requires capsule_id from a prior request_capsule call for role bagong. Enforces the mandatory senior-maintainer review rubric as a hard constraint (see the bagong prompt): the submission is REJECTED unless requirement_coverage (verification performed) and uncertainties (questions/assumptions and remaining unverified risks) are both populated, findings are non-blank, and a no-findings review states so explicitly in honest_summary.",
 	}, submitBagongReviewHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{

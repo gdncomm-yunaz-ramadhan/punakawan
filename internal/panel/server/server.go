@@ -15,8 +15,10 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/session"
+	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
+	"github.com/ygrip/punakawan/internal/workflowdef"
 )
 
 // Options configures a Server, per §26's configuration keys this phase
@@ -75,6 +77,21 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 		hub:      events.NewHub(),
 		sessions: session.NewManager(),
 	}
+}
+
+// resolveRoot maps a project id to the workspace root that backs it, via the
+// registry, falling back to the primary workspace this server was loaded for.
+// An unknown id yields an error so handlers answer 404 rather than 500.
+func (s *Server) resolveRoot(projectID string) (string, error) {
+	if s.registry != nil {
+		if entry, err := s.registry.Get(projectID); err == nil {
+			return entry.Path, nil
+		}
+	}
+	if projectID == s.app.Workspace.ID {
+		return s.app.Workspace.Root, nil
+	}
+	return "", fmt.Errorf("server: project %q is not registered", projectID)
 }
 
 // Addr returns the address the server is listening on, valid only after
@@ -169,6 +186,36 @@ func (s *Server) Start() error {
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/metadata", session.RequireSession(s.sessions, api.MetadataCreateHandler(s.readers.Project)))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/metadata/{key}", session.RequireSession(s.sessions, api.MetadataUpdateHandler(s.readers.Project)))
 	mux.HandleFunc("DELETE /api/v1/projects/{projectId}/metadata/{key}", session.RequireSession(s.sessions, api.MetadataDeleteHandler(s.readers.Project)))
+
+	// Project-scoped plans (Phase 7), workflow definitions (Phase 6), and
+	// cached health (Phase 8). All resolve a {projectId} to its workspace
+	// root through the registry, falling back to the primary workspace so it
+	// stays reachable even before it is registered.
+	projectStores := artifact.NewProjectStores(s.resolveRoot)
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans", api.ListPlansHandler(projectStores))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(projectStores))
+
+	caps := workflowdef.NewCapabilitySet(workflowdef.KnownMCPCapabilities(), nil)
+	// Invocation is validated (enabled + capabilities) here, but binding a
+	// definition to the run engine is deferred (punokawan follow-up): a
+	// workflow definition id is not one of the fixed WorkflowRun name enums,
+	// so the RunCreator returns a descriptive error until that linkage lands.
+	newInvoker := func(root string) workflowdef.Invoker {
+		return workflowdef.NewInvoker(caps, func(context.Context, workflowdef.Definition, map[string]any) (string, error) {
+			return "", fmt.Errorf("workflow invocation is not yet connected to the run engine")
+		})
+	}
+	wf := api.NewWorkflowDefHandlers(s.resolveRoot, caps, newInvoker)
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/workflows", wf.List())
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/workflows", session.RequireSession(s.sessions, wf.Create()))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/workflows/{workflowId}", wf.Get())
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/workflows/{workflowId}/enable", session.RequireSession(s.sessions, wf.Enable()))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/workflows/{workflowId}/disable", session.RequireSession(s.sessions, wf.Disable()))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/workflows/{workflowId}/invoke", session.RequireSession(s.sessions, wf.Invoke()))
+
+	healthCache := sources.NewHealthCache(s.readers.Workspace, sources.DefaultHealthTTL)
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/health", api.HealthHandler(healthCache))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/health/refresh", session.RequireSession(s.sessions, api.HealthRefreshHandler(healthCache)))
 
 	mux.HandleFunc("POST /api/v1/session/exchange", session.ExchangeHandler(s.sessions))
 
