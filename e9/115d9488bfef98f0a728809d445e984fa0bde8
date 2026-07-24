@@ -1,0 +1,79 @@
+internal/roles/bagong.go
+  d98638225f35480d 5,15-22,30-32,41-136
+internal/panel/registry/registry.go
+  d98638225f35480d 27-36,41-46,116-143,153-163,165
+internal/workflowdef/store_test.go
+  d98638225f35480d 1-165
+internal/panel/api/health_handler.go
+  d98638225f35480d 1-80
+internal/panel/api/workflowdef_handler.go
+  d98638225f35480d 1-224
+internal/panel/api/plan_handler_test.go
+  d98638225f35480d 1-168
+internal/mcpserver/tools_workflow_test.go
+  d98638225f35480d 64-68,96-99
+internal/roles/bagong_test.go
+  d98638225f35480d 4,21-108,113-118
+internal/artifact/project_stores_test.go
+  d98638225f35480d 1-72
+internal/workflowdef/invoke.go
+  d98638225f35480d 1-59
+internal/artifact/plan_manifest.go
+  d98638225f35480d 1-147
+internal/workflowdef/store.go
+  d98638225f35480d 1-221
+internal/artifact/plan_store.go
+  d98638225f35480d 8,85-92,129-140,144-160,242-327
+internal/workflowdef/invoke_test.go
+  d98638225f35480d 1-76
+internal/mcpserver/tools.go
+  d98638225f35480d 49
+internal/panel/sources/health_cache.go
+  d98638225f35480d 1-207
+internal/panel/registry/registry_test.go
+  d98638225f35480d 7,146-235
+internal/panel/server/server.go
+  d98638225f35480d 18,21,82-96,190-219
+internal/workflowdef/validation.go
+  d98638225f35480d 1-102
+internal/artifact/plan_manifest_test.go
+  d98638225f35480d 1-216
+internal/workflowdef/validation_test.go
+  d98638225f35480d 1-127
+internal/panel/api/health_handler_test.go
+  d98638225f35480d 1-163
+prompts/bagong/prompt.md
+  d98638225f35480d 74-136
+internal/panel/api/workflowdef_handler_test.go
+  d98638225f35480d 1-301
+internal/artifact/project_stores.go
+  d98638225f35480d 1-75
+internal/panel/api/plan_handler.go
+  d98638225f35480d 1-126
+internal/workflowdef/capabilities.go
+  d98638225f35480d 1-96
+internal/panel/sources/health_cache_test.go
+  d98638225f35480d 1-281
+internal/workflowdef/definition.go
+  d98638225f35480d 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e9115d9488bfef98f0a728809d445e984fa0bde8",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 3577,
+      "total_deletions": 14,
+      "accepted_lines": 3573,
+      "overriden_lines": 0
+    }
+  }
+}
