@@ -9,6 +9,9 @@
   import MetricCard, { type MetricAccent } from "../../lib/components/cards/MetricCard.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ProjectMetadata from "./ProjectMetadata.svelte";
+  import ProjectWorkflows from "./ProjectWorkflows.svelte";
+  import ProjectPlans from "./ProjectPlans.svelte";
+  import ProjectHealth from "./ProjectHealth.svelte";
 
   interface Props {
     projectId: string;
@@ -19,11 +22,12 @@
   let error: string | null = $state(null);
   let loading = $state(true);
 
-  // Summary + Metadata are built (Phase 2). The rest are declared so the
-  // tab bar reflects the project's full information architecture, but they
+  // Summary, Metadata, Workflows, Plans, and Health are built. The
+  // remaining tabs (Knowledge, Tasks, Sessions) are declared so the tab
+  // bar reflects the project's full information architecture, but they
   // render an explicit "coming soon" panel - never faked data - because
   // those phases have not shipped yet.
-  const activeTabs = new Set(["summary", "metadata"]);
+  const activeTabs = new Set(["summary", "metadata", "workflows", "plans", "health"]);
   const tabs = [
     { id: "summary", label: "Summary" },
     { id: "metadata", label: "Metadata" },
@@ -118,6 +122,18 @@
   {:else if activeId === "metadata"}
     <div id="tabpanel-metadata" role="tabpanel" aria-labelledby="tab-metadata">
       <ProjectMetadata {projectId} />
+    </div>
+  {:else if activeId === "workflows"}
+    <div id="tabpanel-workflows" role="tabpanel" aria-labelledby="tab-workflows">
+      <ProjectWorkflows {projectId} />
+    </div>
+  {:else if activeId === "plans"}
+    <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">
+      <ProjectPlans {projectId} />
+    </div>
+  {:else if activeId === "health"}
+    <div id="tabpanel-health" role="tabpanel" aria-labelledby="tab-health">
+      <ProjectHealth {projectId} />
     </div>
   {:else}
     {@const tab = tabs.find((t) => t.id === activeId)}

@@ -34,6 +34,11 @@ type Readers struct {
 	Approval     contract.ApprovalReader
 	GlobalSearch contract.GlobalSearchReader
 	Project      contract.ProjectReader
+
+	// Runtime is the bounded *app.App pool (Phase 3). The server owns its
+	// lifecycle: it runs a periodic CloseIdle sweep and Closes all non-primary
+	// runtimes on shutdown. Exposed here because NewReaders constructs it.
+	Runtime *runtime.ProjectRuntimeManager
 }
 
 // NewReaders builds Readers backed by internal/panel/sources'
@@ -76,6 +81,7 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 			PrimaryID:   a.Workspace.ID,
 			PrimaryRoot: a.Workspace.Root,
 		},
+		Runtime: runtimeMgr,
 	}
 }
 

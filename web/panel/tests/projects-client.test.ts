@@ -2,10 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   addMetadata,
+  createWorkflow,
   deleteMetadata,
+  disableWorkflow,
+  enableWorkflow,
+  getHealth,
+  getPlan,
   getProject,
+  getWorkflow,
+  invokeWorkflow,
   listMetadata,
+  listPlans,
   listProjects,
+  listWorkflows,
+  refreshHealth,
   updateMetadata,
 } from "../src/lib/api/client";
 import { setCsrfToken } from "../src/lib/session";
@@ -129,5 +139,123 @@ describe("deleteMetadata", () => {
     const err = await deleteMetadata("p1", "env", 1).catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(409);
+  });
+});
+
+describe("workflow reads", () => {
+  it("listWorkflows GETs the workflows sub-resource", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ items: [] }));
+    const res = await listWorkflows("p1");
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/p1/workflows", expect.any(Object));
+    expect(res.items).toEqual([]);
+  });
+
+  it("getWorkflow GETs the encoded workflow id", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ id: "w/1", steps: [] }));
+    await getWorkflow("p1", "w/1");
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/p1/workflows/w%2F1", expect.any(Object));
+  });
+});
+
+describe("workflow mutations", () => {
+  it("enableWorkflow POSTs to /enable with the CSRF header", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ id: "w1", enabled: true }));
+    await enableWorkflow("p1", "w1");
+    const [url, init] = (fetch as unknown as FetchMock).mock.calls[0];
+    expect(url).toBe("/api/v1/projects/p1/workflows/w1/enable");
+    expect((init as RequestInit).method).toBe("POST");
+    expect(new Headers((init as RequestInit).headers).get("X-Csrf-Token")).toBe("csrf-test-token");
+  });
+
+  it("disableWorkflow POSTs to /disable", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ id: "w1", enabled: false }));
+    await disableWorkflow("p1", "w1");
+    const [url, init] = (fetch as unknown as FetchMock).mock.calls[0];
+    expect(url).toBe("/api/v1/projects/p1/workflows/w1/disable");
+    expect((init as RequestInit).method).toBe("POST");
+  });
+
+  it("createWorkflow POSTs the definition body", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ id: "w1" }, true, 201));
+    await createWorkflow("p1", { id: "w1", name: "New" });
+    const [url, init] = (fetch as unknown as FetchMock).mock.calls[0];
+    expect(url).toBe("/api/v1/projects/p1/workflows");
+    expect((init as RequestInit).method).toBe("POST");
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ id: "w1", name: "New" });
+  });
+
+  it("maps a 400 unknown_capability to ApiError carrying status + code", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(
+      jsonResponse({ code: "unknown_capability", error: "no such capability" }, false, 400),
+    );
+    const err = await createWorkflow("p1", {}).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(400);
+    expect(err.code).toBe("unknown_capability");
+  });
+
+  it("maps a 409 revision_conflict on create", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(
+      jsonResponse({ code: "revision_conflict", error: "changed" }, false, 409),
+    );
+    const err = await createWorkflow("p1", {}).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(409);
+    expect(err.code).toBe("revision_conflict");
+  });
+
+  it("invokeWorkflow POSTs {inputs} and returns run_id", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ run_id: "run-7" }));
+    const res = await invokeWorkflow("p1", "w1", { branch: "main" });
+    const [url, init] = (fetch as unknown as FetchMock).mock.calls[0];
+    expect(url).toBe("/api/v1/projects/p1/workflows/w1/invoke");
+    expect((init as RequestInit).method).toBe("POST");
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ inputs: { branch: "main" } });
+    expect(res.run_id).toBe("run-7");
+  });
+
+  it("maps a 409 disabled on invoke", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(
+      jsonResponse({ code: "disabled", error: "workflow disabled" }, false, 409),
+    );
+    const err = await invokeWorkflow("p1", "w1", {}).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(409);
+    expect(err.code).toBe("disabled");
+  });
+});
+
+describe("plan reads", () => {
+  it("listPlans GETs the plans sub-resource", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ items: [] }));
+    await listPlans("p1");
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/p1/plans", expect.any(Object));
+  });
+
+  it("getPlan GETs the encoded plan id and returns the manifest", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(
+      jsonResponse({ manifest: { id: "pl/1", title: "T", status: "active", current_version: "v2" } }),
+    );
+    const res = await getPlan("p1", "pl/1");
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/p1/plans/pl%2F1", expect.any(Object));
+    expect(res.manifest.current_version).toBe("v2");
+  });
+});
+
+describe("health", () => {
+  it("getHealth GETs the health sub-resource", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ health: [], stale: false }));
+    const res = await getHealth("p1");
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/p1/health", expect.any(Object));
+    expect(res.stale).toBe(false);
+  });
+
+  it("refreshHealth POSTs to /health/refresh with the CSRF header", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ health: [], stale: false }));
+    await refreshHealth("p1");
+    const [url, init] = (fetch as unknown as FetchMock).mock.calls[0];
+    expect(url).toBe("/api/v1/projects/p1/health/refresh");
+    expect((init as RequestInit).method).toBe("POST");
+    expect(new Headers((init as RequestInit).headers).get("X-Csrf-Token")).toBe("csrf-test-token");
   });
 });

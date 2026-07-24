@@ -20,7 +20,9 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
+	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // Options configures a Server, per §26's configuration keys this phase
@@ -54,6 +56,7 @@ type Server struct {
 	hub                *events.Hub
 	stopReconciliation context.CancelFunc
 	reconcileDone      chan struct{}
+	stopRuntimeSweep   context.CancelFunc
 
 	sessions     *session.Manager
 	bootstrapURL string
@@ -172,8 +175,14 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
 	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
-	mux.HandleFunc("GET /api/v1/workspaces", api.WorkspacesHandler(s.readers.Workspace))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}", api.WorkspaceHandler(s.readers.Workspace))
+	// /workspaces is the pre-project-model name for the same registry entries
+	// now surfaced canonically under /projects (§14). The list and single-entry
+	// reads are kept as deprecated aliases (marked with Deprecation/Link headers
+	// pointing at their /projects successor) during migration; the
+	// /workspaces/{id}/{sub} routes below have no /projects equivalent yet and
+	// are not deprecated.
+	mux.HandleFunc("GET /api/v1/workspaces", deprecatedAlias("/api/v1/projects", api.WorkspacesHandler(s.readers.Workspace)))
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}", deprecatedAlias("/api/v1/projects/{projectId}", api.WorkspaceHandler(s.readers.Workspace)))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions", api.SessionsHandler(s.readers.Session))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}", api.SessionHandler(s.readers.Session))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/capsules", api.CapsulesHandler(s.app.Capsules))
@@ -204,13 +213,29 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(projectStores))
 
 	caps := workflowdef.NewCapabilitySet(workflowdef.KnownMCPCapabilities(), nil)
-	// Invocation is validated (enabled + capabilities) here, but binding a
-	// definition to the run engine is deferred (punokawan follow-up): a
-	// workflow definition id is not one of the fixed WorkflowRun name enums,
-	// so the RunCreator returns a descriptive error until that linkage lands.
+	// Invoke validates enabled + capabilities in workflowdef, then this
+	// RunCreator binds the accepted definition to the run engine by creating a
+	// WorkflowRun. A definition id is not one of the fixed WorkflowRun name
+	// enums, so the run is created under the generic "implementation-only"
+	// carrier with its Objective set to the originating definition id (that is
+	// how a run traces back to the definition that spawned it). Only the
+	// primary project's run store is wired here; cross-project invocation is a
+	// separate follow-up (it needs a per-project workflow.Store via the runtime
+	// manager).
 	newInvoker := func(root string) workflowdef.Invoker {
-		return workflowdef.NewInvoker(caps, func(context.Context, workflowdef.Definition, map[string]any) (string, error) {
-			return "", fmt.Errorf("workflow invocation is not yet connected to the run engine")
+		return workflowdef.NewInvoker(caps, func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
+			if root != s.app.Workspace.Root {
+				return "", fmt.Errorf("workflow invocation is currently supported only for the primary project")
+			}
+			now := time.Now().UTC()
+			runID := fmt.Sprintf("pkw:run/%s/%s-%d", s.app.Workspace.ID, def.ID, now.UnixNano())
+			run := workflow.New(runID, s.app.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
+			objective := "workflow-definition:" + def.ID
+			run.Objective = &objective
+			if err := s.app.Workflow.Append(run); err != nil {
+				return "", fmt.Errorf("create workflow run for definition %q: %w", def.ID, err)
+			}
+			return runID, nil
 		})
 	}
 	wf := api.NewWorkflowDefHandlers(s.resolveRoot, caps, newInvoker)
@@ -249,6 +274,45 @@ func (s *Server) Start() error {
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/reject", session.RequireSession(s.sessions, api.RejectProposalHandler(reviews)))
 	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/request-changes", session.RequireSession(s.sessions, api.RequestChangesHandler(reviews, dispatcher)))
 
+	// Project-scoped mirror of the artifact review/proposal protocol (Phase 7):
+	// each handler resolves its Plan/Review stores for {projectId} via the same
+	// artifact.ProjectStores resolver used by /projects/.../plans, so a review
+	// created under a project writes into that project's .punakawan tree rather
+	// than always the primary. The flat /artifacts and /reviews routes above
+	// remain for review-by-id operations and backward compatibility.
+	recipesFactory := stores.Recipes
+	projectArtifacts := api.NewProjectArtifactStores(
+		projectStores,
+		recipesFactory,
+		func(projectID string) revision.Dispatcher {
+			root, _ := s.resolveRoot(projectID)
+			return &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: root}
+		},
+		s.logger,
+	)
+	pa := "/api/v1/projects/{projectId}"
+	mux.HandleFunc("GET "+pa+"/artifacts/{type}/{id}/current", projectArtifacts.ArtifactCurrent())
+	mux.HandleFunc("POST "+pa+"/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, projectArtifacts.CreateReview()))
+	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}", projectArtifacts.Review())
+	mux.HandleFunc("PATCH "+pa+"/reviews/{reviewId}", session.RequireSession(s.sessions, projectArtifacts.UpdateReview()))
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/cancel", session.RequireSession(s.sessions, projectArtifacts.Cancel()))
+	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/timeline", projectArtifacts.Timeline())
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/submit", session.RequireSession(s.sessions, projectArtifacts.Submit()))
+	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/comments", projectArtifacts.Comments())
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/comments", session.RequireSession(s.sessions, projectArtifacts.CreateComment()))
+	mux.HandleFunc("PATCH "+pa+"/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, projectArtifacts.UpdateComment()))
+	mux.HandleFunc("DELETE "+pa+"/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, projectArtifacts.DeleteComment()))
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals", session.RequireSession(s.sessions, projectArtifacts.CreateProposal()))
+	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals", projectArtifacts.ListProposals())
+	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals/{proposalId}", projectArtifacts.Proposal())
+	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals/{proposalId}/diff", projectArtifacts.ProposalDiff())
+	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals/{proposalId}/validation", projectArtifacts.ProposalValidation())
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/accept", session.RequireSession(s.sessions, projectArtifacts.AcceptProposal()))
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/reject", session.RequireSession(s.sessions, projectArtifacts.RejectProposal()))
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/request-changes", session.RequireSession(s.sessions, projectArtifacts.RequestChanges()))
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/rebase", session.RequireSession(s.sessions, projectArtifacts.Rebase()))
+	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/fail", session.RequireSession(s.sessions, projectArtifacts.Fail()))
+
 	mux.Handle("/", static)
 
 	// Dev-only Server-Timing: enabled by the Options flag OR the
@@ -277,6 +341,29 @@ func (s *Server) Start() error {
 		defer close(s.reconcileDone)
 		reconciler.Run(reconcileCtx)
 	}()
+
+	// Periodically close project runtimes that have gone idle, so the pool does
+	// not hold Dolt/adapter processes open for workspaces no longer being
+	// browsed (Phase 3, §10.3). The primary and in-use runtimes are never
+	// closed by CloseIdle; Shutdown closes the rest.
+	if mgr := s.readers.Runtime; mgr != nil {
+		sweepCtx, cancelSweep := context.WithCancel(context.Background())
+		s.stopRuntimeSweep = cancelSweep
+		go func() {
+			t := time.NewTicker(2 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-sweepCtx.Done():
+					return
+				case <-t.C:
+					if err := mgr.CloseIdle(sweepCtx); err != nil {
+						s.logger.Warn("panel runtime idle sweep", "error", err)
+					}
+				}
+			}
+		}()
+	}
 
 	s.logger.Info("panel server started", "addr", listener.Addr().String())
 	return nil
@@ -308,11 +395,31 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		case <-ctx.Done():
 		}
 	}
+	if s.stopRuntimeSweep != nil {
+		s.stopRuntimeSweep()
+	}
+	if mgr := s.readers.Runtime; mgr != nil {
+		if err := mgr.Close(ctx); err != nil {
+			s.logger.Warn("panel runtime pool close", "error", err)
+		}
+	}
 	if s.httpServer == nil {
 		return nil
 	}
 	s.logger.Info("panel server shutting down")
 	return s.httpServer.Shutdown(ctx)
+}
+
+// deprecatedAlias wraps a handler that is being kept only for backward
+// compatibility, stamping the standard Deprecation header and a Link to the
+// successor route (§14's migration aliases) so clients can detect and migrate
+// off it without the endpoint disappearing mid-migration.
+func deprecatedAlias(successor string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Deprecation", "true")
+		w.Header().Set("Link", "<"+successor+">; rel=\"successor-version\"")
+		next(w, r)
+	}
 }
 
 // loggingMiddleware writes one structured log line per request, per

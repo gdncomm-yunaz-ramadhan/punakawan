@@ -765,3 +765,168 @@ export async function deleteMetadata(id: string, key: string, baseRevision: numb
     throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
   }
 }
+
+// --- Project Workflows (Phase 6, plan §6) --------------------------------
+//
+// A workflow Definition is a declarative, versioned recipe: an ordered
+// list of capability steps the run engine executes. It is enabled/disabled
+// as a unit and invoked with a set of named inputs; `revision` guards
+// concurrent edits the same way project metadata does.
+
+export interface WorkflowInput {
+  name: string;
+  type: string;
+  required?: boolean;
+  default?: unknown;
+}
+
+export interface WorkflowStep {
+  id: string;
+  capability: string;
+  intent?: string;
+  // The ids of earlier steps whose output feeds this one.
+  input_from?: string[];
+}
+
+export interface WorkflowDefinition {
+  version: string;
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  required_metadata?: string[];
+  inputs?: WorkflowInput[];
+  steps: WorkflowStep[];
+  allowed_capabilities?: string[];
+  approval?: {
+    required_for?: string[];
+  };
+  output?: {
+    type: string;
+  };
+  revision: number;
+}
+
+// The 400 validation codes the workflow create endpoint can return; kept
+// as a union so the UI's message map is exhaustive. "revision_conflict"
+// arrives on a 409 rather than a 400.
+export type WorkflowErrorCode = "unknown_capability" | "command_not_allowed" | "invalid" | "revision_conflict";
+
+export function listWorkflows(id: string): Promise<{ items: WorkflowDefinition[] }> {
+  return getJSON<{ items: WorkflowDefinition[] }>(`/projects/${encodeURIComponent(id)}/workflows`);
+}
+
+export function getWorkflow(id: string, workflowId: string): Promise<WorkflowDefinition> {
+  return getJSON<WorkflowDefinition>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}`,
+  );
+}
+
+export function createWorkflow(id: string, definition: unknown): Promise<WorkflowDefinition> {
+  return mutateJSON<WorkflowDefinition>(`/projects/${encodeURIComponent(id)}/workflows`, {
+    method: "POST",
+    body: JSON.stringify(definition),
+  });
+}
+
+export function enableWorkflow(id: string, workflowId: string): Promise<WorkflowDefinition> {
+  return mutateJSON<WorkflowDefinition>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}/enable`,
+    { method: "POST" },
+  );
+}
+
+export function disableWorkflow(id: string, workflowId: string): Promise<WorkflowDefinition> {
+  return mutateJSON<WorkflowDefinition>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}/disable`,
+    { method: "POST" },
+  );
+}
+
+export interface InvokeWorkflowResult {
+  run_id: string;
+}
+
+// invoke queues a run with the given named inputs. NOTE: until the run
+// engine wiring lands, the backend answers with an error carrying the
+// message "not connected to the run engine" - that surfaces here as a
+// normal ApiError the UI shows verbatim. A 409 {code:"disabled"} means the
+// workflow must be enabled first.
+export function invokeWorkflow(
+  id: string,
+  workflowId: string,
+  inputs: Record<string, unknown>,
+): Promise<InvokeWorkflowResult> {
+  return mutateJSON<InvokeWorkflowResult>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}/invoke`,
+    { method: "POST", body: JSON.stringify({ inputs }) },
+  );
+}
+
+// --- Project Plans (Phase 7, plan §7) ------------------------------------
+//
+// Plans are read-only from the panel's perspective: they are authored and
+// versioned through the review protocol elsewhere. Here we only list their
+// summaries and render a selected plan's manifest + current version text.
+
+export interface PlanDerivedFrom {
+  knowledge?: string[];
+  workflows?: string[];
+  metadata?: string[];
+}
+
+export interface PlanSummary {
+  id: string;
+  title: string;
+  status: string;
+  current_version: string;
+  related_tasks?: string[];
+  derived_from?: PlanDerivedFrom;
+}
+
+// The plan manifest carries at least the summary fields; the backend may
+// attach further descriptive fields, so the known summary shape is
+// extended rather than re-listed. Optional fields are surfaced when
+// present and skipped otherwise.
+export interface PlanManifest extends PlanSummary {
+  description?: string;
+  versions?: string[];
+}
+
+export interface PlanDetail {
+  manifest: PlanManifest;
+  current_version_content?: string;
+}
+
+export function listPlans(id: string): Promise<{ items: PlanSummary[] }> {
+  return getJSON<{ items: PlanSummary[] }>(`/projects/${encodeURIComponent(id)}/plans`);
+}
+
+export function getPlan(id: string, planId: string): Promise<PlanDetail> {
+  return getJSON<PlanDetail>(`/projects/${encodeURIComponent(id)}/plans/${encodeURIComponent(planId)}`);
+}
+
+// --- Project Health (Phase 8, plan §8) -----------------------------------
+//
+// Per-source availability for the project's data sources. GET may serve a
+// cached snapshot (X-Cache header, `stale:true`); the refresh endpoint
+// forces a fresh probe and returns the same shape.
+
+// A single project data-source health entry. Structurally identical to
+// SourceHealth (workspace health) - reusing that shape keeps StatusBadge
+// availability rendering consistent across the workspace and project
+// health views.
+export type HealthEntry = SourceHealth;
+
+export interface HealthResponse {
+  health: HealthEntry[];
+  stale: boolean;
+}
+
+export function getHealth(id: string): Promise<HealthResponse> {
+  return getJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health`);
+}
+
+export function refreshHealth(id: string): Promise<HealthResponse> {
+  return mutateJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health/refresh`, { method: "POST" });
+}
