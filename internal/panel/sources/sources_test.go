@@ -588,6 +588,60 @@ func TestKnowledgeSourceSearchGetRelations(t *testing.T) {
 	}
 }
 
+// TestKnowledgeSourceSearchIndexesNewWritesWithoutManualRebuild guards
+// punokawan-obt: a record written to the store must be findable via
+// KnowledgeSource.Search immediately, with no explicit search.Rebuild call.
+// The panel used to query the raw index directly and returned nothing for a
+// never-indexed record; it now routes through App.SearchKnowledge, which
+// watermark-gated-rebuilds before querying. Note this test deliberately never
+// calls search.Rebuild itself - that omission is the whole point.
+func TestKnowledgeSourceSearchIndexesNewWritesWithoutManualRebuild(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	ks := &KnowledgeSource{App: a}
+	ctx := context.Background()
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	rec := protocol.KnowledgeRecord{
+		Id:     "pkw:requirement/repo-a/webhook-idempotency",
+		Type:   protocol.KnowledgeRecordTypeRequirement,
+		Status: "active",
+		Title:  "Webhook idempotency guarantee",
+		Source: protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{
+			Method: protocol.KnowledgeRecordExtractionMethodModelAssisted,
+		},
+		Validity: protocol.KnowledgeRecordValidity{
+			State:      protocol.KnowledgeRecordValidityStateVerified,
+			VerifiedBy: []string{"test"},
+		},
+	}
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	results, err := ks.Search(ctx, a.Workspace.ID, search.Request{Query: "webhook idempotency"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected the just-written record to be searchable without a manual reindex (punokawan-obt)")
+	}
+	var found bool
+	for _, r := range results {
+		if r.Id == rec.Id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("Search results %+v do not include the just-written record %q", results, rec.Id)
+	}
+}
+
 func TestKnowledgeSourceListFiltersAndHistory(t *testing.T) {
 	requireDolt(t)
 	a := newTestApp(t)

@@ -135,7 +135,14 @@ func (k *KnowledgeSource) Search(ctx context.Context, workspaceID string, req se
 	if err != nil {
 		return nil, fmt.Errorf("sources: search knowledge: %w", err)
 	}
-	return search.Search(store, ix, req)
+	// Go through App.SearchKnowledge, not search.Search directly: it
+	// watermark-gated-Rebuilds the index before querying (a no-op when the
+	// store is unchanged, punokawan-77q) under the shared index lock
+	// (punokawan-hzp). Without it the panel queried a stale or never-populated
+	// index and returned nothing for records the store already held, so a
+	// just-written record was invisible until a manual reindex (punokawan-obt).
+	// This mirrors the MCP search_knowledge path exactly.
+	return k.App.SearchKnowledge(store, ix, req)
 }
 
 func (k *KnowledgeSource) Get(ctx context.Context, workspaceID, knowledgeID string) (protocol.KnowledgeRecord, error) {
