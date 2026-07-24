@@ -7,6 +7,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/contract"
+	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -79,7 +80,24 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		// Server-Timing probes (performance plan §17). "overview_aggregate"
+		// brackets the reader work; the three sub-probes attribute latency to
+		// each reader. These are no-ops unless the request carries a
+		// timing.Collector (dev Server-Timing enabled). The aggregate is
+		// recorded explicitly just before the final writeJSON (not deferred):
+		// the dev timing middleware writes the Server-Timing header the moment
+		// the response is first written, so a deferred probe firing after that
+		// would never make it into the header. This means the aggregate
+		// excludes JSON-encoding time, which is negligible for warm reads.
+		// Deeper source-level probes (dolt_connect, beads_list, git_status
+		// from the §17 example) are pending: those reads live behind the
+		// reader interfaces and do not yet thread this ctx down to the
+		// individual bd/dolt/git calls.
+		stopAggregate := timing.Probe(ctx, "overview_aggregate")
+
+		stopWorkspaces := timing.Probe(ctx, "workspace_list")
 		workspaces, err := readers.Workspace.List(ctx)
+		stopWorkspaces()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -109,7 +127,9 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 			}
 		}
 
+		stopSessions := timing.Probe(ctx, "sessions")
 		sessions, err := readers.Session.List(ctx, workspaceID, contract.SessionFilter{})
+		stopSessions()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -129,7 +149,9 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 			}
 		}
 
+		stopApprovals := timing.Probe(ctx, "approvals")
 		pending, err := readers.Approval.List(ctx, workspaceID, contract.ApprovalFilter{Status: "pending"})
+		stopApprovals()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -158,6 +180,7 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 			recent = recent[:recentSessionLimit]
 		}
 
+		stopAggregate()
 		writeJSON(w, http.StatusOK, Overview{
 			ActiveSessions:      activeSessions,
 			PendingApprovals:    pending,

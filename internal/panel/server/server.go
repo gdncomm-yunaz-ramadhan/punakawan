@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
@@ -16,6 +17,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/session"
 	"github.com/ygrip/punakawan/internal/panel/sources"
+	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -32,6 +34,12 @@ type Options struct {
 	// default is 7331.
 	Port   string
 	Logger *slog.Logger
+	// ServerTiming enables the dev-only per-request Server-Timing response
+	// header (performance plan §17). Off by default (production); the
+	// PUNAKAWAN_PANEL_SERVER_TIMING=1 environment variable also turns it on
+	// (OR'd in when Start builds the middleware chain), so a developer can
+	// flip it without a code change.
+	ServerTiming bool
 }
 
 // Server is the Punakawan Panel's loopback HTTP server.
@@ -243,8 +251,15 @@ func (s *Server) Start() error {
 
 	mux.Handle("/", static)
 
+	// Dev-only Server-Timing: enabled by the Options flag OR the
+	// PUNAKAWAN_PANEL_SERVER_TIMING=1 env var. timingMiddleware sits inside
+	// security (which owns the Host/Origin gate and response security
+	// headers) but outside logging, so the Collector's context reaches every
+	// handler and source, and the logged duration still brackets the full
+	// handler run.
+	serverTiming := s.opts.ServerTiming || os.Getenv("PUNAKAWAN_PANEL_SERVER_TIMING") == "1"
 	s.httpServer = &http.Server{
-		Handler:           securityMiddleware(loggingMiddleware(s.logger, mux)),
+		Handler:           securityMiddleware(timingMiddleware(serverTiming, loggingMiddleware(s.logger, mux))),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -309,4 +324,80 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 		logger.Info("panel request", "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(start).Milliseconds())
 	})
+}
+
+// timingMiddleware, when enabled, attaches a fresh timing.Collector to the
+// request context so handlers and sources can probe their sub-reads, then
+// writes the accumulated durations back as a Server-Timing response header
+// (performance plan §17). When disabled it is a pure pass-through - handlers
+// still call timing.Probe unconditionally, but with no Collector in context
+// those probes are no-ops.
+//
+// Header ordering: Server-Timing must be set before the response status line
+// and body are written, but a Collector is only fully populated once the
+// handler returns. Panel handlers assemble their whole response and call
+// WriteHeader/Write exactly once at the end (see writeJSON), so we wrap the
+// ResponseWriter and inject the header just-in-time on the first
+// WriteHeader/Write call - the moment before the headers are flushed, which
+// is also the moment the handler has finished its probed work. A handler that
+// streams (e.g. the SSE endpoint) would flush headers early and thus capture
+// only the timings recorded so far; that is acceptable for a dev-only
+// diagnostic and those endpoints are not the warm-read paths §18 targets.
+func timingMiddleware(enabled bool, next http.Handler) http.Handler {
+	if !enabled {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		collector := timing.NewCollector()
+		ctx := timing.WithCollector(r.Context(), collector)
+		tw := &timingResponseWriter{ResponseWriter: w, collector: collector}
+		next.ServeHTTP(tw, r.WithContext(ctx))
+		// Fallback for a handler that never wrote anything (no WriteHeader/
+		// Write, so the wrapper's just-in-time hook never fired): set the
+		// header now. net/http will still emit an implicit 200 for us.
+		tw.injectServerTiming()
+	})
+}
+
+// timingResponseWriter defers the Server-Timing header until the first
+// WriteHeader or Write, when the handler's probed work is complete but the
+// headers have not yet been flushed.
+type timingResponseWriter struct {
+	http.ResponseWriter
+	collector *timing.Collector
+	injected  bool
+}
+
+// injectServerTiming sets the Server-Timing header from the collector exactly
+// once, and only while the headers are still mutable (before the first real
+// WriteHeader). A no-op if nothing was recorded, so unprobed requests carry no
+// empty header.
+func (w *timingResponseWriter) injectServerTiming() {
+	if w.injected {
+		return
+	}
+	w.injected = true
+	if v := w.collector.ServerTiming(); v != "" {
+		w.ResponseWriter.Header().Set("Server-Timing", v)
+	}
+}
+
+func (w *timingResponseWriter) WriteHeader(status int) {
+	w.injectServerTiming()
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *timingResponseWriter) Write(b []byte) (int, error) {
+	w.injectServerTiming()
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush forwards to the underlying writer when it supports flushing (the SSE
+// endpoint relies on it), injecting the header first so streamed responses
+// still carry whatever timings were recorded before the first flush.
+func (w *timingResponseWriter) Flush() {
+	w.injectServerTiming()
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }

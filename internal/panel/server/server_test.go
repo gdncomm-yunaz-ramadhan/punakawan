@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ import (
 	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
@@ -893,5 +895,88 @@ func TestServerSubmitDispatchesABDTaskGraph(t *testing.T) {
 	res, err := a.Supervisor.Run(context.Background(), tools.Spec{Name: "bd", Args: []string{"show", submitted.Run.RunID}, Dir: a.Workspace.Root})
 	if err != nil || res.ExitCode != 0 {
 		t.Fatalf("bd show %s: err=%v exit=%d stderr=%s", submitted.Run.RunID, err, res.ExitCode, res.Stderr)
+	}
+}
+
+// probingHandler records one probe named "handler_work" (completing its timed
+// section before writing, as panel handlers record sub-reads before writeJSON)
+// then writes a JSON body via WriteHeader+Write - the case timingMiddleware's
+// just-in-time header injection is built for.
+func probingHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stop := timing.Probe(r.Context(), "handler_work")
+		stop()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+}
+
+func TestTimingMiddlewareSetsServerTimingWhenEnabled(t *testing.T) {
+	h := timingMiddleware(true, probingHandler())
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	got := rec.Header().Get("Server-Timing")
+	if !strings.HasPrefix(got, "handler_work;dur=") {
+		t.Fatalf("Server-Timing = %q, want handler_work;dur= prefix", got)
+	}
+	if rec.Body.String() != `{"ok":true}` {
+		t.Fatalf("body = %q, want the handler's JSON (header injection must not corrupt the body)", rec.Body.String())
+	}
+}
+
+func TestTimingMiddlewareAbsentWhenDisabled(t *testing.T) {
+	h := timingMiddleware(false, probingHandler())
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
+
+	h.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Server-Timing"); got != "" {
+		t.Fatalf("Server-Timing = %q, want empty when disabled", got)
+	}
+	// The probe in the handler must have been a harmless no-op.
+	if _, ok := timing.FromContext(req.Context()); ok {
+		t.Fatal("no collector should be attached when timing is disabled")
+	}
+}
+
+// TestServerServerTimingEndToEnd confirms the Options flag actually wires the
+// header through the real middleware chain (security -> timing -> logging).
+func TestServerServerTimingEndToEnd(t *testing.T) {
+	a := newTestApp(t)
+	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	if err != nil {
+		t.Fatalf("registry.OpenAt: %v", err)
+	}
+	s := New(a, reg, Options{Port: "0", ServerTiming: true})
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.Shutdown(ctx); err != nil {
+			t.Logf("Shutdown: %v", err)
+		}
+	})
+
+	resp, err := http.Get(fmt.Sprintf("http://%s/api/v1/overview", s.Addr()))
+	if err != nil {
+		t.Fatalf("GET /api/v1/overview: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	got := resp.Header.Get("Server-Timing")
+	if !strings.Contains(got, "overview_aggregate;dur=") {
+		t.Fatalf("Server-Timing = %q, want it to include overview_aggregate;dur=", got)
 	}
 }
