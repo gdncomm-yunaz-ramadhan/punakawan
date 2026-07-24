@@ -23,46 +23,50 @@ const SchemaVersion = "punakawan.workflow/v1"
 // checks it against the capability registry. Revision is an integer bumped on
 // every Save; definitions are immutable *by version*, so each prior revision
 // is snapshotted before a new one overwrites the live file.
+// Both yaml and json tags are declared: yaml is the on-disk format the store
+// reads/writes; json is the panel API's wire format. Without explicit json
+// tags the HTTP layer would emit Go's PascalCase field names, which the
+// Svelte client (expecting snake_case/camelCase) silently reads as undefined.
 type Definition struct {
-	Version             string         `yaml:"version"`
-	ID                  string         `yaml:"id"`
-	Name                string         `yaml:"name"`
-	Description         string         `yaml:"description"`
-	Enabled             bool           `yaml:"enabled"`
-	RequiredMetadata    []string       `yaml:"required_metadata,omitempty"`
-	Inputs              []Input        `yaml:"inputs,omitempty"`
-	Steps               []Step         `yaml:"steps"`
-	AllowedCapabilities []string       `yaml:"allowed_capabilities,omitempty"`
-	Approval            ApprovalPolicy `yaml:"approval,omitempty"`
-	Output              OutputSpec     `yaml:"output,omitempty"`
-	Revision            int            `yaml:"revision"`
+	Version             string         `yaml:"version" json:"version"`
+	ID                  string         `yaml:"id" json:"id"`
+	Name                string         `yaml:"name" json:"name"`
+	Description         string         `yaml:"description" json:"description"`
+	Enabled             bool           `yaml:"enabled" json:"enabled"`
+	RequiredMetadata    []string       `yaml:"required_metadata,omitempty" json:"required_metadata,omitempty"`
+	Inputs              []Input        `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+	Steps               []Step         `yaml:"steps" json:"steps"`
+	AllowedCapabilities []string       `yaml:"allowed_capabilities,omitempty" json:"allowed_capabilities,omitempty"`
+	Approval            ApprovalPolicy `yaml:"approval,omitempty" json:"approval,omitempty"`
+	Output              OutputSpec     `yaml:"output,omitempty" json:"output,omitempty"`
+	Revision            int            `yaml:"revision" json:"revision"`
 }
 
 // Input is one declared workflow input parameter (§6.1 inputs[]).
 type Input struct {
-	Name     string `yaml:"name"`
-	Type     string `yaml:"type"`
-	Required bool   `yaml:"required"`
-	Default  any    `yaml:"default,omitempty"`
+	Name     string `yaml:"name" json:"name"`
+	Type     string `yaml:"type" json:"type"`
+	Required bool   `yaml:"required" json:"required"`
+	Default  any    `yaml:"default,omitempty" json:"default,omitempty"`
 }
 
 // Step is one workflow step (§6.1 steps[]). Capability names a registered
 // capability (never an arbitrary shell command — see Validate). InputFrom
 // lists the ids of prior steps whose output feeds this one.
 type Step struct {
-	Capability string   `yaml:"capability"`
-	Intent     string   `yaml:"intent,omitempty"`
-	ID         string   `yaml:"id"`
-	InputFrom  []string `yaml:"input_from,omitempty"`
+	Capability string   `yaml:"capability" json:"capability"`
+	Intent     string   `yaml:"intent,omitempty" json:"intent,omitempty"`
+	ID         string   `yaml:"id" json:"id"`
+	InputFrom  []string `yaml:"input_from,omitempty" json:"input_from,omitempty"`
 }
 
 // ApprovalPolicy declares which capability classes require human approval
 // before the run may perform them (§6.1 approval.required_for).
 type ApprovalPolicy struct {
-	RequiredFor []string `yaml:"required_for,omitempty"`
+	RequiredFor []string `yaml:"required_for,omitempty" json:"required_for,omitempty"`
 }
 
 // OutputSpec names the shape a workflow produces (§6.1 output.type).
 type OutputSpec struct {
-	Type string `yaml:"type,omitempty"`
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
 }
