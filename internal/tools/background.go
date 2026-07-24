@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -40,7 +39,7 @@ func (s *Supervisor) StartBackground(spec Spec, logPath string) (*BackgroundProc
 	cmd.Env = s.buildEnv(spec.Env)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
@@ -79,8 +78,10 @@ func (p *BackgroundProcess) WaitError() error {
 	return p.waitErr
 }
 
-// Stop sends SIGTERM to the process group and waits up to 5 seconds for a
-// clean exit, escalating to SIGKILL if it does not stop in time.
+// Stop requests a graceful termination of the process tree and waits up to 5
+// seconds for a clean exit, escalating to a forceful kill if it does not stop
+// in time. On unix this is SIGTERM then SIGKILL against the process group; on
+// Windows it is a taskkill tree termination then a forced taskkill.
 func (p *BackgroundProcess) Stop() error {
 	select {
 	case <-p.done:
@@ -88,8 +89,8 @@ func (p *BackgroundProcess) Stop() error {
 	default:
 	}
 
-	pid := p.cmd.Process.Pid
-	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
+	proc := p.cmd.Process
+	if err := terminateProcessTree(proc); err != nil {
 		select {
 		case <-p.done:
 			return nil
@@ -101,8 +102,8 @@ func (p *BackgroundProcess) Stop() error {
 	select {
 	case <-p.done:
 		err := p.WaitError()
-		// The process exiting because of the SIGTERM we just sent is a
-		// successful stop, not a failure - only surface genuinely
+		// The process exiting because of the termination we just requested is
+		// a successful stop, not a failure - only surface genuinely
 		// unexpected wait errors.
 		var exitErr *exec.ExitError
 		if err != nil && !errors.As(err, &exitErr) {
@@ -110,7 +111,7 @@ func (p *BackgroundProcess) Stop() error {
 		}
 		return nil
 	case <-time.After(5 * time.Second):
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = killProcessTree(proc)
 		<-p.done
 		return fmt.Errorf("tools: process did not exit within grace period; force-killed")
 	}

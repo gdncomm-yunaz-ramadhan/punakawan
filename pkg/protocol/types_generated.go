@@ -2764,6 +2764,10 @@ type KnowledgeRecord struct {
 	Aliases []string `json:"aliases,omitempty,omitzero" yaml:"aliases,omitempty" mapstructure:"aliases,omitempty"`
 
 	// Bagong's independent final review, present on bagong-review records. See §8.4.
+	// blocking_findings and findings are structured so the senior-maintainer rubric
+	// (prompts/bagong/prompt.md) is field-enforced: every finding must carry a
+	// severity, the exact file+location, why it is a problem, a realistic failure
+	// scenario, and the smallest appropriate correction - not free text.
 	BagongReview *KnowledgeRecordBagongReview `json:"bagong_review,omitempty,omitzero" yaml:"bagong_review,omitempty" mapstructure:"bagong_review,omitempty"`
 
 	// The record's full text body, the lowest-weighted BM25F search field. See
@@ -2847,16 +2851,24 @@ type KnowledgeRecord struct {
 }
 
 // Bagong's independent final review, present on bagong-review records. See §8.4.
+// blocking_findings and findings are structured so the senior-maintainer rubric
+// (prompts/bagong/prompt.md) is field-enforced: every finding must carry a
+// severity, the exact file+location, why it is a problem, a realistic failure
+// scenario, and the smallest appropriate correction - not free text.
 type KnowledgeRecordBagongReview struct {
-	// BlockingFindings corresponds to the JSON schema field "blocking_findings".
-	BlockingFindings []string `json:"blocking_findings,omitempty,omitzero" yaml:"blocking_findings,omitempty" mapstructure:"blocking_findings,omitempty"`
+	// Blocking (section 1 of the senior-maintainer rubric) findings that must be
+	// resolved before completion. Each entry is a structured finding, mirroring the
+	// per-finding attributes the rubric demands.
+	BlockingFindings []KnowledgeRecordBagongReviewBlockingFindingsElem `json:"blocking_findings,omitempty,omitzero" yaml:"blocking_findings,omitempty" mapstructure:"blocking_findings,omitempty"`
 
 	// CompatibilityFindings corresponds to the JSON schema field
 	// "compatibility_findings".
 	CompatibilityFindings []string `json:"compatibility_findings,omitempty,omitzero" yaml:"compatibility_findings,omitempty" mapstructure:"compatibility_findings,omitempty"`
 
-	// Findings corresponds to the JSON schema field "findings".
-	Findings []string `json:"findings,omitempty,omitzero" yaml:"findings,omitempty" mapstructure:"findings,omitempty"`
+	// Non-blocking (section 2 of the senior-maintainer rubric) improvements. Each
+	// entry is a structured finding, mirroring the per-finding attributes the rubric
+	// demands.
+	Findings []KnowledgeRecordBagongReviewFindingsElem `json:"findings,omitempty,omitzero" yaml:"findings,omitempty" mapstructure:"findings,omitempty"`
 
 	// HonestSummary corresponds to the JSON schema field "honest_summary".
 	HonestSummary *string `json:"honest_summary,omitempty,omitzero" yaml:"honest_summary,omitempty" mapstructure:"honest_summary,omitempty"`
@@ -2876,6 +2888,170 @@ type KnowledgeRecordBagongReview struct {
 
 	// Verdict corresponds to the JSON schema field "verdict".
 	Verdict *string `json:"verdict,omitempty,omitzero" yaml:"verdict,omitempty" mapstructure:"verdict,omitempty"`
+}
+
+type KnowledgeRecordBagongReviewBlockingFindingsElem struct {
+	// The smallest appropriate correction.
+	Correction string `json:"correction" yaml:"correction" mapstructure:"correction"`
+
+	// A realistic scenario in which this causes a concrete failure.
+	FailureScenario string `json:"failure_scenario" yaml:"failure_scenario" mapstructure:"failure_scenario"`
+
+	// The exact file and line/location the finding applies to, e.g.
+	// internal/foo/bar.go:12.
+	Location string `json:"location" yaml:"location" mapstructure:"location"`
+
+	// Finding severity, reusing ReviewFinding's severity vocabulary.
+	Severity KnowledgeRecordBagongReviewBlockingFindingsElemSeverity `json:"severity" yaml:"severity" mapstructure:"severity"`
+
+	// Why this is a problem.
+	Why string `json:"why" yaml:"why" mapstructure:"why"`
+}
+
+type KnowledgeRecordBagongReviewBlockingFindingsElemSeverity string
+
+const KnowledgeRecordBagongReviewBlockingFindingsElemSeverityBlocker KnowledgeRecordBagongReviewBlockingFindingsElemSeverity = "blocker"
+const KnowledgeRecordBagongReviewBlockingFindingsElemSeverityMajor KnowledgeRecordBagongReviewBlockingFindingsElemSeverity = "major"
+const KnowledgeRecordBagongReviewBlockingFindingsElemSeverityMinor KnowledgeRecordBagongReviewBlockingFindingsElemSeverity = "minor"
+const KnowledgeRecordBagongReviewBlockingFindingsElemSeveritySuggestion KnowledgeRecordBagongReviewBlockingFindingsElemSeverity = "suggestion"
+
+var enumValues_KnowledgeRecordBagongReviewBlockingFindingsElemSeverity = []interface{}{
+	"blocker",
+	"major",
+	"minor",
+	"suggestion",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordBagongReviewBlockingFindingsElemSeverity) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordBagongReviewBlockingFindingsElemSeverity {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordBagongReviewBlockingFindingsElemSeverity, v)
+	}
+	*j = KnowledgeRecordBagongReviewBlockingFindingsElemSeverity(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordBagongReviewBlockingFindingsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["correction"]; raw != nil && !ok {
+		return fmt.Errorf("field correction in KnowledgeRecordBagongReviewBlockingFindingsElem: required")
+	}
+	if _, ok := raw["failure_scenario"]; raw != nil && !ok {
+		return fmt.Errorf("field failure_scenario in KnowledgeRecordBagongReviewBlockingFindingsElem: required")
+	}
+	if _, ok := raw["location"]; raw != nil && !ok {
+		return fmt.Errorf("field location in KnowledgeRecordBagongReviewBlockingFindingsElem: required")
+	}
+	if _, ok := raw["severity"]; raw != nil && !ok {
+		return fmt.Errorf("field severity in KnowledgeRecordBagongReviewBlockingFindingsElem: required")
+	}
+	if _, ok := raw["why"]; raw != nil && !ok {
+		return fmt.Errorf("field why in KnowledgeRecordBagongReviewBlockingFindingsElem: required")
+	}
+	type Plain KnowledgeRecordBagongReviewBlockingFindingsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = KnowledgeRecordBagongReviewBlockingFindingsElem(plain)
+	return nil
+}
+
+type KnowledgeRecordBagongReviewFindingsElem struct {
+	// The smallest appropriate correction.
+	Correction string `json:"correction" yaml:"correction" mapstructure:"correction"`
+
+	// A realistic scenario in which this causes a concrete failure.
+	FailureScenario string `json:"failure_scenario" yaml:"failure_scenario" mapstructure:"failure_scenario"`
+
+	// The exact file and line/location the finding applies to, e.g.
+	// internal/foo/bar.go:12.
+	Location string `json:"location" yaml:"location" mapstructure:"location"`
+
+	// Finding severity, reusing ReviewFinding's severity vocabulary.
+	Severity KnowledgeRecordBagongReviewFindingsElemSeverity `json:"severity" yaml:"severity" mapstructure:"severity"`
+
+	// Why this is a problem.
+	Why string `json:"why" yaml:"why" mapstructure:"why"`
+}
+
+type KnowledgeRecordBagongReviewFindingsElemSeverity string
+
+const KnowledgeRecordBagongReviewFindingsElemSeverityBlocker KnowledgeRecordBagongReviewFindingsElemSeverity = "blocker"
+const KnowledgeRecordBagongReviewFindingsElemSeverityMajor KnowledgeRecordBagongReviewFindingsElemSeverity = "major"
+const KnowledgeRecordBagongReviewFindingsElemSeverityMinor KnowledgeRecordBagongReviewFindingsElemSeverity = "minor"
+const KnowledgeRecordBagongReviewFindingsElemSeveritySuggestion KnowledgeRecordBagongReviewFindingsElemSeverity = "suggestion"
+
+var enumValues_KnowledgeRecordBagongReviewFindingsElemSeverity = []interface{}{
+	"blocker",
+	"major",
+	"minor",
+	"suggestion",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordBagongReviewFindingsElemSeverity) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_KnowledgeRecordBagongReviewFindingsElemSeverity {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_KnowledgeRecordBagongReviewFindingsElemSeverity, v)
+	}
+	*j = KnowledgeRecordBagongReviewFindingsElemSeverity(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordBagongReviewFindingsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["correction"]; raw != nil && !ok {
+		return fmt.Errorf("field correction in KnowledgeRecordBagongReviewFindingsElem: required")
+	}
+	if _, ok := raw["failure_scenario"]; raw != nil && !ok {
+		return fmt.Errorf("field failure_scenario in KnowledgeRecordBagongReviewFindingsElem: required")
+	}
+	if _, ok := raw["location"]; raw != nil && !ok {
+		return fmt.Errorf("field location in KnowledgeRecordBagongReviewFindingsElem: required")
+	}
+	if _, ok := raw["severity"]; raw != nil && !ok {
+		return fmt.Errorf("field severity in KnowledgeRecordBagongReviewFindingsElem: required")
+	}
+	if _, ok := raw["why"]; raw != nil && !ok {
+		return fmt.Errorf("field why in KnowledgeRecordBagongReviewFindingsElem: required")
+	}
+	type Plain KnowledgeRecordBagongReviewFindingsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = KnowledgeRecordBagongReviewFindingsElem(plain)
+	return nil
 }
 
 // Semar's pre-planning context dossier, present on context-dossier records. See

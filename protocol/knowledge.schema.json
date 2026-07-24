@@ -231,14 +231,44 @@
       }
     },
     "bagong_review": {
-      "description": "Bagong's independent final review, present on bagong-review records. See §8.4.",
+      "description": "Bagong's independent final review, present on bagong-review records. See §8.4. blocking_findings and findings are structured so the senior-maintainer rubric (prompts/bagong/prompt.md) is field-enforced: every finding must carry a severity, the exact file+location, why it is a problem, a realistic failure scenario, and the smallest appropriate correction - not free text.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "verdict": { "type": "string" },
         "requirement_coverage": { "type": "array", "items": { "type": "string" } },
-        "findings": { "type": "array", "items": { "type": "string" } },
-        "blocking_findings": { "type": "array", "items": { "type": "string" } },
+        "findings": {
+          "description": "Non-blocking (section 2 of the senior-maintainer rubric) improvements. Each entry is a structured finding, mirroring the per-finding attributes the rubric demands.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["severity", "location", "why", "failure_scenario", "correction"],
+            "additionalProperties": false,
+            "properties": {
+              "severity": { "description": "Finding severity, reusing ReviewFinding's severity vocabulary.", "type": "string", "enum": ["blocker", "major", "minor", "suggestion"] },
+              "location": { "description": "The exact file and line/location the finding applies to, e.g. internal/foo/bar.go:12.", "type": "string" },
+              "why": { "description": "Why this is a problem.", "type": "string" },
+              "failure_scenario": { "description": "A realistic scenario in which this causes a concrete failure.", "type": "string" },
+              "correction": { "description": "The smallest appropriate correction.", "type": "string" }
+            }
+          }
+        },
+        "blocking_findings": {
+          "description": "Blocking (section 1 of the senior-maintainer rubric) findings that must be resolved before completion. Each entry is a structured finding, mirroring the per-finding attributes the rubric demands.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["severity", "location", "why", "failure_scenario", "correction"],
+            "additionalProperties": false,
+            "properties": {
+              "severity": { "description": "Finding severity, reusing ReviewFinding's severity vocabulary.", "type": "string", "enum": ["blocker", "major", "minor", "suggestion"] },
+              "location": { "description": "The exact file and line/location the finding applies to, e.g. internal/foo/bar.go:12.", "type": "string" },
+              "why": { "description": "Why this is a problem.", "type": "string" },
+              "failure_scenario": { "description": "A realistic scenario in which this causes a concrete failure.", "type": "string" },
+              "correction": { "description": "The smallest appropriate correction.", "type": "string" }
+            }
+          }
+        },
         "test_gaps": { "type": "array", "items": { "type": "string" } },
         "security_findings": { "type": "array", "items": { "type": "string" } },
         "compatibility_findings": { "type": "array", "items": { "type": "string" } },

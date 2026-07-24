@@ -44,5 +44,7 @@ export const manifest: AdapterManifest = {
     'atlassian.addWorklog': { side_effect: true, approval: 'required' },
     'atlassian.getIssueTypeFieldMeta': { side_effect: false },
     'atlassian.createJiraSubtask': { side_effect: true, approval: 'required' },
+    'atlassian.searchJiraUsers': { side_effect: false },
+    'atlassian.createIssueLink': { side_effect: true, approval: 'required' },
   },
 };

@@ -60,15 +60,15 @@ const findingAttributesReminder = "every finding must carry severity, the exact 
 // what was actually verified (section 4) and list any remaining risks it
 // could not verify (section 3, per the rubric's final line). Sections 1 and
 // 2 may legitimately be empty, but a review that reports no actionable
-// problems is only conformant if honest_summary says so explicitly. Because
-// blocking_findings/findings are free-text strings in protocol's
-// knowledge.schema.json (not structured finding objects), the per-finding
-// attributes - severity, file/location, why, failure scenario, smallest
-// correction - are directed by the embedded rubric instruction rather than
-// field-validated here; this gate additionally rejects blank finding entries
-// so an "empty" finding cannot slip through. Turning the per-finding
-// attributes into hard field-level checks would require a protocol schema
-// change (structured findings), which is flagged rather than hand-edited.
+// problems is only conformant if honest_summary says so explicitly.
+//
+// blocking_findings and findings are now structured finding objects in
+// protocol's knowledge.schema.json, so the per-finding attributes the rubric
+// demands - severity (valid enum), the exact file/location, why it is a
+// problem, a realistic failure scenario, and the smallest appropriate
+// correction - are hard-enforced here as field-level checks: every finding in
+// either section is rejected with a precise error naming the offending
+// section, index, and missing field.
 func validateSeniorMaintainerRubric(id string, review protocol.KnowledgeRecordBagongReview) error {
 	// Section 4 - verification performed - must always be documented.
 	if countNonBlank(review.RequirementCoverage) == 0 {
@@ -78,24 +78,65 @@ func validateSeniorMaintainerRubric(id string, review protocol.KnowledgeRecordBa
 	if countNonBlank(review.Uncertainties) == 0 {
 		return fmt.Errorf("roles: bagong review %s: senior-maintainer rubric requires a 'questions/assumptions' section - populate uncertainties with open questions, assumptions, and any remaining risks you could not verify (the rubric requires you to identify remaining unverified risks even when no problems are found)", id)
 	}
-	// Sections 1 and 2 - findings must be substantive when present.
+	// Sections 1 and 2 - every finding must carry the rubric's per-finding
+	// attributes. The two slices are distinct generated types with identical
+	// fields, so each is projected onto the shared validateFinding checker.
 	for i, f := range review.BlockingFindings {
-		if strings.TrimSpace(f) == "" {
-			return fmt.Errorf("roles: bagong review %s: blocking_findings[%d] is blank - %s", id, i, findingAttributesReminder)
+		if err := validateFinding(id, "blocking_findings", i, string(f.Severity), f.Location, f.Why, f.FailureScenario, f.Correction); err != nil {
+			return err
 		}
 	}
 	for i, f := range review.Findings {
-		if strings.TrimSpace(f) == "" {
-			return fmt.Errorf("roles: bagong review %s: findings[%d] is blank - %s", id, i, findingAttributesReminder)
+		if err := validateFinding(id, "findings", i, string(f.Severity), f.Location, f.Why, f.FailureScenario, f.Correction); err != nil {
+			return err
 		}
 	}
 	// "No actionable problems found" is a valid, conforming submission only
 	// if honest_summary says so explicitly (rubric's last line). Remaining
 	// unverified risks are already required via uncertainties above.
-	if countNonBlank(review.BlockingFindings) == 0 && countNonBlank(review.Findings) == 0 {
+	if len(review.BlockingFindings) == 0 && len(review.Findings) == 0 {
 		if !statesNoActionableProblems(*review.HonestSummary) {
 			return fmt.Errorf("roles: bagong review %s: with no blocking or non-blocking findings, the senior-maintainer rubric requires honest_summary to state explicitly that no actionable problems were found (e.g. \"no blocking issues\", \"no actionable problems\") and rely on uncertainties for remaining unverified risks", id)
 		}
+	}
+	return nil
+}
+
+// validFindingSeverities is the set of severities a Bagong finding may carry,
+// reusing ReviewFinding's severity vocabulary (protocol
+// reviewfinding.schema.json) for cross-review consistency.
+var validFindingSeverities = map[string]bool{
+	"blocker":    true,
+	"major":      true,
+	"minor":      true,
+	"suggestion": true,
+}
+
+// validateFinding hard-enforces that a single structured finding carries every
+// per-finding attribute the senior-maintainer rubric demands. section is the
+// schema field name ("blocking_findings" or "findings") and i its index, so
+// the rejection precisely names the offending finding and the missing field.
+func validateFinding(id, section string, i int, severity, location, why, failureScenario, correction string) error {
+	missing := func(field string) error {
+		return fmt.Errorf("roles: bagong review %s: %s[%d] is missing %s - %s", id, section, i, field, findingAttributesReminder)
+	}
+	if strings.TrimSpace(severity) == "" {
+		return missing("severity")
+	}
+	if !validFindingSeverities[strings.TrimSpace(severity)] {
+		return fmt.Errorf("roles: bagong review %s: %s[%d] has invalid severity %q - must be one of blocker, major, minor, suggestion", id, section, i, severity)
+	}
+	if strings.TrimSpace(location) == "" {
+		return missing("location (the exact file and line)")
+	}
+	if strings.TrimSpace(why) == "" {
+		return missing("why (why it is a problem)")
+	}
+	if strings.TrimSpace(failureScenario) == "" {
+		return missing("failure_scenario (a realistic failure scenario)")
+	}
+	if strings.TrimSpace(correction) == "" {
+		return missing("correction (the smallest appropriate correction)")
 	}
 	return nil
 }

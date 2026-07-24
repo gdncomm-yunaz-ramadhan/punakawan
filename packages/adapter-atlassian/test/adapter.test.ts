@@ -26,6 +26,8 @@ import {
   getJiraRemoteLinks,
   listJiraAttachments,
   uploadJiraAttachment,
+  searchJiraUsers,
+  createIssueLink,
 } from '../src/operations.js';
 import { manifest } from '../src/manifest.js';
 import { normalizeJiraIssue } from '../src/normalize.js';
@@ -385,6 +387,47 @@ describe('addJiraComment', () => {
     const flattened = adfText(rest.addedComments[0]?.body.body);
     assert.equal(flattened, 'createShareLink() -> validateRequestFields() & friends');
 
+    await client.close();
+  });
+});
+
+describe('searchJiraUsers', () => {
+  test('returns compact accountId-bearing users from the user-search endpoint', async () => {
+    const { client, rest } = fakeClientWithRest();
+    const { users } = await searchJiraUsers(client, { query: 'a', maxResults: 5 });
+
+    assert.equal(users.length, 2);
+    assert.equal(users[0]?.accountId, 'acc-1');
+    assert.equal(users[0]?.displayName, 'Ada Lovelace');
+    assert.equal(users[1]?.active, false);
+
+    const req = rest.requests.at(-1);
+    assert.equal(req?.path, '/rest/api/3/user/search');
+    assert.ok(req?.url.includes('query=a'), `expected query in ${req?.url}`);
+    assert.ok(req?.url.includes('maxResults=5'), `expected maxResults in ${req?.url}`);
+    await client.close();
+  });
+});
+
+describe('createIssueLink', () => {
+  test('posts an issueLink with the Jira inward/outward body shape', async () => {
+    const { client, rest } = fakeClientWithRest();
+    const result = await createIssueLink(client, {
+      linkType: 'Blocks',
+      inwardIssueKey: 'PROJ-2',
+      outwardIssueKey: 'PROJ-1',
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.linkType, 'Blocks');
+    const req = rest.requests.at(-1);
+    assert.equal(req?.method, 'POST');
+    assert.equal(req?.path, '/rest/api/3/issueLink');
+    assert.deepEqual(req?.body, {
+      type: { name: 'Blocks' },
+      inwardIssue: { key: 'PROJ-2' },
+      outwardIssue: { key: 'PROJ-1' },
+    });
     await client.close();
   });
 });

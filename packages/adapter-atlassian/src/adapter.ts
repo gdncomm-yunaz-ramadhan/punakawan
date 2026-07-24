@@ -5,7 +5,9 @@ import { manifest } from './manifest.js';
 import {
   addJiraComment,
   addWorklog,
+  createIssueLink,
   createJiraSubtask,
+  searchJiraUsers,
   deleteJiraAttachment,
   downloadJiraAttachment,
   editJiraIssue,
@@ -179,6 +181,22 @@ export function createHandlers(options?: {
             );
           }
           return createJiraSubtask(getClient(), { parentKey, projectKey, issueTypeName, candidates });
+        }
+        case 'atlassian.searchJiraUsers': {
+          const { query, maxResults } = rest as { query: string; maxResults?: number };
+          if (!query) throw new Error('atlassian.searchJiraUsers requires "query"');
+          return searchJiraUsers(getClient(), { query, maxResults });
+        }
+        case 'atlassian.createIssueLink': {
+          const { linkType, inwardIssueKey, outwardIssueKey } = rest as {
+            linkType: string;
+            inwardIssueKey: string;
+            outwardIssueKey: string;
+          };
+          if (!linkType || !inwardIssueKey || !outwardIssueKey) {
+            throw new Error('atlassian.createIssueLink requires "linkType", "inwardIssueKey", and "outwardIssueKey"');
+          }
+          return createIssueLink(getClient(), { linkType, inwardIssueKey, outwardIssueKey });
         }
         default:
           throw new Error(`Unsupported op: ${op}`);

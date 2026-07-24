@@ -481,6 +481,64 @@ export async function editJiraIssue(client: AtlassianRestClient, params: EditJir
   return editJiraIssueFields(client, { issueIdOrKey: params.issueIdOrKey, fields });
 }
 
+export interface SearchJiraUsersParams {
+  query: string;
+  maxResults?: number;
+}
+
+/**
+ * Resolves a display name or email to Jira account ids via the user-search
+ * endpoint, so callers no longer need a raw call_adapter_operation passthrough
+ * (or a separate hosted Atlassian MCP call) just to find an accountId for an
+ * assignment (punokawan-t6y). Read-only.
+ */
+export async function searchJiraUsers(client: AtlassianRestClient, params: SearchJiraUsersParams) {
+  const maxResults = Math.min(50, Math.max(1, params.maxResults ?? 20));
+  const raw = await client.jira<unknown[]>('/rest/api/3/user/search', {
+    query: { query: params.query, maxResults },
+  });
+  const all = Array.isArray(raw.data) ? raw.data : [];
+  const users = all.map((entry) => {
+    const user = asRecord(entry);
+    return {
+      accountId: asString(user.accountId),
+      displayName: asString(user.displayName),
+      emailAddress: asString(user.emailAddress),
+      active: typeof user.active === 'boolean' ? user.active : undefined,
+    };
+  });
+  return { users };
+}
+
+export interface CreateIssueLinkParams {
+  /** Issue link type NAME (e.g. "Blocks", "Relates"). */
+  linkType: string;
+  inwardIssueKey: string;
+  outwardIssueKey: string;
+}
+
+/**
+ * Creates an issue link between two issues. inwardIssueKey/outwardIssueKey map
+ * directly onto Jira's inwardIssue/outwardIssue, so the semantic direction is
+ * the link type's own (for "Blocks", outward blocks inward). A write.
+ */
+export async function createIssueLink(client: AtlassianRestClient, params: CreateIssueLinkParams) {
+  await client.jira('/rest/api/3/issueLink', {
+    method: 'POST',
+    body: {
+      type: { name: params.linkType },
+      inwardIssue: { key: params.inwardIssueKey },
+      outwardIssue: { key: params.outwardIssueKey },
+    },
+  });
+  return {
+    ok: true,
+    linkType: params.linkType,
+    inwardIssue: params.inwardIssueKey,
+    outwardIssue: params.outwardIssueKey,
+  };
+}
+
 export interface AddWorklogParams {
   issueIdOrKey: string;
   timeSpentSeconds: number;

@@ -183,7 +183,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "request_jira_clarification",
-		Description: "Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup). Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + approvalGateNote,
 	}, requestJiraClarificationHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -198,8 +198,32 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_jira_task_progress",
-		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; do NOT use old Jira wiki markup like h3. or {{code}} - it renders literally). Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes." + approvalGateNote,
 	}, updateJiraTaskProgressHandler(a))
+
+	// Native Jira convenience tools (punokawan-t6y): common ops that previously
+	// needed a raw call_adapter_operation passthrough. Each is a thin,
+	// approval-gated wrapper over the same atlassian adapter operation layer as
+	// the tools above; run_id is optional (lightweight one-off mode).
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_search_user",
+		Description: "Look up Jira Cloud users by display name or email and return their accountId(s), so a name/email can be resolved to the accountId that jira_assign_issue (and Jira writes generally) require. Read-only: no approval needed. run_id is optional for one-off use.",
+	}, jiraSearchUserHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_link_issues",
+		Description: "Create an issue link between two Jira issues (e.g. Blocks or Relates). inward_issue/outward_issue map onto Jira's inward/outward sides, so direction follows the link type. run_id is optional for one-off use." + approvalGateNote,
+	}, jiraLinkIssuesHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_set_story_points",
+		Description: "Set an issue's Story Points custom field. Defaults to customfield_10016 (the common Jira Cloud default); pass story_points_field_id to override per project/board (discover the real id via atlassian.getIssueTypeFieldMeta). run_id is optional for one-off use." + approvalGateNote,
+	}, jiraSetStoryPointsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_assign_issue",
+		Description: "Assign a Jira issue to a user by accountId (resolve a name/email with jira_search_user first). run_id is optional for one-off use." + approvalGateNote,
+	}, jiraAssignIssueHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_jira_sync_queue",
@@ -213,7 +237,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_jira_assessment",
-		Description: "Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup - h3./{{code}} render literally). Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result." + approvalGateNote,
 	}, submitJiraAssessmentHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{

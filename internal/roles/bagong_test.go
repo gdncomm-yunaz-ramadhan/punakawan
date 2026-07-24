@@ -25,7 +25,13 @@ func conformantReview() protocol.KnowledgeRecordBagongReview {
 		Verdict:             strPtr("changes_required"),
 		RequirementCoverage: []string{"AC1: verified against diff.patch and tests.json"},
 		Uncertainties:       []string{"could not verify concurrency behavior without a load test"},
-		Findings:            []string{"major: handler at internal/foo/bar.go:12 leaks a goroutine; under sustained load the process OOMs; defer cancel() on the derived context"},
+		Findings: []protocol.KnowledgeRecordBagongReviewFindingsElem{{
+			Severity:        "major",
+			Location:        "internal/foo/bar.go:12",
+			Why:             "the handler leaks a goroutine on every request",
+			FailureScenario: "under sustained load the process OOMs and is OOM-killed",
+			Correction:      "defer cancel() on the derived context",
+		}},
 	}
 }
 
@@ -64,16 +70,63 @@ func TestSubmitBagongReviewRejectsMissingQuestionsSection(t *testing.T) {
 	}
 }
 
-func TestSubmitBagongReviewRejectsBlankFinding(t *testing.T) {
+// completeFinding returns a fully-populated structured finding that passes
+// every per-finding rubric check, so each subtest can knock out one field.
+func completeFinding() protocol.KnowledgeRecordBagongReviewBlockingFindingsElem {
+	return protocol.KnowledgeRecordBagongReviewBlockingFindingsElem{
+		Severity:        "blocker",
+		Location:        "internal/checkout/total.go:42",
+		Why:             "checkout total is off by one cent on discount codes",
+		FailureScenario: "a $10 order with a 10% code charges $8.99 instead of $9.00",
+		Correction:      "round after summing line items",
+	}
+}
+
+func TestSubmitBagongReviewRejectsFindingMissingRequiredField(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(*protocol.KnowledgeRecordBagongReviewBlockingFindingsElem)
+		wantMsg string
+	}{
+		{"severity", func(f *protocol.KnowledgeRecordBagongReviewBlockingFindingsElem) { f.Severity = "" }, "severity"},
+		{"location", func(f *protocol.KnowledgeRecordBagongReviewBlockingFindingsElem) { f.Location = "" }, "location"},
+		{"why", func(f *protocol.KnowledgeRecordBagongReviewBlockingFindingsElem) { f.Why = "" }, "why"},
+		{"failure_scenario", func(f *protocol.KnowledgeRecordBagongReviewBlockingFindingsElem) { f.FailureScenario = "" }, "failure_scenario"},
+		{"correction", func(f *protocol.KnowledgeRecordBagongReviewBlockingFindingsElem) { f.Correction = "" }, "correction"},
+		{"invalid-severity", func(f *protocol.KnowledgeRecordBagongReviewBlockingFindingsElem) { f.Severity = "nit" }, "invalid severity"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			review := conformantReview()
+			review.HonestSummary = strPtr("summary")
+			f := completeFinding()
+			tc.mutate(&f)
+			review.BlockingFindings = []protocol.KnowledgeRecordBagongReviewBlockingFindingsElem{f}
+			_, err := SubmitBagongReview(nil, "pkw:bagong/ws/run-1", "review", review)
+			if err == nil {
+				t.Fatalf("expected rejection when a blocking finding lacks %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("error = %q, want it to mention %q", err, tc.wantMsg)
+			}
+		})
+	}
+}
+
+func TestSubmitBagongReviewRejectsNonBlockingFindingMissingField(t *testing.T) {
 	review := conformantReview()
 	review.HonestSummary = strPtr("summary")
-	review.BlockingFindings = []string{""} // a finding missing severity/location/scenario/correction
+	review.Findings = []protocol.KnowledgeRecordBagongReviewFindingsElem{{
+		Severity: "minor",
+		Location: "internal/foo/bar.go:5",
+		// why, failure_scenario, correction intentionally omitted
+	}}
 	_, err := SubmitBagongReview(nil, "pkw:bagong/ws/run-1", "review", review)
 	if err == nil {
-		t.Fatal("expected rejection when a blocking finding is blank")
+		t.Fatal("expected rejection when a non-blocking finding is missing fields")
 	}
-	if !strings.Contains(err.Error(), "severity") || !strings.Contains(err.Error(), "location") {
-		t.Errorf("error = %q, want it to spell out the required per-finding attributes", err)
+	if !strings.Contains(err.Error(), "findings[0]") || !strings.Contains(err.Error(), "why") {
+		t.Errorf("error = %q, want it to name findings[0] and the missing field", err)
 	}
 }
 
@@ -113,9 +166,15 @@ func TestSubmitBagongReviewPersists(t *testing.T) {
 		Verdict:             strPtr("changes_required"),
 		RequirementCoverage: []string{"AC1 refund happy path: verified against diff.patch and tests.json"},
 		TestGaps:            []string{"no test for duplicate refund requests"},
-		Findings:            []string{"major: refund handler at internal/refund/handler.go:88 is not idempotent; a retried webhook double-refunds; guard on an idempotency key"},
-		Uncertainties:       []string{"could not verify webhook retry behavior without an integration test"},
-		HonestSummary:       strPtr("Implementation covers the happy path but idempotency is untested."),
+		Findings: []protocol.KnowledgeRecordBagongReviewFindingsElem{{
+			Severity:        "major",
+			Location:        "internal/refund/handler.go:88",
+			Why:             "the refund handler is not idempotent",
+			FailureScenario: "a retried webhook double-refunds the customer",
+			Correction:      "guard on an idempotency key",
+		}},
+		Uncertainties: []string{"could not verify webhook retry behavior without an integration test"},
+		HonestSummary: strPtr("Implementation covers the happy path but idempotency is untested."),
 	}
 
 	rec, err := SubmitBagongReview(store, "pkw:bagong/ws/run-1", "Bagong review of refund API", review)

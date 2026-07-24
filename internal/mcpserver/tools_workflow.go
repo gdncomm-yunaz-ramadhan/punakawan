@@ -113,8 +113,14 @@ func checkNoBlockingBagongFindings(store *knowledge.Store, a *app.App, runID str
 	if rec.BagongReview == nil || len(rec.BagongReview.BlockingFindings) == 0 {
 		return nil
 	}
+	// blocking_findings are now structured objects; summarize each so the
+	// error names the severity, location, and reason of every blocker.
+	summaries := make([]string, 0, len(rec.BagongReview.BlockingFindings))
+	for _, f := range rec.BagongReview.BlockingFindings {
+		summaries = append(summaries, fmt.Sprintf("[%s] %s: %s", f.Severity, f.Location, f.Why))
+	}
 	return fmt.Errorf(
 		"mcpserver: advance workflow: run %q has %d unresolved blocking Bagong finding(s): %s; resolve each via reopen_task (regression in completed work) or report_discovered_task (new/missing scope), then resubmit a clean submit_bagong_review before completing",
-		runID, len(rec.BagongReview.BlockingFindings), strings.Join(rec.BagongReview.BlockingFindings, "; "),
+		runID, len(rec.BagongReview.BlockingFindings), strings.Join(summaries, "; "),
 	)
 }
