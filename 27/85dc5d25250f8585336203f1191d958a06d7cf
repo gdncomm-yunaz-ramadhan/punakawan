@@ -1,0 +1,53 @@
+internal/panel/api/project_artifacts.go
+  d98638225f35480d 1-277
+web/panel/src/routes/projects/ProjectWorkflows.svelte
+  d98638225f35480d 1-501
+web/panel/tests/ProjectWorkflows.test.ts
+  d98638225f35480d 1-105
+internal/mcpserver/metadata_context.go
+  d98638225f35480d 1-77
+web/panel/src/routes/projects/ProjectHealth.svelte
+  d98638225f35480d 1-198
+internal/mcpserver/tools_taskcontext_test.go
+  d98638225f35480d 5-7,11-149
+web/panel/tests/ProjectHealth.test.ts
+  d98638225f35480d 1-86
+internal/panel/deps.go
+  d98638225f35480d 37-41,84
+internal/panel/server/server.go
+  d98638225f35480d 23,25,59,178-185,216-224,226-238,277-315,345-367,398-405,413-424
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 768-932
+web/panel/src/routes/projects/ProjectPlans.svelte
+  d98638225f35480d 1-281
+internal/panel/api/project_artifacts_test.go
+  d98638225f35480d 1-213
+web/panel/tests/projects-client.test.ts
+  d98638225f35480d 5,7-10,12-13,15,17-18,144-261
+docs/panel/workspace-to-project-migration.md
+  d98638225f35480d 1-44
+web/panel/src/routes/projects/ProjectDetail.svelte
+  d98638225f35480d 12-14,25-27,30,126-137
+internal/mcpserver/tools_taskcontext.go
+  d98638225f35480d 26-50,53-54,57,66,70,91,94-97,99,102-110,113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2785dc5d25250f8585336203f1191d958a06d7cf",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2413,
+      "total_deletions": 26,
+      "accepted_lines": 2406,
+      "overriden_lines": 0
+    }
+  }
+}
