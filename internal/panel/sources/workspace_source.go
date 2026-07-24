@@ -175,25 +175,53 @@ func unavailableDetail(entry protocol.PanelWorkspaceRegistryEntry, err error) co
 // not know about.
 func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *protocol.PanelWorkspaceRegistryEntry) (contract.WorkspaceDetail, error) {
 	now := time.Now().UTC()
-	var health []protocol.PanelSourceHealth
 
-	knowledgeCount := 0
-	if store, err := a.OpenKnowledge(); err != nil {
-		health = append(health, healthDown("knowledge", err, now))
-	} else if recs, err := store.AllWithUpdatedAt(); err != nil {
-		health = append(health, healthDown("knowledge", err, now))
-	} else {
-		knowledgeCount = len(recs)
-		health = append(health, healthOK("knowledge", now))
-	}
+	// The four heavy probe groups below are mutually independent - knowledge
+	// opens a Dolt store, beads shells out to `bd list` + `bd ready`, and git
+	// shells out to `git status` per repo - so running them sequentially made a
+	// single describe() the sum of all three's latency (~6s for the overview,
+	// which describes only the primary workspace). Fan them out and assemble
+	// their health slices back in a fixed order afterwards so the output stays
+	// deterministic (tests and the health board depend on ordering). adapter
+	// health is a cheap PATH lookup, left inline.
+	var (
+		knowledgeCount  int
+		knowledgeHealth []protocol.PanelSourceHealth
+		openTasks       int
+		blockedTasks    int
+		beadsHealth     []protocol.PanelSourceHealth
+		activeSessions  int
+		workflowHealth  []protocol.PanelSourceHealth
+		gitH            []protocol.PanelSourceHealth
+		wg              sync.WaitGroup
+	)
 
-	openTasks, blockedTasks := 0, 0
-	if !beads.Available(ctx, a.Supervisor, a.Workspace.Root) {
-		msg := "bd binary not found or not initialized in this workspace"
-		health = append(health, protocol.PanelSourceHealth{Source: "bd", Availability: protocol.PanelSourceHealthAvailabilityUnavailable, Message: &msg, CheckedAt: now})
-	} else if issues, err := beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{Limit: -1}); err != nil {
-		health = append(health, healthDown("bd", err, now))
-	} else {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if store, err := a.OpenKnowledge(); err != nil {
+			knowledgeHealth = append(knowledgeHealth, healthDown("knowledge", err, now))
+		} else if recs, err := store.AllWithUpdatedAt(); err != nil {
+			knowledgeHealth = append(knowledgeHealth, healthDown("knowledge", err, now))
+		} else {
+			knowledgeCount = len(recs)
+			knowledgeHealth = append(knowledgeHealth, healthOK("knowledge", now))
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if !beads.Available(ctx, a.Supervisor, a.Workspace.Root) {
+			msg := "bd binary not found or not initialized in this workspace"
+			beadsHealth = append(beadsHealth, protocol.PanelSourceHealth{Source: "bd", Availability: protocol.PanelSourceHealthAvailabilityUnavailable, Message: &msg, CheckedAt: now})
+			return
+		}
+		issues, err := beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{Limit: -1})
+		if err != nil {
+			beadsHealth = append(beadsHealth, healthDown("bd", err, now))
+			return
+		}
 		// The blocked count must match the status board's boardStatus,
 		// which treats an "open" issue bd does not currently consider ready
 		// (an unmet "blocks" dependency) as blocked - bd does not flip such
@@ -217,22 +245,39 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 				blockedTasks++
 			}
 		}
-		health = append(health, healthOK("bd", now))
-	}
+		beadsHealth = append(beadsHealth, healthOK("bd", now))
+	}()
 
-	activeSessions := 0
-	if current, err := a.Workflow.Current(); err != nil {
-		health = append(health, healthDown("workflow", err, now))
-	} else {
-		for _, run := range current {
-			if activeStates[run.State] {
-				activeSessions++
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if current, err := a.Workflow.Current(); err != nil {
+			workflowHealth = append(workflowHealth, healthDown("workflow", err, now))
+		} else {
+			for _, run := range current {
+				if activeStates[run.State] {
+					activeSessions++
+				}
 			}
+			workflowHealth = append(workflowHealth, healthOK("workflow", now))
 		}
-		health = append(health, healthOK("workflow", now))
-	}
+	}()
 
-	health = append(health, gitHealth(ctx, a, now)...)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		gitH = gitHealth(ctx, a, now)
+	}()
+
+	wg.Wait()
+
+	// Reassemble in the original sequential order: knowledge, bd, workflow,
+	// git, adapters.
+	health := make([]protocol.PanelSourceHealth, 0, len(knowledgeHealth)+len(beadsHealth)+len(workflowHealth)+len(gitH)+len(a.AdapterRegistry.Specs()))
+	health = append(health, knowledgeHealth...)
+	health = append(health, beadsHealth...)
+	health = append(health, workflowHealth...)
+	health = append(health, gitH...)
 	health = append(health, adapterHealth(a, now)...)
 
 	displayName := a.Workspace.Name
