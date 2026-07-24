@@ -1,0 +1,23 @@
+internal/workflowdef/definition.go
+  d98638225f35480d 26-29,31-42,47-50,57-60,66,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "a9ad5babf7b03354433df2ce3fd4de3ecb0bf4c7",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 64,
+      "total_deletions": 22,
+      "accepted_lines": 56,
+      "overriden_lines": 8
+    }
+  }
+}
