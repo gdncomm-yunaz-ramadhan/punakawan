@@ -18,7 +18,7 @@ type ApprovalSource struct {
 
 func (a *ApprovalSource) List(ctx context.Context, workspaceID string, filter contract.ApprovalFilter) ([]protocol.ApprovalRecord, error) {
 	if workspaceID != a.App.Workspace.ID {
-		return nil, fmt.Errorf("sources: workspace %q is not available (only %q is)", workspaceID, a.App.Workspace.ID)
+		return nil, fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, a.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 
 	recs, err := a.App.Approvals.List()

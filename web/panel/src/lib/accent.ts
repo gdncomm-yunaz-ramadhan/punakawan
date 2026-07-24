@@ -4,7 +4,7 @@
 // touched here, per the plan's rule that accent selection must not
 // recolor those semantics.
 
-export type AccentPresetId = "indigo" | "teal" | "blue" | "violet" | "amber";
+export type AccentPresetId = "wayang" | "indigo" | "teal" | "blue" | "violet" | "amber";
 
 export interface AccentPreset {
   id: AccentPresetId;
@@ -22,10 +22,28 @@ export interface AccentVars {
 
 export const ACCENT_STORAGE_KEY = "punakawan.accent";
 
-// Indigo reuses the default --color-accent token values from theme.css
-// exactly, so selecting it (or having no stored preference) is visually
-// identical to the un-overridden default theme.
+// Wayang reuses the default --color-accent token values from theme.css
+// exactly (the batik indigo-blue), so selecting it (or having no stored
+// preference) is visually identical to the un-overridden default theme.
+// It is the default preset (see getStoredAccentPreset). The order here
+// puts it first so it heads the AccentPicker list.
 export const ACCENT_PRESETS: AccentPreset[] = [
+  {
+    id: "wayang",
+    label: "Wayang",
+    light: {
+      "--color-accent": "#235fb5",
+      "--color-accent-hover": "#1b4a90",
+      "--color-accent-soft": "#e8eefb",
+      "--color-accent-contrast": "#ffffff",
+    },
+    dark: {
+      "--color-accent": "#7fa8ee",
+      "--color-accent-hover": "#a0c1f5",
+      "--color-accent-soft": "#1f2b40",
+      "--color-accent-contrast": "#10131c",
+    },
+  },
   {
     id: "indigo",
     label: "Indigo",
@@ -113,10 +131,10 @@ export function getPreset(id: AccentPresetId): AccentPreset {
 }
 
 export function getStoredAccentPreset(): AccentPresetId {
-  if (typeof window === "undefined") return "indigo";
+  if (typeof window === "undefined") return "wayang";
   const stored = window.localStorage.getItem(ACCENT_STORAGE_KEY);
   if (stored && ACCENT_PRESETS.some((p) => p.id === stored)) return stored as AccentPresetId;
-  return "indigo";
+  return "wayang";
 }
 
 // Applies a preset's light+dark var pairs as inline custom properties on

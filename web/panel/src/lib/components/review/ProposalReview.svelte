@@ -685,35 +685,47 @@
     font-size: 0.8rem;
     margin: 0.4rem 0 0;
   }
+  .primary-button,
+  .secondary-button,
+  .danger-button {
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 1.1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 44px;
+  }
   .primary-button {
-    border: none;
-    border-radius: 6px;
     background: var(--color-accent);
     color: var(--color-accent-contrast);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
+    box-shadow: var(--shadow-sm);
+  }
+  .primary-button:hover:not(:disabled) {
+    background: var(--color-accent-hover);
   }
   .secondary-button {
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-color: var(--color-border-strong);
     background: var(--color-surface);
     color: var(--color-text);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
+  }
+  .secondary-button:hover:not(:disabled) {
+    background: var(--color-surface-subtle);
+    border-color: var(--color-accent);
   }
   .danger-button {
-    border: none;
-    border-radius: 6px;
     background: var(--color-danger);
     color: var(--color-accent-contrast);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
+    box-shadow: var(--shadow-sm);
+  }
+  .danger-button:hover:not(:disabled) {
+    filter: brightness(0.92);
+  }
+  .primary-button:focus-visible,
+  .secondary-button:focus-visible,
+  .danger-button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
   .primary-button:disabled,
   .secondary-button:disabled,

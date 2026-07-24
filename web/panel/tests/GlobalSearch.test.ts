@@ -20,9 +20,9 @@ describe("GlobalSearch", () => {
       jsonResponse({
         items: [
           {
-            WorkspaceID: "ws-a",
-            Result: { Id: "pkw:requirement/repo-a/x", Title: "Refund SLA", Summary: "s", Type: "requirement", Score: 1, Match: { Kind: "bm25" }, Explanation: ["Title BM25"], Record: {} },
-            RRFScore: 0.016,
+            workspace_id: "ws-a",
+            result: { Id: "pkw:requirement/repo-a/x", Title: "Refund SLA", Summary: "s", Type: "requirement", Score: 1, Match: { Kind: "bm25" }, Explanation: ["Title BM25"], Record: {} },
+            rrf_score: 0.016,
           },
         ],
       }),

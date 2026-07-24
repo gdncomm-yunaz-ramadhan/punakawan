@@ -52,7 +52,7 @@ func KnowledgeListHandler(reader contract.KnowledgeReader) http.HandlerFunc {
 		if q := query.Get("q"); q != "" {
 			results, err := reader.Search(r.Context(), workspaceID, parseSearchRequest(query))
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
+				writeError(w, listErrorStatus(err), err)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"items": results})
@@ -80,7 +80,7 @@ func KnowledgeListHandler(reader contract.KnowledgeReader) http.HandlerFunc {
 
 		records, err := reader.List(r.Context(), workspaceID, filter)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeError(w, listErrorStatus(err), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": records})

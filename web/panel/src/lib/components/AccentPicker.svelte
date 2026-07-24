@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { ACCENT_PRESETS, applyAccentPreset, getStoredAccentPreset, type AccentPresetId } from "../accent";
 
-  let selected: AccentPresetId = $state("indigo");
+  let selected: AccentPresetId = $state("wayang");
 
   onMount(() => {
     selected = getStoredAccentPreset();

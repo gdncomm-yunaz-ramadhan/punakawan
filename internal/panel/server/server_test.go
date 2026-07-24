@@ -309,14 +309,6 @@ func TestServerSessionsEndpoints(t *testing.T) {
 	if body["id"] != "run-test-1" {
 		t.Fatalf("id = %v, want run-test-1", body["id"])
 	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/run-test-1/timeline")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if _, ok := body["items"]; !ok {
-		t.Fatalf("expected an items field: %+v", body)
-	}
 }
 
 func TestServerTasksEndpoints(t *testing.T) {
@@ -364,9 +356,9 @@ func TestServerTasksEndpoints(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
-	nodes, _ := body["Nodes"].([]any)
+	nodes, _ := body["nodes"].([]any)
 	if len(nodes) != 1 {
-		t.Fatalf("Nodes = %+v, want 1", nodes)
+		t.Fatalf("nodes = %+v, want 1", nodes)
 	}
 }
 

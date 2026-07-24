@@ -161,7 +161,10 @@ func TestRequestJiraClarificationSkipsTransitionWhenUnconfigured(t *testing.T) {
 	}
 }
 
-func TestRequestJiraClarificationFailsClearlyWhenNoMatchingTransition(t *testing.T) {
+func TestRequestJiraClarificationSoftSkipsWhenNoMatchingTransition(t *testing.T) {
+	// punokawan-7a1: a clarification_status with no matching transition is a
+	// soft skip (comment still posts, TransitionSkipReason explains why), not
+	// a hard error, matching update_jira_task_progress's transition behavior.
 	gate, _ := newJiraClarifyTestGate(t, twoTransitionsJSON)
 	cfg := &jiraworkflow.Config{ClarificationStatus: "Does Not Exist"}
 	in := RequestJiraClarificationInput{RunId: "run-1", IssueIdOrKey: "PAY-1", CommentBody: "hi", RequestedBy: "semar"}
@@ -174,14 +177,61 @@ func TestRequestJiraClarificationFailsClearlyWhenNoMatchingTransition(t *testing
 	}
 
 	out, err := requestJiraClarification(context.Background(), nil, gate, cfg, in)
-	if err == nil {
-		t.Fatal("expected an error when no transition matches the configured clarification status")
+	if err != nil {
+		t.Fatalf("requestJiraClarification: %v (no matching transition should be a soft skip, not an error)", err)
 	}
 	if !out.CommentPosted {
-		t.Error("CommentPosted = false, want true (comment still posts even if the transition fails)")
+		t.Error("CommentPosted = false, want true (comment still posts even when the transition is skipped)")
 	}
 	if out.TransitionApplied {
 		t.Error("TransitionApplied = true, want false")
+	}
+	if out.TransitionSkipReason == "" {
+		t.Error("TransitionSkipReason is empty, want an explanation of why no transition matched")
+	}
+}
+
+func TestRequestJiraClarificationMatchesTransitionByName(t *testing.T) {
+	// punokawan-7a1: reusing transitionIssueToStatus means a clarification_status
+	// naming a transition (not its target status) also resolves. "Send back" is
+	// transition id 11's NAME, not its toStatus name.
+	gate, fc := newJiraClarifyTestGate(t, twoTransitionsJSON)
+	cfg := &jiraworkflow.Config{ClarificationStatus: "Send back"}
+	in := RequestJiraClarificationInput{RunId: "run-1", IssueIdOrKey: "PAY-1", CommentBody: "hi", RequestedBy: "semar"}
+
+	if _, err := gate.RequestApproval(in.RunId, "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+	if err := gate.Approve(in.RunId, "ygrip"); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	out, err := requestJiraClarification(context.Background(), nil, gate, cfg, in)
+	if err != nil {
+		t.Fatalf("requestJiraClarification: %v", err)
+	}
+	if !out.TransitionApplied || out.TransitionId != "11" {
+		t.Fatalf("out = %+v, want TransitionApplied=true TransitionId=11 (matched by transition name)", out)
+	}
+	var sawTransition bool
+	for _, c := range fc.calls {
+		if c["op"] == "atlassian.transitionJiraIssue" && c["transitionId"] == "11" {
+			sawTransition = true
+		}
+	}
+	if !sawTransition {
+		t.Fatalf("calls = %+v, want a transitionJiraIssue with id 11", fc.calls)
+	}
+}
+
+func TestRequestJiraClarificationRejectsInvalidRequestedBy(t *testing.T) {
+	// punokawan-mkm: requested_by is validated against the protocol enum.
+	gate, _ := newJiraClarifyTestGate(t, twoTransitionsJSON)
+	cfg := &jiraworkflow.Config{}
+	in := RequestJiraClarificationInput{RunId: "run-1", IssueIdOrKey: "PAY-1", CommentBody: "hi", RequestedBy: "nobody"}
+
+	if _, err := requestJiraClarification(context.Background(), nil, gate, cfg, in); err == nil {
+		t.Fatal("expected an error for an invalid requested_by")
 	}
 }
 

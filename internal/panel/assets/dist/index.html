@@ -3,9 +3,68 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <title>Punakawan Panel</title>
-    <script type="module" crossorigin src="/assets/index-NohCgJXJ.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CbAPqF1e.css">
+    <script>
+      // No-flash theme + accent init (§13.3): this MUST run before Svelte
+      // mounts or paints, so it cannot import ../src/lib/theme.ts or
+      // ../src/lib/accent.ts - it duplicates their resolution logic and
+      // (for accent) preset table inline instead. Keep this in sync with
+      // theme.ts's getStoredThemePreference()/resolveTheme() and
+      // accent.ts's ACCENT_PRESETS if those ever change.
+      (function () {
+        try {
+          var pref = localStorage.getItem("punakawan.theme") || "system";
+          var resolved =
+            pref === "dark" || pref === "light"
+              ? pref
+              : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.setAttribute("data-theme", resolved);
+
+          var ACCENT_PRESETS = {
+            wayang: {
+              light: { "--color-accent": "#235fb5", "--color-accent-hover": "#1b4a90", "--color-accent-soft": "#e8eefb", "--color-accent-contrast": "#ffffff" },
+              dark: { "--color-accent": "#7fa8ee", "--color-accent-hover": "#a0c1f5", "--color-accent-soft": "#1f2b40", "--color-accent-contrast": "#10131c" },
+            },
+            indigo: {
+              light: { "--color-accent": "#5b5bd6", "--color-accent-hover": "#4b4bc4", "--color-accent-soft": "#ececfe", "--color-accent-contrast": "#ffffff" },
+              dark: { "--color-accent": "#8b8cf6", "--color-accent-hover": "#a0a1ff", "--color-accent-soft": "#29294f", "--color-accent-contrast": "#101321" },
+            },
+            teal: {
+              light: { "--color-accent": "#0f9f9c", "--color-accent-hover": "#0c8583", "--color-accent-soft": "#e2f7f6", "--color-accent-contrast": "#ffffff" },
+              dark: { "--color-accent": "#35c7c4", "--color-accent-hover": "#5cd8d5", "--color-accent-soft": "#123433", "--color-accent-contrast": "#071b1a" },
+            },
+            blue: {
+              light: { "--color-accent": "#2878c7", "--color-accent-hover": "#1f63a3", "--color-accent-soft": "#e4effa", "--color-accent-contrast": "#ffffff" },
+              dark: { "--color-accent": "#65a9ef", "--color-accent-hover": "#8ac0f4", "--color-accent-soft": "#132a41", "--color-accent-contrast": "#081420" },
+            },
+            violet: {
+              light: { "--color-accent": "#8b5cf6", "--color-accent-hover": "#7c3aed", "--color-accent-soft": "#f1eafe", "--color-accent-contrast": "#ffffff" },
+              dark: { "--color-accent": "#a78bfa", "--color-accent-hover": "#bda4fb", "--color-accent-soft": "#2c2350", "--color-accent-contrast": "#120d24" },
+            },
+            amber: {
+              light: { "--color-accent": "#b76e00", "--color-accent-hover": "#9a5c00", "--color-accent-soft": "#fdf0dc", "--color-accent-contrast": "#ffffff" },
+              dark: { "--color-accent": "#e5a940", "--color-accent-hover": "#efc06e", "--color-accent-soft": "#3a2b0f", "--color-accent-contrast": "#1a1305" },
+            },
+          };
+
+          var accentId = localStorage.getItem("punakawan.accent") || "wayang";
+          var preset = ACCENT_PRESETS[accentId] || ACCENT_PRESETS.wayang;
+          var vars = preset[resolved];
+          for (var key in vars) {
+            document.documentElement.style.setProperty(key, vars[key]);
+          }
+        } catch (e) {
+          // localStorage/matchMedia unavailable (e.g. privacy mode) - fall
+          // back to the light theme + wayang accent defaults already set
+          // by theme.css.
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-9qLx-R-P.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-B2GLFUo1.css">
   </head>
   <body>
     <div id="app"></div>

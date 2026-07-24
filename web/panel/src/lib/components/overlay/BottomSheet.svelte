@@ -95,7 +95,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgb(0 0 0 / 0.4);
     z-index: 30;
   }
   .sheet {
@@ -104,12 +104,12 @@
     right: 0;
     bottom: 0;
     max-height: min(80vh, 640px);
-    background: var(--color-surface);
+    background: var(--color-surface-raised);
     border: 1px solid var(--color-border);
     border-bottom: none;
-    border-top-left-radius: var(--radius-card);
-    border-top-right-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     padding: 0.5rem 1.25rem 1.25rem;
     overflow-y: auto;
     z-index: 31;

@@ -197,6 +197,21 @@ func TestWorkspaceSourceListWithRegistryDescribesAllEntries(t *testing.T) {
 	if !contains(ids, a.Workspace.ID) || !contains(ids, "other") {
 		t.Fatalf("ids = %v, want both %q and \"other\"", ids, a.Workspace.ID)
 	}
+
+	// Order preservation: List is parallelized (punokawan-d9h) but reassembles
+	// by index, so the summaries must follow the registry's own entry order.
+	entries, err := reg.List()
+	if err != nil {
+		t.Fatalf("reg.List: %v", err)
+	}
+	if len(entries) != len(summaries) {
+		t.Fatalf("entry/summary count mismatch: %d vs %d", len(entries), len(summaries))
+	}
+	for i := range entries {
+		if summaries[i].ID != entries[i].Id {
+			t.Fatalf("order not preserved at %d: summary=%q registry=%q", i, summaries[i].ID, entries[i].Id)
+		}
+	}
 }
 
 func contains(ss []string, s string) bool {

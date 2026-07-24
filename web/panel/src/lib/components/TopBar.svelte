@@ -18,6 +18,7 @@
 </script>
 
 <header>
+  <img class="logo" src="/logo.svg" alt="" aria-hidden="true" width="28" height="28" />
   <h1>Punakawan Panel</h1>
   <div class="spacer"></div>
   {#if system}
@@ -35,11 +36,33 @@
 
 <style>
   header {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.75rem;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--color-border);
+    background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-subtle) 100%);
+  }
+  /* Signature batik ribbon: a 3px gold->terracotta->teal->indigo bar
+     running the full width of the header's top edge. */
+  header::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient-brand);
+  }
+  .logo {
+    display: block;
+    flex-shrink: 0;
+  }
+  /* Logo art is a monochrome black silhouette; invert it in dark mode so it
+     reads as light-on-dark. data-theme lives on <html> (see index.html). */
+  :global(html[data-theme="dark"]) .logo {
+    filter: invert(1);
   }
   h1 {
     font-size: 1.1rem;
@@ -52,11 +75,11 @@
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
-    background: #eee;
+    background: var(--color-surface-subtle);
   }
   .version,
   time {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
   }
   .connection {
@@ -64,15 +87,15 @@
     align-items: center;
     gap: 0.3rem;
     font-size: 0.8rem;
-    color: #666;
+    color: var(--color-text-muted);
   }
   .connection-open {
-    color: #1e7d32;
+    color: var(--color-success);
   }
   .connection-error {
-    color: #c62828;
+    color: var(--color-danger);
   }
   .connection-connecting {
-    color: #9a6700;
+    color: var(--color-warning);
   }
 </style>

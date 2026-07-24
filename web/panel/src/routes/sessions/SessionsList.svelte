@@ -3,6 +3,8 @@
   import { listSessions, type PanelSessionSummary } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import DataTable from "../../lib/components/data/DataTable.svelte";
+  import type { Column, RowAction } from "../../lib/components/data/types";
 
   interface Props {
     workspaceId: string;
@@ -12,6 +14,8 @@
   let sessions: PanelSessionSummary[] = $state([]);
   let error: string | null = $state(null);
   let loading = $state(true);
+  let page = $state(1);
+  let pageSize = $state(10);
 
   async function load(id: string) {
     loading = true;
@@ -35,75 +39,49 @@
   $effect(() => {
     load(workspaceId);
   });
+
+  const columns: Column<PanelSessionSummary>[] = [
+    { key: "id", label: "Session", primary: true },
+    { key: "workflow", label: "Workflow", sortable: true },
+    { key: "status", label: "Status", sortable: true },
+    { key: "active_role", label: "Role", render: (s) => s.active_role ?? "—" },
+    { key: "started_at", label: "Started", sortable: true, render: (s) => new Date(s.started_at).toLocaleString() },
+    { key: "updated_at", label: "Updated", sortable: true, render: (s) => new Date(s.updated_at).toLocaleString() },
+  ];
+
+  const rowAction: RowAction<PanelSessionSummary> = {
+    label: "Open",
+    onSelect: (s) => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(s.id)}`),
+  };
 </script>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if error}
+{#if error}
   <p role="alert" class="error">Failed to load sessions: {error}</p>
-{:else if sessions.length === 0}
-  <p>No sessions yet.</p>
 {:else}
-  <table>
-    <thead>
-      <tr>
-        <th>Session</th>
-        <th>Workflow</th>
-        <th>Status</th>
-        <th>Role</th>
-        <th>Started</th>
-        <th>Updated</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each sessions as s (s.id)}
-        <tr
-          class="row"
-          onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(s.id)}`)}
-        >
-          <td>{s.id}</td>
-          <td>{s.workflow}</td>
-          <td><span class="status status-{s.status}">{s.status}</span></td>
-          <td>{s.active_role ?? "—"}</td>
-          <td>{new Date(s.started_at).toLocaleString()}</td>
-          <td>{new Date(s.updated_at).toLocaleString()}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  <!--
+    Migrated (UI-011/UI-017) to the shared DataTable instead of a bespoke
+    <table>: gains sorting, pagination, sticky header, and a mobile
+    card-list fallback, and stays visually consistent with the Overview
+    and Tasks tables (and theme-aware in both light and dark).
+  -->
+  <DataTable
+    {columns}
+    rows={sessions}
+    {loading}
+    {page}
+    {pageSize}
+    onPageChange={(p) => (page = p)}
+    onPageSizeChange={(s) => {
+      pageSize = s;
+      page = 1;
+    }}
+    {rowAction}
+    emptyMessage="No sessions yet."
+  />
 {/if}
 
 <style>
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.9rem;
-  }
-  th {
-    text-align: left;
-    color: #666;
-    font-weight: 500;
-    font-size: 0.8rem;
-    padding: 0.4rem 0.6rem;
-    border-bottom: 1px solid #ddd;
-  }
-  td {
-    padding: 0.5rem 0.6rem;
-    border-bottom: 1px solid #eee;
-  }
-  .row {
-    cursor: pointer;
-  }
-  .row:hover {
-    background: #f7f7f7;
-  }
-  .status {
-    font-size: 0.8rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    background: #eee;
-  }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
 </style>

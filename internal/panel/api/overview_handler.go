@@ -12,7 +12,11 @@ import (
 
 // NeedsAttentionKind categorizes one Overview.NeedsAttention entry, per
 // §14.1's fixed priority order (failed session, pending approval, blocked
-// task, unavailable workspace, source failure, stale active session).
+// task, unavailable workspace, stale active session). A "source failure"
+// kind was reserved here originally, but per-source health is not available
+// from WorkspaceReader.List (it returns WorkspaceSummary, no Health), and a
+// wholly-unavailable source already surfaces as an unavailable_workspace
+// entry, so the dead kind was removed rather than left un-emitted.
 type NeedsAttentionKind string
 
 const (
@@ -20,13 +24,7 @@ const (
 	NeedsAttentionPendingApproval      NeedsAttentionKind = "pending_approval"
 	NeedsAttentionBlockedTasks         NeedsAttentionKind = "blocked_tasks"
 	NeedsAttentionUnavailableWorkspace NeedsAttentionKind = "unavailable_workspace"
-	// NeedsAttentionSourceFailure is defined but not populated yet:
-	// WorkspaceReader.List returns WorkspaceSummary (no per-source Health),
-	// and computing per-workspace Health here would mean a Get call per
-	// workspace on every Overview request. Wiring this in cheaply needs a
-	// bulk health reader, which is not part of Phase 2's scope.
-	NeedsAttentionSourceFailure NeedsAttentionKind = "source_failure"
-	NeedsAttentionStaleSession  NeedsAttentionKind = "stale_session"
+	NeedsAttentionStaleSession         NeedsAttentionKind = "stale_session"
 )
 
 // NeedsAttentionItem is one entry in Overview.NeedsAttention.
@@ -57,6 +55,16 @@ type Overview struct {
 	NeedsAttention      []NeedsAttentionItem           `json:"needs_attention"`
 	WorkspaceHealth     []contract.WorkspaceSummary    `json:"workspace_health"`
 	RecentSessions      []protocol.PanelSessionSummary `json:"recent_sessions"`
+	// PrimaryWorkspaceId names the single workspace this panel instance was
+	// loaded for. The scope of this response is deliberately mixed and this
+	// field makes it explicit: BlockedTasks, AvailableWorkspaces, and
+	// WorkspaceHealth aggregate across every registered workspace, but
+	// ActiveSessions, RecentSessions, and PendingApprovals cover only the
+	// primary workspace - the non-workspace sources cannot serve any other
+	// workspace's sessions/approvals (they 404). The frontend uses this to
+	// label the primary-only cards rather than implying a cross-workspace
+	// total.
+	PrimaryWorkspaceId string `json:"primary_workspace_id"`
 }
 
 // recentSessionLimit bounds RecentSessions, per §18's "bound all list
@@ -158,6 +166,7 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 			NeedsAttention:      final,
 			WorkspaceHealth:     workspaces,
 			RecentSessions:      recent,
+			PrimaryWorkspaceId:  workspaceID,
 		})
 	}
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getWorkspace, type WorkspaceDetail } from "../../lib/api/client";
+  import { getWorkspace, listApprovals, type WorkspaceDetail } from "../../lib/api/client";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import { navigate } from "../../lib/router/router.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
@@ -11,6 +11,7 @@
   let { workspaceId }: Props = $props();
 
   let detail: WorkspaceDetail | null = $state(null);
+  let pendingApprovals: number | null = $state(null);
   let error: string | null = $state(null);
   let loading = $state(true);
 
@@ -18,8 +19,17 @@
     loading = true;
     error = null;
     detail = null;
+    pendingApprovals = null;
     try {
-      detail = await getWorkspace(id);
+      const d = await getWorkspace(id);
+      detail = d;
+      // Sessions/tasks/knowledge/approvals are only served for the primary
+      // workspace; fetching the pending-approval count for any other one
+      // would 404, so only do it when this is the primary workspace.
+      if (d.primary) {
+        const appr = await listApprovals(id, "pending");
+        pendingApprovals = appr.items.length;
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -34,6 +44,10 @@
   $effect(() => {
     load(workspaceId);
   });
+
+  function drill(sub: string) {
+    navigate(`/workspaces/${encodeURIComponent(workspaceId)}/${sub}`);
+  }
 </script>
 
 {#if loading}
@@ -41,62 +55,46 @@
 {:else if error}
   <p role="alert" class="error">Failed to load this workspace: {error}</p>
 {:else if detail}
+  {@const canDrill = detail.primary}
   <header>
     <h1>{detail.display_name || detail.id}</h1>
     <StatusBadge availability={detail.availability} />
   </header>
   <p class="path">{detail.path}</p>
 
+  {#if !canDrill}
+    <p class="scope-note" role="note">
+      This is not the primary workspace this panel instance is serving. Its sessions, tasks, knowledge, and
+      approvals are not available here, so the cards below are read-only summary counts.
+    </p>
+  {/if}
+
+  {#snippet statCard(value: string | number, label: string, sub: string)}
+    {#if canDrill}
+      <div
+        class="card clickable"
+        role="button"
+        tabindex="0"
+        onclick={() => drill(sub)}
+        onkeydown={(e) => e.key === "Enter" && drill(sub)}
+      >
+        <strong>{value}</strong>
+        <span>{label}</span>
+      </div>
+    {:else}
+      <div class="card">
+        <strong>{value}</strong>
+        <span>{label}</span>
+      </div>
+    {/if}
+  {/snippet}
+
   <section class="cards" aria-label="Summary">
-    <div
-      class="card clickable"
-      role="button"
-      tabindex="0"
-      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/sessions`)}
-      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/sessions`)}
-    >
-      <strong>{detail.active_session_count}</strong>
-      <span>Active sessions</span>
-    </div>
-    <div
-      class="card clickable"
-      role="button"
-      tabindex="0"
-      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
-      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
-    >
-      <strong>{detail.open_task_count}</strong>
-      <span>Open tasks</span>
-    </div>
-    <div
-      class="card clickable"
-      role="button"
-      tabindex="0"
-      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
-      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/tasks`)}
-    >
-      <strong>{detail.blocked_task_count}</strong>
-      <span>Blocked tasks</span>
-    </div>
-    <div
-      class="card clickable"
-      role="button"
-      tabindex="0"
-      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/knowledge`)}
-      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/knowledge`)}
-    >
-      <strong>{detail.knowledge_count}</strong>
-      <span>Knowledge records</span>
-    </div>
-    <div
-      class="card clickable"
-      role="button"
-      tabindex="0"
-      onclick={() => navigate(`/workspaces/${encodeURIComponent(workspaceId)}/approvals`)}
-      onkeydown={(e) => e.key === "Enter" && navigate(`/workspaces/${encodeURIComponent(workspaceId)}/approvals`)}
-    >
-      <span>Approvals</span>
-    </div>
+    {@render statCard(detail.active_session_count, "Active sessions", "sessions")}
+    {@render statCard(detail.open_task_count, "Open tasks", "tasks")}
+    {@render statCard(detail.blocked_task_count, "Blocked tasks", "tasks")}
+    {@render statCard(detail.knowledge_count, "Knowledge records", "knowledge")}
+    {@render statCard(canDrill ? (pendingApprovals ?? "—") : "—", "Pending approvals", "approvals")}
   </section>
 
   <section aria-labelledby="source-health-heading">
@@ -124,12 +122,21 @@
     margin: 0;
   }
   .path {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
     margin-top: 0.15rem;
   }
+  .scope-note {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    margin: 0.5rem 0 0;
+  }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
   .cards {
     display: grid;
@@ -138,7 +145,7 @@
     margin: 1rem 0 1.5rem;
   }
   .card {
-    border: 1px solid #ddd;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.75rem 1rem;
     display: grid;
@@ -151,10 +158,10 @@
     cursor: pointer;
   }
   .card.clickable:hover {
-    background: #f7f7f7;
+    background: var(--color-surface-subtle);
   }
   .card span {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
   }
   h2 {
@@ -167,7 +174,7 @@
     gap: 0.4rem;
   }
   ul.health li {
-    border: 1px solid #eee;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
     display: flex;
@@ -179,7 +186,7 @@
     min-width: 100px;
   }
   .message {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
   }
 </style>

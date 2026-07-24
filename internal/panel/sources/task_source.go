@@ -24,7 +24,7 @@ type TaskSource struct {
 
 func (t *TaskSource) checkWorkspace(workspaceID string) error {
 	if workspaceID != t.App.Workspace.ID {
-		return fmt.Errorf("sources: workspace %q is not available (only %q is)", workspaceID, t.App.Workspace.ID)
+		return fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, t.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 	return nil
 }

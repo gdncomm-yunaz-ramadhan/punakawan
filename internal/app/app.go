@@ -244,6 +244,23 @@ func (a *App) OpenSearchIndex() (*search.Index, error) {
 	return ix, nil
 }
 
+// SearchKnowledge synchronizes the search index to the knowledge store and
+// runs req against it, holding searchIndexMu across both. search.Rebuild is a
+// read-modify-write over the shared index, so two concurrent search_knowledge
+// calls must not interleave a rebuild with each other's read (punokawan-hzp).
+// Rebuild is watermark-gated, so in steady state (no knowledge mutations
+// between searches) it is a cheap no-op and this lock is held only briefly
+// (punokawan-77q).
+func (a *App) SearchKnowledge(store *knowledge.Store, ix *search.Index, req search.Request) ([]search.Result, error) {
+	a.searchIndexMu.Lock()
+	defer a.searchIndexMu.Unlock()
+
+	if err := search.Rebuild(store, ix); err != nil {
+		return nil, err
+	}
+	return search.Search(store, ix, req)
+}
+
 // Close releases resources opened on demand (the knowledge store's Dolt
 // server and the BM25 search index, if OpenKnowledge/OpenSearchIndex were
 // ever called) and shuts down any adapter processes the AdapterRegistry has

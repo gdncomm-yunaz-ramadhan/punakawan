@@ -37,6 +37,15 @@ func resolveWithinRoot(root, relPath string) (string, error) {
 	return filepath.Join(absRoot, cleaned), nil
 }
 
+// ResolveWithinRoot resolves relPath against root, refusing any path that is
+// absolute or escapes root via "..". It is the exported entry point other
+// packages use to confine a caller-supplied relative path to a task worktree
+// the same way WriteFile does (punokawan-doe), without duplicating the
+// traversal-rejection logic.
+func ResolveWithinRoot(root, relPath string) (string, error) {
+	return resolveWithinRoot(root, relPath)
+}
+
 // WriteFile writes content to relPath within worktreeRoot, after confirming
 // pol allows the write (§16.3 policy levels) and that relPath cannot escape
 // worktreeRoot. Parent directories are created as needed.

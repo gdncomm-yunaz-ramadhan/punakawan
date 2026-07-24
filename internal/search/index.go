@@ -2,6 +2,8 @@ package search
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/analysis/analyzer/keyword"
@@ -59,6 +61,17 @@ func buildIndexMapping() mapping.IndexMapping {
 // can always be rebuilt from the Store.
 type Index struct {
 	bleve bleve.Index
+
+	// syncMu guards the last-synced watermark below. Rebuild is a
+	// read-modify-write over the shared index, so two concurrent callers
+	// (e.g. two search_knowledge calls) must not interleave it
+	// (punokawan-hzp). App-level callers additionally serialize Rebuild+Search
+	// under App.searchIndexMu; syncMu keeps Rebuild self-safe for callers that
+	// do not (e.g. capsule retrieval).
+	syncMu       sync.Mutex
+	hasWatermark bool
+	syncedCount  int
+	syncedNewest time.Time
 }
 
 // OpenIndex opens the Bleve index at path, creating it with §11.4's mapping
@@ -101,11 +114,29 @@ func (ix *Index) DeleteRecord(id string) error {
 // (an empty new index) and ongoing incremental sync, rather than
 // maintaining a separate change-diffing mechanism that could drift out of
 // sync with the canonical Dolt store.
+//
+// Rebuild is watermark-gated (punokawan-77q): search_knowledge calls it
+// before every query for correctness, but the full scan + per-record
+// DetectIdentifiers + batch upsert is O(N) and pure waste when nothing has
+// changed. It records the (record count, newest updated_at) it last synced to
+// and short-circuits to a no-op when the store still matches, so steady-state
+// searches skip the rebuild entirely. Any Put/Supersede bumps updated_at and
+// any Delete lowers the count, so a real mutation always breaks the match and
+// forces a resync.
 func Rebuild(store *knowledge.Store, ix *Index) error {
 	records, err := store.AllWithUpdatedAt()
 	if err != nil {
 		return fmt.Errorf("search: rebuild: list records: %w", err)
 	}
+
+	ix.syncMu.Lock()
+	defer ix.syncMu.Unlock()
+
+	count, newest := watermarkOf(records)
+	if ix.hasWatermark && ix.syncedCount == count && ix.syncedNewest.Equal(newest) {
+		return nil
+	}
+
 	current := make(map[string]bool, len(records))
 	for _, rec := range records {
 		current[rec.Record.Id] = true
@@ -130,7 +161,24 @@ func Rebuild(store *knowledge.Store, ix *Index) error {
 	if err := ix.bleve.Batch(batch); err != nil {
 		return fmt.Errorf("search: rebuild: execute batch: %w", err)
 	}
+
+	ix.hasWatermark = true
+	ix.syncedCount = count
+	ix.syncedNewest = newest
 	return nil
+}
+
+// watermarkOf summarizes store state as the record count and the newest
+// updated_at across all records - the cheap signature Rebuild compares against
+// its last sync to decide whether a re-index is needed.
+func watermarkOf(records []knowledge.RecordWithUpdatedAt) (int, time.Time) {
+	var newest time.Time
+	for _, rec := range records {
+		if rec.UpdatedAt.After(newest) {
+			newest = rec.UpdatedAt
+		}
+	}
+	return len(records), newest
 }
 
 // allDocIDs returns every document id currently in the Bleve index.

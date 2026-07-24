@@ -14,7 +14,7 @@ func EvidenceListHandler(reader contract.EvidenceReader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		items, err := reader.List(r.Context(), r.PathValue("workspaceId"), r.PathValue("sessionId"))
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeError(w, listErrorStatus(err), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})

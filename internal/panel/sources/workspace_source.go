@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
@@ -79,10 +80,27 @@ func (w *WorkspaceSource) List(ctx context.Context) ([]contract.WorkspaceSummary
 		return []contract.WorkspaceSummary{detail.WorkspaceSummary}, nil
 	}
 
-	out := make([]contract.WorkspaceSummary, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, w.summaryFor(ctx, e))
+	// Each entry's summary is independent (a non-primary workspace is
+	// app.Load'd fresh and its bd/dolt/git health probed in isolation), so
+	// describing them sequentially made List O(workspaces) in wall-clock -
+	// ~10s for a handful of workspaces, since every entry shells out to
+	// `bd list` + `bd ready` and opens a Dolt store (punokawan-d9h). Fan the
+	// per-entry work out with a bounded worker pool and reassemble in the
+	// registry's original order.
+	out := make([]contract.WorkspaceSummary, len(entries))
+	const maxConcurrent = 4
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	for i, e := range entries {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, e protocol.PanelWorkspaceRegistryEntry) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			out[i] = w.summaryFor(ctx, e)
+		}(i, e)
 	}
+	wg.Wait()
 	return out, nil
 }
 
@@ -91,7 +109,7 @@ func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract
 		return w.describe(ctx, w.App, nil)
 	}
 	if w.Registry == nil {
-		return contract.WorkspaceDetail{}, fmt.Errorf("sources: workspace %q is not available (only %q is)", workspaceID, w.App.Workspace.ID)
+		return contract.WorkspaceDetail{}, fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, w.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 
 	entry, err := w.Registry.Get(workspaceID)
@@ -173,13 +191,28 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 	if !beads.Available(ctx, a.Supervisor, a.Workspace.Root) {
 		msg := "bd binary not found or not initialized in this workspace"
 		health = append(health, protocol.PanelSourceHealth{Source: "bd", Availability: protocol.PanelSourceHealthAvailabilityUnavailable, Message: &msg, CheckedAt: now})
-	} else if issues, err := beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{}); err != nil {
+	} else if issues, err := beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{Limit: -1}); err != nil {
 		health = append(health, healthDown("bd", err, now))
 	} else {
+		// The blocked count must match the status board's boardStatus,
+		// which treats an "open" issue bd does not currently consider ready
+		// (an unmet "blocks" dependency) as blocked - bd does not flip such
+		// an issue's stored Status to "blocked". Counting only
+		// Status=="blocked" under-reports against the board and overview, so
+		// fold in the same readiness set boardStatus uses (bd ready).
+		ready := map[string]bool{}
+		if readyIssues, err := beads.Ready(ctx, a.Supervisor, a.Workspace.Root, beads.ReadyOptions{}); err == nil {
+			for _, ri := range readyIssues {
+				ready[ri.ID] = true
+			}
+		}
 		for _, issue := range issues {
 			switch issue.Status {
 			case "open":
 				openTasks++
+				if !ready[issue.ID] {
+					blockedTasks++
+				}
 			case "blocked":
 				blockedTasks++
 			}
@@ -223,6 +256,7 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 		KnowledgeCount:     knowledgeCount,
 		LastActivityAt:     now,
 		Pinned:             pinned,
+		Primary:            a.Workspace.ID == w.App.Workspace.ID,
 	}
 	return contract.WorkspaceDetail{WorkspaceSummary: summary, Health: health}, nil
 }

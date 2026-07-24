@@ -68,6 +68,16 @@ type UpdateJiraTaskProgressOutput struct {
 	// matches, distinct from "no transition was requested" (both leave
 	// Transitioned false, so this is left empty in the latter case).
 	TransitionSkipReason string `json:"transition_skip_reason,omitempty"`
+	// FailedStep/FailedError report a partial success (punokawan-4tw): when
+	// an earlier sub-write in this call succeeded but a later one failed,
+	// these name the failed step ("estimate", "worklog", "comment",
+	// "transition") and carry its error, and the call still returns as a
+	// non-error result so the caller sees exactly what was applied and does
+	// not re-run the whole tool (which would duplicate the non-dedup
+	// worklog/comment writes). The failed step is queued for retry via the
+	// adapter sync queue; see list_jira_sync_queue.
+	FailedStep  string `json:"failed_step,omitempty"`
+	FailedError string `json:"failed_error,omitempty"`
 }
 
 func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, UpdateJiraTaskProgressInput) (*mcp.CallToolResult, UpdateJiraTaskProgressOutput, error) {
@@ -92,7 +102,16 @@ func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallTo
 // spawned adapter process, which would require live Jira credentials.
 func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, cfg *jiraworkflow.Config, in UpdateJiraTaskProgressInput) (UpdateJiraTaskProgressOutput, error) {
 	var out UpdateJiraTaskProgressOutput
-	requestedBy := protocol.ApprovalRecordRequestedBy(in.RequestedBy)
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+
+	// anySucceeded tracks whether an earlier sub-write in this call already
+	// applied. On a later failure, recordPartialFailure uses it to decide
+	// between surfacing an ordinary error (nothing applied yet) and returning
+	// a non-error partial-success result (punokawan-4tw).
+	anySucceeded := false
 
 	estimateHours, hasEstimate, estimateSkipReason := resolveEstimateHours(cfg, in)
 	out.EstimateSkipReason = estimateSkipReason
@@ -107,11 +126,12 @@ func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate 
 				},
 			},
 		}, requestedBy); err != nil {
-			return out, fmt.Errorf("mcpserver: update original estimate: %w", err)
+			return out, recordPartialFailure(&out.FailedStep, &out.FailedError, anySucceeded, "estimate", fmt.Errorf("mcpserver: update original estimate: %w", err))
 		}
 		out.EstimateUpdated = true
 		out.EstimateHours = estimateHours
 		out.RemainingEstimateHours = remainingHours
+		anySucceeded = true
 	}
 
 	if in.WorklogHours != nil {
@@ -119,9 +139,10 @@ func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate 
 			"issueIdOrKey":     in.IssueIdOrKey,
 			"timeSpentSeconds": int(math.Round(*in.WorklogHours * 3600)),
 		}, requestedBy); err != nil {
-			return out, fmt.Errorf("mcpserver: add worklog: %w", err)
+			return out, recordPartialFailure(&out.FailedStep, &out.FailedError, anySucceeded, "worklog", fmt.Errorf("mcpserver: add worklog: %w", err))
 		}
 		out.WorklogAdded = true
+		anySucceeded = true
 	}
 
 	if in.Comment != "" {
@@ -129,17 +150,18 @@ func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate 
 			"issueIdOrKey": in.IssueIdOrKey,
 			"commentBody":  in.Comment,
 		}, requestedBy); err != nil {
-			return out, fmt.Errorf("mcpserver: post comment: %w", err)
+			return out, recordPartialFailure(&out.FailedStep, &out.FailedError, anySucceeded, "comment", fmt.Errorf("mcpserver: post comment: %w", err))
 		}
 		out.CommentPosted = true
+		anySucceeded = true
 	}
 
 	if in.TransitionToStatus != "" {
-		transitioned, transitionedTo, skipReason, err := transitionIssueToStatus(
+		transitioned, _, transitionedTo, skipReason, err := transitionIssueToStatus(
 			ctx, req, gate, in.RunId, in.IssueIdOrKey, in.TransitionToStatus, requestedBy,
 		)
 		if err != nil {
-			return out, fmt.Errorf("mcpserver: transition issue: %w", err)
+			return out, recordPartialFailure(&out.FailedStep, &out.FailedError, anySucceeded, "transition", fmt.Errorf("mcpserver: transition issue: %w", err))
 		}
 		out.Transitioned = transitioned
 		out.TransitionedTo = transitionedTo
@@ -165,12 +187,12 @@ func transitionIssueToStatus(
 	issueIDOrKey string,
 	targetStatusName string,
 	requestedBy protocol.ApprovalRecordRequestedBy,
-) (transitioned bool, transitionedTo string, skipReason string, err error) {
+) (transitioned bool, transitionID string, transitionedTo string, skipReason string, err error) {
 	raw, err := invokeAdapterOperation(ctx, req, gate, runID, "atlassian.getTransitionsForJiraIssue", map[string]any{
 		"issueIdOrKey": issueIDOrKey,
 	}, requestedBy)
 	if err != nil {
-		return false, "", "", fmt.Errorf("list available transitions: %w", err)
+		return false, "", "", "", fmt.Errorf("list available transitions: %w", err)
 	}
 
 	var result struct {
@@ -184,7 +206,7 @@ func transitionIssueToStatus(
 		} `json:"transitions"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return false, "", "", fmt.Errorf("decode available transitions: %w", err)
+		return false, "", "", "", fmt.Errorf("decode available transitions: %w", err)
 	}
 
 	var matchID, matchToStatus string
@@ -198,7 +220,7 @@ func transitionIssueToStatus(
 		}
 	}
 	if matchID == "" {
-		return false, "", fmt.Sprintf(
+		return false, "", "", fmt.Sprintf(
 			"no transition from the issue's current status reaches %q; available target statuses: %s",
 			targetStatusName, strings.Join(available, ", "),
 		), nil
@@ -208,10 +230,10 @@ func transitionIssueToStatus(
 		"issueIdOrKey": issueIDOrKey,
 		"transitionId": matchID,
 	}, requestedBy); err != nil {
-		return false, "", "", fmt.Errorf("fire transition %q: %w", matchID, err)
+		return false, "", "", "", fmt.Errorf("fire transition %q: %w", matchID, err)
 	}
 
-	return true, matchToStatus, "", nil
+	return true, matchID, matchToStatus, "", nil
 }
 
 // resolveEstimateHours implements the user's decision: an explicit

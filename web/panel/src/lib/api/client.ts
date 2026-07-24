@@ -28,6 +28,10 @@ export interface WorkspaceSummary {
   knowledge_count: number;
   last_activity_at: string;
   pinned: boolean;
+  // True only for the single workspace this panel instance serves; every
+  // other workspace's sessions/tasks/knowledge/approvals are unavailable
+  // here (they 404), so the UI disables their drill-down navigation.
+  primary: boolean;
 }
 
 export interface SourceHealth {
@@ -90,7 +94,6 @@ export type NeedsAttentionKind =
   | "pending_approval"
   | "blocked_tasks"
   | "unavailable_workspace"
-  | "source_failure"
   | "stale_session";
 
 export interface NeedsAttentionItem {
@@ -108,6 +111,11 @@ export interface Overview {
   needs_attention: NeedsAttentionItem[];
   workspace_health: WorkspaceSummary[];
   recent_sessions: PanelSessionSummary[];
+  // The single workspace this panel instance serves. active_sessions,
+  // recent_sessions, and pending_approvals cover only this workspace,
+  // whereas blocked_tasks/available_workspaces/workspace_health span all
+  // registered workspaces.
+  primary_workspace_id: string;
 }
 
 export interface TimelineEvent {
@@ -274,15 +282,15 @@ export interface TaskDetail {
 }
 
 export interface TaskGraphEdge {
-  From: string;
-  To: string;
-  Type: string;
+  from: string;
+  to: string;
+  type: string;
 }
 
 export interface TaskGraph {
-  Nodes: TaskSummary[];
-  Edges: TaskGraphEdge[];
-  Cycles: string[][];
+  nodes: TaskSummary[];
+  edges: TaskGraphEdge[];
+  cycles: string[][];
 }
 
 export interface TaskFilter {
@@ -523,9 +531,9 @@ export function getKnowledgeHistory(workspaceId: string, knowledgeId: string): P
 }
 
 export interface GlobalSearchResult {
-  WorkspaceID: string;
-  Result: SearchResult;
-  RRFScore: number;
+  workspace_id: string;
+  result: SearchResult;
+  rrf_score: number;
 }
 
 export function globalSearch(

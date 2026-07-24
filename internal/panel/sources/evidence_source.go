@@ -48,7 +48,7 @@ type EvidenceSource struct {
 
 func (e *EvidenceSource) checkWorkspace(workspaceID string) error {
 	if workspaceID != e.App.Workspace.ID {
-		return fmt.Errorf("sources: workspace %q is not available (only %q is)", workspaceID, e.App.Workspace.ID)
+		return fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, e.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 	return nil
 }

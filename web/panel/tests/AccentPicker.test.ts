@@ -16,16 +16,16 @@ afterEach(() => {
 });
 
 describe("AccentPicker", () => {
-  it("renders all five presets", () => {
+  it("renders all presets", () => {
     render(AccentPicker);
-    for (const label of ["Indigo", "Teal", "Blue", "Violet", "Amber"]) {
+    for (const label of ["Wayang", "Indigo", "Teal", "Blue", "Violet", "Amber"]) {
       expect(screen.getByRole("radio", { name: label })).toBeTruthy();
     }
   });
 
-  it("defaults to Indigo selected", () => {
+  it("defaults to Wayang selected", () => {
     render(AccentPicker);
-    expect(screen.getByRole("radio", { name: "Indigo" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Wayang" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("clicking Teal sets --color-accent to teal's light hex and persists the preset id", async () => {

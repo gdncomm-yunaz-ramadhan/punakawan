@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <title>Punakawan Panel</title>
     <script>
       // No-flash theme + accent init (§13.3): this MUST run before Svelte
@@ -23,6 +24,10 @@
           document.documentElement.setAttribute("data-theme", resolved);
 
           var ACCENT_PRESETS = {
+            wayang: {
+              light: { "--color-accent": "#235fb5", "--color-accent-hover": "#1b4a90", "--color-accent-soft": "#e8eefb", "--color-accent-contrast": "#ffffff" },
+              dark: { "--color-accent": "#7fa8ee", "--color-accent-hover": "#a0c1f5", "--color-accent-soft": "#1f2b40", "--color-accent-contrast": "#10131c" },
+            },
             indigo: {
               light: { "--color-accent": "#5b5bd6", "--color-accent-hover": "#4b4bc4", "--color-accent-soft": "#ececfe", "--color-accent-contrast": "#ffffff" },
               dark: { "--color-accent": "#8b8cf6", "--color-accent-hover": "#a0a1ff", "--color-accent-soft": "#29294f", "--color-accent-contrast": "#101321" },
@@ -45,15 +50,15 @@
             },
           };
 
-          var accentId = localStorage.getItem("punakawan.accent") || "indigo";
-          var preset = ACCENT_PRESETS[accentId] || ACCENT_PRESETS.indigo;
+          var accentId = localStorage.getItem("punakawan.accent") || "wayang";
+          var preset = ACCENT_PRESETS[accentId] || ACCENT_PRESETS.wayang;
           var vars = preset[resolved];
           for (var key in vars) {
             document.documentElement.style.setProperty(key, vars[key]);
           }
         } catch (e) {
           // localStorage/matchMedia unavailable (e.g. privacy mode) - fall
-          // back to the light theme + indigo accent defaults already set
+          // back to the light theme + wayang accent defaults already set
           // by theme.css.
         }
       })();

@@ -122,8 +122,8 @@
     right: 0;
     height: 100vh;
     width: min(420px, 100vw);
-    background: white;
-    border-left: 1px solid #ddd;
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
     padding: 1rem 1.25rem;
     overflow-y: auto;
     z-index: 11;
@@ -148,12 +148,12 @@
     font-weight: 600;
   }
   .meta {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
     text-transform: capitalize;
   }
   .status {
-    color: #3949ab;
+    color: var(--color-accent);
   }
   section {
     margin: 0.9rem 0;
@@ -161,7 +161,7 @@
   section h3 {
     font-size: 0.85rem;
     margin: 0 0 0.3rem;
-    color: #444;
+    color: var(--color-text-muted);
   }
   ul.related {
     list-style: none;
@@ -171,16 +171,16 @@
     font-size: 0.85rem;
   }
   .muted {
-    color: #999;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
   .gap-note {
-    color: #999;
+    color: var(--color-text-muted);
     font-size: 0.75rem;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--color-border);
     padding-top: 0.6rem;
   }
 </style>

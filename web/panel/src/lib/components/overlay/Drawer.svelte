@@ -39,7 +39,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgb(0 0 0 / 0.4);
     z-index: 30;
   }
   .drawer {
@@ -48,9 +48,11 @@
     right: 0;
     height: 100vh;
     width: min(420px, 100vw);
-    background: var(--color-surface);
+    background: var(--color-surface-raised);
     border-left: 1px solid var(--color-border);
-    box-shadow: var(--shadow-card);
+    border-top-left-radius: var(--radius-lg);
+    border-bottom-left-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     padding: 1rem 1.25rem;
     overflow-y: auto;
     z-index: 31;

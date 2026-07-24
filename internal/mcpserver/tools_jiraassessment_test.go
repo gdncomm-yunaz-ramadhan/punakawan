@@ -117,6 +117,70 @@ func TestSubmitJiraAssessmentFailsWithoutCommentApproval(t *testing.T) {
 	}
 }
 
+func TestSubmitJiraAssessmentRejectsDuplicateSummaries(t *testing.T) {
+	// punokawan-clq: identical task summaries collide when results are keyed
+	// by summary, so they are rejected up front - before the comment is posted.
+	gate, fc := newJiraClarifyTestGateWithManifest(t, assessmentTestManifest())
+	approveOp(t, gate, "run-1", "atlassian.addJiraComment")
+
+	in := SubmitJiraAssessmentInput{
+		RunId:         "run-1",
+		IssueIdOrKey:  "PAY-1",
+		ProjectKey:    "PAY",
+		IssueTypeName: "Subtask",
+		Summary:       "assessment",
+		Tasks: []JiraAssessmentTask{
+			{Summary: "Same title", Plan: "a", AiHours: 1, HumanHours: 2},
+			{Summary: "Same title", Plan: "b", AiHours: 3, HumanHours: 4},
+		},
+		RequestedBy: "petruk",
+	}
+
+	out, err := submitJiraAssessment(context.Background(), nil, gate, in)
+	if err == nil {
+		t.Fatal("expected an error for duplicate task summaries")
+	}
+	if out.CommentPosted {
+		t.Error("CommentPosted = true, want false (rejected before any write)")
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("calls = %+v, want none (rejected before any adapter call)", fc.calls)
+	}
+}
+
+func TestSubmitJiraAssessmentReturnsPartialSuccessWhenSubtasksFail(t *testing.T) {
+	// punokawan-4tw: comment posts, then subtask creation fails - the call
+	// returns a non-error result recording the comment succeeded and which
+	// step failed, so the caller does not re-post the comment on retry.
+	gate, caller := newJiraClarifyTestGateWithManifest(t, assessmentTestManifest())
+	approveOp(t, gate, "run-1", "atlassian.addJiraComment")
+	caller.failOps = map[string]bool{"atlassian.createJiraSubtask": true}
+
+	in := SubmitJiraAssessmentInput{
+		RunId:         "run-1",
+		IssueIdOrKey:  "PAY-1",
+		ProjectKey:    "PAY",
+		IssueTypeName: "Subtask",
+		Summary:       "assessment",
+		Tasks:         []JiraAssessmentTask{{Summary: "Add flag", Plan: "p", AiHours: 4, HumanHours: 10}},
+		RequestedBy:   "petruk",
+	}
+
+	out, err := submitJiraAssessment(context.Background(), nil, gate, in)
+	if err != nil {
+		t.Fatalf("submitJiraAssessment returned an error, want a non-error partial-success result: %v", err)
+	}
+	if !out.CommentPosted {
+		t.Error("CommentPosted = false, want true")
+	}
+	if out.FailedStep != "subtasks" || out.FailedError == "" {
+		t.Errorf("out = %+v, want FailedStep=subtasks with a non-empty FailedError", out)
+	}
+	if len(out.TasksCreated) != 0 {
+		t.Errorf("TasksCreated = %+v, want none (creation failed)", out.TasksCreated)
+	}
+}
+
 func TestRenderJiraAssessmentCommentHandlesNegativeTimeSaved(t *testing.T) {
 	in := SubmitJiraAssessmentInput{
 		Summary: "AI takes longer than a human here.",

@@ -28,8 +28,66 @@ type Store struct {
 	db     *sql.DB
 	server *tools.BackgroundProcess
 
+	// dataDir is the registry key (see serverRegistry) when this Store
+	// participates in the in-process refcount for a server this process
+	// started - i.e. the starter or an in-process reuser. Empty for a Store
+	// bound to a server started by a different OS process (reused via
+	// sql-server.info), which this process must never stop.
+	dataDir string
+
 	eventsPath string
 	eventsMu   sync.Mutex
+}
+
+// serverRegistry tracks the Dolt sql-servers this process started, keyed by
+// data directory, with a reference count of the live Stores using each one.
+// It closes the ownership gap behind punokawan-q9r.6.1: a Store that reuses a
+// server another Store in THIS process already started joins the refcount, and
+// the last Store to close stops the server - instead of every reuser leaving
+// it running (the old server==nil early return in Close) and the starter
+// orphaning it whenever a transient PROCESSLIST count was non-zero. Servers we
+// did not start (reused across OS processes via sql-server.info) are absent
+// here and are never stopped by us.
+var serverRegistry = struct {
+	mu      sync.Mutex
+	servers map[string]*sharedServer
+}{servers: map[string]*sharedServer{}}
+
+type sharedServer struct {
+	proc *tools.BackgroundProcess
+	refs int
+}
+
+// joinInProcessServer increments the refcount for key when this process
+// started its server, returning true so the caller records key on its Store
+// and participates in Close's decrement. Returns false for a cross-process
+// reuse, which this process does not own.
+func joinInProcessServer(key string) bool {
+	serverRegistry.mu.Lock()
+	defer serverRegistry.mu.Unlock()
+	if ss, ok := serverRegistry.servers[key]; ok {
+		ss.refs++
+		return true
+	}
+	return false
+}
+
+// registerStartedServer records a server this process just started, with an
+// initial refcount of 1 for the starting Store.
+func registerStartedServer(key string, proc *tools.BackgroundProcess) {
+	serverRegistry.mu.Lock()
+	defer serverRegistry.mu.Unlock()
+	serverRegistry.servers[key] = &sharedServer{proc: proc, refs: 1}
+}
+
+// newReusedStore builds a Store for a server reached via connectExistingServer
+// and joins the in-process refcount when this process started that server.
+func newReusedStore(key string, db *sql.DB, eventsPath string) *Store {
+	st := &Store{db: db, eventsPath: eventsPath}
+	if joinInProcessServer(key) {
+		st.dataDir = key
+	}
+	return st
 }
 
 // Open ensures dataDir is an initialized Dolt repository, starts a Dolt
@@ -39,6 +97,9 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		return nil, err
 	}
 	dbName := filepath.Base(dataDir)
+	// Registry key: a stable, per-process-consistent form of dataDir so the
+	// starter and any in-process reuser agree on the same sharedServer entry.
+	key := filepath.Clean(dataDir)
 
 	// Per §10.2's directory layout, knowledge-events.jsonl lives in events/
 	// alongside (not inside) the knowledge/ Dolt data directory.
@@ -53,7 +114,7 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 	// and records its port in sql-server.info, so reuse it instead of starting
 	// a second server that can only fail on the repository's write lock.
 	if db, err := connectExistingServer(dataDir, dbName, 750*time.Millisecond); err == nil {
-		store := &Store{db: db, eventsPath: eventsPath}
+		store := newReusedStore(key, db, eventsPath)
 		if err := store.migrate(); err != nil {
 			_ = store.Close()
 			return nil, err
@@ -85,7 +146,7 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		// startup. If the other process won the Dolt lock, its info file now
 		// points at the server we should share.
 		if existing, existingErr := connectExistingServer(dataDir, dbName, 2*time.Second); existingErr == nil {
-			store := &Store{db: existing, eventsPath: eventsPath}
+			store := newReusedStore(key, existing, eventsPath)
 			if migrateErr := store.migrate(); migrateErr != nil {
 				_ = store.Close()
 				return nil, migrateErr
@@ -95,7 +156,8 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("knowledge: connect to dolt sql-server: %w%s", err, startupLogSuffix(logPath))
 	}
 
-	store := &Store{db: db, server: server, eventsPath: eventsPath}
+	registerStartedServer(key, server)
+	store := &Store{db: db, server: server, dataDir: key, eventsPath: eventsPath}
 	if err := store.migrate(); err != nil {
 		_ = store.Close()
 		return nil, err
@@ -191,15 +253,11 @@ func waitForConnection(dsn string, timeout time.Duration, server *tools.Backgrou
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
-		// Close's "is another process still using this shared server"
-		// check counts PROCESSLIST rows other than its own query's
-		// connection - which only distinguishes a genuinely different
-		// process if this *sql.DB can never itself hold more than one
-		// open connection. database/sql's default (unlimited) pool would
-		// otherwise let concurrent callers open a second connection from
-		// this same process, making that check see it as "another
-		// process" and skip stopping the server - orphaning it even on a
-		// clean, non-crashing exit.
+		// Pin the pool to a single connection. Besides serializing access to
+		// the single-writer Dolt store, this keeps Close's cross-process guard
+		// honest: with one connection, information_schema.PROCESSLIST minus our
+		// own CONNECTION_ID() counts only genuine other-process clients, not
+		// idle connections from our own pool (punokawan-q9r.6.1).
 		db.SetMaxOpenConns(1)
 		return db, nil
 	}
@@ -236,26 +294,61 @@ CREATE TABLE IF NOT EXISTS knowledge_relations (
 	return nil
 }
 
-// Close disconnects from the database and stops the Dolt sql-server.
+// Close disconnects from the database and, when this Store is the last
+// in-process user of a Dolt sql-server this process started, stops it. A
+// server reused from a different OS process (via sql-server.info) is left
+// running - and even the last in-process holder leaves it running if another
+// OS process is still connected, so cross-process sharing keeps working. See
+// serverRegistry and punokawan-q9r.6.1.
 func (s *Store) Close() error {
-	keepSharedServer := false
-	if s.server != nil {
-		var otherConnections int
-		// If another Punakawan process reused this server, leave it running.
-		// Its connection is evidence that stopping our child would break an
-		// otherwise healthy MCP session. An orphan is safe and is reused by the
-		// next Open call through sql-server.info.
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID()`).Scan(&otherConnections); err == nil {
-			keepSharedServer = otherConnections > 0
+	var proc *tools.BackgroundProcess
+	lastHolder := false
+	if s.dataDir != "" {
+		serverRegistry.mu.Lock()
+		if ss, ok := serverRegistry.servers[s.dataDir]; ok {
+			ss.refs--
+			if ss.refs <= 0 {
+				delete(serverRegistry.servers, s.dataDir)
+				proc = ss.proc
+				lastHolder = true
+			}
+		}
+		serverRegistry.mu.Unlock()
+	}
+
+	// Cross-process guard, evaluated outside the registry lock while our db
+	// handle is still open: if a client other than us is on the server, it is
+	// another OS process that reused it, so orphan it for reuse instead of
+	// stopping it. This narrows but does not fully close a TOCTOU window: once
+	// we have deleted the registry entry, a concurrent in-process Open for the
+	// same key can no longer join the refcount and instead connects as a
+	// "foreign" reuser (dataDir=""); if it connects in the gap between this
+	// PROCESSLIST check and proc.Stop(), it will lose its server. This is
+	// acceptable because concurrent cold opens of the identical knowledge
+	// directory within one process do not occur in practice (the panel and
+	// tests each open distinct directories), and the cross-process case has the
+	// same inherent window. Do not assume this is race-free under adversarial
+	// same-key concurrency.
+	stop := lastHolder && proc != nil && !s.otherClientsConnected()
+
+	dbErr := s.db.Close()
+	if stop {
+		if stopErr := proc.Stop(); stopErr != nil && dbErr == nil {
+			return stopErr
 		}
 	}
-	dbErr := s.db.Close()
-	if s.server == nil || keepSharedServer {
-		return dbErr
+	return dbErr
+}
+
+// otherClientsConnected reports whether a client other than this Store's own
+// connection is on the Dolt server - evidence that a different OS process
+// reused it and that stopping it now would break a live session. A query
+// error is treated as "no other clients" so a transient failure never blocks
+// reaping our own child.
+func (s *Store) otherClientsConnected() bool {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID()`).Scan(&n); err != nil {
+		return false
 	}
-	stopErr := s.server.Stop()
-	if dbErr != nil {
-		return dbErr
-	}
-	return stopErr
+	return n > 0
 }

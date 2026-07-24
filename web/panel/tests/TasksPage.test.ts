@@ -31,7 +31,7 @@ afterEach(() => {
 describe("TasksPage", () => {
   it("renders the board with a blocked task and its reason", async () => {
     (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
-      if (url.includes("/task-graph")) return Promise.resolve(jsonResponse({ Nodes: [task], Edges: [], Cycles: [] }));
+      if (url.includes("/task-graph")) return Promise.resolve(jsonResponse({ nodes: [task], edges: [], cycles: [] }));
       return Promise.resolve(jsonResponse({ items: [task] }));
     });
 

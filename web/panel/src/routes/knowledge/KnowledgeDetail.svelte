@@ -478,18 +478,18 @@
   }
   .type {
     font-size: 0.75rem;
-    color: #666;
+    color: var(--color-text-muted);
     text-transform: uppercase;
   }
   .validity {
     font-size: 0.75rem;
     padding: 0.1rem 0.4rem;
     border-radius: 4px;
-    background: #eee;
+    background: var(--color-surface-subtle);
     text-transform: capitalize;
   }
   .id {
-    color: #888;
+    color: var(--color-text-muted);
     font-size: 0.8rem;
     margin: 0.1rem 0 0.6rem;
   }
@@ -498,10 +498,10 @@
   }
   .superseded {
     font-size: 0.85rem;
-    color: #9a6700;
+    color: var(--color-warning);
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
   section {
     margin: 1.25rem 0;
@@ -521,7 +521,7 @@
     font-size: 0.85rem;
   }
   dt {
-    color: #666;
+    color: var(--color-text-muted);
   }
   dd {
     margin: 0;
@@ -539,7 +539,7 @@
     font-size: 0.85rem;
   }
   .rel-type {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.75rem;
     margin-right: 0.4rem;
   }
@@ -547,17 +547,17 @@
     background: none;
     border: none;
     padding: 0;
-    color: #3949ab;
+    color: var(--color-accent);
     cursor: pointer;
     font-size: inherit;
     text-decoration: underline;
   }
   .muted {
-    color: #999;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
   }
   .hint {
-    color: #888;
+    color: var(--color-text-muted);
     font-size: 0.75rem;
     margin-top: 0;
   }
@@ -573,7 +573,7 @@
     gap: 0.6rem;
   }
   .time {
-    color: #666;
+    color: var(--color-text-muted);
     min-width: 11rem;
   }
 

@@ -151,7 +151,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}", api.WorkspaceHandler(s.readers.Workspace))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions", api.SessionsHandler(s.readers.Session))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}", api.SessionHandler(s.readers.Session))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}/timeline", api.SessionTimelineHandler(s.readers.Session))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/capsules", api.CapsulesHandler(s.app.Capsules))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks", api.TasksHandler(s.readers.Task))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks/{taskId}", api.TaskHandler(s.readers.Task))

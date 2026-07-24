@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { listApprovals, type ApprovalRecord } from "../../lib/api/client";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import Card from "../../lib/components/cards/Card.svelte";
+  import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
 
   interface Props {
     workspaceId: string;
@@ -34,6 +36,12 @@
   $effect(() => {
     load(workspaceId);
   });
+
+  const statusVariants: Record<string, BadgeVariant> = {
+    pending: "warning",
+    approved: "success",
+    denied: "danger",
+  };
 
   async function copy(command: string, id: string) {
     try {
@@ -74,32 +82,38 @@
 {:else}
   <ul>
     {#each records as rec (rec.id)}
-      <li class="row">
-        <div class="row-head">
-          <span class="op">{rec.operation}</span>
-          <span class="status status-{rec.status}">{rec.status}</span>
-          <span class="requested-by">requested by {rec.requested_by}</span>
-        </div>
-        {#if rec.target}<p class="target">{rec.target}</p>{/if}
-        {#if rec.reason}<p class="reason">{rec.reason}</p>{/if}
-        {#if rec.preview}<pre class="preview">{rec.preview}</pre>{/if}
-        <p class="meta">created {rec.created_at}{#if rec.resolved_at} · resolved {rec.resolved_at} by {rec.approved_by}{/if}</p>
-        {#if rec.approve_command && rec.deny_command}
-          <div class="commands">
-            <div class="command-row">
-              <code>{rec.approve_command}</code>
-              <button type="button" onclick={() => copy(rec.approve_command ?? "", rec.id + "-approve")}>
-                {copiedId === rec.id + "-approve" ? "Copied" : "Copy"}
-              </button>
+      <li>
+        <Card>
+          {#snippet header()}
+            <div class="row-head">
+              <span class="op">{rec.operation}</span>
+              <StatusBadge variant={statusVariants[rec.status] ?? "neutral"} label={rec.status} />
             </div>
-            <div class="command-row">
-              <code>{rec.deny_command}</code>
-              <button type="button" onclick={() => copy(rec.deny_command ?? "", rec.id + "-deny")}>
-                {copiedId === rec.id + "-deny" ? "Copied" : "Copy"}
-              </button>
-            </div>
-          </div>
-        {/if}
+            <span class="requested-by">requested by {rec.requested_by}</span>
+          {/snippet}
+          {#snippet children()}
+            {#if rec.target}<p class="target">{rec.target}</p>{/if}
+            {#if rec.reason}<p class="reason">{rec.reason}</p>{/if}
+            {#if rec.preview}<pre class="preview">{rec.preview}</pre>{/if}
+            <p class="meta">created {rec.created_at}{#if rec.resolved_at} · resolved {rec.resolved_at} by {rec.approved_by}{/if}</p>
+            {#if rec.approve_command && rec.deny_command}
+              <div class="commands">
+                <div class="command-row">
+                  <code>{rec.approve_command}</code>
+                  <button type="button" onclick={() => copy(rec.approve_command ?? "", rec.id + "-approve")}>
+                    {copiedId === rec.id + "-approve" ? "Copied" : "Copy"}
+                  </button>
+                </div>
+                <div class="command-row">
+                  <code>{rec.deny_command}</code>
+                  <button type="button" onclick={() => copy(rec.deny_command ?? "", rec.id + "-deny")}>
+                    {copiedId === rec.id + "-deny" ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              </div>
+            {/if}
+          {/snippet}
+        </Card>
       </li>
     {/each}
   </ul>
@@ -111,7 +125,7 @@
     margin-bottom: 0.2rem;
   }
   .hint {
-    color: #666;
+    color: var(--color-text-muted);
     font-size: 0.85rem;
     margin-top: 0;
   }
@@ -119,27 +133,22 @@
     display: inline-grid;
     gap: 0.2rem;
     font-size: 0.8rem;
-    color: #444;
+    color: var(--color-text-muted);
     margin-bottom: 1rem;
   }
   select {
     font-size: 0.85rem;
     padding: 0.3rem 0.4rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
   }
   ul {
     list-style: none;
     padding: 0;
     display: grid;
     gap: 0.6rem;
-  }
-  .row {
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 0.6rem 0.8rem;
-    display: grid;
-    gap: 0.3rem;
   }
   .row-head {
     display: flex;
@@ -149,39 +158,20 @@
   .op {
     font-weight: 600;
   }
-  .status {
-    font-size: 0.75rem;
-    padding: 0.05rem 0.4rem;
-    border-radius: 4px;
-    background: #eee;
-  }
-  .status-pending {
-    background: #fff4e5;
-    color: #9a6700;
-  }
-  .status-approved {
-    background: #e6f4ea;
-    color: #1e7d32;
-  }
-  .status-denied {
-    background: #fdecea;
-    color: #c62828;
-  }
   .requested-by {
-    margin-left: auto;
     font-size: 0.75rem;
-    color: #666;
+    color: var(--color-text-muted);
   }
   .target,
   .reason {
     margin: 0;
     font-size: 0.85rem;
-    color: #333;
+    color: var(--color-text);
   }
   .preview {
     margin: 0;
     font-size: 0.75rem;
-    background: #f7f7f7;
+    background: var(--color-surface-subtle);
     padding: 0.4rem;
     border-radius: 4px;
     overflow-x: auto;
@@ -190,7 +180,7 @@
   .meta {
     margin: 0;
     font-size: 0.75rem;
-    color: #888;
+    color: var(--color-text-muted);
   }
   .commands {
     display: grid;
@@ -205,7 +195,7 @@
   .command-row code {
     flex: 1;
     font-size: 0.78rem;
-    background: #f0f0f0;
+    background: var(--color-surface-subtle);
     padding: 0.3rem 0.5rem;
     border-radius: 4px;
     overflow-x: auto;
@@ -214,13 +204,13 @@
   .command-row button {
     font-size: 0.78rem;
     padding: 0.3rem 0.6rem;
-    border: 1px solid #3949ab;
-    background: white;
-    color: #3949ab;
+    border: 1px solid var(--color-accent);
+    background: var(--color-surface);
+    color: var(--color-accent);
     border-radius: 6px;
     cursor: pointer;
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
   }
 </style>

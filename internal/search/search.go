@@ -87,6 +87,21 @@ const (
 	relationMaxDepth    = 1
 	relationMaxItems    = 10
 	fuzzyMinTokenLength = 4
+
+	// relationSeedTopK bounds how many of the highest-scoring hits are used as
+	// seeds for one-hop relation expansion, and relationExpandedTotalMax caps
+	// the total number of newly-added related candidates across all seeds
+	// (punokawan-gi1). Without these, up to a full fetch page of seeds x
+	// relationMaxItems each dominates the query with store reads before
+	// finalize trims the result down to req.Limit.
+	relationSeedTopK         = 20
+	relationExpandedTotalMax = 50
+
+	// minFetchCap / fetchCapMultiplier size the Bleve fetch page as a multiple
+	// of req.Limit (punokawan-rye) rather than a fixed 200, so a large Limit is
+	// not silently truncated before scoring reorders the candidates.
+	minFetchCap        = 200
+	fetchCapMultiplier = 5
 )
 
 // Search implements §11.2's pipeline: normalize the query, detect
@@ -103,73 +118,183 @@ func Search(store *knowledge.Store, ix *Index, req Request) ([]Result, error) {
 
 	identifiers := DetectIdentifiers(text)
 
-	hits, kind, err := runQuery(ix, text, req)
+	hits, kind, err := runQuery(ix, text, identifiers, req)
 	if err != nil {
 		return nil, fmt.Errorf("search: query: %w", err)
 	}
 
+	// Scoring reads every field it needs (scope, aliases, identifiers,
+	// symbols, trust) straight from the fields Bleve stored at index time, so
+	// it no longer re-fetches each candidate from the store (punokawan-co7)
+	// nor re-runs DetectIdentifiers per hit (punokawan-god). The full
+	// protocol.KnowledgeRecord is hydrated later, only for the results that
+	// actually survive ranking (see finalize).
 	results := make(map[string]*Result, len(hits))
 	for id, hit := range hits {
-		rec, err := store.Get(id)
-		if err != nil {
-			// Stale index entry (record deleted from the canonical store
-			// since the last Rebuild/IndexRecord) - skip rather than fail
-			// the whole search over one dangling id.
-			continue
-		}
-		results[id] = scoreResult(rec, hit, kind, text, identifiers, req.Scope)
+		results[id] = scoreResult(id, hit, kind, text, identifiers, req.Scope)
 	}
 
 	if req.IncludeRelated {
 		expandRelations(store, results)
 	}
 
-	return finalize(results, req.Limit), nil
+	return finalize(store, results, req.Limit), nil
 }
 
 // hitInfo is one Bleve hit's score plus which fields/terms actually matched
 // (from SearchRequest.IncludeLocations), carried through to Result.Match
-// for §11.13's explain-match.
+// for §11.13's explain-match. doc holds the fields Bleve stored at index time,
+// read back so scoring needs neither a per-hit store.Get nor a per-hit
+// DetectIdentifiers pass.
 type hitInfo struct {
 	score  float64
 	fields []string
 	terms  []string
+	doc    storedDoc
+}
+
+// storedDoc is the subset of IndexedDocument that scoring consumes, read back
+// from a hit's stored Bleve fields. Because DetectIdentifiers already ran at
+// index-build time (see BuildDocument), Identifiers/Symbols come back verbatim
+// rather than being recomputed from the record text at query time.
+type storedDoc struct {
+	Title       string
+	Summary     string
+	Type        string
+	Project     string
+	Repository  string
+	Module      string
+	Path        string
+	Aliases     []string
+	Identifiers []string
+	Symbols     []string
+	TrustLevel  string
+}
+
+// storedFields is the set of stored fields runSearchRequest asks Bleve to
+// return on each hit so newStoredDoc can reconstruct a storedDoc.
+var storedFields = []string{
+	"title", "summary", "type", "project", "repository", "module", "path",
+	"aliases", "identifiers", "symbols", "trustLevel",
+}
+
+func newStoredDoc(fields map[string]interface{}) storedDoc {
+	return storedDoc{
+		Title:       stringField(fields, "title"),
+		Summary:     stringField(fields, "summary"),
+		Type:        stringField(fields, "type"),
+		Project:     stringField(fields, "project"),
+		Repository:  stringField(fields, "repository"),
+		Module:      stringField(fields, "module"),
+		Path:        stringField(fields, "path"),
+		Aliases:     stringSliceField(fields, "aliases"),
+		Identifiers: stringSliceField(fields, "identifiers"),
+		Symbols:     stringSliceField(fields, "symbols"),
+		TrustLevel:  stringField(fields, "trustLevel"),
+	}
+}
+
+func stringField(fields map[string]interface{}, key string) string {
+	if v, ok := fields[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// stringSliceField normalizes a stored multi-value Bleve field, which comes
+// back as a bare string when it held a single value and as []interface{} when
+// it held several.
+func stringSliceField(fields map[string]interface{}, key string) []string {
+	switch v := fields[key].(type) {
+	case string:
+		return []string{v}
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 // runQuery executes §11.2's "exact identifier search -> alias search ->
-// BM25F search -> optional fuzzy fallback" stages. Exact-identifier and
-// alias matching are not separate Bleve queries: they are scored as bonuses
-// in scoreResult against whatever BM25F (or, on an empty BM25F result,
-// fuzzy) already surfaced, since a record that mentions a query's exact
-// identifier or alias almost always also scores on BM25F terms from that
-// same text - a separate identifier/alias-only query pass would be
-// redundant rather than additive.
-func runQuery(ix *Index, text string, req Request) (map[string]hitInfo, MatchKind, error) {
-	bm25Query := buildBM25FQuery(text)
-	filtered := applyFilters(bm25Query, req)
+// BM25F search -> optional fuzzy fallback" stages. BM25F is the primary pass;
+// a cheap identifier/alias term query is unioned on top so a record carrying
+// the query's exact identifier still enters the candidate set even when it
+// ranks below the BM25F fetch cap (punokawan-rye). Fuzzy matching fires only
+// when the combined set is empty.
+func runQuery(ix *Index, text string, identifiers []Identifier, req Request) (map[string]hitInfo, MatchKind, error) {
+	fetchCap := fetchLimit(req.Limit)
 
-	hits, err := runSearchRequest(ix, filtered)
+	bm25Query := buildBM25FQuery(text)
+	hits, err := runSearchRequest(ix, applyFilters(bm25Query, req), fetchCap)
 	if err != nil {
 		return nil, "", err
 	}
+
+	// Union in any record holding one of the query's exact identifiers/aliases
+	// (punokawan-rye). BM25F only surfaces the fetchCap top-scoring hits, so a
+	// record that carries the exact identifier but ranks below that cut never
+	// enters the candidate set and never receives scoreResult's +identifier /
+	// +alias bonus. A cheap term query over the identifiers/symbols/aliases
+	// fields pulls those docs in directly; merge keeps any existing BM25 hit's
+	// richer score/locations rather than overwriting them.
+	if idQuery := buildIdentifierQuery(identifiers); idQuery != nil {
+		idHits, err := runSearchRequest(ix, applyFilters(idQuery, req), fetchCap)
+		if err != nil {
+			return nil, "", err
+		}
+		mergeHits(hits, idHits)
+	}
+
 	if len(hits) > 0 {
 		return hits, MatchKindBM25, nil
 	}
 
 	fuzzyQuery := buildFuzzyQuery(text)
 	if fuzzyQuery == nil {
-		return nil, MatchKindBM25, nil
+		return hits, MatchKindBM25, nil
 	}
-	hits, err = runSearchRequest(ix, applyFilters(fuzzyQuery, req))
+	hits, err = runSearchRequest(ix, applyFilters(fuzzyQuery, req), fetchCap)
 	if err != nil {
 		return nil, "", err
 	}
 	return hits, MatchKindFuzzy, nil
 }
 
-func runSearchRequest(ix *Index, q query.Query) (map[string]hitInfo, error) {
-	sr := bleve.NewSearchRequestOptions(q, 200, 0, false)
+// fetchLimit sizes the Bleve fetch page as a multiple of the caller's limit,
+// floored at minFetchCap so small limits still gather enough candidates for
+// scoreResult's bonuses to reorder them meaningfully.
+func fetchLimit(limit int) int {
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	c := limit * fetchCapMultiplier
+	if c < minFetchCap {
+		c = minFetchCap
+	}
+	return c
+}
+
+// mergeHits adds every entry of src to dst that dst does not already hold,
+// preserving dst's existing hitInfo (its BM25 score and match locations) on
+// collision.
+func mergeHits(dst, src map[string]hitInfo) {
+	for id, h := range src {
+		if _, exists := dst[id]; !exists {
+			dst[id] = h
+		}
+	}
+}
+
+func runSearchRequest(ix *Index, q query.Query, fetchCap int) (map[string]hitInfo, error) {
+	sr := bleve.NewSearchRequestOptions(q, fetchCap, 0, false)
 	sr.IncludeLocations = true
+	sr.Fields = storedFields
 	res, err := ix.bleve.Search(sr)
 	if err != nil {
 		return nil, err
@@ -184,7 +309,12 @@ func runSearchRequest(ix *Index, q query.Query) (map[string]hitInfo, error) {
 				termSet[term] = true
 			}
 		}
-		hits[hit.ID] = hitInfo{score: hit.Score, fields: sortedKeys(fieldSet), terms: sortedKeys(termSet)}
+		hits[hit.ID] = hitInfo{
+			score:  hit.Score,
+			fields: sortedKeys(fieldSet),
+			terms:  sortedKeys(termSet),
+			doc:    newStoredDoc(hit.Fields),
+		}
 	}
 	return hits, nil
 }
@@ -225,6 +355,31 @@ func buildFuzzyQuery(text string) query.Query {
 	return bleve.NewDisjunctionQuery(disjuncts...)
 }
 
+// buildIdentifierQuery builds a disjunction that matches any record carrying
+// one of the detected identifiers in its identifiers/symbols/aliases fields
+// (punokawan-rye's candidate-recall pass). It is deliberately restricted to
+// exactly the fields scoreResult bonuses on, so a hit it surfaces always earns
+// its +identifier or +alias boost; broader fields would surface docs that then
+// score no differently from a plain BM25 hit. Returns nil when the query
+// carried no structured identifiers.
+func buildIdentifierQuery(identifiers []Identifier) query.Query {
+	if len(identifiers) == 0 {
+		return nil
+	}
+	var disjuncts []query.Query
+	for _, id := range identifiers {
+		for _, field := range []string{"identifiers", "symbols", "aliases"} {
+			mq := bleve.NewMatchQuery(id.Value)
+			mq.SetField(field)
+			disjuncts = append(disjuncts, mq)
+		}
+	}
+	if len(disjuncts) == 0 {
+		return nil
+	}
+	return bleve.NewDisjunctionQuery(disjuncts...)
+}
+
 // applyFilters ANDs req.Types/req.Tags onto q as hard filters (§11.12's
 // KnowledgeSearchRequest.types/tags) - unlike Scope, these narrow the
 // result set rather than merely ranking it.
@@ -252,19 +407,21 @@ func termsDisjunction(field string, values []string) query.Query {
 	return bleve.NewDisjunctionQuery(disjuncts...)
 }
 
-// scoreResult applies §11.10's ranking formula on top of rec's raw BM25F
-// (or fuzzy) score.
-func scoreResult(rec protocol.KnowledgeRecord, hit hitInfo, kind MatchKind, queryText string, identifiers []Identifier, scope Scope) *Result {
-	doc := BuildDocument(rec, timeZero)
+// scoreResult applies §11.10's ranking formula on top of the hit's raw BM25F
+// (or fuzzy) score, using the fields Bleve stored at index time rather than
+// re-fetching or re-deriving anything. Result.Record is left unset here and is
+// hydrated later for the surviving results (see finalize).
+func scoreResult(id string, hit hitInfo, kind MatchKind, queryText string, identifiers []Identifier, scope Scope) *Result {
+	doc := hit.doc
 	score := hit.score
 	var explanation []string
 
-	if id, ok := matchedIdentifier(identifiers, doc); ok {
+	if matched, ok := matchedIdentifier(identifiers, doc); ok {
 		score += exactIdentifierBonus
 		kind = MatchKindIdentifier
-		explanation = append(explanation, fmt.Sprintf("Exact identifier: %q", id))
+		explanation = append(explanation, fmt.Sprintf("Exact identifier: %q", matched))
 	}
-	if alias, ok := matchedAlias(queryText, rec.Aliases); ok {
+	if alias, ok := matchedAlias(queryText, doc.Aliases); ok {
 		score += exactAliasBonus
 		if kind == MatchKindBM25 || kind == MatchKindFuzzy {
 			kind = MatchKindAlias
@@ -287,26 +444,25 @@ func scoreResult(rec protocol.KnowledgeRecord, hit hitInfo, kind MatchKind, quer
 		explanation = append(explanation, fmt.Sprintf("Same project: %s", scope.Project))
 	}
 
-	if rec.Validity.State == protocol.KnowledgeRecordValidityStateVerified {
+	if doc.TrustLevel == string(protocol.KnowledgeRecordValidityStateVerified) {
 		score += verifiedTrustBonus
 		explanation = append(explanation, "Verified")
 	}
 
-	explanation = append(explanation, fmt.Sprintf("Type: %s", rec.Type))
+	explanation = append(explanation, fmt.Sprintf("Type: %s", doc.Type))
 
 	return &Result{
-		Id:          rec.Id,
-		Title:       rec.Title,
+		Id:          id,
+		Title:       doc.Title,
 		Summary:     doc.Summary,
-		Type:        string(rec.Type),
+		Type:        doc.Type,
 		Score:       score,
 		Match:       Match{Kind: kind, Fields: hit.fields, Terms: hit.terms},
 		Explanation: explanation,
-		Record:      rec,
 	}
 }
 
-func matchedIdentifier(identifiers []Identifier, doc IndexedDocument) (string, bool) {
+func matchedIdentifier(identifiers []Identifier, doc storedDoc) (string, bool) {
 	for _, id := range identifiers {
 		for _, docID := range doc.Identifiers {
 			if id.Value == docID {
@@ -334,26 +490,51 @@ func matchedAlias(queryText string, aliases []string) (string, bool) {
 
 // expandRelations implements §11.9's one-hop relation expansion: for each
 // already-matched result, pull every directly-linked record - both its own
-// outgoing relations (rec.Relations, already in hand) and any other record
-// whose relations point at it (store.Related, the reverse direction) -
-// bounded to relationMaxItems combined, and adds them as new candidates if
-// not already present. Scored with only the flat relation bonus, since this
-// schema's KnowledgeRecordRelation carries no confidence value to compare
-// against §11.9's minimumConfidence, so every direct relation qualifies.
+// outgoing relations (rec.Relations) and any other record whose relations
+// point at it (store.Related, the reverse direction) - bounded to
+// relationMaxItems combined, and adds them as new candidates if not already
+// present. Scored with only the flat relation bonus, since this schema's
+// KnowledgeRecordRelation carries no confidence value to compare against
+// §11.9's minimumConfidence, so every direct relation qualifies.
 func expandRelations(store *knowledge.Store, results map[string]*Result) {
-	seedIDs := make([]string, 0, len(results))
-	for id := range results {
-		seedIDs = append(seedIDs, id)
+	// Expand only the highest-scoring seeds, and cap the total number of
+	// newly-added related candidates (punokawan-gi1). Seeds are snapshotted
+	// before any addition, so the newly-added related records never themselves
+	// become seeds - keeping expansion to a single hop by construction.
+	seeds := make([]*Result, 0, len(results))
+	for _, r := range results {
+		seeds = append(seeds, r)
+	}
+	sort.Slice(seeds, func(i, j int) bool {
+		if seeds[i].Score != seeds[j].Score {
+			return seeds[i].Score > seeds[j].Score
+		}
+		return seeds[i].Id < seeds[j].Id
+	})
+	if len(seeds) > relationSeedTopK {
+		seeds = seeds[:relationSeedTopK]
 	}
 
-	for _, seedID := range seedIDs {
-		seed := results[seedID]
-		candidateIDs := make([]string, 0, len(seed.Record.Relations)+relationMaxItems)
-		for _, rel := range seed.Record.Relations {
+	total := 0
+	for _, seed := range seeds {
+		if total >= relationExpandedTotalMax {
+			break
+		}
+		// The seed's own outgoing relations live on its record, which scoring
+		// did not fetch; get it now (also hydrating Record so finalize need
+		// not re-fetch it). Both this and store.Related are now bounded to the
+		// top-K seeds rather than every hit (punokawan-co7).
+		seedRec, err := store.Get(seed.Id)
+		if err != nil {
+			continue
+		}
+		seed.Record = seedRec
+
+		candidateIDs := make([]string, 0, len(seedRec.Relations)+relationMaxItems)
+		for _, rel := range seedRec.Relations {
 			candidateIDs = append(candidateIDs, rel.Target)
 		}
-		reverseRelated, err := store.Related(seedID)
-		if err == nil {
+		if reverseRelated, err := store.Related(seed.Id); err == nil {
 			for _, rec := range reverseRelated {
 				candidateIDs = append(candidateIDs, rec.Id)
 			}
@@ -361,7 +542,7 @@ func expandRelations(store *knowledge.Store, results map[string]*Result) {
 
 		added := 0
 		for _, id := range candidateIDs {
-			if added >= relationMaxItems {
+			if added >= relationMaxItems || total >= relationExpandedTotalMax {
 				break
 			}
 			if _, exists := results[id]; exists {
@@ -379,32 +560,51 @@ func expandRelations(store *knowledge.Store, results map[string]*Result) {
 				Type:        string(rec.Type),
 				Score:       directlyRelatedBonus,
 				Match:       Match{Kind: MatchKindRelated},
-				Explanation: []string{fmt.Sprintf("Directly related to %s", seedID), fmt.Sprintf("Type: %s", rec.Type)},
+				Explanation: []string{fmt.Sprintf("Directly related to %s", seed.Id), fmt.Sprintf("Type: %s", rec.Type)},
 				Record:      rec,
 			}
 			added++
+			total++
 		}
 	}
 	_ = relationMaxDepth // depth is 1 by construction: expandRelations never recurses into the newly-added records.
 }
 
-func finalize(results map[string]*Result, limit int) []Result {
+// finalize ranks the scored candidates, then hydrates the full
+// protocol.KnowledgeRecord for the surviving results in rank order, stopping
+// once limit valid results are collected. Hydration is bounded to ~limit
+// store.Get calls rather than one per candidate (punokawan-co7); a candidate
+// whose record has vanished from the store since the last index sync is a
+// stale entry and is skipped rather than surfaced.
+func finalize(store *knowledge.Store, results map[string]*Result, limit int) []Result {
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
-	out := make([]Result, 0, len(results))
+	ranked := make([]*Result, 0, len(results))
 	for _, r := range results {
-		out = append(out, *r)
+		ranked = append(ranked, r)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].Score != ranked[j].Score {
+			return ranked[i].Score > ranked[j].Score
 		}
-		return out[i].Id < out[j].Id
+		return ranked[i].Id < ranked[j].Id
 	})
-	if len(out) > limit {
-		out = out[:limit]
+
+	out := make([]Result, 0, limit)
+	for _, r := range ranked {
+		if len(out) >= limit {
+			break
+		}
+		if r.Record.Id == "" {
+			rec, err := store.Get(r.Id)
+			if err != nil {
+				continue
+			}
+			r.Record = rec
+		}
+		out = append(out, *r)
 	}
 	return out
 }

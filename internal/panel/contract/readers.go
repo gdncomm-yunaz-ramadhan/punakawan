@@ -10,6 +10,7 @@ package contract
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/beads"
@@ -17,6 +18,14 @@ import (
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// ErrWorkspaceUnavailable is returned by the non-workspace sources
+// (session, task, knowledge, evidence, approval) when asked for a
+// workspace other than the single one the panel's *app.App was loaded
+// for. Those sources only serve that one workspace, so a request for any
+// other is the caller's mistake (a 4xx), not a server fault: HTTP handlers
+// detect this with errors.Is and answer 404 rather than 500.
+var ErrWorkspaceUnavailable = errors.New("workspace is not available on this panel instance")
 
 // WorkspaceSummary is one workspace's panel-facing overview, per
 // punakawan-panel-implementation-plan.md §14.2's workspace card. JSON tags
@@ -34,6 +43,12 @@ type WorkspaceSummary struct {
 	KnowledgeCount     int                                    `json:"knowledge_count"`
 	LastActivityAt     time.Time                              `json:"last_activity_at"`
 	Pinned             bool                                   `json:"pinned"`
+	// Primary is true for the one workspace this panel instance's *app.App
+	// was loaded for - the only workspace whose sessions, tasks, knowledge,
+	// and approvals this instance can actually serve. The frontend uses it
+	// to disable drill-down navigation for every other (non-primary)
+	// workspace, whose sub-resources would otherwise 404.
+	Primary bool `json:"primary"`
 }
 
 // WorkspaceDetail extends WorkspaceSummary with per-source health, per
@@ -112,9 +127,9 @@ type TaskSummary struct {
 
 // TaskEdge is one dependency edge in a TaskGraph.
 type TaskEdge struct {
-	From string
-	To   string
-	Type string
+	From string `json:"from"`
+	To   string `json:"to"`
+	Type string `json:"type"`
 }
 
 // TaskGraph is the BD work graph's dependency view, per §14.5. Cycles lists
@@ -123,9 +138,9 @@ type TaskEdge struct {
 // cycles be detected and displayed rather than silently mis-rendered as a
 // tree.
 type TaskGraph struct {
-	Nodes  []TaskSummary
-	Edges  []TaskEdge
-	Cycles [][]string
+	Nodes  []TaskSummary `json:"nodes"`
+	Edges  []TaskEdge    `json:"edges"`
+	Cycles [][]string    `json:"cycles"`
 }
 
 // TaskReader lists and describes BD issues without mutating them, per
@@ -231,9 +246,9 @@ type ApprovalReader interface {
 // (search.FuseRankedLists) since separate BM25F corpora are not
 // comparable on score alone.
 type GlobalSearchResult struct {
-	WorkspaceID string
-	Result      search.Result
-	RRFScore    float64
+	WorkspaceID string        `json:"workspace_id"`
+	Result      search.Result `json:"result"`
+	RRFScore    float64       `json:"rrf_score"`
 }
 
 // GlobalSearchReader searches every registered workspace at once, per
