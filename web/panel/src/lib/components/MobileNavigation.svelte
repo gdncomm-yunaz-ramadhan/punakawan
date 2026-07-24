@@ -7,6 +7,7 @@
   // introducing a shared module for it right now.
   const links: { path: string; label: string; icon: string }[] = [
     { path: "/", label: "Overview", icon: "⌂" },
+    { path: "/projects", label: "Projects", icon: "❖" },
     { path: "/workspaces", label: "Workspaces", icon: "▦" },
     { path: "/search", label: "Search", icon: "⚲" },
     { path: "/system", label: "System", icon: "⚙" },

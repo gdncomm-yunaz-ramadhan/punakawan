@@ -6,6 +6,7 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/panel/runtime"
 	"github.com/ygrip/punakawan/internal/search"
 )
 
@@ -26,6 +27,13 @@ import (
 type GlobalSearchSource struct {
 	App      *app.App
 	Registry *registry.Store
+
+	// Runtime, when non-nil, supplies a bounded shared pool of loaded Apps
+	// for non-primary workspaces, so Search reuses a warm App across
+	// requests instead of app.Load'ing (and Close'ing) a fresh one for
+	// every registry entry every call (§10.3). When nil, behavior is
+	// unchanged: each non-primary entry does its own app.Load + Close.
+	Runtime *runtime.ProjectRuntimeManager
 }
 
 func (g *GlobalSearchSource) Search(ctx context.Context, req search.Request) ([]contract.GlobalSearchResult, error) {
@@ -66,9 +74,22 @@ func (g *GlobalSearchSource) Search(ctx context.Context, req search.Request) ([]
 				continue
 			}
 		} else {
-			other, err := app.Load(e.path)
-			if err != nil {
-				continue
+			var other *app.App
+			var release func()
+			if g.Runtime != nil {
+				rt, rel, err := g.Runtime.Acquire(ctx, e.id, e.path)
+				if err != nil {
+					continue
+				}
+				other = rt.App
+				release = rel
+			} else {
+				loaded, err := app.Load(e.path)
+				if err != nil {
+					continue
+				}
+				other = loaded
+				release = func() { loaded.Close() }
 			}
 			store, err := other.OpenKnowledge()
 			if err == nil {
@@ -78,7 +99,7 @@ func (g *GlobalSearchSource) Search(ctx context.Context, req search.Request) ([]
 					results, _ = search.Search(store, ix, req)
 				}
 			}
-			other.Close()
+			release()
 		}
 		if len(results) > 0 {
 			lists = append(lists, search.RankedList{WorkspaceID: e.id, Results: results})

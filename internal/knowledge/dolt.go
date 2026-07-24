@@ -291,6 +291,111 @@ CREATE TABLE IF NOT EXISTS knowledge_relations (
 	if err != nil {
 		return fmt.Errorf("knowledge: create relations schema: %w", err)
 	}
+
+	// schema_migrations records which versioned, non-idempotent-by-default
+	// migrations (the secondary indexes below) have already been applied, so a
+	// reused open - the common case, since a Dolt sql-server is shared across
+	// processes and every Open re-runs migrate() - skips work it has done
+	// before instead of re-issuing DDL on every panel/tool startup. The base
+	// CREATE TABLE IF NOT EXISTS statements above stay unconditional: they are
+	// cheap and idempotent by construction.
+	if _, err := s.db.Exec(`
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version VARCHAR(64) PRIMARY KEY,
+  applied_at DATETIME NOT NULL
+)`); err != nil {
+		return fmt.Errorf("knowledge: create schema_migrations: %w", err)
+	}
+
+	// Secondary indexes backing the panel's counts and first-page browses
+	// (punokawan-rit, Phase 4 §11): every List query orders by updated_at DESC
+	// and filters on type/status/validity_state, so these keep the panel off a
+	// full-corpus scan. The version key is the index name; each is applied once
+	// per store and then recorded so later opens skip it.
+	indexMigrations := []struct {
+		table   string
+		index   string
+		columns string
+	}{
+		{"knowledge_records", "idx_knowledge_updated_at", "updated_at"},
+		{"knowledge_records", "idx_knowledge_type_updated_at", "type, updated_at"},
+		{"knowledge_records", "idx_knowledge_status_updated_at", "status, updated_at"},
+		{"knowledge_records", "idx_knowledge_validity_updated_at", "validity_state, updated_at"},
+	}
+	for _, m := range indexMigrations {
+		applied, err := s.migrationApplied(m.index)
+		if err != nil {
+			return fmt.Errorf("knowledge: check migration %s: %w", m.index, err)
+		}
+		if applied {
+			continue
+		}
+		if err := s.ensureIndex(m.table, m.index, m.columns); err != nil {
+			return err
+		}
+		if err := s.recordMigration(m.index); err != nil {
+			return fmt.Errorf("knowledge: record migration %s: %w", m.index, err)
+		}
+	}
+	return nil
+}
+
+// migrationApplied reports whether version has already been recorded in
+// schema_migrations.
+func (s *Store) migrationApplied(version string) (bool, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, version).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// recordMigration marks version as applied. ON DUPLICATE KEY keeps it
+// idempotent under the narrow race of two processes migrating a fresh store
+// at once.
+func (s *Store) recordMigration(version string) error {
+	_, err := s.db.Exec(`
+INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)
+ON DUPLICATE KEY UPDATE applied_at = VALUES(applied_at)`, version, time.Now().UTC())
+	return err
+}
+
+// indexExists reports whether an index named idx exists on table, via the
+// SQL-standard information_schema.statistics view (the portable fallback for
+// engines that reject CREATE INDEX IF NOT EXISTS).
+func (s *Store) indexExists(table, idx string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.statistics WHERE table_name = ? AND index_name = ?`,
+		table, idx).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// ensureIndex creates idx on table(columns) if it does not already exist.
+// Dolt accepts CREATE INDEX IF NOT EXISTS, which is the primary path; should a
+// future engine reject that syntax, it falls back to a plain CREATE guarded by
+// an information_schema.statistics existence check so the migration is still
+// idempotent.
+func (s *Store) ensureIndex(table, idx, columns string) error {
+	if exists, err := s.indexExists(table, idx); err == nil && exists {
+		return nil
+	}
+	if _, err := s.db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS `%s` ON `%s` (%s)", idx, table, columns)); err != nil {
+		// IF NOT EXISTS may be unsupported; retry the plain form after
+		// re-checking existence so a concurrent creator doesn't fail us.
+		if exists, exErr := s.indexExists(table, idx); exErr == nil && exists {
+			return nil
+		}
+		if _, err2 := s.db.Exec(fmt.Sprintf("CREATE INDEX `%s` ON `%s` (%s)", idx, table, columns)); err2 != nil {
+			if exists, exErr := s.indexExists(table, idx); exErr == nil && exists {
+				return nil
+			}
+			return fmt.Errorf("knowledge: create index %s: %w", idx, err2)
+		}
+	}
 	return nil
 }
 

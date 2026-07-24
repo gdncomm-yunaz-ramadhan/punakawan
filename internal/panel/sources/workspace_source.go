@@ -16,6 +16,7 @@ import (
 	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/panel/runtime"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -35,6 +36,13 @@ import (
 type WorkspaceSource struct {
 	App      *app.App
 	Registry *registry.Store
+
+	// Runtime, when non-nil, supplies a bounded shared pool of loaded Apps
+	// for non-primary workspaces, so Get/summaryFor reuse a warm App across
+	// requests instead of app.Load'ing (and Close'ing) a fresh one every
+	// call (§10.3). When nil, behavior is unchanged from Phase 2: each
+	// non-primary read does its own app.Load + Close.
+	Runtime *runtime.ProjectRuntimeManager
 }
 
 func healthOK(source string, at time.Time) protocol.PanelSourceHealth {
@@ -117,6 +125,15 @@ func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract
 		return contract.WorkspaceDetail{}, fmt.Errorf("sources: workspace %q: %w", workspaceID, err)
 	}
 
+	if w.Runtime != nil {
+		rt, release, err := w.Runtime.Acquire(ctx, entry.Id, entry.Path)
+		if err != nil {
+			return unavailableDetail(entry, err), nil
+		}
+		defer release()
+		return w.describe(ctx, rt.App, &entry)
+	}
+
 	other, err := app.Load(entry.Path)
 	if err != nil {
 		return unavailableDetail(entry, err), nil
@@ -130,6 +147,19 @@ func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract
 func (w *WorkspaceSource) summaryFor(ctx context.Context, entry protocol.PanelWorkspaceRegistryEntry) contract.WorkspaceSummary {
 	if entry.Id == w.App.Workspace.ID {
 		detail, err := w.describe(ctx, w.App, &entry)
+		if err != nil {
+			return unavailableDetail(entry, err).WorkspaceSummary
+		}
+		return detail.WorkspaceSummary
+	}
+
+	if w.Runtime != nil {
+		rt, release, err := w.Runtime.Acquire(ctx, entry.Id, entry.Path)
+		if err != nil {
+			return unavailableDetail(entry, err).WorkspaceSummary
+		}
+		defer release()
+		detail, err := w.describe(ctx, rt.App, &entry)
 		if err != nil {
 			return unavailableDetail(entry, err).WorkspaceSummary
 		}

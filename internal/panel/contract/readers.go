@@ -15,6 +15,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -256,4 +257,51 @@ type GlobalSearchResult struct {
 // entire point of "global."
 type GlobalSearchReader interface {
 	Search(ctx context.Context, req search.Request) ([]GlobalSearchResult, error)
+}
+
+// ProjectSummary is one project's panel-facing overview, per the project
+// performance plan §3/§14. A project shares its id with the workspace it is
+// rooted in (project id == registry workspace id). The count fields are
+// sourced from the existing WorkspaceReader rather than recomputed here
+// (§8's "one snapshot, reused everywhere"): the project source composes a
+// WorkspaceReader instead of duplicating its deep bd/dolt/git inspection.
+// JSON tags are load-bearing: handlers marshal this type directly.
+type ProjectSummary struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Description        string `json:"description"`
+	Path               string `json:"path"`
+	Pinned             bool   `json:"pinned"`
+	Primary            bool   `json:"primary"`
+	Availability       string `json:"availability"`
+	RepositoryCount    int    `json:"repository_count"`
+	KnowledgeCount     int    `json:"knowledge_count"`
+	OpenTaskCount      int    `json:"open_task_count"`
+	BlockedTaskCount   int    `json:"blocked_task_count"`
+	ActiveSessionCount int    `json:"active_session_count"`
+	MetadataCount      int    `json:"metadata_count"`
+}
+
+// ProjectReader lists and describes projects and applies the plan's metadata
+// mutations. Reads (List/Summary/Get) never mutate; the three metadata
+// methods each load the project fresh, apply an optimistically-locked change
+// through internal/project, and persist a new immutable revision, returning
+// the updated project so the handler can render the changed entry and new
+// revision (§4.3/§15).
+//
+// The metadata mutations live on the reader (not directly in the HTTP
+// handler) so the handler stays transport-only: it need not know how a
+// project id maps to a workspace root, only the internal/project error kinds
+// it maps to status codes. Errors returned wrap internal/project's exported
+// error vars (ErrRevisionConflict, ErrDuplicateKey, ErrSecretRejected,
+// ErrInvalidValue, ErrMissingField, ErrKeyNotFound) and
+// ErrWorkspaceUnavailable for an unknown project id, all matchable with
+// errors.Is.
+type ProjectReader interface {
+	List(ctx context.Context) ([]ProjectSummary, error)
+	Summary(ctx context.Context, projectID string) (ProjectSummary, error)
+	Get(ctx context.Context, projectID string) (*project.Project, error)
+	AddMetadata(ctx context.Context, projectID string, entry project.MetadataEntry, baseRevision int) (*project.Project, error)
+	UpdateMetadata(ctx context.Context, projectID, key string, newDescription *string, newValue any, baseRevision int) (*project.Project, error)
+	DeleteMetadata(ctx context.Context, projectID, key string, baseRevision int) (*project.Project, error)
 }

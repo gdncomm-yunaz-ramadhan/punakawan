@@ -4,6 +4,8 @@
   import { getPath } from "./lib/router/router.svelte";
   import AppShell from "./lib/components/AppShell.svelte";
   import Overview from "./routes/overview/Overview.svelte";
+  import ProjectsList from "./routes/projects/ProjectsList.svelte";
+  import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
   import WorkspacesList from "./routes/workspaces/WorkspacesList.svelte";
   import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
   import SessionsList from "./routes/sessions/SessionsList.svelte";
@@ -29,6 +31,7 @@
     }
   });
 
+  const projectDetailPath = /^\/projects\/([^/]+)$/;
   const workspaceDetailPath = /^\/workspaces\/([^/]+)$/;
   const sessionsListPath = /^\/workspaces\/([^/]+)\/sessions$/;
   const sessionDetailPath = /^\/workspaces\/([^/]+)\/sessions\/([^/]+)$/;
@@ -47,6 +50,8 @@
 
   {#if getPath() === "/" || getPath() === ""}
     <Overview />
+  {:else if getPath() === "/projects"}
+    <ProjectsList />
   {:else if getPath() === "/workspaces"}
     <WorkspacesList />
   {:else if getPath() === "/search"}
@@ -85,6 +90,9 @@
   {:else if tasksPath.exec(getPath())}
     {@const match = tasksPath.exec(getPath())}
     <TasksPage workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else if projectDetailPath.exec(getPath())}
+    {@const match = projectDetailPath.exec(getPath())}
+    <ProjectDetail projectId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if workspaceDetailPath.exec(getPath())}
     {@const match = workspaceDetailPath.exec(getPath())}
     <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />

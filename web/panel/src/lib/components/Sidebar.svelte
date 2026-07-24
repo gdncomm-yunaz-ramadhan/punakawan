@@ -3,6 +3,7 @@
 
   const links: { path: string; label: string; disabled?: boolean }[] = [
     { path: "/", label: "Overview" },
+    { path: "/projects", label: "Projects" },
     { path: "/workspaces", label: "Workspaces" },
     { path: "/search", label: "Search" },
     { path: "/system", label: "System" },

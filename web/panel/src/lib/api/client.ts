@@ -3,6 +3,8 @@
 // workspaces only); later phases add sessions/tasks/knowledge/evidence/
 // approvals here as their own endpoints land.
 
+import { fetchWithCsrf } from "../session";
+
 export interface SystemInfo {
   panel_version: string;
   punakawan_version: string;
@@ -156,6 +158,11 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    // Machine-readable error code carried on validation (400) and
+    // conflict (409) responses so the UI can render a specific message
+    // (e.g. "duplicate_key", "secret_rejected") rather than only the
+    // human-readable string. Undefined for errors that carry no code.
+    public code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -636,4 +643,125 @@ export function getEvidenceTextPreview(
 export function listApprovals(workspaceId: string, status?: string): Promise<{ items: ApprovalRecord[] }> {
   const qs = status ? `?status=${encodeURIComponent(status)}` : "";
   return getJSON<{ items: ApprovalRecord[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/approvals${qs}`);
+}
+
+// --- Projects (Phase 2, plan §5) -----------------------------------------
+//
+// Projects are becoming the primary entity. A project's snapshot counts
+// mirror internal/panel's ProjectSummary; its editable metadata is an
+// optimistically-locked list guarded by a monotonically increasing
+// `revision` (send the last-loaded revision as base_revision on every
+// mutation; a stale one 409s).
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  pinned: boolean;
+  primary: boolean;
+  // A plain string (not the Availability union) per the backend contract;
+  // its values happen to overlap Availability, so StatusBadge can render
+  // it after a narrowing cast.
+  availability: string;
+  repository_count: number;
+  knowledge_count: number;
+  open_task_count: number;
+  blocked_task_count: number;
+  active_session_count: number;
+  metadata_count: number;
+}
+
+// A single editable project-metadata field. `value` is intentionally
+// `unknown` - metadata holds arbitrary JSON (strings, numbers, objects),
+// and the UI stringifies/parses it at the edges.
+export interface MetadataEntry {
+  key: string;
+  description: string;
+  value: unknown;
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  metadata: MetadataEntry[];
+  revision: number;
+}
+
+// The write endpoints (POST/PATCH) echo the persisted entry plus the new
+// revision the caller must carry into its next optimistic-locked write.
+export interface MetadataMutationResult {
+  entry: MetadataEntry;
+  revision: number;
+}
+
+// The 400 validation codes the metadata write endpoints can return
+// (plan §5). Kept as a union so the UI's message map is exhaustive.
+export type MetadataErrorCode = "duplicate_key" | "secret_rejected" | "invalid_value" | "missing_field";
+
+export function listProjects(): Promise<{ items: ProjectSummary[] }> {
+  return getJSON<{ items: ProjectSummary[] }>("/projects");
+}
+
+export function getProject(id: string): Promise<ProjectDetail> {
+  return getJSON<ProjectDetail>(`/projects/${encodeURIComponent(id)}`);
+}
+
+export function listMetadata(id: string): Promise<{ items: MetadataEntry[]; revision: number }> {
+  return getJSON<{ items: MetadataEntry[]; revision: number }>(`/projects/${encodeURIComponent(id)}/metadata`);
+}
+
+// mutateJSON is the write-side sibling of getJSON: it goes through
+// fetchWithCsrf (attaching the session CSRF header and mapping 401/403 to
+// SessionExpiredError) and, on any other non-2xx, throws an ApiError that
+// preserves both the server's `code` (409 conflict / 400 validation) and
+// its human-readable message so the UI can branch on either.
+async function mutateJSON<T>(path: string, init: RequestInit): Promise<T> {
+  const res = await fetchWithCsrf(`/api/v1${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", Accept: "application/json", ...(init.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
+    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface AddMetadataRequest {
+  key: string;
+  description: string;
+  value: unknown;
+  base_revision: number;
+}
+
+export function addMetadata(id: string, body: AddMetadataRequest): Promise<MetadataMutationResult> {
+  return mutateJSON<MetadataMutationResult>(`/projects/${encodeURIComponent(id)}/metadata`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export interface UpdateMetadataRequest {
+  description?: string;
+  value?: unknown;
+  base_revision: number;
+}
+
+export function updateMetadata(id: string, key: string, body: UpdateMetadataRequest): Promise<MetadataMutationResult> {
+  return mutateJSON<MetadataMutationResult>(
+    `/projects/${encodeURIComponent(id)}/metadata/${encodeURIComponent(key)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+// DELETE returns 204 with no body; base_revision rides in the query
+// string (the DELETE has no request body) for optimistic locking.
+export async function deleteMetadata(id: string, key: string, baseRevision: number): Promise<void> {
+  const res = await fetchWithCsrf(
+    `/api/v1/projects/${encodeURIComponent(id)}/metadata/${encodeURIComponent(key)}?base_revision=${baseRevision}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
+    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
+  }
 }
