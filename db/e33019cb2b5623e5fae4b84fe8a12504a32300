@@ -1,0 +1,59 @@
+internal/mcpserver/tools_workflow.go
+  d98638225f35480d 116-121,124
+internal/tools/supervisor_windows.go
+  d98638225f35480d 1-74
+packages/adapter-atlassian/test/fakeAtlassianRest.ts
+  d98638225f35480d 230-240
+packages/adapter-atlassian/test/adapter.test.ts
+  d98638225f35480d 29-30,394-434
+internal/tools/supervisor.go
+  d98638225f35480d 7-13,129,136
+internal/mcpserver/tools.go
+  d98638225f35480d 186,201,204-226,240
+packages/adapter-atlassian/src/adapter.ts
+  d98638225f35480d 8,10,185-200
+internal/tools/background.go
+  d98638225f35480d 42,81-84,92-93,105-106,114
+protocol/knowledge.schema.json
+  d98638225f35480d 234,240-271
+scripts/install.ps1
+  d98638225f35480d 1-263
+internal/roles/bagong_test.go
+  d98638225f35480d 28-34,73-116,119-123,126,128-129,169-175
+packages/adapter-atlassian/src/operations.ts
+  d98638225f35480d 484-541
+internal/roles/bagong.go
+  d98638225f35480d 63-71,81-83,85-86,90-91,97,105-139
+internal/mcpserver/tools_workflow_test.go
+  d98638225f35480d 68-74
+internal/mcpserver/tools_jiraprogress.go
+  d98638225f35480d 33
+internal/mcpserver/tools_jira.go
+  d98638225f35480d 1-296
+packages/adapter-atlassian/src/manifest.ts
+  d98638225f35480d 47-48
+internal/mcpserver/tools_jira_test.go
+  d98638225f35480d 1-266
+internal/tools/supervisor_unix.go
+  d98638225f35480d 1-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "dbe33019cb2b5623e5fae4b84fe8a12504a32300",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1284,
+      "total_deletions": 53,
+      "accepted_lines": 1277,
+      "overriden_lines": 0
+    }
+  }
+}
