@@ -1,0 +1,25 @@
+internal/panel/sources/sources_test.go
+  d98638225f35480d 591-644
+internal/panel/sources/knowledge_source.go
+  d98638225f35480d 138-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "6159d0606be4b89792f166599f3b466382f34e85",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 62,
+      "total_deletions": 1,
+      "accepted_lines": 62,
+      "overriden_lines": 0
+    }
+  }
+}
