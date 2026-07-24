@@ -1,0 +1,43 @@
+internal/mcpserver/tools_dossier.go
+  d98638225f35480d 29-38,54-61,75
+internal/dossier/dossier.go
+  d98638225f35480d 58-65,150
+internal/mcpserver/tools_capsule.go
+  d98638225f35480d 48-57,74-80,96
+internal/mcpserver/metadata_context.go
+  d98638225f35480d 8,65-108
+internal/capsule/build_test.go
+  d98638225f35480d 87-122
+internal/panel/api/workflowdef_handler.go
+  d98638225f35480d 29-33,37,42,184-185,215
+internal/capsule/build.go
+  d98638225f35480d 51-58,119-122
+protocol/knowledge.schema.json
+  d98638225f35480d 161-176
+protocol/capsule.schema.json
+  d98638225f35480d 69-85
+internal/panel/server/server.go
+  d98638225f35480d 221-225,227-236,238-239,241-249
+internal/panel/api/workflowdef_handler_test.go
+  d98638225f35480d 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2523396ea7ddb472fc135145066f2d1feba8e2af",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 211,
+      "total_deletions": 28,
+      "accepted_lines": 211,
+      "overriden_lines": 0
+    }
+  }
+}
