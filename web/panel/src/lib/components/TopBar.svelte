@@ -36,11 +36,24 @@
 
 <style>
   header {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.75rem;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--color-border);
+    background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-subtle) 100%);
+  }
+  /* Signature batik ribbon: a 3px gold->terracotta->teal->indigo bar
+     running the full width of the header's top edge. */
+  header::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient-brand);
   }
   .logo {
     display: block;

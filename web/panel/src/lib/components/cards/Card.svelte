@@ -62,7 +62,7 @@
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
+    box-shadow: var(--shadow-sm);
     padding: 1rem 1.1rem;
     display: flex;
     flex-direction: column;
@@ -70,6 +70,18 @@
     box-sizing: border-box;
     height: 100%;
     min-width: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .card {
+      transition:
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        transform 160ms ease;
+    }
+  }
+  .card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-border-strong);
   }
   .card-header {
     display: flex;

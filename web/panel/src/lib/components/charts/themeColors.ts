@@ -22,6 +22,14 @@ export interface ThemePalette {
   warning: string;
   danger: string;
   info: string;
+  // Batik brand hues (§13.2 additive tokens). Used as the categorical
+  // chart series palette (colorRoles.ts ROTATION) so multi-series charts
+  // read as one wayang-themed system instead of a rainbow of semantics.
+  gold: string;
+  teal: string;
+  terracotta: string;
+  indigo: string;
+  violet: string;
 }
 
 const PROPERTY_MAP: Record<keyof ThemePalette, string> = {
@@ -42,29 +50,39 @@ const PROPERTY_MAP: Record<keyof ThemePalette, string> = {
   warning: "--color-warning",
   danger: "--color-danger",
   info: "--color-info",
+  gold: "--color-gold",
+  teal: "--color-teal",
+  terracotta: "--color-terracotta",
+  indigo: "--color-indigo",
+  violet: "--color-violet",
 };
 
 // Fallback palette used when there is no document (SSR-less test contexts
 // that skip DOM setup) - mirrors theme.css's light theme so charts/graphs
 // still render something sane.
 const FALLBACK: ThemePalette = {
-  bg: "#f6f7fb",
+  bg: "#f7f5f0",
   surface: "#ffffff",
-  surfaceSubtle: "#eef1f6",
+  surfaceSubtle: "#f0ece3",
   surfaceRaised: "#ffffff",
-  text: "#172033",
-  textMuted: "#667085",
-  border: "#dce2ea",
-  borderStrong: "#c7cfdb",
-  accent: "#5b5bd6",
-  accentHover: "#4b4bc4",
-  accentSoft: "#ececfe",
+  text: "#1f2430",
+  textMuted: "#6b6459",
+  border: "#e6ddcf",
+  borderStrong: "#d3c8b6",
+  accent: "#235fb5",
+  accentHover: "#1b4a90",
+  accentSoft: "#e8eefb",
   accentContrast: "#ffffff",
-  secondary: "#0f9f9c",
-  success: "#16875b",
-  warning: "#b76e00",
-  danger: "#c7374f",
-  info: "#2878c7",
+  secondary: "#128a5e",
+  success: "#128a5e",
+  warning: "#c07b12",
+  danger: "#c7402a",
+  info: "#235fb5",
+  gold: "#c9880f",
+  teal: "#128a5e",
+  terracotta: "#d9531f",
+  indigo: "#235fb5",
+  violet: "#7a5bd0",
 };
 
 export function readThemePalette(): ThemePalette {
