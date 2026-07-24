@@ -1,0 +1,99 @@
+internal/panel/api/project_handler.go
+  d98638225f35480d 1-66
+web/panel/tests/ProjectMetadata.test.ts
+  d98638225f35480d 1-175
+internal/panel/server/server.go
+  d98638225f35480d 166-172
+internal/panel/runtime/manager_test.go
+  d98638225f35480d 1-429
+internal/panel/sources/global_search_source.go
+  d98638225f35480d 9,30-36,77-92,102
+internal/panel/api/metadata_handler_test.go
+  d98638225f35480d 1-186
+internal/panel/tasksnapshot/service_test.go
+  d98638225f35480d 1-255
+internal/panel/events/reconciler_test.go
+  d98638225f35480d 6,45-74,201-241
+internal/panel/sources/workspace_source.go
+  d98638225f35480d 19,39-45,128-136,156-168
+internal/knowledge/query_test.go
+  d98638225f35480d 1-176
+internal/panel/snapshot/snapshot_test.go
+  d98638225f35480d 1-215
+web/panel/src/lib/components/Sidebar.svelte
+  d98638225f35480d 6
+internal/project/selector_test.go
+  d98638225f35480d 1-79
+internal/panel/api/metadata_handler.go
+  d98638225f35480d 1-142
+internal/panel/deps.go
+  d98638225f35480d 9-12,16,18-19,36,44-60,62,64,68-78,80-230,232
+internal/panel/tasksnapshot/service.go
+  d98638225f35480d 1-368
+internal/panel/sources/knowledge_source.go
+  d98638225f35480d 37-43,55-64,73-78,81-96,98-112,114-118,121
+web/panel/src/routes/projects/ProjectsList.svelte
+  d98638225f35480d 1-146
+internal/panel/api/project_handler_test.go
+  d98638225f35480d 1-152
+internal/panel/sources/task_source.go
+  d98638225f35480d 11,15-23,25-26,54-63,65,68-72,74,76,78,80,88,95,99,137,141
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 6-7,161-165,647-767
+internal/panel/contract/readers.go
+  d98638225f35480d 18,261-307
+internal/project/project.go
+  d98638225f35480d 1-390
+internal/project/project_test.go
+  d98638225f35480d 1-248
+internal/panel/runtime/manager.go
+  d98638225f35480d 1-377
+internal/project/validation.go
+  d98638225f35480d 1-102
+internal/project/selector.go
+  d98638225f35480d 1-95
+web/panel/src/routes/projects/ProjectDetail.svelte
+  d98638225f35480d 1-189
+web/panel/src/routes/projects/ProjectMetadata.svelte
+  d98638225f35480d 1-537
+internal/knowledge/dolt.go
+  d98638225f35480d 294-398
+internal/project/validation_test.go
+  d98638225f35480d 1-44
+internal/panel/events/reconciler.go
+  d98638225f35480d 12-14,17-24,28-35,41-43,58-60,67-69,71-74,79-82,87-88,90-96,139-146
+web/panel/tests/projects-client.test.ts
+  d98638225f35480d 1-133
+web/panel/src/App.svelte
+  d98638225f35480d 7-8,34,53-54,93-95
+internal/panel/sources/cached_workspace.go
+  d98638225f35480d 1-172
+internal/panel/snapshot/snapshot.go
+  d98638225f35480d 1-242
+internal/knowledge/query.go
+  d98638225f35480d 1-159
+internal/panel/sources/cached_workspace_test.go
+  d98638225f35480d 1-75,77-78,80-133,135-155
+web/panel/src/lib/components/MobileNavigation.svelte
+  d98638225f35480d 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "a3afc713e0cf79f5f1fe13b76237322e104488ea",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 6047,
+      "total_deletions": 257,
+      "accepted_lines": 5996,
+      "overriden_lines": 3
+    }
+  }
+}
