@@ -170,6 +170,20 @@ export interface KnowledgeRecord {
     missing_information?: string[];
     contradictions?: string[];
     confidence_level?: string;
+    /**
+     * Bounded, relevance-selected project metadata (performance plan §4.4) injected when the dossier was built, so a later reader of the persisted dossier record sees the same project context the builder had.
+     */
+    project_metadata?: {
+      key: string;
+      description?: string;
+      /**
+       * The raw metadata value; may be any JSON type (string, number, boolean, array, or object).
+       */
+      value?: {
+        [k: string]: unknown;
+      };
+      rendered: string;
+    }[];
   };
   /**
    * Semar's consolidated output after merging Gareng and Petruk findings, present on semar-synthesis records. See §8.1, §9.2.

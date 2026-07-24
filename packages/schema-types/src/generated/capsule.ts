@@ -38,4 +38,18 @@ export interface ContextCapsule {
   forbidden_actions: string[];
   expected_output?: string;
   token_budget?: number;
+  /**
+   * Bounded, relevance-selected project metadata (performance plan §4.4) injected when the capsule was built. Deliberately NOT one of the digest fields (§6.3): it is derived project context, not part of the capsule's reasoning inputs, so adding or refreshing it must not change the capsule's identity.
+   */
+  project_metadata?: {
+    key: string;
+    description?: string;
+    /**
+     * The raw metadata value; may be any JSON type (string, number, boolean, array, or object).
+     */
+    value?: {
+      [k: string]: unknown;
+    };
+    rendered: string;
+  }[];
 }

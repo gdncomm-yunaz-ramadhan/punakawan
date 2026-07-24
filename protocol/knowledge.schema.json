@@ -158,7 +158,22 @@
         "assumptions": { "type": "array", "items": { "type": "string" } },
         "missing_information": { "type": "array", "items": { "type": "string" } },
         "contradictions": { "type": "array", "items": { "type": "string" } },
-        "confidence_level": { "type": "string" }
+        "confidence_level": { "type": "string" },
+        "project_metadata": {
+          "description": "Bounded, relevance-selected project metadata (performance plan §4.4) injected when the dossier was built, so a later reader of the persisted dossier record sees the same project context the builder had.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "rendered"],
+            "additionalProperties": false,
+            "properties": {
+              "key": { "type": "string" },
+              "description": { "type": "string" },
+              "value": { "description": "The raw metadata value; may be any JSON type (string, number, boolean, array, or object)." },
+              "rendered": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "semar_synthesis": {

@@ -48,6 +48,14 @@ type BuildInput struct {
 
 	ExpectedOutput string
 	TokenBudget    *int
+
+	// ProjectMetadata is the bounded, relevance-selected project metadata
+	// (performance plan §4.4) the caller chose for this capsule. It is copied
+	// straight onto the capsule but is deliberately NOT part of Digest's §6.3
+	// payload: it is derived project context, so refreshing it must not change
+	// the capsule's identity. Selection/rendering happen in the caller
+	// (mcpserver), which owns the project selector.
+	ProjectMetadata []protocol.ContextCapsuleProjectMetadataElem
 }
 
 // Build resolves in's requirement/knowledge ids against store, rejecting
@@ -108,6 +116,10 @@ func Build(store *knowledge.Store, id string, now time.Time, in BuildInput) (pro
 		c.ExpectedOutput = &in.ExpectedOutput
 	}
 	c.TokenBudget = in.TokenBudget
+	// Set after the digest fields but before Digest is computed: harmless
+	// either way, since Digest hashes only the fixed §6.3 payload and never
+	// reads ProjectMetadata.
+	c.ProjectMetadata = in.ProjectMetadata
 
 	digest, err := Digest(c)
 	if err != nil {

@@ -26,19 +26,20 @@ type WorkflowRootResolver func(projectID string) (root string, err error)
 //   - caps: the registered capability set used to validate definitions and
 //     to re-check on invoke. Built with workflowdef.NewCapabilitySet(
 //     workflowdef.KnownMCPCapabilities(), adapterOps).
-//   - newInvoker: builds an Invoker for a resolved root. The integrator wires
-//     the RunCreator here so it can bind the workflow-run store for that root;
-//     it is a func(root string) so run creation can target the right
-//     workspace. caps is passed through for the invoke-time re-check.
+//   - newInvoker: builds an Invoker for a resolved (projectID, root). The
+//     integrator wires the RunCreator here so it can bind the workflow-run
+//     store for that project; it takes both the project id (the runtime pool's
+//     key for non-primary projects) and the root so run creation can target the
+//     right workspace. caps is passed through for the invoke-time re-check.
 type WorkflowDefHandlers struct {
 	resolveRoot WorkflowRootResolver
 	caps        workflowdef.CapabilitySet
-	newInvoker  func(root string) workflowdef.Invoker
+	newInvoker  func(projectID, root string) workflowdef.Invoker
 }
 
 // NewWorkflowDefHandlers constructs the handler bundle. resolveRoot and
 // newInvoker must be non-nil.
-func NewWorkflowDefHandlers(resolveRoot WorkflowRootResolver, caps workflowdef.CapabilitySet, newInvoker func(root string) workflowdef.Invoker) *WorkflowDefHandlers {
+func NewWorkflowDefHandlers(resolveRoot WorkflowRootResolver, caps workflowdef.CapabilitySet, newInvoker func(projectID, root string) workflowdef.Invoker) *WorkflowDefHandlers {
 	return &WorkflowDefHandlers{resolveRoot: resolveRoot, caps: caps, newInvoker: newInvoker}
 }
 
@@ -180,7 +181,8 @@ func (h *WorkflowDefHandlers) setEnabled(enabled bool) http.HandlerFunc {
 // its run created via the injected Invoker, returning {"run_id": ...}.
 func (h *WorkflowDefHandlers) Invoke() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		root, err := h.resolveRoot(r.PathValue("projectId"))
+		projectID := r.PathValue("projectId")
+		root, err := h.resolveRoot(projectID)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err)
 			return
@@ -210,7 +212,7 @@ func (h *WorkflowDefHandlers) Invoke() http.HandlerFunc {
 			}
 		}
 
-		runID, err := h.newInvoker(root).Invoke(r.Context(), def, body.Inputs)
+		runID, err := h.newInvoker(projectID, root).Invoke(r.Context(), def, body.Inputs)
 		if errors.Is(err, workflowdef.ErrDisabled) {
 			writeCodeError(w, http.StatusConflict, "disabled", err)
 			return

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ygrip/punakawan/internal/project"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // MetadataContextEntry is one selected project-metadata item, rendered for an
@@ -59,6 +60,50 @@ func selectProjectMetadata(workspaceRoot, capability, intent string, requestedKe
 		}
 	}
 	return out, nil
+}
+
+// toDossierMetadata converts the selected entries to the codegen shape the
+// persisted context-dossier record carries (§4.4). Returns nil for an empty
+// selection so the schema-optional field is omitted entirely.
+func toDossierMetadata(entries []MetadataContextEntry) []protocol.KnowledgeRecordContextDossierProjectMetadataElem {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]protocol.KnowledgeRecordContextDossierProjectMetadataElem, len(entries))
+	for i, e := range entries {
+		out[i] = protocol.KnowledgeRecordContextDossierProjectMetadataElem{
+			Key:      e.Key,
+			Value:    e.Value,
+			Rendered: e.Rendered,
+		}
+		if e.Description != "" {
+			d := e.Description
+			out[i].Description = &d
+		}
+	}
+	return out
+}
+
+// toCapsuleMetadata is toDossierMetadata's sibling for the ContextCapsule
+// codegen type; the two element structs are identical in shape but distinct
+// Go types, so each needs its own converter.
+func toCapsuleMetadata(entries []MetadataContextEntry) []protocol.ContextCapsuleProjectMetadataElem {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]protocol.ContextCapsuleProjectMetadataElem, len(entries))
+	for i, e := range entries {
+		out[i] = protocol.ContextCapsuleProjectMetadataElem{
+			Key:      e.Key,
+			Value:    e.Value,
+			Rendered: e.Rendered,
+		}
+		if e.Description != "" {
+			d := e.Description
+			out[i].Description = &d
+		}
+	}
+	return out
 }
 
 // renderMetadataEntry renders a single metadata entry in §4.4's block format:

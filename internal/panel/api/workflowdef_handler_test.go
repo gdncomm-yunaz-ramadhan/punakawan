@@ -26,7 +26,7 @@ func wfTestHandlers(t *testing.T) (*WorkflowDefHandlers, string, *fakeRunCreator
 		}
 		return root, nil
 	}
-	newInvoker := func(r string) workflowdef.Invoker {
+	newInvoker := func(projectID, r string) workflowdef.Invoker {
 		return workflowdef.NewInvoker(caps, frc.create)
 	}
 	return NewWorkflowDefHandlers(resolve, caps, newInvoker), root, frc

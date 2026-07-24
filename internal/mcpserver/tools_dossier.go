@@ -26,6 +26,16 @@ type BuildContextDossierInput struct {
 	MissingInformation   []string `json:"missing_information,omitempty"`
 	Contradictions       []string `json:"contradictions,omitempty"`
 	ConfidenceLevel      string   `json:"confidence_level,omitempty"`
+
+	// Capability, Intent, and RequestedMetadataKeys drive project-metadata
+	// selection (§4.4), identically to build_task_context: only the relevant,
+	// bounded subset of the project's metadata is folded into the dossier, and
+	// with none supplied the selector returns general project context under a
+	// strict limit. A workspace without project.yaml (or metadata) yields
+	// nothing and the dossier's project_metadata field is omitted.
+	Capability            string   `json:"capability,omitempty" jsonschema:"project-metadata key namespace to prioritize (e.g. jira); selects keys equal to it or prefixed '<capability>.'"`
+	Intent                string   `json:"intent,omitempty" jsonschema:"a project-metadata key to prioritize by exact match"`
+	RequestedMetadataKeys []string `json:"requested_metadata_keys,omitempty" jsonschema:"explicit project-metadata keys to include first, in order"`
 }
 
 // BuildContextDossierOutput is build_context_dossier's output.
@@ -41,6 +51,14 @@ func buildContextDossierHandler(a *app.App) func(context.Context, *mcp.CallToolR
 			return nil, BuildContextDossierOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
 
+		// Select the bounded, relevant project metadata (§4.4) fresh from the
+		// live project.yaml, then bake it into the persisted dossier so a later
+		// reader sees the same project context the builder had.
+		metadata, err := selectProjectMetadata(a.Workspace.Root, in.Capability, in.Intent, in.RequestedMetadataKeys)
+		if err != nil {
+			return nil, BuildContextDossierOutput{}, err
+		}
+
 		rec, err := dossier.Build(ctx, a.Workspace, a.Supervisor, store, dossier.BuildInput{
 			WorkspaceID:          a.Workspace.ID,
 			RunID:                in.RunId,
@@ -54,6 +72,7 @@ func buildContextDossierHandler(a *app.App) func(context.Context, *mcp.CallToolR
 			MissingInformation:   in.MissingInformation,
 			Contradictions:       in.Contradictions,
 			ConfidenceLevel:      in.ConfidenceLevel,
+			ProjectMetadata:      toDossierMetadata(metadata),
 		})
 		if err != nil {
 			return nil, BuildContextDossierOutput{}, fmt.Errorf("mcpserver: build context dossier: %w", err)

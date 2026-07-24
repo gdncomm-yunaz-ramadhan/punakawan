@@ -84,6 +84,42 @@ func TestBuildAssemblesCapsuleAndResolvesReferences(t *testing.T) {
 	}
 }
 
+func TestBuildProjectMetadataIsCarriedButNotDigested(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
+
+	base := BuildInput{
+		TaskID:    "bd-task-1",
+		Role:      protocol.ContextCapsuleRolePetruk,
+		Objective: "Implement the refund flow",
+	}
+	withMeta := base
+	withMeta.ProjectMetadata = []protocol.ContextCapsuleProjectMetadataElem{
+		{Key: "jira.project_key", Value: "TRF", Rendered: "jira.project_key\n  Value: TRF"},
+	}
+
+	plain, err := Build(store, "cap-1", now, base)
+	if err != nil {
+		t.Fatalf("Build plain: %v", err)
+	}
+	meta, err := Build(store, "cap-1", now, withMeta)
+	if err != nil {
+		t.Fatalf("Build with metadata: %v", err)
+	}
+
+	if len(meta.ProjectMetadata) != 1 || meta.ProjectMetadata[0].Key != "jira.project_key" {
+		t.Fatalf("ProjectMetadata = %+v, want the injected entry carried onto the capsule", meta.ProjectMetadata)
+	}
+	if len(plain.ProjectMetadata) != 0 {
+		t.Fatalf("ProjectMetadata = %+v, want none when the caller injected none", plain.ProjectMetadata)
+	}
+	// §6.3: project_metadata is derived context, not a digest input. Adding it
+	// must not change the capsule's identity.
+	if plain.Digest != meta.Digest {
+		t.Fatalf("digest changed with project_metadata: %q vs %q; it must be excluded from the §6.3 payload", plain.Digest, meta.Digest)
+	}
+}
+
 func TestBuildRejectsForbiddenKnowledgeType(t *testing.T) {
 	store := newTestStore(t)
 	plan := baseRecord("pkw:petrukplan/smoke/PLAN-1", protocol.KnowledgeRecordTypePetrukPlan, "Petruk's plan")

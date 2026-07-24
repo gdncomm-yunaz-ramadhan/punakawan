@@ -218,24 +218,35 @@ func (s *Server) Start() error {
 	// WorkflowRun. A definition id is not one of the fixed WorkflowRun name
 	// enums, so the run is created under the generic "implementation-only"
 	// carrier with its Objective set to the originating definition id (that is
-	// how a run traces back to the definition that spawned it). Only the
-	// primary project's run store is wired here; cross-project invocation is a
-	// separate follow-up (it needs a per-project workflow.Store via the runtime
-	// manager).
-	newInvoker := func(root string) workflowdef.Invoker {
+	// how a run traces back to the definition that spawned it). The primary
+	// project uses its long-lived run store directly; a non-primary project is
+	// Acquire'd from the runtime pool (punokawan-hbm) so its own
+	// .punakawan/workflow/runs.jsonl receives the run, then released.
+	newInvoker := func(projectID, root string) workflowdef.Invoker {
 		return workflowdef.NewInvoker(caps, func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
-			if root != s.app.Workspace.Root {
-				return "", fmt.Errorf("workflow invocation is currently supported only for the primary project")
+			createRun := func(a *app.App) (string, error) {
+				now := time.Now().UTC()
+				runID := fmt.Sprintf("pkw:run/%s/%s-%d", a.Workspace.ID, def.ID, now.UnixNano())
+				run := workflow.New(runID, a.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
+				objective := "workflow-definition:" + def.ID
+				run.Objective = &objective
+				if err := a.Workflow.Append(run); err != nil {
+					return "", fmt.Errorf("create workflow run for definition %q: %w", def.ID, err)
+				}
+				return runID, nil
 			}
-			now := time.Now().UTC()
-			runID := fmt.Sprintf("pkw:run/%s/%s-%d", s.app.Workspace.ID, def.ID, now.UnixNano())
-			run := workflow.New(runID, s.app.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
-			objective := "workflow-definition:" + def.ID
-			run.Objective = &objective
-			if err := s.app.Workflow.Append(run); err != nil {
-				return "", fmt.Errorf("create workflow run for definition %q: %w", def.ID, err)
+			if root == s.app.Workspace.Root {
+				return createRun(s.app)
 			}
-			return runID, nil
+			if s.readers.Runtime == nil {
+				return "", fmt.Errorf("workflow invocation for non-primary project %q is unavailable: no runtime pool", projectID)
+			}
+			rt, release, err := s.readers.Runtime.Acquire(ctx, projectID, root)
+			if err != nil {
+				return "", fmt.Errorf("acquire project %q for workflow invocation: %w", projectID, err)
+			}
+			defer release()
+			return createRun(rt.App)
 		})
 	}
 	wf := api.NewWorkflowDefHandlers(s.resolveRoot, caps, newInvoker)

@@ -1993,6 +1993,12 @@ type ContextCapsule struct {
 	// Objective corresponds to the JSON schema field "objective".
 	Objective string `json:"objective" yaml:"objective" mapstructure:"objective"`
 
+	// Bounded, relevance-selected project metadata (performance plan §4.4) injected
+	// when the capsule was built. Deliberately NOT one of the digest fields (§6.3):
+	// it is derived project context, not part of the capsule's reasoning inputs, so
+	// adding or refreshing it must not change the capsule's identity.
+	ProjectMetadata []ContextCapsuleProjectMetadataElem `json:"project_metadata,omitempty,omitzero" yaml:"project_metadata,omitempty" mapstructure:"project_metadata,omitempty"`
+
 	// RelevantKnowledge corresponds to the JSON schema field "relevant_knowledge".
 	RelevantKnowledge []ContextCapsuleRelevantKnowledgeElem `json:"relevant_knowledge,omitempty,omitzero" yaml:"relevant_knowledge,omitempty" mapstructure:"relevant_knowledge,omitempty"`
 
@@ -2036,6 +2042,42 @@ func (j *ContextCapsuleEvidenceElem) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	*j = ContextCapsuleEvidenceElem(plain)
+	return nil
+}
+
+type ContextCapsuleProjectMetadataElem struct {
+	// Description corresponds to the JSON schema field "description".
+	Description *string `json:"description,omitempty,omitzero" yaml:"description,omitempty" mapstructure:"description,omitempty"`
+
+	// Key corresponds to the JSON schema field "key".
+	Key string `json:"key" yaml:"key" mapstructure:"key"`
+
+	// Rendered corresponds to the JSON schema field "rendered".
+	Rendered string `json:"rendered" yaml:"rendered" mapstructure:"rendered"`
+
+	// The raw metadata value; may be any JSON type (string, number, boolean, array,
+	// or object).
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContextCapsuleProjectMetadataElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["key"]; raw != nil && !ok {
+		return fmt.Errorf("field key in ContextCapsuleProjectMetadataElem: required")
+	}
+	if _, ok := raw["rendered"]; raw != nil && !ok {
+		return fmt.Errorf("field rendered in ContextCapsuleProjectMetadataElem: required")
+	}
+	type Plain ContextCapsuleProjectMetadataElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ContextCapsuleProjectMetadataElem(plain)
 	return nil
 }
 
@@ -3100,6 +3142,11 @@ type KnowledgeRecordContextDossier struct {
 	// MissingInformation corresponds to the JSON schema field "missing_information".
 	MissingInformation []string `json:"missing_information,omitempty,omitzero" yaml:"missing_information,omitempty" mapstructure:"missing_information,omitempty"`
 
+	// Bounded, relevance-selected project metadata (performance plan §4.4) injected
+	// when the dossier was built, so a later reader of the persisted dossier record
+	// sees the same project context the builder had.
+	ProjectMetadata []KnowledgeRecordContextDossierProjectMetadataElem `json:"project_metadata,omitempty,omitzero" yaml:"project_metadata,omitempty" mapstructure:"project_metadata,omitempty"`
+
 	// RelevantPreviousDecisions corresponds to the JSON schema field
 	// "relevant_previous_decisions".
 	RelevantPreviousDecisions []string `json:"relevant_previous_decisions,omitempty,omitzero" yaml:"relevant_previous_decisions,omitempty" mapstructure:"relevant_previous_decisions,omitempty"`
@@ -3109,6 +3156,42 @@ type KnowledgeRecordContextDossier struct {
 
 	// UserGoal corresponds to the JSON schema field "user_goal".
 	UserGoal *string `json:"user_goal,omitempty,omitzero" yaml:"user_goal,omitempty" mapstructure:"user_goal,omitempty"`
+}
+
+type KnowledgeRecordContextDossierProjectMetadataElem struct {
+	// Description corresponds to the JSON schema field "description".
+	Description *string `json:"description,omitempty,omitzero" yaml:"description,omitempty" mapstructure:"description,omitempty"`
+
+	// Key corresponds to the JSON schema field "key".
+	Key string `json:"key" yaml:"key" mapstructure:"key"`
+
+	// Rendered corresponds to the JSON schema field "rendered".
+	Rendered string `json:"rendered" yaml:"rendered" mapstructure:"rendered"`
+
+	// The raw metadata value; may be any JSON type (string, number, boolean, array,
+	// or object).
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *KnowledgeRecordContextDossierProjectMetadataElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["key"]; raw != nil && !ok {
+		return fmt.Errorf("field key in KnowledgeRecordContextDossierProjectMetadataElem: required")
+	}
+	if _, ok := raw["rendered"]; raw != nil && !ok {
+		return fmt.Errorf("field rendered in KnowledgeRecordContextDossierProjectMetadataElem: required")
+	}
+	type Plain KnowledgeRecordContextDossierProjectMetadataElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = KnowledgeRecordContextDossierProjectMetadataElem(plain)
+	return nil
 }
 
 type KnowledgeRecordExtraction struct {
