@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/dossierclaim.schema.json",
+  "title": "DossierClaim",
+  "description": "One claim within a Change Dossier, per punakawan-role-config-distinguished-improvements-plan.md §34. A claim has a producer role and a status in the evidence ladder; a role can never verify its own claim (enforced by the store): Petruk produces implementation claims, Gareng risk/feasibility, Semar completeness/coordination, and Bagong verifies or disputes.",
+  "type": "object",
+  "required": ["id", "type", "statement", "producer", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "dossier_id": { "type": "string" },
+    "type": { "type": "string", "description": "e.g. compatibility, implementation, risk, completeness." },
+    "statement": { "type": "string" },
+    "producer": {
+      "type": "object",
+      "required": ["role"],
+      "additionalProperties": false,
+      "properties": { "role": { "type": "string", "enum": ["semar", "gareng", "petruk", "bagong"] } }
+    },
+    "status": {
+      "type": "string",
+      "description": "The §2.3 evidence ladder.",
+      "enum": ["draft", "claimed", "supported", "verified", "disputed", "rejected", "superseded"]
+    },
+    "evidence": { "type": "array", "items": { "type": "string" }, "description": "DossierEvidence ids supporting the claim." },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": { "type": "string", "enum": ["semar", "gareng", "petruk", "bagong"] },
+        "result": { "type": "string", "enum": ["verified", "disputed"] },
+        "note": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

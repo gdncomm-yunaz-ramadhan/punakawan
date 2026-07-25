@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/dossier.schema.json",
+  "title": "ChangeDossier",
+  "description": "The primary proof artifact for a change, per punakawan-role-config-distinguished-improvements-plan.md Part IV §32/§33. Machine- and human-readable, versioned, project-scoped, evidence-backed, exportable. It answers what was requested, what evidence defined it, what contradictions existed, what was affected, what plan was accepted, what changed, what was tested, whether implementation matched the plan, and what remains unresolved. Claims and evidence live in sibling records (DossierClaim / DossierEvidence); this manifest links them by id.",
+  "type": "object",
+  "required": ["version", "id", "project_id", "title", "status", "objective"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string", "const": "punakawan.change-dossier/v1" },
+    "id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "title": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "context_ready", "planned", "implementing", "awaiting_verification", "verified", "disputed", "completed", "superseded"]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "objective": {
+      "type": "object",
+      "required": ["statement"],
+      "additionalProperties": false,
+      "properties": {
+        "statement": { "type": "string" },
+        "source_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "covered": { "type": "array", "items": { "type": "string" } },
+        "uncovered": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "contradictions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resolved": { "type": "array", "items": { "type": "string" } },
+        "unresolved": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repositories": { "type": "array", "items": { "type": "string" } },
+        "excluded_repositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["repository", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "repository": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "missing_coverage": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "integer" }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "completed": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "changed_repositories": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "description": "Per-dimension verification status. Values are claim-status strings (draft/claimed/supported/verified/disputed/rejected).",
+      "additionalProperties": { "type": "string" }
+    },
+    "plan_conformance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "implemented": { "type": "integer" },
+        "partial": { "type": "integer" },
+        "missing": { "type": "integer" },
+        "deliberate_deviations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["item", "actual", "rationale"],
+            "additionalProperties": false,
+            "properties": {
+              "item": { "type": "string" },
+              "actual": { "type": "string" },
+              "rationale": { "type": "string" },
+              "approved": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "unresolved_risks": { "type": "array", "items": { "type": "string" } },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verified": { "type": "boolean" },
+        "procedure": { "type": "string" }
+      }
+    },
+    "claims": { "type": "array", "items": { "type": "string" }, "description": "DossierClaim ids attached to this dossier." },
+    "evidence": { "type": "array", "items": { "type": "string" }, "description": "DossierEvidence ids attached to this dossier." }
+  }
+}

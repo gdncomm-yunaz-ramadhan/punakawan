@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/contradiction.schema.json",
+  "title": "Contradiction",
+  "description": "A durable record of a disagreement between sources (Jira, Confluence, project metadata, workflows, knowledge, plans, source code, configuration, tests, API specs), per punakawan-role-config-distinguished-improvements-plan.md Part II. Punakawan must not silently choose between conflicting sources: every material disagreement becomes one of these records, carrying each side's claim + evidence and an optional proposed resolution that requires human confirmation.",
+  "type": "object",
+  "required": ["version", "id", "project_id", "title", "severity", "status", "subject", "claims"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string", "const": "punakawan.contradiction/v1" },
+    "id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "title": { "type": "string" },
+    "severity": {
+      "type": "string",
+      "description": "informational: record only. minor: warn. material: clarify or resolve. critical: block.",
+      "enum": ["informational", "minor", "material", "critical"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["detected", "triaged", "needs_clarification", "resolution_proposed", "resolved", "accepted_divergence", "superseded"]
+    },
+    "blocking": { "type": "boolean", "description": "Whether this contradiction currently blocks progress. Only Gareng's blocking_risks capability (or project policy for critical) may set it." },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "detected_by": { "type": "string", "description": "Role or subsystem that detected the contradiction." },
+    "subject": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["configuration", "api_operation", "requirement", "knowledge", "plan", "source", "test", "metadata", "other"]
+        },
+        "key": { "type": "string", "description": "Normalized identifier for the thing in disagreement (config key, operation id, requirement id, ...)." }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["source", "statement"],
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string", "enum": ["confluence", "jira", "repository", "metadata", "knowledge", "plan", "test", "openapi", "other"] },
+              "ref": { "type": "string", "description": "Reference within the source (page id, issue key, file path, ...)." }
+            }
+          },
+          "statement": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" }, "description": "Evidence record ids supporting this claim." }
+        }
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "proposed_statement": { "type": "string" },
+        "rationale": { "type": "string" },
+        "requires_human_confirmation": { "type": "boolean" },
+        "resolved_statement": { "type": "string", "description": "The confirmed statement once resolved." },
+        "resolved_by": { "type": "string" },
+        "resolved_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "links": {
+      "type": "object",
+      "description": "Ids of related entities this contradiction affects (§22 detail 'affected ...').",
+      "additionalProperties": false,
+      "properties": {
+        "plans": { "type": "array", "items": { "type": "string" } },
+        "tasks": { "type": "array", "items": { "type": "string" } },
+        "dossiers": { "type": "array", "items": { "type": "string" } },
+        "handoffs": { "type": "array", "items": { "type": "string" } },
+        "repositories": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

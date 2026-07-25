@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/impactedge.schema.json",
+  "title": "ImpactEdge",
+  "description": "One evidence-backed directed edge in a project's Cross-Repository Impact Graph, per punakawan-role-config-distinguished-improvements-plan.md Part III §25/§26. Edges connect two ImpactNode ids and carry a confidence and the evidence that discovered them, so an impact query can distinguish observed facts from inferences. Persisted append-only to .punakawan/impact/edges.jsonl.",
+  "type": "object",
+  "required": ["from", "to", "type", "confidence"],
+  "additionalProperties": false,
+  "properties": {
+    "from": { "type": "string", "description": "Source node id." },
+    "to": { "type": "string", "description": "Target node id." },
+    "type": {
+      "type": "string",
+      "enum": ["contains", "defines", "calls", "implements", "consumes", "tests", "configures", "deploys", "depends_on", "documented_by", "owned_by", "tracked_by", "contradicts", "derived_from"]
+    },
+    "confidence": {
+      "type": "string",
+      "description": "observed: directly seen in a source. inferred: derived heuristically. verified: independently confirmed. disputed: a contradiction exists about this edge.",
+      "enum": ["observed", "inferred", "verified", "disputed"]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "description": "e.g. source_location, openapi_reference, test_reference." },
+          "ref": { "type": "string", "description": "e.g. src/lib/api/merchant.ts:44." }
+        }
+      }
+    },
+    "discovered_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": { "type": "string" },
+        "method": { "type": "string", "description": "e.g. openapi-client-reference." }
+      }
+    }
+  }
+}

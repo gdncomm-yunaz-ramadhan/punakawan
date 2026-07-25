@@ -1953,6 +1953,324 @@ func (j *BrowserFlow) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// The primary proof artifact for a change, per
+// punakawan-role-config-distinguished-improvements-plan.md Part IV §32/§33.
+// Machine- and human-readable, versioned, project-scoped, evidence-backed,
+// exportable. It answers what was requested, what evidence defined it, what
+// contradictions existed, what was affected, what plan was accepted, what changed,
+// what was tested, whether implementation matched the plan, and what remains
+// unresolved. Claims and evidence live in sibling records (DossierClaim /
+// DossierEvidence); this manifest links them by id.
+type ChangeDossier struct {
+	// DossierClaim ids attached to this dossier.
+	Claims []string `json:"claims,omitempty,omitzero" yaml:"claims,omitempty" mapstructure:"claims,omitempty"`
+
+	// Contradictions corresponds to the JSON schema field "contradictions".
+	Contradictions *ChangeDossierContradictions `json:"contradictions,omitempty,omitzero" yaml:"contradictions,omitempty" mapstructure:"contradictions,omitempty"`
+
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt *time.Time `json:"created_at,omitempty,omitzero" yaml:"created_at,omitempty" mapstructure:"created_at,omitempty"`
+
+	// DossierEvidence ids attached to this dossier.
+	Evidence []string `json:"evidence,omitempty,omitzero" yaml:"evidence,omitempty" mapstructure:"evidence,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Impact corresponds to the JSON schema field "impact".
+	Impact *ChangeDossierImpact `json:"impact,omitempty,omitzero" yaml:"impact,omitempty" mapstructure:"impact,omitempty"`
+
+	// Implementation corresponds to the JSON schema field "implementation".
+	Implementation *ChangeDossierImplementation `json:"implementation,omitempty,omitzero" yaml:"implementation,omitempty" mapstructure:"implementation,omitempty"`
+
+	// Objective corresponds to the JSON schema field "objective".
+	Objective ChangeDossierObjective `json:"objective" yaml:"objective" mapstructure:"objective"`
+
+	// Plan corresponds to the JSON schema field "plan".
+	Plan *ChangeDossierPlan `json:"plan,omitempty,omitzero" yaml:"plan,omitempty" mapstructure:"plan,omitempty"`
+
+	// PlanConformance corresponds to the JSON schema field "plan_conformance".
+	PlanConformance *ChangeDossierPlanConformance `json:"plan_conformance,omitempty,omitzero" yaml:"plan_conformance,omitempty" mapstructure:"plan_conformance,omitempty"`
+
+	// ProjectId corresponds to the JSON schema field "project_id".
+	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
+
+	// Requirements corresponds to the JSON schema field "requirements".
+	Requirements *ChangeDossierRequirements `json:"requirements,omitempty,omitzero" yaml:"requirements,omitempty" mapstructure:"requirements,omitempty"`
+
+	// Rollback corresponds to the JSON schema field "rollback".
+	Rollback *ChangeDossierRollback `json:"rollback,omitempty,omitzero" yaml:"rollback,omitempty" mapstructure:"rollback,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status ChangeDossierStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Tasks corresponds to the JSON schema field "tasks".
+	Tasks *ChangeDossierTasks `json:"tasks,omitempty,omitzero" yaml:"tasks,omitempty" mapstructure:"tasks,omitempty"`
+
+	// Title corresponds to the JSON schema field "title".
+	Title string `json:"title" yaml:"title" mapstructure:"title"`
+
+	// UnresolvedRisks corresponds to the JSON schema field "unresolved_risks".
+	UnresolvedRisks []string `json:"unresolved_risks,omitempty,omitzero" yaml:"unresolved_risks,omitempty" mapstructure:"unresolved_risks,omitempty"`
+
+	// UpdatedAt corresponds to the JSON schema field "updated_at".
+	UpdatedAt *time.Time `json:"updated_at,omitempty,omitzero" yaml:"updated_at,omitempty" mapstructure:"updated_at,omitempty"`
+
+	// Per-dimension verification status. Values are claim-status strings
+	// (draft/claimed/supported/verified/disputed/rejected).
+	Verification ChangeDossierVerification `json:"verification,omitempty,omitzero" yaml:"verification,omitempty" mapstructure:"verification,omitempty"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version string `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+type ChangeDossierContradictions struct {
+	// Resolved corresponds to the JSON schema field "resolved".
+	Resolved []string `json:"resolved,omitempty,omitzero" yaml:"resolved,omitempty" mapstructure:"resolved,omitempty"`
+
+	// Unresolved corresponds to the JSON schema field "unresolved".
+	Unresolved []string `json:"unresolved,omitempty,omitzero" yaml:"unresolved,omitempty" mapstructure:"unresolved,omitempty"`
+}
+
+type ChangeDossierImpact struct {
+	// ExcludedRepositories corresponds to the JSON schema field
+	// "excluded_repositories".
+	ExcludedRepositories []ChangeDossierImpactExcludedRepositoriesElem `json:"excluded_repositories,omitempty,omitzero" yaml:"excluded_repositories,omitempty" mapstructure:"excluded_repositories,omitempty"`
+
+	// MissingCoverage corresponds to the JSON schema field "missing_coverage".
+	MissingCoverage []string `json:"missing_coverage,omitempty,omitzero" yaml:"missing_coverage,omitempty" mapstructure:"missing_coverage,omitempty"`
+
+	// Repositories corresponds to the JSON schema field "repositories".
+	Repositories []string `json:"repositories,omitempty,omitzero" yaml:"repositories,omitempty" mapstructure:"repositories,omitempty"`
+}
+
+type ChangeDossierImpactExcludedRepositoriesElem struct {
+	// Reason corresponds to the JSON schema field "reason".
+	Reason string `json:"reason" yaml:"reason" mapstructure:"reason"`
+
+	// Repository corresponds to the JSON schema field "repository".
+	Repository string `json:"repository" yaml:"repository" mapstructure:"repository"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ChangeDossierImpactExcludedRepositoriesElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["reason"]; raw != nil && !ok {
+		return fmt.Errorf("field reason in ChangeDossierImpactExcludedRepositoriesElem: required")
+	}
+	if _, ok := raw["repository"]; raw != nil && !ok {
+		return fmt.Errorf("field repository in ChangeDossierImpactExcludedRepositoriesElem: required")
+	}
+	type Plain ChangeDossierImpactExcludedRepositoriesElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ChangeDossierImpactExcludedRepositoriesElem(plain)
+	return nil
+}
+
+type ChangeDossierImplementation struct {
+	// ChangedRepositories corresponds to the JSON schema field
+	// "changed_repositories".
+	ChangedRepositories []string `json:"changed_repositories,omitempty,omitzero" yaml:"changed_repositories,omitempty" mapstructure:"changed_repositories,omitempty"`
+}
+
+type ChangeDossierObjective struct {
+	// SourceRefs corresponds to the JSON schema field "source_refs".
+	SourceRefs []string `json:"source_refs,omitempty,omitzero" yaml:"source_refs,omitempty" mapstructure:"source_refs,omitempty"`
+
+	// Statement corresponds to the JSON schema field "statement".
+	Statement string `json:"statement" yaml:"statement" mapstructure:"statement"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ChangeDossierObjective) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["statement"]; raw != nil && !ok {
+		return fmt.Errorf("field statement in ChangeDossierObjective: required")
+	}
+	type Plain ChangeDossierObjective
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ChangeDossierObjective(plain)
+	return nil
+}
+
+type ChangeDossierPlan struct {
+	// Id corresponds to the JSON schema field "id".
+	Id *string `json:"id,omitempty,omitzero" yaml:"id,omitempty" mapstructure:"id,omitempty"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version *int `json:"version,omitempty,omitzero" yaml:"version,omitempty" mapstructure:"version,omitempty"`
+}
+
+type ChangeDossierPlanConformance struct {
+	// DeliberateDeviations corresponds to the JSON schema field
+	// "deliberate_deviations".
+	DeliberateDeviations []ChangeDossierPlanConformanceDeliberateDeviationsElem `json:"deliberate_deviations,omitempty,omitzero" yaml:"deliberate_deviations,omitempty" mapstructure:"deliberate_deviations,omitempty"`
+
+	// Implemented corresponds to the JSON schema field "implemented".
+	Implemented *int `json:"implemented,omitempty,omitzero" yaml:"implemented,omitempty" mapstructure:"implemented,omitempty"`
+
+	// Missing corresponds to the JSON schema field "missing".
+	Missing *int `json:"missing,omitempty,omitzero" yaml:"missing,omitempty" mapstructure:"missing,omitempty"`
+
+	// Partial corresponds to the JSON schema field "partial".
+	Partial *int `json:"partial,omitempty,omitzero" yaml:"partial,omitempty" mapstructure:"partial,omitempty"`
+}
+
+type ChangeDossierPlanConformanceDeliberateDeviationsElem struct {
+	// Actual corresponds to the JSON schema field "actual".
+	Actual string `json:"actual" yaml:"actual" mapstructure:"actual"`
+
+	// Approved corresponds to the JSON schema field "approved".
+	Approved *bool `json:"approved,omitempty,omitzero" yaml:"approved,omitempty" mapstructure:"approved,omitempty"`
+
+	// Item corresponds to the JSON schema field "item".
+	Item string `json:"item" yaml:"item" mapstructure:"item"`
+
+	// Rationale corresponds to the JSON schema field "rationale".
+	Rationale string `json:"rationale" yaml:"rationale" mapstructure:"rationale"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ChangeDossierPlanConformanceDeliberateDeviationsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["actual"]; raw != nil && !ok {
+		return fmt.Errorf("field actual in ChangeDossierPlanConformanceDeliberateDeviationsElem: required")
+	}
+	if _, ok := raw["item"]; raw != nil && !ok {
+		return fmt.Errorf("field item in ChangeDossierPlanConformanceDeliberateDeviationsElem: required")
+	}
+	if _, ok := raw["rationale"]; raw != nil && !ok {
+		return fmt.Errorf("field rationale in ChangeDossierPlanConformanceDeliberateDeviationsElem: required")
+	}
+	type Plain ChangeDossierPlanConformanceDeliberateDeviationsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ChangeDossierPlanConformanceDeliberateDeviationsElem(plain)
+	return nil
+}
+
+type ChangeDossierRequirements struct {
+	// Covered corresponds to the JSON schema field "covered".
+	Covered []string `json:"covered,omitempty,omitzero" yaml:"covered,omitempty" mapstructure:"covered,omitempty"`
+
+	// Uncovered corresponds to the JSON schema field "uncovered".
+	Uncovered []string `json:"uncovered,omitempty,omitzero" yaml:"uncovered,omitempty" mapstructure:"uncovered,omitempty"`
+}
+
+type ChangeDossierRollback struct {
+	// Procedure corresponds to the JSON schema field "procedure".
+	Procedure *string `json:"procedure,omitempty,omitzero" yaml:"procedure,omitempty" mapstructure:"procedure,omitempty"`
+
+	// Verified corresponds to the JSON schema field "verified".
+	Verified *bool `json:"verified,omitempty,omitzero" yaml:"verified,omitempty" mapstructure:"verified,omitempty"`
+}
+
+type ChangeDossierStatus string
+
+const ChangeDossierStatusAwaitingVerification ChangeDossierStatus = "awaiting_verification"
+const ChangeDossierStatusCompleted ChangeDossierStatus = "completed"
+const ChangeDossierStatusContextReady ChangeDossierStatus = "context_ready"
+const ChangeDossierStatusDisputed ChangeDossierStatus = "disputed"
+const ChangeDossierStatusDraft ChangeDossierStatus = "draft"
+const ChangeDossierStatusImplementing ChangeDossierStatus = "implementing"
+const ChangeDossierStatusPlanned ChangeDossierStatus = "planned"
+const ChangeDossierStatusSuperseded ChangeDossierStatus = "superseded"
+const ChangeDossierStatusVerified ChangeDossierStatus = "verified"
+
+var enumValues_ChangeDossierStatus = []interface{}{
+	"draft",
+	"context_ready",
+	"planned",
+	"implementing",
+	"awaiting_verification",
+	"verified",
+	"disputed",
+	"completed",
+	"superseded",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ChangeDossierStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ChangeDossierStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ChangeDossierStatus, v)
+	}
+	*j = ChangeDossierStatus(v)
+	return nil
+}
+
+type ChangeDossierTasks struct {
+	// Completed corresponds to the JSON schema field "completed".
+	Completed []string `json:"completed,omitempty,omitzero" yaml:"completed,omitempty" mapstructure:"completed,omitempty"`
+}
+
+// Per-dimension verification status. Values are claim-status strings
+// (draft/claimed/supported/verified/disputed/rejected).
+type ChangeDossierVerification map[string]string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ChangeDossier) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ChangeDossier: required")
+	}
+	if _, ok := raw["objective"]; raw != nil && !ok {
+		return fmt.Errorf("field objective in ChangeDossier: required")
+	}
+	if _, ok := raw["project_id"]; raw != nil && !ok {
+		return fmt.Errorf("field project_id in ChangeDossier: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in ChangeDossier: required")
+	}
+	if _, ok := raw["title"]; raw != nil && !ok {
+		return fmt.Errorf("field title in ChangeDossier: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in ChangeDossier: required")
+	}
+	type Plain ChangeDossier
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Version != "punakawan.change-dossier/v1" {
+		return fmt.Errorf("field %s: must be equal to %s", "version", "punakawan.change-dossier/v1")
+	}
+	*j = ChangeDossier(plain)
+	return nil
+}
+
 // An immutable, hashable, bounded context handed to one Gareng/Petruk/Bagong
 // invocation. See punakawan-architecture-enhancement-plan.md §6 and AEP-M1
 // (punokawan-0m9). Digest is computed over
@@ -2213,6 +2531,802 @@ func (j *ContextCapsule) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s: must be >= %v", "token_budget", 1)
 	}
 	*j = ContextCapsule(plain)
+	return nil
+}
+
+// A durable record of a disagreement between sources (Jira, Confluence, project
+// metadata, workflows, knowledge, plans, source code, configuration, tests, API
+// specs), per punakawan-role-config-distinguished-improvements-plan.md Part II.
+// Punakawan must not silently choose between conflicting sources: every material
+// disagreement becomes one of these records, carrying each side's claim + evidence
+// and an optional proposed resolution that requires human confirmation.
+type Contradiction struct {
+	// Whether this contradiction currently blocks progress. Only Gareng's
+	// blocking_risks capability (or project policy for critical) may set it.
+	Blocking *bool `json:"blocking,omitempty,omitzero" yaml:"blocking,omitempty" mapstructure:"blocking,omitempty"`
+
+	// Claims corresponds to the JSON schema field "claims".
+	Claims []ContradictionClaimsElem `json:"claims" yaml:"claims" mapstructure:"claims"`
+
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt *time.Time `json:"created_at,omitempty,omitzero" yaml:"created_at,omitempty" mapstructure:"created_at,omitempty"`
+
+	// Role or subsystem that detected the contradiction.
+	DetectedBy *string `json:"detected_by,omitempty,omitzero" yaml:"detected_by,omitempty" mapstructure:"detected_by,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Ids of related entities this contradiction affects (§22 detail 'affected ...').
+	Links *ContradictionLinks `json:"links,omitempty,omitzero" yaml:"links,omitempty" mapstructure:"links,omitempty"`
+
+	// ProjectId corresponds to the JSON schema field "project_id".
+	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
+
+	// Resolution corresponds to the JSON schema field "resolution".
+	Resolution *ContradictionResolution `json:"resolution,omitempty,omitzero" yaml:"resolution,omitempty" mapstructure:"resolution,omitempty"`
+
+	// informational: record only. minor: warn. material: clarify or resolve.
+	// critical: block.
+	Severity ContradictionSeverity `json:"severity" yaml:"severity" mapstructure:"severity"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status ContradictionStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Subject corresponds to the JSON schema field "subject".
+	Subject ContradictionSubject `json:"subject" yaml:"subject" mapstructure:"subject"`
+
+	// Title corresponds to the JSON schema field "title".
+	Title string `json:"title" yaml:"title" mapstructure:"title"`
+
+	// UpdatedAt corresponds to the JSON schema field "updated_at".
+	UpdatedAt *time.Time `json:"updated_at,omitempty,omitzero" yaml:"updated_at,omitempty" mapstructure:"updated_at,omitempty"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version string `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+type ContradictionClaimsElem struct {
+	// Evidence record ids supporting this claim.
+	Evidence []string `json:"evidence,omitempty,omitzero" yaml:"evidence,omitempty" mapstructure:"evidence,omitempty"`
+
+	// Source corresponds to the JSON schema field "source".
+	Source ContradictionClaimsElemSource `json:"source" yaml:"source" mapstructure:"source"`
+
+	// Statement corresponds to the JSON schema field "statement".
+	Statement string `json:"statement" yaml:"statement" mapstructure:"statement"`
+}
+
+type ContradictionClaimsElemSource struct {
+	// Reference within the source (page id, issue key, file path, ...).
+	Ref *string `json:"ref,omitempty,omitzero" yaml:"ref,omitempty" mapstructure:"ref,omitempty"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type ContradictionClaimsElemSourceType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+type ContradictionClaimsElemSourceType string
+
+const ContradictionClaimsElemSourceTypeConfluence ContradictionClaimsElemSourceType = "confluence"
+const ContradictionClaimsElemSourceTypeJira ContradictionClaimsElemSourceType = "jira"
+const ContradictionClaimsElemSourceTypeKnowledge ContradictionClaimsElemSourceType = "knowledge"
+const ContradictionClaimsElemSourceTypeMetadata ContradictionClaimsElemSourceType = "metadata"
+const ContradictionClaimsElemSourceTypeOpenapi ContradictionClaimsElemSourceType = "openapi"
+const ContradictionClaimsElemSourceTypeOther ContradictionClaimsElemSourceType = "other"
+const ContradictionClaimsElemSourceTypePlan ContradictionClaimsElemSourceType = "plan"
+const ContradictionClaimsElemSourceTypeRepository ContradictionClaimsElemSourceType = "repository"
+const ContradictionClaimsElemSourceTypeTest ContradictionClaimsElemSourceType = "test"
+
+var enumValues_ContradictionClaimsElemSourceType = []interface{}{
+	"confluence",
+	"jira",
+	"repository",
+	"metadata",
+	"knowledge",
+	"plan",
+	"test",
+	"openapi",
+	"other",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContradictionClaimsElemSourceType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ContradictionClaimsElemSourceType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ContradictionClaimsElemSourceType, v)
+	}
+	*j = ContradictionClaimsElemSourceType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContradictionClaimsElemSource) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ContradictionClaimsElemSource: required")
+	}
+	type Plain ContradictionClaimsElemSource
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ContradictionClaimsElemSource(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContradictionClaimsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["source"]; raw != nil && !ok {
+		return fmt.Errorf("field source in ContradictionClaimsElem: required")
+	}
+	if _, ok := raw["statement"]; raw != nil && !ok {
+		return fmt.Errorf("field statement in ContradictionClaimsElem: required")
+	}
+	type Plain ContradictionClaimsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ContradictionClaimsElem(plain)
+	return nil
+}
+
+// Ids of related entities this contradiction affects (§22 detail 'affected ...').
+type ContradictionLinks struct {
+	// Dossiers corresponds to the JSON schema field "dossiers".
+	Dossiers []string `json:"dossiers,omitempty,omitzero" yaml:"dossiers,omitempty" mapstructure:"dossiers,omitempty"`
+
+	// Handoffs corresponds to the JSON schema field "handoffs".
+	Handoffs []string `json:"handoffs,omitempty,omitzero" yaml:"handoffs,omitempty" mapstructure:"handoffs,omitempty"`
+
+	// Plans corresponds to the JSON schema field "plans".
+	Plans []string `json:"plans,omitempty,omitzero" yaml:"plans,omitempty" mapstructure:"plans,omitempty"`
+
+	// Repositories corresponds to the JSON schema field "repositories".
+	Repositories []string `json:"repositories,omitempty,omitzero" yaml:"repositories,omitempty" mapstructure:"repositories,omitempty"`
+
+	// Tasks corresponds to the JSON schema field "tasks".
+	Tasks []string `json:"tasks,omitempty,omitzero" yaml:"tasks,omitempty" mapstructure:"tasks,omitempty"`
+}
+
+type ContradictionResolution struct {
+	// ProposedStatement corresponds to the JSON schema field "proposed_statement".
+	ProposedStatement *string `json:"proposed_statement,omitempty,omitzero" yaml:"proposed_statement,omitempty" mapstructure:"proposed_statement,omitempty"`
+
+	// Rationale corresponds to the JSON schema field "rationale".
+	Rationale *string `json:"rationale,omitempty,omitzero" yaml:"rationale,omitempty" mapstructure:"rationale,omitempty"`
+
+	// RequiresHumanConfirmation corresponds to the JSON schema field
+	// "requires_human_confirmation".
+	RequiresHumanConfirmation *bool `json:"requires_human_confirmation,omitempty,omitzero" yaml:"requires_human_confirmation,omitempty" mapstructure:"requires_human_confirmation,omitempty"`
+
+	// ResolvedAt corresponds to the JSON schema field "resolved_at".
+	ResolvedAt *time.Time `json:"resolved_at,omitempty,omitzero" yaml:"resolved_at,omitempty" mapstructure:"resolved_at,omitempty"`
+
+	// ResolvedBy corresponds to the JSON schema field "resolved_by".
+	ResolvedBy *string `json:"resolved_by,omitempty,omitzero" yaml:"resolved_by,omitempty" mapstructure:"resolved_by,omitempty"`
+
+	// The confirmed statement once resolved.
+	ResolvedStatement *string `json:"resolved_statement,omitempty,omitzero" yaml:"resolved_statement,omitempty" mapstructure:"resolved_statement,omitempty"`
+}
+
+type ContradictionSeverity string
+
+const ContradictionSeverityCritical ContradictionSeverity = "critical"
+const ContradictionSeverityInformational ContradictionSeverity = "informational"
+const ContradictionSeverityMaterial ContradictionSeverity = "material"
+const ContradictionSeverityMinor ContradictionSeverity = "minor"
+
+var enumValues_ContradictionSeverity = []interface{}{
+	"informational",
+	"minor",
+	"material",
+	"critical",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContradictionSeverity) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ContradictionSeverity {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ContradictionSeverity, v)
+	}
+	*j = ContradictionSeverity(v)
+	return nil
+}
+
+type ContradictionStatus string
+
+const ContradictionStatusAcceptedDivergence ContradictionStatus = "accepted_divergence"
+const ContradictionStatusDetected ContradictionStatus = "detected"
+const ContradictionStatusNeedsClarification ContradictionStatus = "needs_clarification"
+const ContradictionStatusResolutionProposed ContradictionStatus = "resolution_proposed"
+const ContradictionStatusResolved ContradictionStatus = "resolved"
+const ContradictionStatusSuperseded ContradictionStatus = "superseded"
+const ContradictionStatusTriaged ContradictionStatus = "triaged"
+
+var enumValues_ContradictionStatus = []interface{}{
+	"detected",
+	"triaged",
+	"needs_clarification",
+	"resolution_proposed",
+	"resolved",
+	"accepted_divergence",
+	"superseded",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContradictionStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ContradictionStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ContradictionStatus, v)
+	}
+	*j = ContradictionStatus(v)
+	return nil
+}
+
+type ContradictionSubject struct {
+	// Normalized identifier for the thing in disagreement (config key, operation id,
+	// requirement id, ...).
+	Key *string `json:"key,omitempty,omitzero" yaml:"key,omitempty" mapstructure:"key,omitempty"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type ContradictionSubjectType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+type ContradictionSubjectType string
+
+const ContradictionSubjectTypeApiOperation ContradictionSubjectType = "api_operation"
+const ContradictionSubjectTypeConfiguration ContradictionSubjectType = "configuration"
+const ContradictionSubjectTypeKnowledge ContradictionSubjectType = "knowledge"
+const ContradictionSubjectTypeMetadata ContradictionSubjectType = "metadata"
+const ContradictionSubjectTypeOther ContradictionSubjectType = "other"
+const ContradictionSubjectTypePlan ContradictionSubjectType = "plan"
+const ContradictionSubjectTypeRequirement ContradictionSubjectType = "requirement"
+const ContradictionSubjectTypeSource ContradictionSubjectType = "source"
+const ContradictionSubjectTypeTest ContradictionSubjectType = "test"
+
+var enumValues_ContradictionSubjectType = []interface{}{
+	"configuration",
+	"api_operation",
+	"requirement",
+	"knowledge",
+	"plan",
+	"source",
+	"test",
+	"metadata",
+	"other",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContradictionSubjectType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ContradictionSubjectType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ContradictionSubjectType, v)
+	}
+	*j = ContradictionSubjectType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ContradictionSubject) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ContradictionSubject: required")
+	}
+	type Plain ContradictionSubject
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ContradictionSubject(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Contradiction) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["claims"]; raw != nil && !ok {
+		return fmt.Errorf("field claims in Contradiction: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in Contradiction: required")
+	}
+	if _, ok := raw["project_id"]; raw != nil && !ok {
+		return fmt.Errorf("field project_id in Contradiction: required")
+	}
+	if _, ok := raw["severity"]; raw != nil && !ok {
+		return fmt.Errorf("field severity in Contradiction: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in Contradiction: required")
+	}
+	if _, ok := raw["subject"]; raw != nil && !ok {
+		return fmt.Errorf("field subject in Contradiction: required")
+	}
+	if _, ok := raw["title"]; raw != nil && !ok {
+		return fmt.Errorf("field title in Contradiction: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in Contradiction: required")
+	}
+	type Plain Contradiction
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Claims != nil && len(plain.Claims) < 2 {
+		return fmt.Errorf("field %s length: must be >= %d", "claims", 2)
+	}
+	if plain.Version != "punakawan.contradiction/v1" {
+		return fmt.Errorf("field %s: must be equal to %s", "version", "punakawan.contradiction/v1")
+	}
+	*j = Contradiction(plain)
+	return nil
+}
+
+// One claim within a Change Dossier, per
+// punakawan-role-config-distinguished-improvements-plan.md §34. A claim has a
+// producer role and a status in the evidence ladder; a role can never verify its
+// own claim (enforced by the store): Petruk produces implementation claims, Gareng
+// risk/feasibility, Semar completeness/coordination, and Bagong verifies or
+// disputes.
+type DossierClaim struct {
+	// DossierId corresponds to the JSON schema field "dossier_id".
+	DossierId *string `json:"dossier_id,omitempty,omitzero" yaml:"dossier_id,omitempty" mapstructure:"dossier_id,omitempty"`
+
+	// DossierEvidence ids supporting the claim.
+	Evidence []string `json:"evidence,omitempty,omitzero" yaml:"evidence,omitempty" mapstructure:"evidence,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Producer corresponds to the JSON schema field "producer".
+	Producer DossierClaimProducer `json:"producer" yaml:"producer" mapstructure:"producer"`
+
+	// Statement corresponds to the JSON schema field "statement".
+	Statement string `json:"statement" yaml:"statement" mapstructure:"statement"`
+
+	// The §2.3 evidence ladder.
+	Status DossierClaimStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// e.g. compatibility, implementation, risk, completeness.
+	Type string `json:"type" yaml:"type" mapstructure:"type"`
+
+	// Verification corresponds to the JSON schema field "verification".
+	Verification *DossierClaimVerification `json:"verification,omitempty,omitzero" yaml:"verification,omitempty" mapstructure:"verification,omitempty"`
+}
+
+type DossierClaimProducer struct {
+	// Role corresponds to the JSON schema field "role".
+	Role DossierClaimProducerRole `json:"role" yaml:"role" mapstructure:"role"`
+}
+
+type DossierClaimProducerRole string
+
+const DossierClaimProducerRoleBagong DossierClaimProducerRole = "bagong"
+const DossierClaimProducerRoleGareng DossierClaimProducerRole = "gareng"
+const DossierClaimProducerRolePetruk DossierClaimProducerRole = "petruk"
+const DossierClaimProducerRoleSemar DossierClaimProducerRole = "semar"
+
+var enumValues_DossierClaimProducerRole = []interface{}{
+	"semar",
+	"gareng",
+	"petruk",
+	"bagong",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierClaimProducerRole) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DossierClaimProducerRole {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DossierClaimProducerRole, v)
+	}
+	*j = DossierClaimProducerRole(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierClaimProducer) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["role"]; raw != nil && !ok {
+		return fmt.Errorf("field role in DossierClaimProducer: required")
+	}
+	type Plain DossierClaimProducer
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = DossierClaimProducer(plain)
+	return nil
+}
+
+type DossierClaimStatus string
+
+const DossierClaimStatusClaimed DossierClaimStatus = "claimed"
+const DossierClaimStatusDisputed DossierClaimStatus = "disputed"
+const DossierClaimStatusDraft DossierClaimStatus = "draft"
+const DossierClaimStatusRejected DossierClaimStatus = "rejected"
+const DossierClaimStatusSuperseded DossierClaimStatus = "superseded"
+const DossierClaimStatusSupported DossierClaimStatus = "supported"
+const DossierClaimStatusVerified DossierClaimStatus = "verified"
+
+var enumValues_DossierClaimStatus = []interface{}{
+	"draft",
+	"claimed",
+	"supported",
+	"verified",
+	"disputed",
+	"rejected",
+	"superseded",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierClaimStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DossierClaimStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DossierClaimStatus, v)
+	}
+	*j = DossierClaimStatus(v)
+	return nil
+}
+
+type DossierClaimVerification struct {
+	// At corresponds to the JSON schema field "at".
+	At *time.Time `json:"at,omitempty,omitzero" yaml:"at,omitempty" mapstructure:"at,omitempty"`
+
+	// Note corresponds to the JSON schema field "note".
+	Note *string `json:"note,omitempty,omitzero" yaml:"note,omitempty" mapstructure:"note,omitempty"`
+
+	// Result corresponds to the JSON schema field "result".
+	Result *DossierClaimVerificationResult `json:"result,omitempty,omitzero" yaml:"result,omitempty" mapstructure:"result,omitempty"`
+
+	// Role corresponds to the JSON schema field "role".
+	Role *DossierClaimVerificationRole `json:"role,omitempty,omitzero" yaml:"role,omitempty" mapstructure:"role,omitempty"`
+}
+
+type DossierClaimVerificationResult string
+
+const DossierClaimVerificationResultDisputed DossierClaimVerificationResult = "disputed"
+const DossierClaimVerificationResultVerified DossierClaimVerificationResult = "verified"
+
+var enumValues_DossierClaimVerificationResult = []interface{}{
+	"verified",
+	"disputed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierClaimVerificationResult) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DossierClaimVerificationResult {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DossierClaimVerificationResult, v)
+	}
+	*j = DossierClaimVerificationResult(v)
+	return nil
+}
+
+type DossierClaimVerificationRole string
+
+const DossierClaimVerificationRoleBagong DossierClaimVerificationRole = "bagong"
+const DossierClaimVerificationRoleGareng DossierClaimVerificationRole = "gareng"
+const DossierClaimVerificationRolePetruk DossierClaimVerificationRole = "petruk"
+const DossierClaimVerificationRoleSemar DossierClaimVerificationRole = "semar"
+
+var enumValues_DossierClaimVerificationRole = []interface{}{
+	"semar",
+	"gareng",
+	"petruk",
+	"bagong",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierClaimVerificationRole) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DossierClaimVerificationRole {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DossierClaimVerificationRole, v)
+	}
+	*j = DossierClaimVerificationRole(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierClaim) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in DossierClaim: required")
+	}
+	if _, ok := raw["producer"]; raw != nil && !ok {
+		return fmt.Errorf("field producer in DossierClaim: required")
+	}
+	if _, ok := raw["statement"]; raw != nil && !ok {
+		return fmt.Errorf("field statement in DossierClaim: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in DossierClaim: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in DossierClaim: required")
+	}
+	type Plain DossierClaim
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = DossierClaim(plain)
+	return nil
+}
+
+// One evidence record within a Change Dossier, per
+// punakawan-role-config-distinguished-improvements-plan.md §35. Records how a
+// claim is backed: the command run (and where), its result, and any produced
+// artifacts with content hashes. Distinct from internal task Evidence; this is the
+// dossier's exportable, hash-anchored proof unit.
+type DossierEvidence struct {
+	// Artifacts corresponds to the JSON schema field "artifacts".
+	Artifacts []DossierEvidenceArtifactsElem `json:"artifacts,omitempty,omitzero" yaml:"artifacts,omitempty" mapstructure:"artifacts,omitempty"`
+
+	// DossierId corresponds to the JSON schema field "dossier_id".
+	DossierId *string `json:"dossier_id,omitempty,omitzero" yaml:"dossier_id,omitempty" mapstructure:"dossier_id,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Result corresponds to the JSON schema field "result".
+	Result *DossierEvidenceResult `json:"result,omitempty,omitzero" yaml:"result,omitempty" mapstructure:"result,omitempty"`
+
+	// Source corresponds to the JSON schema field "source".
+	Source *DossierEvidenceSource `json:"source,omitempty,omitzero" yaml:"source,omitempty" mapstructure:"source,omitempty"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type DossierEvidenceType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+type DossierEvidenceArtifactsElem struct {
+	// Path corresponds to the JSON schema field "path".
+	Path string `json:"path" yaml:"path" mapstructure:"path"`
+
+	// Sha256 corresponds to the JSON schema field "sha256".
+	Sha256 *string `json:"sha256,omitempty,omitzero" yaml:"sha256,omitempty" mapstructure:"sha256,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierEvidenceArtifactsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["path"]; raw != nil && !ok {
+		return fmt.Errorf("field path in DossierEvidenceArtifactsElem: required")
+	}
+	type Plain DossierEvidenceArtifactsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = DossierEvidenceArtifactsElem(plain)
+	return nil
+}
+
+type DossierEvidenceResult struct {
+	// ExitCode corresponds to the JSON schema field "exit_code".
+	ExitCode *int `json:"exit_code,omitempty,omitzero" yaml:"exit_code,omitempty" mapstructure:"exit_code,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status *DossierEvidenceResultStatus `json:"status,omitempty,omitzero" yaml:"status,omitempty" mapstructure:"status,omitempty"`
+}
+
+type DossierEvidenceResultStatus string
+
+const DossierEvidenceResultStatusFailed DossierEvidenceResultStatus = "failed"
+const DossierEvidenceResultStatusPassed DossierEvidenceResultStatus = "passed"
+const DossierEvidenceResultStatusUnknown DossierEvidenceResultStatus = "unknown"
+
+var enumValues_DossierEvidenceResultStatus = []interface{}{
+	"passed",
+	"failed",
+	"unknown",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierEvidenceResultStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DossierEvidenceResultStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DossierEvidenceResultStatus, v)
+	}
+	*j = DossierEvidenceResultStatus(v)
+	return nil
+}
+
+type DossierEvidenceSource struct {
+	// Command corresponds to the JSON schema field "command".
+	Command *string `json:"command,omitempty,omitzero" yaml:"command,omitempty" mapstructure:"command,omitempty"`
+
+	// Ref corresponds to the JSON schema field "ref".
+	Ref *string `json:"ref,omitempty,omitzero" yaml:"ref,omitempty" mapstructure:"ref,omitempty"`
+
+	// Repository corresponds to the JSON schema field "repository".
+	Repository *string `json:"repository,omitempty,omitzero" yaml:"repository,omitempty" mapstructure:"repository,omitempty"`
+
+	// WorkingTree corresponds to the JSON schema field "working_tree".
+	WorkingTree *string `json:"working_tree,omitempty,omitzero" yaml:"working_tree,omitempty" mapstructure:"working_tree,omitempty"`
+}
+
+type DossierEvidenceType string
+
+const DossierEvidenceTypeApiCompatibility DossierEvidenceType = "api_compatibility"
+const DossierEvidenceTypeBuildResult DossierEvidenceType = "build_result"
+const DossierEvidenceTypeDependencyScan DossierEvidenceType = "dependency_scan"
+const DossierEvidenceTypeDiff DossierEvidenceType = "diff"
+const DossierEvidenceTypeManualConfirmation DossierEvidenceType = "manual_confirmation"
+const DossierEvidenceTypeMigrationCheck DossierEvidenceType = "migration_check"
+const DossierEvidenceTypeRequirementSource DossierEvidenceType = "requirement_source"
+const DossierEvidenceTypeReviewResult DossierEvidenceType = "review_result"
+const DossierEvidenceTypeScreenshot DossierEvidenceType = "screenshot"
+const DossierEvidenceTypeSecurityScan DossierEvidenceType = "security_scan"
+const DossierEvidenceTypeSourceLocation DossierEvidenceType = "source_location"
+const DossierEvidenceTypeTestResult DossierEvidenceType = "test_result"
+
+var enumValues_DossierEvidenceType = []interface{}{
+	"requirement_source",
+	"source_location",
+	"diff",
+	"test_result",
+	"build_result",
+	"api_compatibility",
+	"security_scan",
+	"dependency_scan",
+	"migration_check",
+	"screenshot",
+	"manual_confirmation",
+	"review_result",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierEvidenceType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DossierEvidenceType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DossierEvidenceType, v)
+	}
+	*j = DossierEvidenceType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DossierEvidence) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in DossierEvidence: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in DossierEvidence: required")
+	}
+	type Plain DossierEvidence
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = DossierEvidence(plain)
 	return nil
 }
 
@@ -2795,6 +3909,455 @@ func (j *GitExecutionPolicy) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	*j = GitExecutionPolicy(plain)
+	return nil
+}
+
+// A compact, resumable snapshot of in-progress work, per
+// punakawan-role-config-distinguished-improvements-plan.md Part V §41. It lets
+// work continue across agent clients, model providers, sessions, machines, and
+// people WITHOUT depending on conversation transcript history. It references
+// existing objects (plan, tasks, contradictions, evidence, dossier) by id rather
+// than copying them, so it stays small.
+type HandoffCapsule struct {
+	// AcceptedPlan corresponds to the JSON schema field "accepted_plan".
+	AcceptedPlan *HandoffCapsuleAcceptedPlan `json:"accepted_plan,omitempty,omitzero" yaml:"accepted_plan,omitempty" mapstructure:"accepted_plan,omitempty"`
+
+	// ChangedRepositories corresponds to the JSON schema field
+	// "changed_repositories".
+	ChangedRepositories []string `json:"changed_repositories,omitempty,omitzero" yaml:"changed_repositories,omitempty" mapstructure:"changed_repositories,omitempty"`
+
+	// CompletedTasks corresponds to the JSON schema field "completed_tasks".
+	CompletedTasks []string `json:"completed_tasks,omitempty,omitzero" yaml:"completed_tasks,omitempty" mapstructure:"completed_tasks,omitempty"`
+
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt *time.Time `json:"created_at,omitempty,omitzero" yaml:"created_at,omitempty" mapstructure:"created_at,omitempty"`
+
+	// CreatedBy corresponds to the JSON schema field "created_by".
+	CreatedBy *HandoffCapsuleCreatedBy `json:"created_by,omitempty,omitzero" yaml:"created_by,omitempty" mapstructure:"created_by,omitempty"`
+
+	// e.g. implementation, verification.
+	CurrentPhase string `json:"current_phase" yaml:"current_phase" mapstructure:"current_phase"`
+
+	// CurrentTask corresponds to the JSON schema field "current_task".
+	CurrentTask *HandoffCapsuleCurrentTask `json:"current_task,omitempty,omitzero" yaml:"current_task,omitempty" mapstructure:"current_task,omitempty"`
+
+	// Dossier corresponds to the JSON schema field "dossier".
+	Dossier *HandoffCapsuleDossier `json:"dossier,omitempty,omitzero" yaml:"dossier,omitempty" mapstructure:"dossier,omitempty"`
+
+	// Evidence corresponds to the JSON schema field "evidence".
+	Evidence []string `json:"evidence,omitempty,omitzero" yaml:"evidence,omitempty" mapstructure:"evidence,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// ImpactSummary corresponds to the JSON schema field "impact_summary".
+	ImpactSummary *HandoffCapsuleImpactSummary `json:"impact_summary,omitempty,omitzero" yaml:"impact_summary,omitempty" mapstructure:"impact_summary,omitempty"`
+
+	// Objective corresponds to the JSON schema field "objective".
+	Objective HandoffCapsuleObjective `json:"objective" yaml:"objective" mapstructure:"objective"`
+
+	// OpenContradictions corresponds to the JSON schema field "open_contradictions".
+	OpenContradictions []string `json:"open_contradictions,omitempty,omitzero" yaml:"open_contradictions,omitempty" mapstructure:"open_contradictions,omitempty"`
+
+	// ProjectId corresponds to the JSON schema field "project_id".
+	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
+
+	// RoleConfigurationRevision corresponds to the JSON schema field
+	// "role_configuration_revision".
+	RoleConfigurationRevision *int `json:"role_configuration_revision,omitempty,omitzero" yaml:"role_configuration_revision,omitempty" mapstructure:"role_configuration_revision,omitempty"`
+
+	// RunId corresponds to the JSON schema field "run_id".
+	RunId string `json:"run_id" yaml:"run_id" mapstructure:"run_id"`
+
+	// A superseded capsule must not resume silently (§43/acceptance).
+	Superseded *bool `json:"superseded,omitempty,omitzero" yaml:"superseded,omitempty" mapstructure:"superseded,omitempty"`
+
+	// UnresolvedRisks corresponds to the JSON schema field "unresolved_risks".
+	UnresolvedRisks []string `json:"unresolved_risks,omitempty,omitzero" yaml:"unresolved_risks,omitempty" mapstructure:"unresolved_risks,omitempty"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version string `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+type HandoffCapsuleAcceptedPlan struct {
+	// Id corresponds to the JSON schema field "id".
+	Id *string `json:"id,omitempty,omitzero" yaml:"id,omitempty" mapstructure:"id,omitempty"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version *int `json:"version,omitempty,omitzero" yaml:"version,omitempty" mapstructure:"version,omitempty"`
+}
+
+type HandoffCapsuleCreatedBy struct {
+	// AgentClient corresponds to the JSON schema field "agent_client".
+	AgentClient *string `json:"agent_client,omitempty,omitzero" yaml:"agent_client,omitempty" mapstructure:"agent_client,omitempty"`
+
+	// Role corresponds to the JSON schema field "role".
+	Role *string `json:"role,omitempty,omitzero" yaml:"role,omitempty" mapstructure:"role,omitempty"`
+}
+
+type HandoffCapsuleCurrentTask struct {
+	// Id corresponds to the JSON schema field "id".
+	Id *string `json:"id,omitempty,omitzero" yaml:"id,omitempty" mapstructure:"id,omitempty"`
+
+	// NextAction corresponds to the JSON schema field "next_action".
+	NextAction *string `json:"next_action,omitempty,omitzero" yaml:"next_action,omitempty" mapstructure:"next_action,omitempty"`
+}
+
+type HandoffCapsuleDossier struct {
+	// Id corresponds to the JSON schema field "id".
+	Id *string `json:"id,omitempty,omitzero" yaml:"id,omitempty" mapstructure:"id,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status *string `json:"status,omitempty,omitzero" yaml:"status,omitempty" mapstructure:"status,omitempty"`
+}
+
+type HandoffCapsuleImpactSummary struct {
+	// ExcludedRepositories corresponds to the JSON schema field
+	// "excluded_repositories".
+	ExcludedRepositories []string `json:"excluded_repositories,omitempty,omitzero" yaml:"excluded_repositories,omitempty" mapstructure:"excluded_repositories,omitempty"`
+
+	// RequiredRepositories corresponds to the JSON schema field
+	// "required_repositories".
+	RequiredRepositories []string `json:"required_repositories,omitempty,omitzero" yaml:"required_repositories,omitempty" mapstructure:"required_repositories,omitempty"`
+}
+
+type HandoffCapsuleObjective struct {
+	// SourceRefs corresponds to the JSON schema field "source_refs".
+	SourceRefs []string `json:"source_refs,omitempty,omitzero" yaml:"source_refs,omitempty" mapstructure:"source_refs,omitempty"`
+
+	// Statement corresponds to the JSON schema field "statement".
+	Statement string `json:"statement" yaml:"statement" mapstructure:"statement"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *HandoffCapsuleObjective) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["statement"]; raw != nil && !ok {
+		return fmt.Errorf("field statement in HandoffCapsuleObjective: required")
+	}
+	type Plain HandoffCapsuleObjective
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = HandoffCapsuleObjective(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *HandoffCapsule) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["current_phase"]; raw != nil && !ok {
+		return fmt.Errorf("field current_phase in HandoffCapsule: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in HandoffCapsule: required")
+	}
+	if _, ok := raw["objective"]; raw != nil && !ok {
+		return fmt.Errorf("field objective in HandoffCapsule: required")
+	}
+	if _, ok := raw["project_id"]; raw != nil && !ok {
+		return fmt.Errorf("field project_id in HandoffCapsule: required")
+	}
+	if _, ok := raw["run_id"]; raw != nil && !ok {
+		return fmt.Errorf("field run_id in HandoffCapsule: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in HandoffCapsule: required")
+	}
+	type Plain HandoffCapsule
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Version != "punakawan.handoff/v1" {
+		return fmt.Errorf("field %s: must be equal to %s", "version", "punakawan.handoff/v1")
+	}
+	*j = HandoffCapsule(plain)
+	return nil
+}
+
+// One evidence-backed directed edge in a project's Cross-Repository Impact Graph,
+// per punakawan-role-config-distinguished-improvements-plan.md Part III §25/§26.
+// Edges connect two ImpactNode ids and carry a confidence and the evidence that
+// discovered them, so an impact query can distinguish observed facts from
+// inferences. Persisted append-only to .punakawan/impact/edges.jsonl.
+type ImpactEdge struct {
+	// observed: directly seen in a source. inferred: derived heuristically. verified:
+	// independently confirmed. disputed: a contradiction exists about this edge.
+	Confidence ImpactEdgeConfidence `json:"confidence" yaml:"confidence" mapstructure:"confidence"`
+
+	// DiscoveredBy corresponds to the JSON schema field "discovered_by".
+	DiscoveredBy *ImpactEdgeDiscoveredBy `json:"discovered_by,omitempty,omitzero" yaml:"discovered_by,omitempty" mapstructure:"discovered_by,omitempty"`
+
+	// Evidence corresponds to the JSON schema field "evidence".
+	Evidence []ImpactEdgeEvidenceElem `json:"evidence,omitempty,omitzero" yaml:"evidence,omitempty" mapstructure:"evidence,omitempty"`
+
+	// Source node id.
+	From string `json:"from" yaml:"from" mapstructure:"from"`
+
+	// Target node id.
+	To string `json:"to" yaml:"to" mapstructure:"to"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type ImpactEdgeType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+type ImpactEdgeConfidence string
+
+const ImpactEdgeConfidenceDisputed ImpactEdgeConfidence = "disputed"
+const ImpactEdgeConfidenceInferred ImpactEdgeConfidence = "inferred"
+const ImpactEdgeConfidenceObserved ImpactEdgeConfidence = "observed"
+const ImpactEdgeConfidenceVerified ImpactEdgeConfidence = "verified"
+
+var enumValues_ImpactEdgeConfidence = []interface{}{
+	"observed",
+	"inferred",
+	"verified",
+	"disputed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ImpactEdgeConfidence) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ImpactEdgeConfidence {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ImpactEdgeConfidence, v)
+	}
+	*j = ImpactEdgeConfidence(v)
+	return nil
+}
+
+type ImpactEdgeDiscoveredBy struct {
+	// e.g. openapi-client-reference.
+	Method *string `json:"method,omitempty,omitzero" yaml:"method,omitempty" mapstructure:"method,omitempty"`
+
+	// Role corresponds to the JSON schema field "role".
+	Role *string `json:"role,omitempty,omitzero" yaml:"role,omitempty" mapstructure:"role,omitempty"`
+}
+
+type ImpactEdgeEvidenceElem struct {
+	// e.g. src/lib/api/merchant.ts:44.
+	Ref *string `json:"ref,omitempty,omitzero" yaml:"ref,omitempty" mapstructure:"ref,omitempty"`
+
+	// e.g. source_location, openapi_reference, test_reference.
+	Type string `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ImpactEdgeEvidenceElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ImpactEdgeEvidenceElem: required")
+	}
+	type Plain ImpactEdgeEvidenceElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ImpactEdgeEvidenceElem(plain)
+	return nil
+}
+
+type ImpactEdgeType string
+
+const ImpactEdgeTypeCalls ImpactEdgeType = "calls"
+const ImpactEdgeTypeConfigures ImpactEdgeType = "configures"
+const ImpactEdgeTypeConsumes ImpactEdgeType = "consumes"
+const ImpactEdgeTypeContains ImpactEdgeType = "contains"
+const ImpactEdgeTypeContradicts ImpactEdgeType = "contradicts"
+const ImpactEdgeTypeDefines ImpactEdgeType = "defines"
+const ImpactEdgeTypeDependsOn ImpactEdgeType = "depends_on"
+const ImpactEdgeTypeDeploys ImpactEdgeType = "deploys"
+const ImpactEdgeTypeDerivedFrom ImpactEdgeType = "derived_from"
+const ImpactEdgeTypeDocumentedBy ImpactEdgeType = "documented_by"
+const ImpactEdgeTypeImplements ImpactEdgeType = "implements"
+const ImpactEdgeTypeOwnedBy ImpactEdgeType = "owned_by"
+const ImpactEdgeTypeTests ImpactEdgeType = "tests"
+const ImpactEdgeTypeTrackedBy ImpactEdgeType = "tracked_by"
+
+var enumValues_ImpactEdgeType = []interface{}{
+	"contains",
+	"defines",
+	"calls",
+	"implements",
+	"consumes",
+	"tests",
+	"configures",
+	"deploys",
+	"depends_on",
+	"documented_by",
+	"owned_by",
+	"tracked_by",
+	"contradicts",
+	"derived_from",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ImpactEdgeType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ImpactEdgeType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ImpactEdgeType, v)
+	}
+	*j = ImpactEdgeType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ImpactEdge) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["confidence"]; raw != nil && !ok {
+		return fmt.Errorf("field confidence in ImpactEdge: required")
+	}
+	if _, ok := raw["from"]; raw != nil && !ok {
+		return fmt.Errorf("field from in ImpactEdge: required")
+	}
+	if _, ok := raw["to"]; raw != nil && !ok {
+		return fmt.Errorf("field to in ImpactEdge: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ImpactEdge: required")
+	}
+	type Plain ImpactEdge
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ImpactEdge(plain)
+	return nil
+}
+
+// One node in a project's Cross-Repository Impact Graph, per
+// punakawan-role-config-distinguished-improvements-plan.md Part III §24. Nodes are
+// the things a change can affect (symbols, API operations, config keys, tests,
+// deployments, ...). Persisted append-only to .punakawan/impact/nodes.jsonl; id is
+// stable and typed so builders can upsert idempotently.
+type ImpactNode struct {
+	// Free-form typed attributes (file path, owner team, operation id, ...). Kept
+	// generic so builders need no per-type node subclass.
+	Attributes ImpactNodeAttributes `json:"attributes,omitempty,omitzero" yaml:"attributes,omitempty" mapstructure:"attributes,omitempty"`
+
+	// Stable typed id, e.g. api:affiliate-api:getMerchantBadge or
+	// config:affiliate-api:payout.retry.max_attempts.
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Human-readable name for the node.
+	Label *string `json:"label,omitempty,omitzero" yaml:"label,omitempty" mapstructure:"label,omitempty"`
+
+	// Repository this node belongs to, when applicable.
+	Repository *string `json:"repository,omitempty,omitzero" yaml:"repository,omitempty" mapstructure:"repository,omitempty"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type ImpactNodeType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+// Free-form typed attributes (file path, owner team, operation id, ...). Kept
+// generic so builders need no per-type node subclass.
+type ImpactNodeAttributes map[string]interface{}
+
+type ImpactNodeType string
+
+const ImpactNodeTypeApiOperation ImpactNodeType = "api_operation"
+const ImpactNodeTypeConfigurationKey ImpactNodeType = "configuration_key"
+const ImpactNodeTypeDatabaseObject ImpactNodeType = "database_object"
+const ImpactNodeTypeDeploymentArtifact ImpactNodeType = "deployment_artifact"
+const ImpactNodeTypeExternalIssue ImpactNodeType = "external_issue"
+const ImpactNodeTypeKnowledgeRecord ImpactNodeType = "knowledge_record"
+const ImpactNodeTypePlan ImpactNodeType = "plan"
+const ImpactNodeTypeProject ImpactNodeType = "project"
+const ImpactNodeTypeRepository ImpactNodeType = "repository"
+const ImpactNodeTypeSourceSymbol ImpactNodeType = "source_symbol"
+const ImpactNodeTypeTask ImpactNodeType = "task"
+const ImpactNodeTypeTeamOwner ImpactNodeType = "team_owner"
+const ImpactNodeTypeTest ImpactNodeType = "test"
+const ImpactNodeTypeWorkflow ImpactNodeType = "workflow"
+
+var enumValues_ImpactNodeType = []interface{}{
+	"project",
+	"repository",
+	"source_symbol",
+	"api_operation",
+	"configuration_key",
+	"database_object",
+	"test",
+	"deployment_artifact",
+	"workflow",
+	"knowledge_record",
+	"plan",
+	"task",
+	"external_issue",
+	"team_owner",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ImpactNodeType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ImpactNodeType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ImpactNodeType, v)
+	}
+	*j = ImpactNodeType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ImpactNode) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ImpactNode: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in ImpactNode: required")
+	}
+	type Plain ImpactNode
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ImpactNode(plain)
 	return nil
 }
 
