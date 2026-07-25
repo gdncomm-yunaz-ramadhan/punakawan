@@ -22,15 +22,13 @@ export interface AccentVars {
 
 export const ACCENT_STORAGE_KEY = "punakawan.accent";
 
-// Wayang reuses the default --color-accent token values from theme.css
-// exactly (the batik indigo-blue), so selecting it (or having no stored
-// preference) is visually identical to the un-overridden default theme.
-// It is the default preset (see getStoredAccentPreset). The order here
-// puts it first so it heads the AccentPicker list.
+// The legacy "wayang" ID is retained so existing stored preferences remain
+// valid. Its user-facing label follows the same color-family convention as
+// every other option. It reuses the default cobalt-blue theme tokens.
 export const ACCENT_PRESETS: AccentPreset[] = [
   {
     id: "wayang",
-    label: "Wayang",
+    label: "Cobalt",
     light: {
       "--color-accent": "#235fb5",
       "--color-accent-hover": "#1b4a90",
@@ -78,7 +76,7 @@ export const ACCENT_PRESETS: AccentPreset[] = [
   },
   {
     id: "blue",
-    label: "Blue",
+    label: "Azure",
     light: {
       "--color-accent": "#2878c7",
       "--color-accent-hover": "#1f63a3",
