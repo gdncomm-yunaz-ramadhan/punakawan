@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/approvals"
@@ -112,6 +113,48 @@ func TestGateAllowsApprovalRequiredOperationOnceApproved(t *testing.T) {
 	}
 	if len(fc.calls) != 1 {
 		t.Fatalf("calls = %+v", fc.calls)
+	}
+}
+
+func TestRequestApprovalStoresRedactedContentPreview(t *testing.T) {
+	g, _ := newTestGate(t)
+
+	preview := BuildApprovalPreview("atlassian.addJiraComment", map[string]any{
+		"issueIdOrKey": "PAY-1",
+		"commentBody":  "Ship it after the risks section is expanded.",
+		"apiToken":     "super-secret-value",
+	})
+	rec, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar, preview)
+	if err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+	if rec.Preview == nil {
+		t.Fatal("expected Preview to be populated so the human sees what they approve")
+	}
+	got := *rec.Preview
+	// The human must see the real content being written...
+	if !strings.Contains(got, "atlassian.addJiraComment") ||
+		!strings.Contains(got, "Ship it after the risks section is expanded.") {
+		t.Fatalf("preview missing operation/content: %q", got)
+	}
+	// ...but never the secret that rode along in the same params.
+	if strings.Contains(got, "super-secret-value") {
+		t.Fatalf("preview leaked a secret value: %q", got)
+	}
+	if !strings.Contains(got, "***redacted***") {
+		t.Fatalf("preview did not redact the sensitive key: %q", got)
+	}
+}
+
+func TestRequestApprovalWithoutPreviewLeavesPreviewUnset(t *testing.T) {
+	g, _ := newTestGate(t)
+
+	rec, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar)
+	if err != nil {
+		t.Fatalf("RequestApproval: %v", err)
+	}
+	if rec.Preview != nil {
+		t.Fatalf("expected no preview when none supplied, got %q", *rec.Preview)
 	}
 }
 

@@ -129,12 +129,14 @@
 <style>
   .chart-shell {
     display: grid;
-    gap: 0.5rem;
+    gap: 0.65rem;
+    width: 100%;
   }
   .chart-canvas {
     width: 100%;
     height: var(--chart-height);
     max-height: var(--chart-height);
+    padding: 0.25rem;
   }
   .skeleton {
     width: 100%;
@@ -171,10 +173,16 @@
     border: 1px solid var(--color-border);
     background: var(--color-surface);
     color: var(--color-text-muted);
-    border-radius: 6px;
-    padding: 0.25rem 0.6rem;
+    border-radius: 7px;
+    padding: 0.32rem 0.7rem;
     cursor: pointer;
     min-height: 32px;
+    transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+  }
+  .table-toggle:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
   }
   table {
     border-collapse: collapse;

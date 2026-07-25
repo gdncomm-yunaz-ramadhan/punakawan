@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/handoff.schema.json",
+  "title": "HandoffCapsule",
+  "description": "A compact, resumable snapshot of in-progress work, per punakawan-role-config-distinguished-improvements-plan.md Part V §41. It lets work continue across agent clients, model providers, sessions, machines, and people WITHOUT depending on conversation transcript history. It references existing objects (plan, tasks, contradictions, evidence, dossier) by id rather than copying them, so it stays small.",
+  "type": "object",
+  "required": ["version", "id", "project_id", "run_id", "objective", "current_phase"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string", "const": "punakawan.handoff/v1" },
+    "id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "superseded": { "type": "boolean", "description": "A superseded capsule must not resume silently (§43/acceptance)." },
+    "objective": {
+      "type": "object",
+      "required": ["statement"],
+      "additionalProperties": false,
+      "properties": {
+        "statement": { "type": "string" },
+        "source_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "current_phase": { "type": "string", "description": "e.g. implementation, verification." },
+    "accepted_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string" }, "version": { "type": "integer" } }
+    },
+    "role_configuration_revision": { "type": "integer" },
+    "completed_tasks": { "type": "array", "items": { "type": "string" } },
+    "current_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string" }, "next_action": { "type": "string" } }
+    },
+    "changed_repositories": { "type": "array", "items": { "type": "string" } },
+    "open_contradictions": { "type": "array", "items": { "type": "string" } },
+    "unresolved_risks": { "type": "array", "items": { "type": "string" } },
+    "impact_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required_repositories": { "type": "array", "items": { "type": "string" } },
+        "excluded_repositories": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "dossier": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string" }, "status": { "type": "string" } }
+    },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "created_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "role": { "type": "string" }, "agent_client": { "type": "string" } }
+    }
+  }
+}

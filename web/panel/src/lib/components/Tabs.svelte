@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon, { type IconName } from "./Icon.svelte";
   // Small reusable ARIA tabs primitive (punokawan-apy.7.3, mobile
   // proposal-review layout). No existing Tabs/TabList component covered
   // this: TasksPage.svelte's `role="tablist"` toolbar is just a button
@@ -11,6 +12,7 @@
   interface Tab {
     id: string;
     label: string;
+    icon?: IconName;
   }
   interface Props {
     tabs: Tab[];
@@ -62,6 +64,7 @@
       onkeydown={(e) => onKeydown(e, i)}
       data-testid={`tab-${tab.id}`}
     >
+      {#if tab.icon}<Icon name={tab.icon} size={16} />{/if}
       {tab.label}
     </button>
   {/each}
@@ -70,27 +73,45 @@
 <style>
   .tabs {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.4rem;
     overflow-x: auto;
-    border-bottom: 1px solid var(--color-border);
-    margin-bottom: 1rem;
+    /* The row scrolls horizontally, so tabs never need to cram to fit -
+       give each room to breathe and don't stretch them to fill. */
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    padding: 0.4rem 0.5rem;
+    margin-bottom: 1.15rem;
+    box-shadow: var(--shadow-sm);
+    scrollbar-width: thin;
   }
   .tab {
-    flex: 1 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    flex: 0 0 auto;
     border: none;
     background: none;
     color: var(--color-text-muted);
     font-size: 0.85rem;
     font-weight: 600;
-    padding: 0.5rem 0.75rem;
+    padding: 0.55rem 0.95rem;
     min-height: 44px;
     cursor: pointer;
-    border-bottom: 2px solid transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
     white-space: nowrap;
   }
   .tab.active {
     color: var(--color-accent);
-    border-bottom-color: var(--color-accent);
+    border-color: color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .tab:hover:not(.active) {
+    color: var(--color-text);
+    background: var(--color-surface-subtle);
   }
   .tab:focus-visible {
     outline: 2px solid var(--color-accent);

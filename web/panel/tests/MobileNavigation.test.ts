@@ -8,8 +8,7 @@ describe("MobileNavigation", () => {
     render(MobileNavigation);
 
     expect(screen.getByRole("link", { name: /Overview/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Workspaces/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Search/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Projects/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /System/ })).toBeTruthy();
   });
 
@@ -17,9 +16,19 @@ describe("MobileNavigation", () => {
     navigate("/");
     render(MobileNavigation);
 
-    const workspacesTab = screen.getByRole("link", { name: /Workspaces/ });
-    await fireEvent.click(workspacesTab);
+    const projectsTab = screen.getByRole("link", { name: /Projects/ });
+    await fireEvent.click(projectsTab);
 
-    expect(window.location.pathname).toBe("/workspaces");
+    expect(window.location.pathname).toBe("/projects");
+  });
+
+  it("cycles the theme when the theme control is tapped", async () => {
+    render(MobileNavigation);
+
+    const themeButton = screen.getByRole("button", { name: /Theme:/ });
+    await fireEvent.click(themeButton);
+
+    // System -> Light on first tap; the control reflects the new choice.
+    expect(themeButton.getAttribute("title")).toBe("Theme: Light");
   });
 });

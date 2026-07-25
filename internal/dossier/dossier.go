@@ -55,6 +55,14 @@ type BuildInput struct {
 	MissingInformation  []string
 	Contradictions      []string
 	ConfidenceLevel     string
+
+	// ProjectMetadata is the bounded, relevance-selected project metadata
+	// (performance plan §4.4) the caller chose for this dossier. Build copies
+	// it straight onto the dossier record so a later reader of the persisted
+	// dossier sees the same project context the builder had; selection and
+	// rendering happen in the caller (mcpserver), which owns the project
+	// selector, so this package keeps its narrow git/knowledge dependency set.
+	ProjectMetadata []protocol.KnowledgeRecordContextDossierProjectMetadataElem
 }
 
 // Build assembles a context-dossier protocol.KnowledgeRecord for run
@@ -139,6 +147,7 @@ func Build(ctx context.Context, ws *workspace.Workspace, sup *tools.Supervisor, 
 		Assumptions:                 in.Assumptions,
 		MissingInformation:          in.MissingInformation,
 		Contradictions:              in.Contradictions,
+		ProjectMetadata:             in.ProjectMetadata,
 	}
 	if in.UserGoal != "" {
 		cd.UserGoal = strPtr(in.UserGoal)

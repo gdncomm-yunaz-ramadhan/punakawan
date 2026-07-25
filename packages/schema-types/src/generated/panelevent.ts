@@ -31,7 +31,17 @@ export interface PanelEvent {
     | "approval.resolved"
     | "evidence.created"
     | "git.state_changed"
-    | "adapter.health_changed";
+    | "adapter.health_changed"
+    | "contradiction.detected"
+    | "contradiction.updated"
+    | "contradiction.resolved"
+    | "impact.snapshot_updated"
+    | "dossier.created"
+    | "dossier.status_changed"
+    | "dossier.finalized"
+    | "handoff.created"
+    | "handoff.validated"
+    | "handoff.superseded";
   occurred_at: string;
   workspace_id?: string;
   session_id?: string;

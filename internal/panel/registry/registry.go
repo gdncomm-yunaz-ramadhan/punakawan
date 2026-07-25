@@ -24,9 +24,26 @@ import (
 // "punakawan.workspace-registry/v1".
 const version = "punakawan.workspace-registry/v1"
 
+// supportedVersions is the set of registry schema versions this build can
+// read. version (the current) is always a member; older versions would be
+// listed here once real migrations exist, so a file written by a compatible
+// past build still loads and is upgraded in place. A non-empty version that
+// is not in this set is treated as "written by a newer/unknown panel" and
+// rejected rather than silently coerced (see migrate).
+var supportedVersions = map[string]bool{
+	version: true,
+}
+
 // ErrNotFound is returned by Get and Remove when no entry exists for the
 // given id.
 var ErrNotFound = errors.New("registry: workspace not found")
+
+// ErrUnsupportedRegistryVersion is returned by readFile (via migrate) when the
+// on-disk registry declares a version this build does not recognize - most
+// likely a file written by a newer panel. Refusing to load it is deliberate:
+// blindly re-stamping it to the current version through the atomic writeFile
+// would drop or corrupt fields the newer schema added.
+var ErrUnsupportedRegistryVersion = errors.New("registry: unsupported registry file version")
 
 // ErrDuplicatePath is returned by Register when path (after resolving
 // symlinks) already belongs to a different registered id, per §7's "
@@ -96,6 +113,34 @@ func OpenAt(path string) (*Store, error) {
 	return &Store{path: path}, nil
 }
 
+// migrate brings a freshly-unmarshalled registry file up to the current
+// schema version. It reports whether f was changed so the caller can persist
+// the upgrade durably, per the panel implementation plan §7/§8. Behavior:
+//
+//   - Version == current: no-op (changed=false).
+//   - Version empty: a legacy or hand-written file that predates version
+//     stamping; adopt the current version (changed=true).
+//   - Version is a recognized older, supported version: upgrade in place to
+//     the current version (changed=true). No such version exists today, so
+//     this branch is forward-compatibility scaffolding for real migrations.
+//   - Version non-empty and unrecognized: return ErrUnsupportedRegistryVersion
+//     rather than silently coercing it, so a file written by a future panel is
+//     not corrupted by being re-stamped to an older schema.
+func migrate(f *file) (*file, bool, error) {
+	switch {
+	case f.Version == version:
+		return f, false, nil
+	case f.Version == "":
+		f.Version = version
+		return f, true, nil
+	case supportedVersions[f.Version]:
+		f.Version = version
+		return f, true, nil
+	default:
+		return nil, false, fmt.Errorf("%w: %q (this build supports %q)", ErrUnsupportedRegistryVersion, f.Version, version)
+	}
+}
+
 func readFile(path string) (file, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -105,7 +150,19 @@ func readFile(path string) (file, error) {
 	if err := yaml.Unmarshal(data, &f); err != nil {
 		return file{}, fmt.Errorf("registry: decode %s: %w", path, err)
 	}
-	return f, nil
+	migrated, changed, err := migrate(&f)
+	if err != nil {
+		return file{}, err
+	}
+	if changed {
+		// Persist the upgrade atomically so the version bump is durable and a
+		// later read does not have to migrate again. writeFile re-stamps the
+		// version (to the current) and preserves the workspace entries.
+		if err := writeFile(path, *migrated); err != nil {
+			return file{}, fmt.Errorf("registry: persist migration of %s: %w", path, err)
+		}
+	}
+	return *migrated, nil
 }
 
 // writeFile persists f atomically: write to a temp file in the same

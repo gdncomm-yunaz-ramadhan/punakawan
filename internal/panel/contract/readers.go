@@ -14,10 +14,21 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/beads"
+	"github.com/ygrip/punakawan/internal/dossier"
+	"github.com/ygrip/punakawan/internal/handoff"
+	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/project"
+	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// ErrHandoffSuperseded is returned by HandoffReader.ResumeHandoff when the
+// capsule (or its dossier) has been superseded: a superseded capsule must not
+// resume silently (handoff §43), so resume is refused rather than returning a
+// stale context. Handlers detect it with errors.Is and answer 409.
+var ErrHandoffSuperseded = errors.New("handoff: capsule is superseded and cannot resume")
 
 // ErrWorkspaceUnavailable is returned by the non-workspace sources
 // (session, task, knowledge, evidence, approval) when asked for a
@@ -256,4 +267,150 @@ type GlobalSearchResult struct {
 // entire point of "global."
 type GlobalSearchReader interface {
 	Search(ctx context.Context, req search.Request) ([]GlobalSearchResult, error)
+}
+
+// ProjectSummary is one project's panel-facing overview, per the project
+// performance plan §3/§14. A project shares its id with the workspace it is
+// rooted in (project id == registry workspace id). The count fields are
+// sourced from the existing WorkspaceReader rather than recomputed here
+// (§8's "one snapshot, reused everywhere"): the project source composes a
+// WorkspaceReader instead of duplicating its deep bd/dolt/git inspection.
+// JSON tags are load-bearing: handlers marshal this type directly.
+type ProjectSummary struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Description        string `json:"description"`
+	Path               string `json:"path"`
+	Pinned             bool   `json:"pinned"`
+	Primary            bool   `json:"primary"`
+	Availability       string `json:"availability"`
+	RepositoryCount    int    `json:"repository_count"`
+	KnowledgeCount     int    `json:"knowledge_count"`
+	OpenTaskCount      int    `json:"open_task_count"`
+	BlockedTaskCount   int    `json:"blocked_task_count"`
+	ActiveSessionCount int    `json:"active_session_count"`
+	MetadataCount      int    `json:"metadata_count"`
+}
+
+// ProjectReader lists and describes projects and applies the plan's metadata
+// mutations. Reads (List/Summary/Get) never mutate; the three metadata
+// methods each load the project fresh, apply an optimistically-locked change
+// through internal/project, and persist a new immutable revision, returning
+// the updated project so the handler can render the changed entry and new
+// revision (§4.3/§15).
+//
+// The metadata mutations live on the reader (not directly in the HTTP
+// handler) so the handler stays transport-only: it need not know how a
+// project id maps to a workspace root, only the internal/project error kinds
+// it maps to status codes. Errors returned wrap internal/project's exported
+// error vars (ErrRevisionConflict, ErrDuplicateKey, ErrSecretRejected,
+// ErrInvalidValue, ErrMissingField, ErrKeyNotFound) and
+// ErrWorkspaceUnavailable for an unknown project id, all matchable with
+// errors.Is.
+type ProjectReader interface {
+	List(ctx context.Context) ([]ProjectSummary, error)
+	Summary(ctx context.Context, projectID string) (ProjectSummary, error)
+	Get(ctx context.Context, projectID string) (*project.Project, error)
+	AddMetadata(ctx context.Context, projectID string, entry project.MetadataEntry, baseRevision int) (*project.Project, error)
+	UpdateMetadata(ctx context.Context, projectID, key string, newDescription *string, newValue any, baseRevision int) (*project.Project, error)
+	DeleteMetadata(ctx context.Context, projectID, key string, baseRevision int) (*project.Project, error)
+}
+
+// RoleCapabilityInfo is one role's owned-capability catalog: the fixed set of
+// capability keys that role may carry (internal/roleconfig.OwnedCapabilities),
+// in Panel/prompt order. GetRoles returns one per role so the Panel knows which
+// toggles to render for each role without hard-coding the catalog client-side.
+type RoleCapabilityInfo struct {
+	Role         string   `json:"role"`
+	Capabilities []string `json:"capabilities"`
+}
+
+// RolesReader reads and mutates a project's four-role configuration, per the
+// role-config distinguished-improvements plan Part I. It mirrors the metadata
+// mutations on ProjectReader: reads (GetRoles) never mutate; UpdateRole/ResetRole
+// each load the config fresh, apply an optimistically-locked change through
+// internal/roleconfig, and persist a new immutable revision, returning the
+// updated configuration so the handler can render the changed roles and new
+// revision.
+//
+// The contract depends on internal/roleconfig directly (no import cycle:
+// roleconfig imports only pkg/protocol, not this package), so the patch shape
+// is roleconfig.Patch verbatim rather than a translated local copy. Errors
+// returned wrap roleconfig's exported error vars (ErrRevisionConflict,
+// ErrUnknownRole, ErrInvalidStyle, ErrInvalidMode, ErrUnownedCapability) and
+// ErrWorkspaceUnavailable for an unknown project id, all matchable with
+// errors.Is.
+type RolesReader interface {
+	// GetRoles returns the current configuration, the owned-capability catalog
+	// for all four roles, and an error. The catalog is static per role but is
+	// returned alongside the config so the Panel renders in one round-trip.
+	GetRoles(ctx context.Context, projectID string) (*protocol.RoleConfiguration, []RoleCapabilityInfo, error)
+	UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RoleConfiguration, error)
+	ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RoleConfiguration, error)
+}
+
+// ContradictionReader reads and mutates a project's Contradiction Ledger, per
+// the role-config distinguished-improvements plan Part II §16-22. It mirrors
+// the metadata/role mutations on the other readers: reads never mutate; the
+// mutators load the ledger fresh, apply the stateless internal/contradiction
+// change, and persist, returning the resulting record so the handler can render
+// it. Errors returned wrap contradiction's exported vars (ErrNotFound,
+// ErrIllegalTransition) and ErrWorkspaceUnavailable for an unknown project id,
+// all matchable with errors.Is.
+type ContradictionReader interface {
+	ListContradictions(ctx context.Context, projectID string) ([]protocol.Contradiction, error)
+	GetContradiction(ctx context.Context, projectID, id string) (*protocol.Contradiction, error)
+	// CreateContradiction persists c through contradiction.Put; the handler
+	// assigns an id when the caller left it empty.
+	CreateContradiction(ctx context.Context, projectID string, c protocol.Contradiction) (*protocol.Contradiction, error)
+	ProposeContradictionResolution(ctx context.Context, projectID, id, proposedStatement, rationale string, requiresHumanConfirmation bool) (*protocol.Contradiction, error)
+	ResolveContradiction(ctx context.Context, projectID, id, statement, by string) (*protocol.Contradiction, error)
+	AcceptContradictionDivergence(ctx context.Context, projectID, id, by string) (*protocol.Contradiction, error)
+}
+
+// ImpactReader reads and queries a project's Cross-Repository Impact Graph, per
+// the plan Part III §23-31. Nodes/QueryImpact never mutate; RefreshImpact
+// re-runs the stateless internal/impact builders to reconcile the persisted
+// graph with the current workspace. QueryImpact returns impact.ImpactResult
+// verbatim (a derived query view, not a stored entity).
+type ImpactReader interface {
+	ImpactNodes(ctx context.Context, projectID string) ([]protocol.ImpactNode, error)
+	ImpactNode(ctx context.Context, projectID, nodeID string) (protocol.ImpactNode, bool, error)
+	QueryImpact(ctx context.Context, projectID, subjectID string, depth int, include []string) (impact.ImpactResult, error)
+	RefreshImpact(ctx context.Context, projectID string) error
+}
+
+// DossierReader reads and mutates a project's durable Change Dossiers, per the
+// plan Part IV §32-39. ListDossiers returns the current dossier per id (a
+// lightweight summary carrying id/title/status/... without claims or evidence);
+// GetDossier returns the full dossier.Loaded (dossier plus its claims and
+// evidence). FinalizeDossier surfaces *dossier.BlockingError verbatim so the
+// handler can 409 with the blocker list; the claim mutators surface
+// ErrSelfVerification/ErrClaimNotFound.
+type DossierReader interface {
+	ListDossiers(ctx context.Context, projectID string) ([]protocol.ChangeDossier, error)
+	CreateDossier(ctx context.Context, projectID string, d protocol.ChangeDossier) (protocol.ChangeDossier, error)
+	GetDossier(ctx context.Context, projectID, id string) (dossier.Loaded, error)
+	AddDossierClaim(ctx context.Context, projectID, id string, claim protocol.DossierClaim) (protocol.DossierClaim, error)
+	VerifyDossierClaim(ctx context.Context, projectID, id, claimID, byRole, note string) (protocol.DossierClaim, error)
+	DisputeDossierClaim(ctx context.Context, projectID, id, claimID, byRole, note string) (protocol.DossierClaim, error)
+	AddDossierEvidence(ctx context.Context, projectID, id string, ev protocol.DossierEvidence) (protocol.DossierEvidence, error)
+	FinalizeDossier(ctx context.Context, projectID, id string) error
+	ExportDossierMarkdown(ctx context.Context, projectID, id string) (string, error)
+	ExportDossierJSON(ctx context.Context, projectID, id string) ([]byte, error)
+}
+
+// HandoffReader reads, mutates, and validates a project's Handoff Capsules, per
+// the plan Part V §40-43. ListHandoffs/GetHandoff never mutate. ValidateHandoff
+// builds the internal/handoff.ValidationDeps from the project's own stores and
+// returns the resulting ValidationResult. ResumeHandoff refuses a superseded
+// capsule with ErrHandoffSuperseded (handlers 409); otherwise it returns the
+// smallest necessary resume context.
+type HandoffReader interface {
+	ListHandoffs(ctx context.Context, projectID string) ([]protocol.HandoffCapsule, error)
+	GetHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
+	CreateHandoff(ctx context.Context, projectID string, h protocol.HandoffCapsule) (protocol.HandoffCapsule, error)
+	ValidateHandoff(ctx context.Context, projectID, id string) (handoff.ValidationResult, error)
+	ResumeHandoff(ctx context.Context, projectID, id string) (map[string]any, error)
+	SupersedeHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
 }

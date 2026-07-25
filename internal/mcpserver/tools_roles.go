@@ -7,9 +7,40 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/impact"
+	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/roles"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// authorizeRoleSubmit is the ROLE-010 server-side gate (§49) run right after a
+// submit handler's capsule check. It resolves role's effective configuration
+// for the primary project (no workflow restriction) and enforces that the role
+// is enabled, at least at propose mode, and - when capability is non-empty -
+// that the capability is on. capability is "" for actions gated by mode alone.
+//
+// It is a no-op when the resolver is nil (no roles wiring, e.g. tests with no
+// roles.yaml) so existing behavior is preserved; under the §7 defaults
+// (gareng/bagong propose, petruk execute, all capabilities on) every check
+// here passes. A resolver read failure is also skipped rather than blocking:
+// Authorize is a reduce-only gate layered on top of the existing capsule and
+// approval controls, not the sole security boundary.
+func authorizeRoleSubmit(a *app.App, role roleconfig.Role, capability string) error {
+	if a.RoleConfig == nil {
+		return nil
+	}
+	eff, err := a.RoleConfig.Effective("", "", role)
+	if err != nil {
+		return nil
+	}
+	if err := roleconfig.Authorize(eff, capability, protocol.RoleConfigModePropose); err != nil {
+		if capability != "" {
+			return fmt.Errorf("mcpserver: role %q may not perform this action (capability %q, mode %q): %w", role, capability, protocol.RoleConfigModePropose, err)
+		}
+		return fmt.Errorf("mcpserver: role %q may not perform this action (mode %q): %w", role, protocol.RoleConfigModePropose, err)
+	}
+	return nil
+}
 
 // recordID builds the pkw:<kind>/<workspace>/<localID> id (§6.2) for a role
 // submission. Callers only supply the short local id; the server fills in
@@ -38,6 +69,9 @@ func submitGarengReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 		if _, err := requireCapsuleForRole(a, in.CapsuleId, protocol.ContextCapsuleRoleGareng); err != nil {
 			return nil, SubmitOutput{}, err
 		}
+		if err := authorizeRoleSubmit(a, roleconfig.Gareng, ""); err != nil {
+			return nil, SubmitOutput{}, err
+		}
 		store, err := a.OpenKnowledge()
 		if err != nil {
 			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
@@ -63,6 +97,9 @@ func submitPetrukPlanHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		if _, err := requireCapsuleForRole(a, in.CapsuleId, protocol.ContextCapsuleRolePetruk); err != nil {
 			return nil, SubmitOutput{}, err
 		}
+		if err := authorizeRoleSubmit(a, roleconfig.Petruk, "plans"); err != nil {
+			return nil, SubmitOutput{}, err
+		}
 		store, err := a.OpenKnowledge()
 		if err != nil {
 			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
@@ -71,8 +108,30 @@ func submitPetrukPlanHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		if err != nil {
 			return nil, SubmitOutput{}, err
 		}
+		// IMPACT-013: record the accepted plan in the impact graph so a later
+		// analyze_impact can traverse from it. Best-effort: a graph write error
+		// must not fail an otherwise-valid plan submission.
+		recordPetrukPlanImpact(a, rec.Id, in.Title, in.Plan)
 		return nil, SubmitOutput{Id: rec.Id, Type: rec.Type}, nil
 	}
+}
+
+// recordPetrukPlanImpact upserts a `plan` node for the submitted plan into the
+// impact graph (IMPACT-013). Repository linkage is limited to what the plan
+// carries as structured data: repository_changes entries are free-form step
+// descriptions, not repository ids, so we do not fabricate repository edges
+// from them - the plan node is created and left for explicit record_impact_edge
+// calls (or the on-disk scanners) to connect. Any error is swallowed: this is a
+// derived side effect, not part of the plan's own validity.
+func recordPetrukPlanImpact(a *app.App, planID, title string, plan protocol.KnowledgeRecordPetrukPlan) {
+	if a == nil || a.Workspace.Root == "" {
+		return
+	}
+	_ = impact.BuildFromPlanTasks(a.Workspace.Root, []impact.PlanTaskRef{{
+		ID:    planID,
+		Kind:  "plan",
+		Title: title,
+	}})
 }
 
 // SubmitBagongReviewInput is submit_bagong_review's input. RunId (unlike
@@ -89,6 +148,9 @@ type SubmitBagongReviewInput struct {
 func submitBagongReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitBagongReviewInput) (*mcp.CallToolResult, SubmitOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitBagongReviewInput) (*mcp.CallToolResult, SubmitOutput, error) {
 		if _, err := requireCapsuleForRole(a, in.CapsuleId, protocol.ContextCapsuleRoleBagong); err != nil {
+			return nil, SubmitOutput{}, err
+		}
+		if err := authorizeRoleSubmit(a, roleconfig.Bagong, "plan_verification"); err != nil {
 			return nil, SubmitOutput{}, err
 		}
 		store, err := a.OpenKnowledge()

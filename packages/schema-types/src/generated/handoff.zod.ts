@@ -1,0 +1,10 @@
+/* eslint-disable */
+/**
+ * Code generated from protocol/*.schema.json. DO NOT EDIT.
+ * Regenerate with `pnpm --filter @punakawan/schema-types generate`.
+ */
+
+import { z } from "zod"
+
+export const HandoffCapsuleSchema = z.object({ "version": z.literal("punakawan.handoff/v1"), "id": z.string(), "project_id": z.string(), "run_id": z.string(), "created_at": z.string().datetime({ offset: true }).optional(), "superseded": z.boolean().describe("A superseded capsule must not resume silently (§43/acceptance).").optional(), "objective": z.object({ "statement": z.string(), "source_refs": z.array(z.string()).optional() }).strict(), "current_phase": z.string().describe("e.g. implementation, verification."), "accepted_plan": z.object({ "id": z.string().optional(), "version": z.number().int().optional() }).strict().optional(), "role_configuration_revision": z.number().int().optional(), "completed_tasks": z.array(z.string()).optional(), "current_task": z.object({ "id": z.string().optional(), "next_action": z.string().optional() }).strict().optional(), "changed_repositories": z.array(z.string()).optional(), "open_contradictions": z.array(z.string()).optional(), "unresolved_risks": z.array(z.string()).optional(), "impact_summary": z.object({ "required_repositories": z.array(z.string()).optional(), "excluded_repositories": z.array(z.string()).optional() }).strict().optional(), "dossier": z.object({ "id": z.string().optional(), "status": z.string().optional() }).strict().optional(), "evidence": z.array(z.string()).optional(), "created_by": z.object({ "role": z.string().optional(), "agent_client": z.string().optional() }).strict().optional() }).strict().describe("A compact, resumable snapshot of in-progress work, per punakawan-role-config-distinguished-improvements-plan.md Part V §41. It lets work continue across agent clients, model providers, sessions, machines, and people WITHOUT depending on conversation transcript history. It references existing objects (plan, tasks, contradictions, evidence, dossier) by id rather than copying them, so it stays small.")
+export type HandoffCapsuleSchema = z.infer<typeof HandoffCapsuleSchema>

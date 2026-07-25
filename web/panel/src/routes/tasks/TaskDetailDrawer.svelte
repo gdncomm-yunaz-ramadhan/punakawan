@@ -1,13 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getTask, type TaskDetail } from "../../lib/api/client";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     workspaceId: string;
     taskId: string;
     onclose: () => void;
+    // Optional override for how the task detail is fetched. Defaults to the
+    // workspace-scoped getTask; the project Tasks tab passes a project-
+    // scoped loader so it works for any project, not just the workspace.
+    fetchTask?: (taskId: string) => Promise<TaskDetail>;
   }
-  let { workspaceId, taskId, onclose }: Props = $props();
+  let { workspaceId, taskId, onclose, fetchTask }: Props = $props();
 
   let detail: TaskDetail | null = $state(null);
   let error: string | null = $state(null);
@@ -18,7 +23,7 @@
     error = null;
     detail = null;
     try {
-      detail = await getTask(workspaceId, id);
+      detail = fetchTask ? await fetchTask(id) : await getTask(workspaceId, id);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -44,7 +49,7 @@
 <aside class="drawer" aria-label="Task detail">
   <div class="drawer-head">
     <h2>{taskId}</h2>
-    <button type="button" class="close" onclick={onclose} aria-label="Close">✕</button>
+    <Button variant="ghost" size="sm" icon="x" ariaLabel="Close" onclick={onclose} />
   </div>
 
   {#if loading}
@@ -136,12 +141,6 @@
   .drawer-head h2 {
     font-size: 1rem;
     margin: 0;
-  }
-  .close {
-    background: none;
-    border: none;
-    font-size: 1rem;
-    cursor: pointer;
   }
   .title {
     font-size: 1.05rem;

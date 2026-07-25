@@ -3,6 +3,8 @@
 // workspaces only); later phases add sessions/tasks/knowledge/evidence/
 // approvals here as their own endpoints land.
 
+import { fetchWithCsrf } from "../session";
+
 export interface SystemInfo {
   panel_version: string;
   punakawan_version: string;
@@ -156,6 +158,11 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    // Machine-readable error code carried on validation (400) and
+    // conflict (409) responses so the UI can render a specific message
+    // (e.g. "duplicate_key", "secret_rejected") rather than only the
+    // human-readable string. Undefined for errors that carry no code.
+    public code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -302,7 +309,7 @@ export interface TaskFilter {
   limit?: number;
 }
 
-export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
+function taskListQuery(filter: TaskFilter): string {
   const params = new URLSearchParams();
   if (filter.status) params.set("status", filter.status);
   if (filter.priority) params.set("priority", filter.priority);
@@ -311,7 +318,11 @@ export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise
   if (filter.query) params.set("query", filter.query);
   if (filter.limit) params.set("limit", String(filter.limit));
   const qs = params.toString();
-  return getJSON<{ items: TaskSummary[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks${qs ? `?${qs}` : ""}`);
+  return qs ? `?${qs}` : "";
+}
+
+export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
+  return getJSON<{ items: TaskSummary[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks${taskListQuery(filter)}`);
 }
 
 export function getTask(workspaceId: string, taskId: string): Promise<TaskDetail> {
@@ -451,6 +462,17 @@ export interface KnowledgeRecord {
   // Present when type === "retrieval_recipe" (punakawan-procedural-
   // knowledge-retrieval-recipe-plan-final.md Phase 0/5).
   retrieval_recipe?: RetrievalRecipe;
+  // Type-specific structured bodies carried by role/context records. The
+  // panel renders whichever is present as the record's substance (a record
+  // often has no free-form summary/content — its body lives here). Kept as
+  // `unknown` because the panel only pretty-prints them generically.
+  requirement?: unknown;
+  petruk_plan?: unknown;
+  context_dossier?: unknown;
+  semar_synthesis?: unknown;
+  gareng_review?: unknown;
+  bagong_review?: unknown;
+  convention_profile?: unknown;
 }
 
 export interface KnowledgeEvent {
@@ -636,4 +658,695 @@ export function getEvidenceTextPreview(
 export function listApprovals(workspaceId: string, status?: string): Promise<{ items: ApprovalRecord[] }> {
   const qs = status ? `?status=${encodeURIComponent(status)}` : "";
   return getJSON<{ items: ApprovalRecord[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/approvals${qs}`);
+}
+
+// --- Projects (Phase 2, plan §5) -----------------------------------------
+//
+// Projects are becoming the primary entity. A project's snapshot counts
+// mirror internal/panel's ProjectSummary; its editable metadata is an
+// optimistically-locked list guarded by a monotonically increasing
+// `revision` (send the last-loaded revision as base_revision on every
+// mutation; a stale one 409s).
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  pinned: boolean;
+  primary: boolean;
+  // A plain string (not the Availability union) per the backend contract;
+  // its values happen to overlap Availability, so StatusBadge can render
+  // it after a narrowing cast.
+  availability: string;
+  repository_count: number;
+  knowledge_count: number;
+  open_task_count: number;
+  blocked_task_count: number;
+  active_session_count: number;
+  metadata_count: number;
+}
+
+// A single editable project-metadata field. `value` is intentionally
+// `unknown` - metadata holds arbitrary JSON (strings, numbers, objects),
+// and the UI stringifies/parses it at the edges.
+export interface MetadataEntry {
+  key: string;
+  description: string;
+  value: unknown;
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  metadata: MetadataEntry[];
+  revision: number;
+}
+
+// The write endpoints (POST/PATCH) echo the persisted entry plus the new
+// revision the caller must carry into its next optimistic-locked write.
+export interface MetadataMutationResult {
+  entry: MetadataEntry;
+  revision: number;
+}
+
+// The 400 validation codes the metadata write endpoints can return
+// (plan §5). Kept as a union so the UI's message map is exhaustive.
+export type MetadataErrorCode = "duplicate_key" | "secret_rejected" | "invalid_value" | "missing_field";
+
+export function listProjects(): Promise<{ items: ProjectSummary[] }> {
+  return getJSON<{ items: ProjectSummary[] }>("/projects");
+}
+
+export function getProject(id: string): Promise<ProjectDetail> {
+  return getJSON<ProjectDetail>(`/projects/${encodeURIComponent(id)}`);
+}
+
+export function listMetadata(id: string): Promise<{ items: MetadataEntry[]; revision: number }> {
+  return getJSON<{ items: MetadataEntry[]; revision: number }>(`/projects/${encodeURIComponent(id)}/metadata`);
+}
+
+// mutateJSON is the write-side sibling of getJSON: it goes through
+// fetchWithCsrf (attaching the session CSRF header and mapping 401/403 to
+// SessionExpiredError) and, on any other non-2xx, throws an ApiError that
+// preserves both the server's `code` (409 conflict / 400 validation) and
+// its human-readable message so the UI can branch on either.
+async function mutateJSON<T>(path: string, init: RequestInit): Promise<T> {
+  const res = await fetchWithCsrf(`/api/v1${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", Accept: "application/json", ...(init.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
+    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface AddMetadataRequest {
+  key: string;
+  description: string;
+  value: unknown;
+  base_revision: number;
+}
+
+export function addMetadata(id: string, body: AddMetadataRequest): Promise<MetadataMutationResult> {
+  return mutateJSON<MetadataMutationResult>(`/projects/${encodeURIComponent(id)}/metadata`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export interface UpdateMetadataRequest {
+  description?: string;
+  value?: unknown;
+  base_revision: number;
+}
+
+export function updateMetadata(id: string, key: string, body: UpdateMetadataRequest): Promise<MetadataMutationResult> {
+  return mutateJSON<MetadataMutationResult>(
+    `/projects/${encodeURIComponent(id)}/metadata/${encodeURIComponent(key)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+// DELETE returns 204 with no body; base_revision rides in the query
+// string (the DELETE has no request body) for optimistic locking.
+export async function deleteMetadata(id: string, key: string, baseRevision: number): Promise<void> {
+  const res = await fetchWithCsrf(
+    `/api/v1/projects/${encodeURIComponent(id)}/metadata/${encodeURIComponent(key)}?base_revision=${baseRevision}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
+    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
+  }
+}
+
+// --- Project Roles (role configuration) ----------------------------------
+//
+// A project's four Punakawan roles (Semar/Gareng/Petruk/Bagong) each carry
+// an enabled flag, a `style` (strict|balanced|creative), a `mode`
+// (assist|propose|execute) and a set of capability toggles. Writes are
+// optimistically locked with the same monotonically increasing `revision`
+// pattern as project metadata: send the last-loaded revision as
+// base_revision on every mutation; a stale one 409s (code
+// "revision_conflict"). `owned` declares which capability keys each role is
+// allowed to render — a role never shows another role's toggles.
+
+export interface RoleConfig {
+  enabled: boolean;
+  style: string;
+  mode: string;
+  capabilities: Record<string, boolean>;
+}
+
+export interface RolesConfiguration {
+  semar: RoleConfig;
+  gareng: RoleConfig;
+  petruk: RoleConfig;
+  bagong: RoleConfig;
+}
+
+// The capability toggle keys a given role owns (and may render). Only these
+// keys are shown for that role.
+export interface RoleCapabilityInfo {
+  role: string;
+  capabilities: string[];
+}
+
+export interface RolesResponse {
+  roles: RolesConfiguration;
+  revision: number;
+  owned: RoleCapabilityInfo[];
+}
+
+// The write endpoints echo the full role map plus the new revision the
+// caller must carry into its next optimistic-locked write.
+export interface RolesMutationResult {
+  roles: RolesConfiguration;
+  revision: number;
+}
+
+// The 4xx error codes the role write endpoints can return. Kept as a union
+// so the UI's message map stays exhaustive.
+export type RoleErrorCode =
+  | "revision_conflict"
+  | "unknown_role"
+  | "invalid_style"
+  | "invalid_mode"
+  | "unowned_capability";
+
+export function getRoles(projectId: string): Promise<RolesResponse> {
+  return getJSON<RolesResponse>(`/projects/${encodeURIComponent(projectId)}/roles`);
+}
+
+export interface UpdateRolePatch {
+  enabled?: boolean;
+  style?: string;
+  mode?: string;
+  capabilities?: Record<string, boolean>;
+}
+
+export function updateRole(
+  projectId: string,
+  role: string,
+  patch: UpdateRolePatch,
+  baseRevision: number,
+): Promise<RolesMutationResult> {
+  return mutateJSON<RolesMutationResult>(
+    `/projects/${encodeURIComponent(projectId)}/roles/${encodeURIComponent(role)}`,
+    { method: "PATCH", body: JSON.stringify({ ...patch, base_revision: baseRevision }) },
+  );
+}
+
+export function resetRole(projectId: string, role: string, baseRevision: number): Promise<RolesMutationResult> {
+  return mutateJSON<RolesMutationResult>(
+    `/projects/${encodeURIComponent(projectId)}/roles/${encodeURIComponent(role)}/reset`,
+    { method: "POST", body: JSON.stringify({ base_revision: baseRevision }) },
+  );
+}
+
+// --- Project Workflows (Phase 6, plan §6) --------------------------------
+//
+// A workflow Definition is a declarative, versioned recipe: an ordered
+// list of capability steps the run engine executes. It is enabled/disabled
+// as a unit and invoked with a set of named inputs; `revision` guards
+// concurrent edits the same way project metadata does.
+
+export interface WorkflowInput {
+  name: string;
+  type: string;
+  required?: boolean;
+  default?: unknown;
+}
+
+export interface WorkflowStep {
+  id: string;
+  capability: string;
+  intent?: string;
+  // The ids of earlier steps whose output feeds this one.
+  input_from?: string[];
+}
+
+export interface WorkflowDefinition {
+  version: string;
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  required_metadata?: string[];
+  inputs?: WorkflowInput[];
+  steps: WorkflowStep[];
+  allowed_capabilities?: string[];
+  approval?: {
+    required_for?: string[];
+  };
+  output?: {
+    type: string;
+  };
+  revision: number;
+}
+
+// The 400 validation codes the workflow create endpoint can return; kept
+// as a union so the UI's message map is exhaustive. "revision_conflict"
+// arrives on a 409 rather than a 400.
+export type WorkflowErrorCode = "unknown_capability" | "command_not_allowed" | "invalid" | "revision_conflict";
+
+export function listWorkflows(id: string): Promise<{ items: WorkflowDefinition[] }> {
+  return getJSON<{ items: WorkflowDefinition[] }>(`/projects/${encodeURIComponent(id)}/workflows`);
+}
+
+export function getWorkflow(id: string, workflowId: string): Promise<WorkflowDefinition> {
+  return getJSON<WorkflowDefinition>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}`,
+  );
+}
+
+export function createWorkflow(id: string, definition: unknown): Promise<WorkflowDefinition> {
+  return mutateJSON<WorkflowDefinition>(`/projects/${encodeURIComponent(id)}/workflows`, {
+    method: "POST",
+    body: JSON.stringify(definition),
+  });
+}
+
+export function enableWorkflow(id: string, workflowId: string): Promise<WorkflowDefinition> {
+  return mutateJSON<WorkflowDefinition>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}/enable`,
+    { method: "POST" },
+  );
+}
+
+export function disableWorkflow(id: string, workflowId: string): Promise<WorkflowDefinition> {
+  return mutateJSON<WorkflowDefinition>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}/disable`,
+    { method: "POST" },
+  );
+}
+
+export interface InvokeWorkflowResult {
+  run_id: string;
+}
+
+// invoke queues a run with the given named inputs. NOTE: until the run
+// engine wiring lands, the backend answers with an error carrying the
+// message "not connected to the run engine" - that surfaces here as a
+// normal ApiError the UI shows verbatim. A 409 {code:"disabled"} means the
+// workflow must be enabled first.
+export function invokeWorkflow(
+  id: string,
+  workflowId: string,
+  inputs: Record<string, unknown>,
+): Promise<InvokeWorkflowResult> {
+  return mutateJSON<InvokeWorkflowResult>(
+    `/projects/${encodeURIComponent(id)}/workflows/${encodeURIComponent(workflowId)}/invoke`,
+    { method: "POST", body: JSON.stringify({ inputs }) },
+  );
+}
+
+// --- Project Plans (Phase 7, plan §7) ------------------------------------
+//
+// Plans are read-only from the panel's perspective: they are authored and
+// versioned through the review protocol elsewhere. Here we only list their
+// summaries and render a selected plan's manifest + current version text.
+
+export interface PlanDerivedFrom {
+  knowledge?: string[];
+  workflows?: string[];
+  metadata?: string[];
+}
+
+export interface PlanSummary {
+  id: string;
+  title: string;
+  status: string;
+  current_version: string;
+  related_tasks?: string[];
+  derived_from?: PlanDerivedFrom;
+}
+
+// The plan manifest carries at least the summary fields; the backend may
+// attach further descriptive fields, so the known summary shape is
+// extended rather than re-listed. Optional fields are surfaced when
+// present and skipped otherwise.
+export interface PlanManifest extends PlanSummary {
+  description?: string;
+  versions?: string[];
+}
+
+export interface PlanDetail {
+  manifest: PlanManifest;
+  current_version_content?: string;
+}
+
+export function listPlans(id: string): Promise<{ items: PlanSummary[] }> {
+  return getJSON<{ items: PlanSummary[] }>(`/projects/${encodeURIComponent(id)}/plans`);
+}
+
+export function getPlan(id: string, planId: string): Promise<PlanDetail> {
+  return getJSON<PlanDetail>(`/projects/${encodeURIComponent(id)}/plans/${encodeURIComponent(planId)}`);
+}
+
+// --- Project Health (Phase 8, plan §8) -----------------------------------
+//
+// Per-source availability for the project's data sources. GET may serve a
+// cached snapshot (X-Cache header, `stale:true`); the refresh endpoint
+// forces a fresh probe and returns the same shape.
+
+// A single project data-source health entry. Structurally identical to
+// SourceHealth (workspace health) - reusing that shape keeps StatusBadge
+// availability rendering consistent across the workspace and project
+// health views.
+export type HealthEntry = SourceHealth;
+
+export interface HealthResponse {
+  health: HealthEntry[];
+  stale: boolean;
+}
+
+export function getHealth(id: string): Promise<HealthResponse> {
+  return getJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health`);
+}
+
+export function refreshHealth(id: string): Promise<HealthResponse> {
+  return mutateJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health/refresh`, { method: "POST" });
+}
+
+// --- Project-scoped task / session / knowledge reads ---------------------
+//
+// The server mounts the SAME handlers used by the /workspaces/{id}/...
+// endpoints under /projects/{id}/... too, so these mirror the workspace
+// reads' response shapes exactly. They let Project Detail's Tasks,
+// Sessions, and Knowledge tabs read real data for ANY project (not only
+// the startup workspace) without routing through the /workspaces/... URLs.
+
+export function listProjectTasks(id: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
+  return getJSON<{ items: TaskSummary[] }>(`/projects/${encodeURIComponent(id)}/tasks${taskListQuery(filter)}`);
+}
+
+export function getProjectTask(id: string, taskId: string): Promise<TaskDetail> {
+  return getJSON<TaskDetail>(`/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`);
+}
+
+export function getProjectTaskGraph(id: string): Promise<TaskGraph> {
+  return getJSON<TaskGraph>(`/projects/${encodeURIComponent(id)}/task-graph`);
+}
+
+export function listProjectSessions(id: string): Promise<{ items: PanelSessionSummary[] }> {
+  return getJSON<{ items: PanelSessionSummary[] }>(`/projects/${encodeURIComponent(id)}/sessions`);
+}
+
+export function getProjectSession(id: string, sessionId: string): Promise<SessionDetail> {
+  return getJSON<SessionDetail>(
+    `/projects/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`,
+  );
+}
+
+export function listProjectKnowledge(
+  id: string,
+  filter: KnowledgeFilter = {},
+): Promise<{ items: (KnowledgeRecord | SearchResult)[] }> {
+  const qs = buildKnowledgeQuery(filter);
+  return getJSON<{ items: (KnowledgeRecord | SearchResult)[] }>(
+    `/projects/${encodeURIComponent(id)}/knowledge${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getProjectKnowledge(id: string, knowledgeId: string): Promise<KnowledgeRecord> {
+  return getJSON<KnowledgeRecord>(
+    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}`,
+  );
+}
+
+export function getProjectKnowledgeRelations(id: string, knowledgeId: string): Promise<{ items: KnowledgeRecord[] }> {
+  return getJSON<{ items: KnowledgeRecord[] }>(
+    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/relations`,
+  );
+}
+
+export function getProjectKnowledgeHistory(id: string, knowledgeId: string): Promise<{ items: KnowledgeEvent[] }> {
+  return getJSON<{ items: KnowledgeEvent[] }>(
+    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/history`,
+  );
+}
+
+// --- Project Contradictions (plan §22) -----------------------------------
+//
+// A contradiction records two or more conflicting claims about the same
+// subject (a metadata key, a requirement, a plan clause, …). It is
+// read-heavy from the panel: list + detail with each claim shown
+// side-by-side, plus two lightweight resolution actions (record a resolved
+// statement, or accept the divergence as intentional). Mutations go through
+// mutateJSON so they carry the session CSRF header.
+
+export type ContradictionSeverity = "informational" | "minor" | "material" | "critical";
+export type ContradictionStatus =
+  | "detected"
+  | "triaged"
+  | "needs_clarification"
+  | "resolution_proposed"
+  | "resolved"
+  | "accepted_divergence"
+  | "superseded";
+
+export interface ContradictionSubject {
+  type: string;
+  key: string;
+}
+
+export interface ContradictionClaim {
+  source: { type: string; ref: string };
+  statement: string;
+  evidence?: string[];
+}
+
+export interface ContradictionResolution {
+  proposed_statement?: string;
+  rationale?: string;
+  requires_human_confirmation?: boolean;
+  resolved_statement?: string;
+}
+
+export interface Contradiction {
+  id: string;
+  title: string;
+  severity: ContradictionSeverity;
+  status: ContradictionStatus;
+  blocking?: boolean;
+  subject: ContradictionSubject;
+  claims: ContradictionClaim[];
+  resolution?: ContradictionResolution;
+  updated_at?: string;
+}
+
+export function listContradictions(id: string): Promise<{ items: Contradiction[] }> {
+  return getJSON<{ items: Contradiction[] }>(`/projects/${encodeURIComponent(id)}/contradictions`);
+}
+
+export function getContradiction(id: string, contradictionId: string): Promise<Contradiction> {
+  return getJSON<Contradiction>(
+    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}`,
+  );
+}
+
+export function resolveContradiction(
+  id: string,
+  contradictionId: string,
+  body: { statement: string; by: string },
+): Promise<Contradiction> {
+  return mutateJSON<Contradiction>(
+    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/resolve`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function acceptDivergence(
+  id: string,
+  contradictionId: string,
+  body: { by: string },
+): Promise<Contradiction> {
+  return mutateJSON<Contradiction>(
+    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/accept-divergence`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function proposeContradictionResolution(
+  id: string,
+  contradictionId: string,
+  body: { proposed_statement: string; rationale: string; requires_human_confirmation: boolean },
+): Promise<Contradiction> {
+  return mutateJSON<Contradiction>(
+    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/propose-resolution`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+// --- Project Impact (plan §30) -------------------------------------------
+//
+// The impact query walks the project's dependency/coverage graph from a
+// subject node and returns the blast radius as READABLE LISTS (plan §30
+// prefers lists over a graph): affected repositories/tests/deployments,
+// owners, missing coverage, and any related contradictions. `listImpactNodes`
+// backs the subject picker; `refreshImpact` forces the graph to rebuild.
+
+export interface ImpactNode {
+  id: string;
+  type: string;
+  label?: string;
+  repository?: string;
+}
+
+export interface ImpactResult {
+  direct_impact: ImpactNode[];
+  transitive_impact: ImpactNode[];
+  affected_repositories: string[];
+  affected_tests: ImpactNode[];
+  deployment_artifacts: ImpactNode[];
+  owners: ImpactNode[];
+  missing_coverage: ImpactNode[];
+  related_contradictions: string[];
+}
+
+export interface ImpactQueryRequest {
+  subject_id: string;
+  depth: number;
+  include: string[];
+}
+
+export function queryImpact(id: string, body: ImpactQueryRequest): Promise<ImpactResult> {
+  return mutateJSON<ImpactResult>(`/projects/${encodeURIComponent(id)}/impact/query`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listImpactNodes(id: string): Promise<{ items: ImpactNode[] }> {
+  return getJSON<{ items: ImpactNode[] }>(`/projects/${encodeURIComponent(id)}/impact/nodes`);
+}
+
+export function refreshImpact(id: string): Promise<{ ok: true }> {
+  return mutateJSON<{ ok: true }>(`/projects/${encodeURIComponent(id)}/impact/refresh`, { method: "POST" });
+}
+
+// --- Project Change Dossiers (plan §38) ----------------------------------
+//
+// A change dossier is the assembled, human-readable case for a change:
+// its objective, requirement coverage, contradiction state, cross-repo
+// impact, plan conformance, and the verified claims backing it. The panel
+// lists dossiers with their summary indicators, shows one in detail, and
+// can finalize it or export the Markdown rendering.
+
+export interface DossierRequirements {
+  covered: number;
+  uncovered: number;
+}
+
+export interface DossierContradictions {
+  resolved: number;
+  unresolved: number;
+}
+
+export interface DossierImpact {
+  repositories?: string[];
+  excluded_repositories?: string[];
+  missing_coverage?: string[];
+}
+
+export interface DossierPlanConformance {
+  implemented: number;
+  partial: number;
+  missing: number;
+}
+
+export interface ChangeDossier {
+  id: string;
+  title: string;
+  status: string;
+  objective: { statement: string };
+  requirements?: DossierRequirements;
+  contradictions?: DossierContradictions;
+  impact?: DossierImpact;
+  plan_conformance?: DossierPlanConformance;
+  claims?: string[];
+  evidence?: string[];
+  blocking?: boolean;
+}
+
+export function listDossiers(id: string): Promise<{ items: ChangeDossier[] }> {
+  return getJSON<{ items: ChangeDossier[] }>(`/projects/${encodeURIComponent(id)}/dossiers`);
+}
+
+export function getDossier(id: string, dossierId: string): Promise<ChangeDossier> {
+  return getJSON<ChangeDossier>(`/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}`);
+}
+
+export function finalizeDossier(id: string, dossierId: string): Promise<ChangeDossier> {
+  return mutateJSON<ChangeDossier>(
+    `/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}/finalize`,
+    { method: "POST" },
+  );
+}
+
+// The Markdown export is served as text, not JSON, so it is fetched
+// directly rather than through getJSON. Callers hand the string to a
+// download/preview; a non-2xx still surfaces as an ApiError.
+export async function exportDossierMarkdown(id: string, dossierId: string): Promise<string> {
+  const res = await fetch(
+    `/api/v1/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}/export.md`,
+    { headers: { Accept: "text/markdown, text/plain, */*" } },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(res.status, body.error ?? res.statusText);
+  }
+  return res.text();
+}
+
+// --- Project Handoffs (handoff capsules) ---------------------------------
+//
+// A handoff capsule is a resumable snapshot of an in-flight run: its
+// objective, current phase/task, who created it, and the dossier it hangs
+// off. `validateHandoff` re-checks it against current state and answers
+// whether it is still resumable (and if not, what changed / must be
+// refreshed); `supersedeHandoff` retires it.
+
+export interface HandoffCapsule {
+  id: string;
+  run_id: string;
+  current_phase: string;
+  objective: { statement: string };
+  current_task?: { id: string; next_action: string };
+  created_by?: { role: string; agent_client: string };
+  superseded?: boolean;
+  created_at?: string;
+  dossier?: { id: string; status: string };
+}
+
+export type HandoffValidationStatus = "resumable" | "refresh_required" | "blocked" | "superseded" | "invalid";
+
+export interface HandoffValidation {
+  status: HandoffValidationStatus;
+  changes_since_handoff?: string[];
+  required_refresh?: string[];
+}
+
+export function listHandoffs(id: string): Promise<{ items: HandoffCapsule[] }> {
+  return getJSON<{ items: HandoffCapsule[] }>(`/projects/${encodeURIComponent(id)}/handoffs`);
+}
+
+export function getHandoff(id: string, handoffId: string): Promise<HandoffCapsule> {
+  return getJSON<HandoffCapsule>(`/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}`);
+}
+
+export function validateHandoff(id: string, handoffId: string): Promise<HandoffValidation> {
+  return mutateJSON<HandoffValidation>(
+    `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}/validate`,
+    { method: "POST" },
+  );
+}
+
+export function supersedeHandoff(id: string, handoffId: string): Promise<HandoffCapsule> {
+  return mutateJSON<HandoffCapsule>(
+    `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}/supersede`,
+    { method: "POST" },
+  );
 }

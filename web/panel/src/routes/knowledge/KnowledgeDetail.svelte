@@ -8,6 +8,7 @@
     type KnowledgeRecord,
   } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
+  import Button from "../../lib/components/Button.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import VersionLineageGraphView from "../../lib/components/graphs/VersionLineageGraphView.svelte";
   import type { GraphNode, GraphEdge } from "../../lib/components/graphs/types";
@@ -179,9 +180,9 @@
     <section aria-labelledby="recipe-identity-heading" class="recipe-block">
       <div class="recipe-block-head">
         <h2 id="recipe-identity-heading">Recipe identity</h2>
-        <button type="button" class="request-correction" onclick={startRecipeReview} data-testid="start-recipe-review">
-          Request a correction to this recipe
-        </button>
+        <span data-testid="start-recipe-review">
+          <Button variant="primary" size="sm" onclick={startRecipeReview}>Request a correction to this recipe</Button>
+        </span>
       </div>
       <dl>
         <dt>Capability</dt>
@@ -608,16 +609,6 @@
   }
   .recipe-block-head h2 {
     margin: 0;
-  }
-  .request-correction {
-    border: none;
-    border-radius: 6px;
-    background: var(--color-accent);
-    color: var(--color-accent-contrast);
-    padding: 0.45rem 0.85rem;
-    font-size: 0.82rem;
-    cursor: pointer;
-    min-height: 44px;
   }
   .recipe-block dl {
     display: grid;

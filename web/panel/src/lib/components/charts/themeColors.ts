@@ -61,14 +61,14 @@ const PROPERTY_MAP: Record<keyof ThemePalette, string> = {
 // that skip DOM setup) - mirrors theme.css's light theme so charts/graphs
 // still render something sane.
 const FALLBACK: ThemePalette = {
-  bg: "#f7f5f0",
+  bg: "#f5f7fa",
   surface: "#ffffff",
-  surfaceSubtle: "#f0ece3",
+  surfaceSubtle: "#f1f4f8",
   surfaceRaised: "#ffffff",
-  text: "#1f2430",
-  textMuted: "#6b6459",
-  border: "#e6ddcf",
-  borderStrong: "#d3c8b6",
+  text: "#182230",
+  textMuted: "#667085",
+  border: "#dce2ea",
+  borderStrong: "#c4ccd7",
   accent: "#235fb5",
   accentHover: "#1b4a90",
   accentSoft: "#e8eefb",

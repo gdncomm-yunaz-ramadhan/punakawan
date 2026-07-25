@@ -46,7 +46,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_bagong_review",
-		Description: "Validate and persist a Bagong independent final review (§8.4) as durable knowledge. Requires capsule_id from a prior request_capsule call for role bagong.",
+		Description: "Validate and persist a Bagong independent final review (§8.4) as durable knowledge. Requires capsule_id from a prior request_capsule call for role bagong. Enforces the mandatory senior-maintainer review rubric as a hard constraint (see the bagong prompt): the submission is REJECTED unless requirement_coverage (verification performed) and uncertainties (questions/assumptions and remaining unverified risks) are both populated, findings are non-blank, and a no-findings review states so explicitly in honest_summary.",
 	}, submitBagongReviewHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -183,7 +183,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "request_jira_clarification",
-		Description: "Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup). Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + approvalGateNote,
 	}, requestJiraClarificationHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -198,8 +198,32 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_jira_task_progress",
-		Description: "Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; do NOT use old Jira wiki markup like h3. or {{code}} - it renders literally). Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes." + approvalGateNote,
 	}, updateJiraTaskProgressHandler(a))
+
+	// Native Jira convenience tools (punokawan-t6y): common ops that previously
+	// needed a raw call_adapter_operation passthrough. Each is a thin,
+	// approval-gated wrapper over the same atlassian adapter operation layer as
+	// the tools above; run_id is optional (lightweight one-off mode).
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_search_user",
+		Description: "Look up Jira Cloud users by display name or email and return their accountId(s), so a name/email can be resolved to the accountId that jira_assign_issue (and Jira writes generally) require. Read-only: no approval needed. run_id is optional for one-off use.",
+	}, jiraSearchUserHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_link_issues",
+		Description: "Create an issue link between two Jira issues (e.g. Blocks or Relates). inward_issue/outward_issue map onto Jira's inward/outward sides, so direction follows the link type. run_id is optional for one-off use." + approvalGateNote,
+	}, jiraLinkIssuesHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_set_story_points",
+		Description: "Set an issue's Story Points custom field. Defaults to customfield_10016 (the common Jira Cloud default); pass story_points_field_id to override per project/board (discover the real id via atlassian.getIssueTypeFieldMeta). run_id is optional for one-off use." + approvalGateNote,
+	}, jiraSetStoryPointsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jira_assign_issue",
+		Description: "Assign a Jira issue to a user by accountId (resolve a name/email with jira_search_user first). run_id is optional for one-off use." + approvalGateNote,
+	}, jiraAssignIssueHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_jira_sync_queue",
@@ -213,7 +237,7 @@ func registerTools(server *mcp.Server, a *app.App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_jira_assessment",
-		Description: "Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup - h3./{{code}} render literally). Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result." + approvalGateNote,
 	}, submitJiraAssessmentHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -250,4 +274,103 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "reset_project_knowledge",
 		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module (an empty scope would match everything). Defaults to a dry run: returns the matching record ids without deleting anything unless confirm=true.",
 	}, resetProjectKnowledgeHandler(a))
+
+	// Contradiction Ledger (Gareng, §16-22). Deterministic, no reasoning.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "submit_contradiction",
+		Description: "Record a detected contradiction - a disagreement between sources about one subject (§21/CONTRA-007). Deduplicates deterministically by normalized subject.key (§20): if a contradiction already exists for the same subject the existing record is returned (deduplicated=true) rather than a duplicate created. New records start at status detected and block by default only when severity is critical. Gated to role Gareng's contradictions capability.",
+	}, submitContradictionHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_contradictions",
+		Description: "List contradictions in the ledger. With no status filter it returns only still-open ones (detected/triaged/needs_clarification/resolution_proposed); pass status to filter to exactly one lifecycle state. Read-only.",
+	}, listContradictionsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "resolve_contradiction",
+		Description: "Record a contradiction's confirmed resolution statement and who confirmed it, advancing it to resolved (§18). Only valid from resolution_proposed. Gated to role Gareng's contradictions capability.",
+	}, resolveContradictionHandler(a))
+
+	// Cross-Repository Impact Graph (Gareng, §23-31). Deterministic query, no reasoning.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "analyze_impact",
+		Description: "Answer \"if subject_id changes, what else is affected?\" by a cycle-safe traversal of the impact graph (§26/§29), returning direct/transitive impact plus affected repositories, tests, deployments, owners, missing coverage, and any related contradictions. depth defaults to 3; set refresh=true to reconcile the structural graph from the workspace first. Read-only against durable state.",
+	}, analyzeImpactHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "record_impact_edge",
+		Description: "Record a discovered dependency edge (from->to of a given type and confidence) into the impact graph (§29/IMPACT-012). Idempotent by (from,to,type): re-recording an edge supersedes the prior one. Gated to role Gareng's cross_repository_impact capability.",
+	}, recordImpactEdgeHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "verify_impact_coverage",
+		Description: "Bagong's coverage check (§30/IMPACT-014): traverse the impact graph from subject_id and report whether every reachable symbol/operation is tested and whether any reachable edge is in dispute. Returns covered=true only when nothing is missing coverage and nothing is disputed, plus the affected repositories, missing-coverage nodes, and related contradictions. Gated to role Bagong's cross_repository_verification capability.",
+	}, verifyImpactCoverageHandler(a))
+
+	// Change Dossier (§32-39): the durable, versioned proof artifact for a change.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_change_dossier",
+		Description: "Create a new Change Dossier (§37) - the durable proof artifact tracking a change from objective to completion. Starts at status draft. Gated to role Semar's change_dossier capability.",
+	}, createChangeDossierHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_dossier_claim",
+		Description: "Attach a claim (producer role, type, statement, optional evidence ids) to a dossier's append-only claim log (§34). Status defaults to claimed. Gated to role Semar's change_dossier capability.",
+	}, addDossierClaimHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "verify_dossier_claim",
+		Description: "Record an independent verification of a dossier claim (§34). Rejected if by_role equals the claim's producer role - a role cannot verify its own claim. Sets the claim to verified.",
+	}, verifyDossierClaimHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "dispute_dossier_claim",
+		Description: "Record an independent dispute of a dossier claim (§34), setting it to disputed - a blocking finding for finalize_dossier. Rejected if by_role equals the claim's producer role.",
+	}, disputeDossierClaimHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_dossier_evidence",
+		Description: "Attach an evidence record (type, artifacts, source, result) to a dossier (§35). The caller supplies any artifact sha256; the store does not compute it. Gated to role Semar's change_dossier capability.",
+	}, addDossierEvidenceHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_dossier_contradictions",
+		Description: "Set a dossier's resolved/unresolved contradiction sets (§34). Unresolved contradictions are blocking findings that prevent finalize_dossier. Gated to role Semar's change_dossier capability.",
+	}, setDossierContradictionsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_dossier_impact",
+		Description: "Set a dossier's impact section (§33): affected repositories, deliberately excluded repositories (each with a reason), and areas with missing coverage. Rendered in the markdown/PR-summary exports. Gated to role Semar's change_dossier capability.",
+	}, setDossierImpactHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "finalize_dossier",
+		Description: "Complete a dossier, but only when it is at verified status and free of blocking findings (§36): no unresolved contradictions, no missing plan items or unapproved deviations, and no disputed/rejected claims. Returns a clear error listing every blocker when it cannot complete. Gated to role Semar's change_dossier capability.",
+	}, finalizeDossierHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "export_dossier",
+		Description: "Render a dossier as human-readable markdown (format=md, default) or deterministic JSON (format=json), including the §38 summary indicators. Read-only.",
+	}, exportDossierHandler(a))
+
+	// Handoff Capsule (§40-43): compact, resumable snapshots of in-progress work.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_handoff_capsule",
+		Description: "Create a Handoff Capsule (§40) - a compact, resumable snapshot of in-progress work that references plan/task/dossier/contradictions/evidence by id rather than copying them, so work can continue across sessions, clients, and people without the transcript. Stamps the current role-config revision for resume-time validation. Gated to role Semar's handoff_capsule capability.",
+	}, createHandoffCapsuleHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_handoff_capsule",
+		Description: "Read a handoff capsule by id (§41). A capsule that was never written is returned as an empty capsule carrying just the id. Read-only.",
+	}, getHandoffCapsuleHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "validate_handoff_capsule",
+		Description: "Classify whether a capsule can be resumed (§42): resumable, refresh_required (inputs moved but still resumable after reloading the listed items), blocked (a referenced dependency is gone), invalid (repository state diverged), or superseded (must not resume silently). Read-only.",
+	}, validateHandoffCapsuleHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "resume_from_handoff",
+		Description: "Validate a capsule and, if resumable or refresh_required, return only the smallest necessary verified context (§43) - objective, current phase/task and next action, accepted plan ref, open contradictions, unresolved risks - plus any required refresh steps. Errors when superseded, blocked, or invalid, explaining why.",
+	}, resumeFromHandoffHandler(a))
 }

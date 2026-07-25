@@ -4,9 +4,13 @@
 // environment allowlist, per-call timeouts, bounded output capture, and
 // process-tree termination on cancellation.
 //
-// Process-group termination (Setpgid/Kill(-pid)) is POSIX-only. Windows
-// support is deferred to Milestone 9 (multi-platform packaging); this
-// package will not compile with GOOS=windows in its current form.
+// Process-tree termination is platform-specific and lives behind build tags:
+// supervisor_unix.go uses POSIX process groups (Setpgid) plus signal-based
+// termination (SIGTERM escalating to SIGKILL against the whole group), while
+// supervisor_windows.go groups children in a new process group and terminates
+// the tree with taskkill. The shared code below is platform-independent and
+// calls the small setProcessGroup/terminateProcessTree/killProcessTree helpers
+// each platform provides.
 package tools
 
 import (
@@ -18,7 +22,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -123,14 +126,14 @@ func (s *Supervisor) Run(ctx context.Context, spec Spec) (*Result, error) {
 	cmd := exec.CommandContext(runCtx, spec.Name, spec.Args...)
 	cmd.Dir = dir
 	cmd.Env = s.buildEnv(spec.Env)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 	// Terminate the whole process group on cancellation, not just the
 	// direct child, so grandchild processes don't outlive the timeout.
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		return terminateProcessTree(cmd.Process)
 	}
 	cmd.WaitDelay = 5 * time.Second
 

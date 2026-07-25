@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/dossierevidence.schema.json",
+  "title": "DossierEvidence",
+  "description": "One evidence record within a Change Dossier, per punakawan-role-config-distinguished-improvements-plan.md §35. Records how a claim is backed: the command run (and where), its result, and any produced artifacts with content hashes. Distinct from internal task Evidence; this is the dossier's exportable, hash-anchored proof unit.",
+  "type": "object",
+  "required": ["id", "type"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "dossier_id": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": ["requirement_source", "source_location", "diff", "test_result", "build_result", "api_compatibility", "security_scan", "dependency_scan", "migration_check", "screenshot", "manual_confirmation", "review_result"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "string" },
+        "repository": { "type": "string" },
+        "working_tree": { "type": "string" },
+        "ref": { "type": "string" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["passed", "failed", "unknown"] },
+        "exit_code": { "type": "integer" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string" }
+        }
+      }
+    }
+  }
+}

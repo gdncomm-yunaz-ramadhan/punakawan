@@ -4,17 +4,16 @@
   import { getPath } from "./lib/router/router.svelte";
   import AppShell from "./lib/components/AppShell.svelte";
   import Overview from "./routes/overview/Overview.svelte";
-  import WorkspacesList from "./routes/workspaces/WorkspacesList.svelte";
+  import ProjectsList from "./routes/projects/ProjectsList.svelte";
+  import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
   import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
   import SessionsList from "./routes/sessions/SessionsList.svelte";
   import SessionDetail from "./routes/sessions/SessionDetail.svelte";
   import TasksPage from "./routes/tasks/TasksPage.svelte";
   import KnowledgeList from "./routes/knowledge/KnowledgeList.svelte";
   import KnowledgeDetail from "./routes/knowledge/KnowledgeDetail.svelte";
-  import GlobalSearch from "./routes/search/GlobalSearch.svelte";
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
-  import Showcase from "./routes/showcase/Showcase.svelte";
   import StartReview from "./routes/review/StartReview.svelte";
   import ReviewMode from "./routes/review/ReviewMode.svelte";
 
@@ -29,6 +28,7 @@
     }
   });
 
+  const projectDetailPath = /^\/projects\/([^/]+)$/;
   const workspaceDetailPath = /^\/workspaces\/([^/]+)$/;
   const sessionsListPath = /^\/workspaces\/([^/]+)\/sessions$/;
   const sessionDetailPath = /^\/workspaces\/([^/]+)\/sessions\/([^/]+)$/;
@@ -47,14 +47,10 @@
 
   {#if getPath() === "/" || getPath() === ""}
     <Overview />
-  {:else if getPath() === "/workspaces"}
-    <WorkspacesList />
-  {:else if getPath() === "/search"}
-    <GlobalSearch />
+  {:else if getPath() === "/projects"}
+    <ProjectsList />
   {:else if getPath() === "/system"}
     <SystemPage />
-  {:else if getPath() === "/showcase"}
-    <Showcase />
   {:else if startReviewPath.exec(getPath())}
     {@const match = startReviewPath.exec(getPath())}
     <StartReview artifactType={(match?.[1] as "plan" | "retrieval_recipe") ?? "plan"} />
@@ -85,6 +81,9 @@
   {:else if tasksPath.exec(getPath())}
     {@const match = tasksPath.exec(getPath())}
     <TasksPage workspaceId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else if projectDetailPath.exec(getPath())}
+    {@const match = projectDetailPath.exec(getPath())}
+    <ProjectDetail projectId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if workspaceDetailPath.exec(getPath())}
     {@const match = workspaceDetailPath.exec(getPath())}
     <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />

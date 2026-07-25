@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -139,6 +140,96 @@ func TestSetPinnedUnknownIDErrors(t *testing.T) {
 	s := openTest(t)
 	if err := s.SetPinned("no-such-id", true); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestReadFileMigratesLegacyUnversionedFileToV1(t *testing.T) {
+	// A file predating version stamping: no `version:` key at all.
+	path := filepath.Join(t.TempDir(), "workspaces.yaml")
+	legacy := "workspaces:\n  - id: legacy-a\n    path: /tmp/legacy-a\n    registered_at: 2020-01-01T00:00:00Z\n"
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+
+	s, err := OpenAt(path)
+	if err != nil {
+		t.Fatalf("OpenAt: %v", err)
+	}
+
+	// List triggers readFile -> migrate; the legacy entry is preserved.
+	entries, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Id != "legacy-a" {
+		t.Fatalf("List = %+v, want the single legacy entry preserved", entries)
+	}
+
+	// The migration must have been persisted durably: the on-disk file now
+	// carries the current version stamp.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migrated file: %v", err)
+	}
+	if !strings.Contains(string(raw), version) {
+		t.Fatalf("migrated file does not contain version %q:\n%s", version, raw)
+	}
+}
+
+func TestReadFileV1IsUnchanged(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspaces.yaml")
+	dir := t.TempDir()
+	if err := os.WriteFile(path, []byte("version: "+version+"\nworkspaces: []\n"), 0o644); err != nil {
+		t.Fatalf("write v1 file: %v", err)
+	}
+	s, err := OpenAt(path)
+	if err != nil {
+		t.Fatalf("OpenAt: %v", err)
+	}
+	// A current-version file loads without error and normal operations work.
+	if _, err := s.List(); err != nil {
+		t.Fatalf("List on v1 file: %v", err)
+	}
+	if _, err := s.Register("a", dir, "", time.Now().UTC()); err != nil {
+		t.Fatalf("Register on v1 file: %v", err)
+	}
+}
+
+func TestReadFileUnknownVersionErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspaces.yaml")
+	future := "version: punakawan.workspace-registry/v99\nworkspaces: []\n"
+	if err := os.WriteFile(path, []byte(future), 0o644); err != nil {
+		t.Fatalf("write future file: %v", err)
+	}
+	// OpenAt does not read the body (the file already exists), so the error
+	// surfaces on the first read.
+	s, err := OpenAt(path)
+	if err != nil {
+		t.Fatalf("OpenAt: %v", err)
+	}
+	if _, err := s.List(); !errors.Is(err, ErrUnsupportedRegistryVersion) {
+		t.Fatalf("List err = %v, want ErrUnsupportedRegistryVersion", err)
+	}
+
+	// The unsupported file must be left untouched, not re-stamped.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if !strings.Contains(string(raw), "v99") {
+		t.Fatalf("unsupported file was rewritten, lost original version:\n%s", raw)
+	}
+}
+
+func TestMigrateUnit(t *testing.T) {
+	if _, changed, err := migrate(&file{Version: version}); err != nil || changed {
+		t.Fatalf("migrate(v1) = (changed=%v, err=%v), want (false, nil)", changed, err)
+	}
+	if f, changed, err := migrate(&file{}); err != nil || !changed || f.Version != version {
+		t.Fatalf("migrate(empty) = (%+v, changed=%v, err=%v), want upgraded to %q", f, changed, err, version)
+	}
+	if _, _, err := migrate(&file{Version: "something-unrecognized"}); !errors.Is(err, ErrUnsupportedRegistryVersion) {
+		t.Fatalf("migrate(unknown) err = %v, want ErrUnsupportedRegistryVersion", err)
 	}
 }
 

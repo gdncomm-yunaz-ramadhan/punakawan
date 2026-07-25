@@ -38,33 +38,60 @@
 
 <style>
   .presets {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(105px, 1fr));
+    gap: 0.55rem;
   }
   .preset {
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.5rem;
     border: 1px solid var(--color-border);
-    background: var(--color-surface-subtle);
+    background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
     color: var(--color-text);
-    border-radius: 8px;
-    padding: 0.35rem 0.6rem;
-    min-height: 44px;
+    border-radius: 10px;
+    padding: 0.55rem 0.65rem;
+    min-height: 48px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 5%, transparent);
   }
   .preset.active {
     border-color: var(--color-accent);
     background: var(--color-accent-soft);
-    font-weight: 600;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .preset.active::after {
+    content: "✓";
+    margin-left: auto;
+    color: var(--color-accent);
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+  .preset:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
   .swatch {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    border: 1px solid var(--color-border-strong);
+    border: 2px solid var(--color-surface-raised);
+    box-shadow: 0 0 0 1px var(--color-border-strong);
     flex-shrink: 0;
+  }
+
+  @media (max-width: 520px) {
+    .presets {
+      grid-template-columns: repeat(2, minmax(105px, 1fr));
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .preset {
+      transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+    }
   }
 </style>

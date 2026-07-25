@@ -66,6 +66,27 @@
     "forbidden_actions": { "type": "array", "items": { "type": "string" } },
 
     "expected_output": { "type": "string" },
-    "token_budget": { "type": "integer", "minimum": 1 }
+    "token_budget": { "type": "integer", "minimum": 1 },
+
+    "role_guidance": {
+      "description": "Compact role-configuration guidance block (plan §48, ROLE-011) rendered from the effective role configuration and injected into the role's prompt. Like project_metadata, it is deliberately NOT one of the digest fields (§6.3): it is derived project configuration, not part of the capsule's reasoning inputs, so attaching it must not change the capsule's identity.",
+      "type": "string"
+    },
+
+    "project_metadata": {
+      "description": "Bounded, relevance-selected project metadata (performance plan §4.4) injected when the capsule was built. Deliberately NOT one of the digest fields (§6.3): it is derived project context, not part of the capsule's reasoning inputs, so adding or refreshing it must not change the capsule's identity.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "rendered"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "type": "string" },
+          "description": { "type": "string" },
+          "value": { "description": "The raw metadata value; may be any JSON type (string, number, boolean, array, or object)." },
+          "rendered": { "type": "string" }
+        }
+      }
+    }
   }
 }

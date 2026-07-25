@@ -59,11 +59,13 @@
 
 <style>
   .card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    position: relative;
+    overflow: hidden;
+    background: var(--surface-card-bg, var(--color-surface));
+    border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-card);
-    box-shadow: var(--shadow-sm);
-    padding: 1rem 1.1rem;
+    box-shadow: var(--shadow-card);
+    padding: 1.05rem 1.15rem;
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
@@ -81,7 +83,21 @@
   }
   .card:hover {
     box-shadow: var(--shadow-md);
-    border-color: var(--color-border-strong);
+    border-color: color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+    transform: translateY(-1px);
+  }
+  .card::after {
+    content: "";
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 34px;
+    height: 34px;
+    border-top: 2px solid color-mix(in srgb, var(--surface-accent, var(--color-accent)) 58%, transparent);
+    border-right: 2px solid color-mix(in srgb, var(--surface-accent, var(--color-accent)) 58%, transparent);
+    border-top-right-radius: inherit;
+    pointer-events: none;
+    opacity: 0.8;
   }
   .card-header {
     display: flex;

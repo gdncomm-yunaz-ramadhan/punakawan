@@ -170,6 +170,20 @@ export interface KnowledgeRecord {
     missing_information?: string[];
     contradictions?: string[];
     confidence_level?: string;
+    /**
+     * Bounded, relevance-selected project metadata (performance plan §4.4) injected when the dossier was built, so a later reader of the persisted dossier record sees the same project context the builder had.
+     */
+    project_metadata?: {
+      key: string;
+      description?: string;
+      /**
+       * The raw metadata value; may be any JSON type (string, number, boolean, array, or object).
+       */
+      value?: {
+        [k: string]: unknown;
+      };
+      rendered: string;
+    }[];
   };
   /**
    * Semar's consolidated output after merging Gareng and Petruk findings, present on semar-synthesis records. See §8.1, §9.2.
@@ -224,13 +238,61 @@ export interface KnowledgeRecord {
     documentation_plan?: string[];
   };
   /**
-   * Bagong's independent final review, present on bagong-review records. See §8.4.
+   * Bagong's independent final review, present on bagong-review records. See §8.4. blocking_findings and findings are structured so the senior-maintainer rubric (prompts/bagong/prompt.md) is field-enforced: every finding must carry a severity, the exact file+location, why it is a problem, a realistic failure scenario, and the smallest appropriate correction - not free text.
    */
   bagong_review?: {
     verdict?: string;
     requirement_coverage?: string[];
-    findings?: string[];
-    blocking_findings?: string[];
+    /**
+     * Non-blocking (section 2 of the senior-maintainer rubric) improvements. Each entry is a structured finding, mirroring the per-finding attributes the rubric demands.
+     */
+    findings?: {
+      /**
+       * Finding severity, reusing ReviewFinding's severity vocabulary.
+       */
+      severity: "blocker" | "major" | "minor" | "suggestion";
+      /**
+       * The exact file and line/location the finding applies to, e.g. internal/foo/bar.go:12.
+       */
+      location: string;
+      /**
+       * Why this is a problem.
+       */
+      why: string;
+      /**
+       * A realistic scenario in which this causes a concrete failure.
+       */
+      failure_scenario: string;
+      /**
+       * The smallest appropriate correction.
+       */
+      correction: string;
+    }[];
+    /**
+     * Blocking (section 1 of the senior-maintainer rubric) findings that must be resolved before completion. Each entry is a structured finding, mirroring the per-finding attributes the rubric demands.
+     */
+    blocking_findings?: {
+      /**
+       * Finding severity, reusing ReviewFinding's severity vocabulary.
+       */
+      severity: "blocker" | "major" | "minor" | "suggestion";
+      /**
+       * The exact file and line/location the finding applies to, e.g. internal/foo/bar.go:12.
+       */
+      location: string;
+      /**
+       * Why this is a problem.
+       */
+      why: string;
+      /**
+       * A realistic scenario in which this causes a concrete failure.
+       */
+      failure_scenario: string;
+      /**
+       * The smallest appropriate correction.
+       */
+      correction: string;
+    }[];
     test_gaps?: string[];
     security_findings?: string[];
     compatibility_findings?: string[];

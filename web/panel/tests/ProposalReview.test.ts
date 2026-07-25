@@ -119,6 +119,38 @@ describe("ProposalReview", () => {
     expect(screen.getByTestId("diff-viewer")).toBeTruthy();
   });
 
+  it("renders (does not crash) when validation issues come back null", async () => {
+    // The Go validators return a nil slice - JSON null, not [] - whenever a
+    // check has no issues, which is the PASSING case. The template guarded
+    // structural?.issues.length (only the object, not the field), so a passing
+    // structural report threw "Cannot read properties of null (reading length)"
+    // and wedged the whole proposal/diff view on "Loading proposal…". Regress it.
+    const p = proposal();
+    vi.spyOn(reviewApi, "listProposals").mockResolvedValue({ items: [p] });
+    vi.spyOn(reviewApi, "getProposalDiff").mockResolvedValue({
+      lines: sampleDiffLines,
+      summary: { added: 1, removed: 1 },
+    });
+    vi.spyOn(reviewApi, "getProposalValidation").mockResolvedValue({
+      structural: { passed: true, issues: null },
+      compliance: { passed: true, issues: null, unresolved_comment_ids: null },
+    } as unknown as Awaited<ReturnType<typeof reviewApi.getProposalValidation>>);
+
+    render(ProposalReview, {
+      props: {
+        reviewId: "review-1",
+        review: review(),
+        comments: [comment()],
+        isDesktop: true,
+        onreviewChanged: vi.fn(),
+      },
+    });
+
+    // The diff must actually render - not stay stuck on the loading state.
+    await waitFor(() => expect(screen.getByTestId("diff-viewer")).toBeTruthy());
+    expect(screen.getByText("Structural: passed")).toBeTruthy();
+  });
+
   it("collapses long unchanged runs in the rendered diff", async () => {
     const p = proposal();
     vi.spyOn(reviewApi, "listProposals").mockResolvedValue({ items: [p] });

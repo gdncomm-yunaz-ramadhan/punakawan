@@ -6,6 +6,7 @@
   // why this replaces ActiveRevisionSummary rather than living alongside
   // it once a proposal actually exists.
   import StickyActionBar from "../StickyActionBar.svelte";
+  import Button from "../Button.svelte";
   import Dialog from "../overlay/Dialog.svelte";
   import Tabs from "../Tabs.svelte";
   import StatusBadge, { type BadgeVariant } from "../StatusBadge.svelte";
@@ -291,9 +292,9 @@
           - accepting is blocked until you rebase onto the latest version. Rebasing returns this review to draft so you
           can review the refreshed document and resubmit.
         </p>
-        <button type="button" class="primary-button" onclick={doRebase} disabled={actionBusy}>
+        <Button variant="primary" onclick={doRebase} disabled={actionBusy}>
           {actionBusy ? "Rebasing…" : "Rebase onto latest version"}
-        </button>
+        </Button>
       </div>
     {:else if showConflictFromAccept}
       <div class="conflict-banner" role="alert" data-testid="conflict-banner">
@@ -301,9 +302,9 @@
           <strong>Accept failed: the canonical artifact changed underneath this proposal.</strong> Rebase to re-anchor
           this review at the current version, then review and resubmit.
         </p>
-        <button type="button" class="primary-button" onclick={doRebase} disabled={actionBusy}>
+        <Button variant="primary" onclick={doRebase} disabled={actionBusy}>
           {actionBusy ? "Rebasing…" : "Rebase onto latest version"}
-        </button>
+        </Button>
       </div>
     {:else if review.metadata.status === "revision_requested"}
       <div class="inflight-banner" data-testid="revision-in-flight-banner">
@@ -381,7 +382,7 @@
               variant={structural?.passed ? "success" : "danger"}
               label={structural?.passed ? "Structural: passed" : "Structural: failed"}
             />
-            {#if structural?.issues.length}
+            {#if structural?.issues?.length}
               <ul class="issue-list">
                 {#each structural.issues as issue}
                   <li><strong>{issue.check}</strong>: {issue.message}</li>
@@ -394,7 +395,7 @@
               variant={compliance?.passed ? "success" : "danger"}
               label={compliance?.passed ? "Review compliance: passed" : "Review compliance: failed"}
             />
-            {#if compliance?.issues.length}
+            {#if compliance?.issues?.length}
               <ul class="issue-list">
                 {#each compliance.issues as issue}
                   <li><strong>{issue.check}</strong>: {issue.message}</li>
@@ -591,6 +592,11 @@
     gap: 0.75rem;
     flex-wrap: wrap;
     margin-bottom: 1rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
   }
   .diff-badge {
     display: inline-flex;
@@ -598,6 +604,9 @@
     font-weight: 700;
     font-family: monospace;
     font-size: 0.9rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 7px;
+    background: var(--color-surface-subtle);
   }
   .diff-badge .added {
     color: var(--color-success);
@@ -612,17 +621,18 @@
     flex-basis: 100%;
   }
   .panel-block {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    background: var(--surface-card-bg, var(--color-surface));
+    border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
-    padding: 1rem 1.25rem;
+    padding: 1rem 1.1rem;
     margin-bottom: 1rem;
   }
   .panel-block h2 {
-    font-size: 0.95rem;
-    margin: 0 0 0.6rem;
+    font-size: 1rem;
+    margin: 0 0 0.8rem;
     color: var(--color-text);
+    letter-spacing: -0.01em;
   }
   .muted {
     color: var(--color-text-muted);

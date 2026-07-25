@@ -30,7 +30,7 @@ type UpdateJiraTaskProgressInput struct {
 	// user's decision.
 	OriginalEstimateHours *float64 `json:"original_estimate_hours,omitempty"`
 	WorklogHours          *float64 `json:"worklog_hours,omitempty"`
-	Comment               string   `json:"comment,omitempty"`
+	Comment               string   `json:"comment,omitempty" jsonschema:"comment body in Markdown (confirmed working; converted to ADF). Do NOT use old Jira wiki markup - h3./{{code}} render literally."`
 	// TransitionToStatus, when given, moves the issue to the Jira workflow
 	// status with this name (e.g. "In Progress", "Done") - matched
 	// case-insensitively against the issue's currently available

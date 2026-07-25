@@ -61,9 +61,17 @@ func TestAdvanceWorkflowRefusesCompletionWithBlockingBagongFindings(t *testing.T
 		CapsuleId: capsuleID,
 		Title:     "Bagong review",
 		Review: protocol.KnowledgeRecordBagongReview{
-			Verdict:          &verdict,
-			HonestSummary:    &summary,
-			BlockingFindings: []string{"checkout total is off by one cent on discount codes"},
+			Verdict:             &verdict,
+			HonestSummary:       &summary,
+			RequirementCoverage: []string{"AC1 discount totals: verified against diff.patch and tests.json"},
+			Uncertainties:       []string{"no E2E trace evidence yet (M7 not shipped)"},
+			BlockingFindings: []protocol.KnowledgeRecordBagongReviewBlockingFindingsElem{{
+				Severity:        "blocker",
+				Location:        "internal/checkout/total.go:42",
+				Why:             "checkout total is off by one cent on discount codes",
+				FailureScenario: "a $10 order with a 10% code charges $8.99 instead of $9.00",
+				Correction:      "round after summing line items",
+			}},
 		},
 	}); err != nil {
 		t.Fatalf("submit_bagong_review: %v", err)
@@ -91,8 +99,10 @@ func TestAdvanceWorkflowAllowsCompletionWithCleanBagongReview(t *testing.T) {
 		CapsuleId: capsuleID,
 		Title:     "Bagong review",
 		Review: protocol.KnowledgeRecordBagongReview{
-			Verdict:       &verdict,
-			HonestSummary: &summary,
+			Verdict:             &verdict,
+			HonestSummary:       &summary,
+			RequirementCoverage: []string{"all acceptance criteria verified against diff.patch and tests.json"},
+			Uncertainties:       []string{"no E2E trace evidence yet (M7 not shipped)"},
 		},
 	}); err != nil {
 		t.Fatalf("submit_bagong_review: %v", err)

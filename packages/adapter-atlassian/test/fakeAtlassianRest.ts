@@ -227,6 +227,17 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
       return json({ id: String(10300 + createdIssues.length), key, self: `https://fake-team.atlassian.net/rest/api/3/issue/${key}` }, 201);
     }
 
+    if (path === '/rest/api/3/user/search' && method === 'GET') {
+      return json([
+        { accountId: 'acc-1', displayName: 'Ada Lovelace', emailAddress: 'ada@example.test', active: true },
+        { accountId: 'acc-2', displayName: 'Alan Turing', emailAddress: 'alan@example.test', active: false },
+      ]);
+    }
+
+    if (path === '/rest/api/3/issueLink' && method === 'POST') {
+      return new Response(null, { status: 201 });
+    }
+
     if (path === `/wiki/rest/api/content/${FIXTURE_CONFLUENCE_PAGE.id}` && method === 'GET') {
       return json(FIXTURE_CONFLUENCE_PAGE);
     }

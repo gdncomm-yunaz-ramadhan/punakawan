@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,6 +82,14 @@ func (s *PlanStore) versionCanonicalLocation(planID string, version int) string 
 	return filepath.Join(".punakawan", "plans", planID, "versions", fmt.Sprintf("%d.md", version))
 }
 
+func (s *PlanStore) plansRoot() string {
+	return filepath.Join(s.WorkspaceRoot, ".punakawan", "plans")
+}
+
+func (s *PlanStore) manifestPath(planID string) string {
+	return filepath.Join(s.planDir(planID), "manifest.yaml")
+}
+
 // CreateVersion writes content as the next immutable version of planID
 // (1 for a brand-new plan, latest+1 otherwise) and repoints current.yaml
 // at it. It refuses to touch an existing version file - version numbers
@@ -117,7 +126,38 @@ func (s *PlanStore) CreateVersion(planID, workspaceID string, content []byte, no
 	if err := s.writeCurrent(planID, ref); err != nil {
 		return protocol.ArtifactReference{}, err
 	}
+	// Keep the manifest's current_version pointer in step with the version
+	// just written, but ONLY when a manifest already exists. A plan that
+	// was never given a manifest (the common case for the existing
+	// review->proposal->accept flow, and every pre-Phase-7 test) is left
+	// exactly as it was - CreateVersion never synthesizes a manifest, so
+	// its behavior is unchanged when none is present and it never fails
+	// purely because a plan has no manifest. Only status is left untouched
+	// here: lifecycle transitions belong to the review/proposal handlers,
+	// not to a raw version write.
+	if err := s.bumpManifestVersion(planID, version); err != nil {
+		return protocol.ArtifactReference{}, err
+	}
 	return ref, nil
+}
+
+// bumpManifestVersion updates an existing manifest's CurrentVersion to
+// version. It is a no-op (nil error) when the plan has no manifest.yaml,
+// which is why CreateVersion stays backward compatible for manifest-less
+// plans.
+func (s *PlanStore) bumpManifestVersion(planID string, version int) error {
+	m, err := ReadManifest(s.manifestPath(planID))
+	if errors.Is(err, ErrManifestNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if m.CurrentVersion == version {
+		return nil
+	}
+	m.CurrentVersion = version
+	return WriteManifest(s.manifestPath(planID), m)
 }
 
 // Current returns planID's current (latest) version reference.
@@ -198,4 +238,90 @@ func (s *PlanStore) latestVersion(planID string) (int, error) {
 		}
 	}
 	return max, nil
+}
+
+// ListPlans enumerates the plan ids in this workspace - one per
+// subdirectory of .punakawan/plans, sorted. A workspace that has never
+// held a plan (no plans directory yet) is a normal, empty state, not an
+// error, so it returns an empty slice. Non-directory entries (stray
+// files) are ignored.
+func (s *PlanStore) ListPlans() ([]string, error) {
+	entries, err := os.ReadDir(s.plansRoot())
+	if os.IsNotExist(err) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("artifact: list plans: %w", err)
+	}
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			ids = append(ids, e.Name())
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+// Manifest returns planID's manifest. When a manifest.yaml is present it
+// is read verbatim. When it is absent - a plan can have versions and a
+// current.yaml but no manifest, e.g. one created purely through the
+// existing review/proposal flow - a minimal manifest is synthesized from
+// current.yaml (id, current version, default draft status), mirroring
+// project.Load's "a project with no project.yaml is normal, not an
+// error" rule. Only a plan directory that does not exist at all yields
+// ErrPlanNotFound.
+func (s *PlanStore) Manifest(planID string) (*PlanManifest, error) {
+	m, err := ReadManifest(s.manifestPath(planID))
+	if err == nil {
+		return m, nil
+	}
+	if !errors.Is(err, ErrManifestNotFound) {
+		return nil, err
+	}
+	if _, statErr := os.Stat(s.planDir(planID)); statErr != nil {
+		if os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("%w: %q", ErrPlanNotFound, planID)
+		}
+		return nil, fmt.Errorf("artifact: stat plan dir: %w", statErr)
+	}
+	return s.synthesizeManifest(planID), nil
+}
+
+// synthesizeManifest builds the default manifest for a plan directory
+// that has no manifest.yaml yet. Title defaults to the id and status to
+// draft; current_version is taken from current.yaml when present (0 when
+// the plan has no versions yet).
+func (s *PlanStore) synthesizeManifest(planID string) *PlanManifest {
+	m := &PlanManifest{
+		Version:      PlanManifestVersion,
+		ID:           planID,
+		Title:        planID,
+		Status:       PlanStatusDraft,
+		DerivedFrom:  Derivations{},
+		RelatedTasks: []string{},
+	}
+	if ref, err := s.Current(planID); err == nil {
+		m.CurrentVersion = ref.Version
+	}
+	return m
+}
+
+// SaveManifest writes planID's manifest, forcing the manifest's own id to
+// match its storage location and defaulting an empty status to draft. A
+// non-empty status that is not one of the five defined lifecycle values
+// is rejected rather than persisted, so an out-of-vocabulary status can
+// never reach disk through this guarded entry point.
+func (s *PlanStore) SaveManifest(planID string, m *PlanManifest) error {
+	if m == nil {
+		return fmt.Errorf("artifact: save nil manifest for %q", planID)
+	}
+	m.ID = planID
+	if m.Status == "" {
+		m.Status = PlanStatusDraft
+	}
+	if !ValidPlanStatus(m.Status) {
+		return fmt.Errorf("artifact: invalid plan status %q", m.Status)
+	}
+	return WriteManifest(s.manifestPath(planID), m)
 }

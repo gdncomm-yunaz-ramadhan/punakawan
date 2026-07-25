@@ -1,5 +1,6 @@
 <script lang="ts">
   import PageHeader from "../../lib/components/PageHeader.svelte";
+  import Button from "../../lib/components/Button.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import { createReview } from "../../lib/review/api";
   import { navigate } from "../../lib/router/router.svelte";
@@ -106,9 +107,11 @@
       <p class="error" role="alert">{error}</p>
     {/if}
 
-    <button type="submit" disabled={!canSubmit} data-testid="start-review-submit">
-      {submitting ? "Creating…" : "Start Review"}
-    </button>
+    <span class="submit-wrap" data-testid="start-review-submit">
+      <Button type="submit" variant="primary" disabled={!canSubmit}>
+        {submitting ? "Creating…" : "Start Review"}
+      </Button>
+    </span>
   </form>
 {/if}
 
@@ -144,20 +147,8 @@
     color: var(--color-danger);
     font-size: 0.85rem;
   }
-  button {
+  .submit-wrap {
     margin-top: 0.75rem;
     align-self: flex-start;
-    border: none;
-    border-radius: 6px;
-    background: var(--color-accent);
-    color: var(--color-accent-contrast);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>

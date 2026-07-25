@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
+  import Button from "../../lib/components/Button.svelte";
   import StickyActionBar from "../../lib/components/StickyActionBar.svelte";
   import BottomSheet from "../../lib/components/overlay/BottomSheet.svelte";
   import Dialog from "../../lib/components/overlay/Dialog.svelte";
@@ -552,12 +553,10 @@
     <p class="error" role="alert">{cancelError}</p>
   {/if}
   <div class="dialog-actions">
-    <button type="button" class="secondary-button" onclick={closeCancelConfirm} disabled={cancelling}>
-      Keep Review
-    </button>
-    <button type="button" class="danger-button" onclick={confirmCancel} disabled={cancelling}>
+    <Button variant="secondary" onclick={closeCancelConfirm} disabled={cancelling}>Keep Review</Button>
+    <Button variant="danger" onclick={confirmCancel} disabled={cancelling}>
       {cancelling ? "Cancelling…" : "Cancel Review"}
-    </button>
+    </Button>
   </div>
 </Dialog>
 
@@ -568,30 +567,35 @@
   }
   .two-pane {
     display: grid;
-    grid-template-columns: 1fr 380px;
-    gap: 1.25rem;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    gap: 1rem;
     align-items: start;
     margin: 1rem 0;
   }
   .document-pane {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
-    padding: 1.25rem 1.5rem;
+    min-width: 0;
     max-height: 75vh;
     overflow-y: auto;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
   }
   .comment-pane {
     position: sticky;
-    top: 1rem;
+    top: 4rem;
     max-height: 75vh;
     overflow-y: auto;
+    padding: 0.9rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--surface-card-bg, var(--color-surface));
+    box-shadow: var(--shadow-card);
   }
   .rail-heading {
-    font-size: 0.9rem;
-    margin: 0 0 0.6rem;
+    font-size: 0.82rem;
+    margin: 0 0 0.75rem;
     color: var(--color-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
   .mobile-document {
     background: var(--color-surface);
@@ -636,30 +640,6 @@
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 1rem;
-  }
-  .secondary-button {
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
-    color: var(--color-text);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
-  }
-  .danger-button {
-    border: none;
-    border-radius: 6px;
-    background: var(--color-danger);
-    color: var(--color-accent-contrast);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
-  }
-  .secondary-button:disabled,
-  .danger-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    flex-wrap: wrap;
   }
 </style>

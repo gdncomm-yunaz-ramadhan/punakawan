@@ -35,8 +35,15 @@
   .shell {
     display: flex;
     min-height: 100vh;
-    background: var(--color-bg);
+    background: transparent;
     color: var(--color-text);
+  }
+  .sidebar-slot {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    z-index: 20;
   }
   .content-area {
     flex: 1;
@@ -45,10 +52,19 @@
     min-width: 0;
   }
   main {
-    padding: 1rem 1.5rem;
-    max-width: 1100px;
+    /* Fill the available canvas (no narrow left-hugging column), but cap
+       line length on very wide monitors and center what remains. */
     width: 100%;
+    max-width: 1520px;
+    margin: 0 auto;
+    padding: 1.75rem 2rem 3rem;
     box-sizing: border-box;
+  }
+
+  @media (max-width: 1023px) {
+    main {
+      padding: 1.25rem 1.5rem 2rem;
+    }
   }
 
   @media (max-width: 639px) {
@@ -61,7 +77,7 @@
       display: none;
     }
     main {
-      padding: 0.75rem 1rem;
+      padding: 0.75rem 1rem 1.5rem;
     }
   }
 </style>

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/capsule"
+	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -45,6 +46,16 @@ type RequestCapsuleInput struct {
 	RetrievalModule     string   `json:"retrieval_module,omitempty"`
 	RetrievalPath       string   `json:"retrieval_path,omitempty"`
 	RetrievalTypes      []string `json:"retrieval_types,omitempty"`
+
+	// Capability, Intent, and RequestedMetadataKeys drive project-metadata
+	// selection (§4.4), identically to build_task_context: the bounded,
+	// relevant subset of the project's metadata is folded into the capsule
+	// (project_metadata), and with none supplied the selector returns general
+	// project context under a strict limit. A workspace without project.yaml
+	// (or metadata) yields nothing and the field is omitted.
+	Capability            string   `json:"capability,omitempty" jsonschema:"project-metadata key namespace to prioritize (e.g. jira); selects keys equal to it or prefixed '<capability>.'"`
+	Intent                string   `json:"intent,omitempty" jsonschema:"a project-metadata key to prioritize by exact match"`
+	RequestedMetadataKeys []string `json:"requested_metadata_keys,omitempty" jsonschema:"explicit project-metadata keys to include first, in order"`
 }
 
 func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RequestCapsuleInput) (*mcp.CallToolResult, protocol.ContextCapsule, error) {
@@ -61,6 +72,13 @@ func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 
 		id := fmt.Sprintf("cap-%s-%s-%d", role, in.TaskId, time.Now().UnixNano())
 
+		// Fold in the bounded, relevant project metadata (§4.4) selected fresh
+		// from the live project.yaml. Not part of the capsule digest (§6.3).
+		metadata, err := selectProjectMetadata(a.Workspace.Root, in.Capability, in.Intent, in.RequestedMetadataKeys)
+		if err != nil {
+			return nil, protocol.ContextCapsule{}, err
+		}
+
 		buildInput := capsule.BuildInput{
 			TaskID:              in.TaskId,
 			Role:                role,
@@ -76,6 +94,7 @@ func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 			ForbiddenActions:    in.ForbiddenActions,
 			ExpectedOutput:      in.ExpectedOutput,
 			TokenBudget:         in.TokenBudget,
+			ProjectMetadata:     toCapsuleMetadata(metadata),
 		}
 
 		var c protocol.ContextCapsule
@@ -113,6 +132,18 @@ func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		}
 		if err != nil {
 			return nil, protocol.ContextCapsule{}, fmt.Errorf("mcpserver: build capsule: %w", err)
+		}
+
+		// ROLE-011 (§48): attach the effective role-configuration guidance block
+		// to the capsule. Set AFTER Build has computed the digest so it never
+		// changes the capsule's identity - role_guidance is excluded from the
+		// digest field set (§6.3), exactly like project_metadata. A nil resolver
+		// (no roles wiring, e.g. older tests) simply skips guidance.
+		if a.RoleConfig != nil {
+			if eff, effErr := a.RoleConfig.Effective("", "", roleconfig.Role(role)); effErr == nil {
+				guidance := roleconfig.PromptBlock(roleconfig.Role(role), eff)
+				c.RoleGuidance = &guidance
+			}
 		}
 
 		if err := a.Capsules.Put(c); err != nil {

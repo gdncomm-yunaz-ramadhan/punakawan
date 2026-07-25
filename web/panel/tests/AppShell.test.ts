@@ -30,6 +30,9 @@ describe("AppShell", () => {
       },
     });
 
-    expect(screen.getByTestId("read-only-badge").textContent?.trim()).toBe("Read-only");
+    // The top bar keeps its status strip minimal: the panel version is a
+    // compact info glyph whose full text is exposed via title/aria-label
+    // (no always-on "Read-only" chip anymore).
+    expect(screen.getByTestId("panel-version").getAttribute("title")).toContain("0.1.0");
   });
 });

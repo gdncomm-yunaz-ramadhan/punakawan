@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/impactnode.schema.json",
+  "title": "ImpactNode",
+  "description": "One node in a project's Cross-Repository Impact Graph, per punakawan-role-config-distinguished-improvements-plan.md Part III §24. Nodes are the things a change can affect (symbols, API operations, config keys, tests, deployments, ...). Persisted append-only to .punakawan/impact/nodes.jsonl; id is stable and typed so builders can upsert idempotently.",
+  "type": "object",
+  "required": ["id", "type"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Stable typed id, e.g. api:affiliate-api:getMerchantBadge or config:affiliate-api:payout.retry.max_attempts." },
+    "type": {
+      "type": "string",
+      "enum": ["project", "repository", "source_symbol", "api_operation", "configuration_key", "database_object", "test", "deployment_artifact", "workflow", "knowledge_record", "plan", "task", "external_issue", "team_owner"]
+    },
+    "label": { "type": "string", "description": "Human-readable name for the node." },
+    "repository": { "type": "string", "description": "Repository this node belongs to, when applicable." },
+    "attributes": {
+      "type": "object",
+      "description": "Free-form typed attributes (file path, owner team, operation id, ...). Kept generic so builders need no per-type node subclass.",
+      "additionalProperties": true
+    }
+  }
+}
