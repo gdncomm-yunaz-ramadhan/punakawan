@@ -1,0 +1,46 @@
+internal/taskstore/taskstore.go
+  d98638225f35480d 1-343
+internal/tasks/tasks.go
+  d98638225f35480d 29,208,213-234,236,346-355,366-375,385-393
+internal/taskstore/taskstore_test.go
+  d98638225f35480d 1-125
+internal/app/app.go
+  d98638225f35480d 59-61,272-298
+internal/panel/sources/task_source.go
+  d98638225f35480d 61-77,143-153
+internal/knowledge/dolt.go
+  d98638225f35480d 93-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ed0fabc4d2e384a3085c4d2a9ade4f1efda50282",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 615,
+      "total_deletions": 4,
+      "accepted_lines": 615,
+      "overriden_lines": 0
+    }
+  }
+}
