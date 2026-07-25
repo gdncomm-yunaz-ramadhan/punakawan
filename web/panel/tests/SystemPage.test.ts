@@ -36,5 +36,8 @@ describe("SystemPage", () => {
     });
     expect(screen.getByText("2")).toBeTruthy();
     expect(screen.getByText("yes")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Color accent" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Wayang" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Teal" })).toBeTruthy();
   });
 });
