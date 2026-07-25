@@ -1,0 +1,38 @@
+scripts/install.sh
+  d98638225f35480d 2-6,8,17,19-22,24-34,36-57,59-70,72-88,90-104,107-110,112,115-123,125-132,137-140,142-200,202,205-211,213,223,243,249-253,256-264,302-305,307-311
+README.md
+  d98638225f35480d 245,251,253,259-269,271-275,278-280,289,302,305-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "fe2b69da1860fadd742d7107e130e69009fab5bc",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 253,
+      "total_deletions": 54,
+      "accepted_lines": 254,
+      "overriden_lines": 0
+    }
+  }
+}
