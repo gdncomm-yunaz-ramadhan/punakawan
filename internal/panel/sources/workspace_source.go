@@ -242,27 +242,55 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if !beads.Available(ctx, a.Supervisor, a.Workspace.Root) {
-			msg := "bd binary not found or not initialized in this workspace"
+		// Gate the expensive bd shell-outs on whether this project actually
+		// uses Beads (a .beads dir at/above the root), not merely on whether
+		// the bd binary exists. `bd --version` succeeds anywhere bd is
+		// installed, so the old check let every registered workspace - even
+		// ones with no beads database - pay two `bd list`/`bd ready`
+		// shell-outs on the overview. Filesystem stat only, no shell-out.
+		if !beads.ProjectInitialized(a.Workspace.Root) {
+			msg := "no beads database (.beads) in this project"
 			beadsHealth = append(beadsHealth, protocol.PanelSourceHealth{Source: "bd", Availability: protocol.PanelSourceHealthAvailabilityUnavailable, Message: &msg, CheckedAt: now})
 			return
 		}
-		issues, err := beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{Limit: -1})
-		if err != nil {
-			beadsHealth = append(beadsHealth, healthDown("bd", err, now))
+		if !beads.Available(ctx, a.Supervisor, a.Workspace.Root) {
+			msg := "bd binary not found"
+			beadsHealth = append(beadsHealth, protocol.PanelSourceHealth{Source: "bd", Availability: protocol.PanelSourceHealthAvailabilityUnavailable, Message: &msg, CheckedAt: now})
 			return
 		}
-		// The blocked count must match the status board's boardStatus,
-		// which treats an "open" issue bd does not currently consider ready
-		// (an unmet "blocks" dependency) as blocked - bd does not flip such
-		// an issue's stored Status to "blocked". Counting only
-		// Status=="blocked" under-reports against the board and overview, so
-		// fold in the same readiness set boardStatus uses (bd ready).
-		ready := map[string]bool{}
-		if readyIssues, err := beads.Ready(ctx, a.Supervisor, a.Workspace.Root, beads.ReadyOptions{}); err == nil {
-			for _, ri := range readyIssues {
-				ready[ri.ID] = true
+		// list and ready are independent bd invocations (~2.7s and ~3.5s
+		// respectively on a large graph); run them concurrently rather than
+		// back-to-back so the beads probe costs max(list, ready), not their
+		// sum.
+		var (
+			issues  []beads.ReadyIssue
+			listErr error
+			ready   = map[string]bool{}
+			beadsWG sync.WaitGroup
+		)
+		beadsWG.Add(2)
+		go func() {
+			defer beadsWG.Done()
+			issues, listErr = beads.List(ctx, a.Supervisor, a.Workspace.Root, beads.ListOptions{Limit: -1})
+		}()
+		go func() {
+			defer beadsWG.Done()
+			// The blocked count must match the status board's boardStatus,
+			// which treats an "open" issue bd does not currently consider
+			// ready (an unmet "blocks" dependency) as blocked - bd does not
+			// flip such an issue's stored Status to "blocked". Counting only
+			// Status=="blocked" under-reports against the board and overview,
+			// so fold in the same readiness set boardStatus uses (bd ready).
+			if readyIssues, err := beads.Ready(ctx, a.Supervisor, a.Workspace.Root, beads.ReadyOptions{}); err == nil {
+				for _, ri := range readyIssues {
+					ready[ri.ID] = true
+				}
 			}
+		}()
+		beadsWG.Wait()
+		if listErr != nil {
+			beadsHealth = append(beadsHealth, healthDown("bd", listErr, now))
+			return
 		}
 		for _, issue := range issues {
 			switch issue.Status {

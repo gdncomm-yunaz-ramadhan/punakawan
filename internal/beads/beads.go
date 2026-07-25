@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -187,6 +189,33 @@ func ReopenIssue(ctx context.Context, sup *tools.Supervisor, dir, issueID, reaso
 func Available(ctx context.Context, sup *tools.Supervisor, dir string) bool {
 	res, err := sup.Run(ctx, tools.Spec{Name: "bd", Args: []string{"--version"}, Dir: dir, Timeout: 5 * time.Second})
 	return err == nil && res.ExitCode == 0
+}
+
+// ProjectInitialized reports whether dir (or any ancestor) contains a .beads
+// directory - i.e. whether this project actually uses Beads. bd itself
+// resolves its Dolt store by walking up for .beads, so this mirrors that
+// resolution with pure filesystem stats and no shell-out. Callers use it to
+// avoid the expensive `bd list`/`bd ready` probes on projects that have no
+// beads database at all (e.g. the panel overview, which describes every
+// registered workspace including non-beads ones).
+func ProjectInitialized(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	d, err := filepath.Abs(dir)
+	if err != nil {
+		d = dir
+	}
+	for {
+		if info, err := os.Stat(filepath.Join(d, ".beads")); err == nil && info.IsDir() {
+			return true
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return false
+		}
+		d = parent
+	}
 }
 
 // ReadyIssue is the subset of `bd ready --json`'s (and `bd ready --claim
