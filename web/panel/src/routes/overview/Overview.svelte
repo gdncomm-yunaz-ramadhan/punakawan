@@ -7,8 +7,7 @@
   import { onPanelEvent } from "../../lib/events/sse.svelte";
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
-  import StatusCard from "../../lib/components/cards/StatusCard.svelte";
-  import ChartCard from "../../lib/components/cards/ChartCard.svelte";
+    import ChartCard from "../../lib/components/cards/ChartCard.svelte";
   import TableCard from "../../lib/components/cards/TableCard.svelte";
   import BlockedTasksChart from "../../lib/components/charts/BlockedTasksChart.svelte";
   import DataTable from "../../lib/components/data/DataTable.svelte";
@@ -99,34 +98,6 @@
       {/snippet}
     </ChartCard>
 
-    <StatusCard
-      size="medium"
-      variant={ov.needs_attention.length === 0 ? "success" : "warning"}
-      label={ov.needs_attention.length === 0 ? "Nothing needs attention" : "Needs attention"}
-      description={ov.needs_attention.length === 0
-        ? "All workspaces are healthy."
-        : `${ov.needs_attention.length} item(s) across workspaces.`}
-    >
-      {#snippet children()}
-        {#if ov.needs_attention.length > 0}
-          <!-- Preview the top few items so the card carries real content
-               rather than a lone count; the full list is the "Needs
-               Attention" card below. -->
-          <ul class="attention-preview">
-            {#each ov.needs_attention.slice(0, 3) as item, i (i)}
-              <li>
-                <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
-                <span class="where">{item.workspace_id}</span>
-              </li>
-            {/each}
-          </ul>
-          {#if ov.needs_attention.length > 3}
-            <span class="attention-more">…{ov.needs_attention.length - 3} more below</span>
-          {/if}
-        {/if}
-      {/snippet}
-    </StatusCard>
-
     <TableCard title="Active Now" size="wide" state={ov.active_sessions.length === 0 ? "empty" : "default"} emptyMessage="No active sessions.">
       {#snippet children()}
         {#if ov.primary_workspace_id}
@@ -162,27 +133,30 @@
       {/snippet}
     </TableCard>
 
-    {#if ov.needs_attention.length > 0}
-      <TableCard title="Needs Attention" size="full">
-        {#snippet children()}
-          <ol class="attention">
-            {#each ov.needs_attention as item, i (i)}
-              <li>
-                <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
-                <span>{item.message}</span>
-                <button
-                  type="button"
-                  class="link-button"
-                  onclick={() => navigate(`/workspaces/${encodeURIComponent(item.workspace_id)}`)}
-                >
-                  {item.workspace_id}
-                </button>
-              </li>
-            {/each}
-          </ol>
-        {/snippet}
-      </TableCard>
-    {/if}
+    <TableCard
+      title="Needs Attention"
+      size="full"
+      state={ov.needs_attention.length === 0 ? "empty" : "default"}
+      emptyMessage="Nothing needs attention — all workspaces are healthy."
+    >
+      {#snippet children()}
+        <ol class="attention">
+          {#each ov.needs_attention as item, i (i)}
+            <li>
+              <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
+              <span>{item.message}</span>
+              <button
+                type="button"
+                class="link-button"
+                onclick={() => navigate(`/workspaces/${encodeURIComponent(item.workspace_id)}`)}
+              >
+                {item.workspace_id}
+              </button>
+            </li>
+          {/each}
+        </ol>
+      {/snippet}
+    </TableCard>
 
     <TableCard title="Recent Sessions" size="full">
       {#snippet children()}
@@ -255,39 +229,6 @@
     cursor: pointer;
     font-size: inherit;
     text-decoration: underline;
-  }
-
-  /* Compact preview inside the "Needs attention" summary card. */
-  ul.attention-preview {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    gap: 0.3rem;
-  }
-  ul.attention-preview li {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    font-size: 0.8rem;
-    min-width: 0;
-  }
-  ul.attention-preview .kind {
-    font-size: 0.8rem;
-  }
-  ul.attention-preview .where {
-    color: var(--color-text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 55%;
-  }
-  .attention-more {
-    display: block;
-    margin-top: 0.4rem;
-    color: var(--color-text-muted);
-    font-size: 0.75rem;
   }
 
   /* Let the chart fill the card's content box so it uses the full tile
