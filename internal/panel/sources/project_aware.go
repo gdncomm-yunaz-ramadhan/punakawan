@@ -47,7 +47,13 @@ func (r *AppResolver) with(ctx context.Context, projectID string, fn func(a *app
 	}
 	rt, release, err := r.Runtime.Acquire(ctx, projectID, root)
 	if err != nil {
-		return fmt.Errorf("sources: acquire project %q: %w", projectID, err)
+		// A project that cannot be loaded (e.g. the path is neither a git
+		// repository nor carries a .punakawan/workspace.yaml, so
+		// workspace.Discover fails) is unavailable, not an internal error -
+		// map it to ErrWorkspaceUnavailable so the read routes return 404 and
+		// the panel shows an "unavailable" state instead of a 500. Mirrors the
+		// Resolve-failure branch above.
+		return fmt.Errorf("sources: acquire project %q: %w: %v", projectID, contract.ErrWorkspaceUnavailable, err)
 	}
 	defer release()
 	return fn(rt.App)
