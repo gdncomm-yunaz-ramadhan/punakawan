@@ -1,0 +1,92 @@
+internal/panel/api/impact_handler.go
+  d98638225f35480d 1-103
+web/panel/src/routes/projects/ProjectContradictions.svelte
+  d98638225f35480d 1-521
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 1090-1352
+internal/panel/api/contradictions_handler.go
+  d98638225f35480d 1-151
+internal/panel/api/dossiers_handler.go
+  d98638225f35480d 1-243
+internal/panel/api/impact_handler_test.go
+  d98638225f35480d 1-112
+internal/mcpserver/tools_contradiction.go
+  d98638225f35480d 1-160
+internal/mcpserver/tools_handoff.go
+  d98638225f35480d 1-226
+internal/mcpserver/tools_newsubsystems_test.go
+  d98638225f35480d 1-234
+internal/panel/api/contradictions_handler_test.go
+  d98638225f35480d 1-204
+web/panel/tests/ProjectContradictions.test.ts
+  d98638225f35480d 1-74
+internal/panel/api/decode.go
+  d98638225f35480d 1-50
+web/panel/tests/ProjectDossiers.test.ts
+  d98638225f35480d 1-67
+.beads/issues.jsonl
+  d98638225f35480d 176-178
+internal/panel/api/dossiers_handler_test.go
+  d98638225f35480d 1-187
+internal/mcpserver/tools_impact.go
+  d98638225f35480d 1-106
+web/panel/src/routes/projects/ProjectHandoffs.svelte
+  d98638225f35480d 1-354
+web/panel/src/routes/projects/ProjectImpact.svelte
+  d98638225f35480d 1-387
+internal/panel/api/handoffs_handler_test.go
+  d98638225f35480d 1-148
+web/panel/src/routes/projects/ProjectDossiers.svelte
+  d98638225f35480d 1-430
+web/panel/tests/ProjectImpact.test.ts
+  d98638225f35480d 1-59
+internal/mcpserver/tools.go
+  d98638225f35480d 277-360
+web/panel/src/routes/projects/ProjectDetail.svelte
+  d98638225f35480d 16-19,46-49,195-210
+internal/panel/deps_subsystems.go
+  d98638225f35480d 1-409
+internal/mcpserver/tools_changedossier.go
+  d98638225f35480d 1-245
+web/panel/tests/ProjectHandoffs.test.ts
+  d98638225f35480d 1-69
+internal/panel/deps.go
+  d98638225f35480d 40-43,97-104
+internal/panel/contract/readers.go
+  d98638225f35480d 17-19,27-31,351-416
+internal/panel/api/handoffs_handler.go
+  d98638225f35480d 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ec9380ba174d23a3866a24e143b6e7dc3f846aad",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 5568,
+      "total_deletions": 87,
+      "accepted_lines": 5478,
+      "overriden_lines": 0
+    }
+  }
+}
