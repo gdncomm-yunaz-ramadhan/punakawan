@@ -657,7 +657,11 @@ export function getEvidenceTextPreview(
 
 export function listApprovals(workspaceId: string, status?: string): Promise<{ items: ApprovalRecord[] }> {
   const qs = status ? `?status=${encodeURIComponent(status)}` : "";
-  return getJSON<{ items: ApprovalRecord[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/approvals${qs}`);
+  // Project-scoped route: resolves any registered project through the panel's
+  // runtime pool (the primary is served directly), so approvals load for a
+  // non-primary project instead of failing "workspace is not available on
+  // this panel instance". The id is the project/workspace id either way.
+  return getJSON<{ items: ApprovalRecord[] }>(`/projects/${encodeURIComponent(workspaceId)}/approvals${qs}`);
 }
 
 // --- Projects (Phase 2, plan §5) -----------------------------------------

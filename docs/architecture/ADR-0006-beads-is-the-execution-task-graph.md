@@ -1,7 +1,7 @@
 # ADR-0006: Beads is the execution task graph
 
 ## Status
-Accepted
+Accepted (qualified by [ADR-0018](./ADR-0018-punakawan-managed-dolt-is-the-beads-less-fallback-task-graph.md): projects with no `.beads/` use a Punakawan-managed Dolt fallback instead)
 
 ## Context
 An approved implementation plan must become dependency-aware, executable work items across multiple repositories, while Jira remains the human-facing tracker; the plan needs a local, detailed execution graph that captures task dependencies, scope, and evidence requirements (§10 Beads Task Generation, §10.3 Task contract).

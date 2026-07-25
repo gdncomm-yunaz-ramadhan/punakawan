@@ -1,17 +1,16 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { getPath, navigate } from "../router/router.svelte";
-  import { applyTheme, getStoredThemePreference, type ThemePreference } from "../theme";
-  import { reapplyStoredAccent } from "../accent";
+  import Icon, { type IconName } from "./Icon.svelte";
+  import ThemeToggle from "./ThemeToggle.svelte";
 
   // Mirrors Sidebar's top-level links (UI-005). Kept as a separate literal
   // rather than importing Sidebar's list, since Sidebar has no exported
   // links constant and duplicating four short entries is cheaper than
   // introducing a shared module for it right now.
-  const links: { path: string; label: string; icon: string }[] = [
-    { path: "/", label: "Overview", icon: "⌂" },
-    { path: "/projects", label: "Projects", icon: "❖" },
-    { path: "/system", label: "System", icon: "⚙" },
+  const links: { path: string; label: string; icon: IconName }[] = [
+    { path: "/", label: "Overview", icon: "dashboard" },
+    { path: "/projects", label: "Projects", icon: "folder" },
+    { path: "/system", label: "System", icon: "settings" },
   ];
 
   function isActive(path: string): boolean {
@@ -21,30 +20,37 @@
   }
 
   // The sidebar (with its ThemeToggle) is hidden below 640px, so the theme
-  // control lives here too. A single tap cycles System -> Light -> Dark and
-  // reuses the same theme.ts persistence + accent re-apply as ThemeToggle.
-  const order: ThemePreference[] = ["system", "light", "dark"];
-  const themeIcons: Record<ThemePreference, string> = { system: "◐", light: "☀", dark: "☾" };
-  const themeLabels: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
-  let theme: ThemePreference = $state("system");
+  // control lives here too. Rather than a tab whose label cycles through
+  // System/Light/Dark - which collided with the "System" page link, showing
+  // two "System" entries - this is a single fixed "Theme" button that opens a
+  // popover with the same ThemeToggle segmented control the sidebar uses.
+  let themeOpen = $state(false);
 
-  onMount(() => {
-    theme = getStoredThemePreference();
-  });
+  function closeTheme() {
+    themeOpen = false;
+  }
 
-  function cycleTheme() {
-    const next = order[(order.indexOf(theme) + 1) % order.length];
-    theme = next;
-    applyTheme(next);
-    reapplyStoredAccent();
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") closeTheme();
   }
 </script>
+
+<svelte:window onkeydown={themeOpen ? onKeydown : undefined} />
 
 <!--
   Bottom tab bar shown only below 640px (§13.4), replacing Sidebar's
   reflow for the mobile range. AppShell always renders this; it is
   invisible above the breakpoint via the media query below.
 -->
+{#if themeOpen}
+  <!-- Dismiss layer: a tap anywhere outside the popover closes it. -->
+  <button type="button" class="theme-scrim" aria-label="Close theme menu" onclick={closeTheme}></button>
+  <div class="theme-popover" role="dialog" aria-label="Theme" aria-modal="true">
+    <span class="theme-popover-title">Theme</span>
+    <ThemeToggle onselect={closeTheme} />
+  </div>
+{/if}
+
 <nav class="mobile-nav" aria-label="Primary">
   {#each links as link (link.path)}
     <a
@@ -56,24 +62,30 @@
         navigate(link.path);
       }}
     >
-      <span class="icon" aria-hidden="true">{link.icon}</span>
+      <span class="icon" aria-hidden="true"><Icon name={link.icon} size={20} /></span>
       <span class="label">{link.label}</span>
     </a>
   {/each}
   <button
     type="button"
     class="tab theme-tab"
-    onclick={cycleTheme}
-    aria-label={`Theme: ${themeLabels[theme]}. Tap to change.`}
-    title={`Theme: ${themeLabels[theme]}`}
+    class:active={themeOpen}
+    onclick={() => (themeOpen = !themeOpen)}
+    aria-haspopup="dialog"
+    aria-expanded={themeOpen}
+    aria-label="Theme"
   >
-    <span class="icon" aria-hidden="true">{themeIcons[theme]}</span>
-    <span class="label">{themeLabels[theme]}</span>
+    <span class="icon" aria-hidden="true"><Icon name="palette" size={20} /></span>
+    <span class="label">Theme</span>
   </button>
 </nav>
 
 <style>
   .mobile-nav {
+    display: none;
+  }
+  .theme-scrim,
+  .theme-popover {
     display: none;
   }
 
@@ -113,7 +125,42 @@
       font-family: inherit;
     }
     .icon {
-      font-size: 1.1rem;
+      display: inline-flex;
+      line-height: 1;
+    }
+
+    /* Full-viewport dismiss layer beneath the popover. */
+    .theme-scrim {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 25;
+      border: none;
+      padding: 0;
+      background: color-mix(in srgb, var(--color-text) 28%, transparent);
+    }
+    /* Bottom sheet sitting just above the tab bar. */
+    .theme-popover {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      position: fixed;
+      left: 0.75rem;
+      right: 0.75rem;
+      bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 0.5rem);
+      z-index: 26;
+      padding: 0.9rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-card);
+      background: var(--color-surface-raised);
+      box-shadow: var(--shadow-lg);
+    }
+    .theme-popover-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--color-text-muted);
     }
   }
 </style>

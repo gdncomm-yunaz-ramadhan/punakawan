@@ -82,7 +82,7 @@ func ensureAdapterApproval(
 		err = fmt.Errorf("client does not support elicitation")
 	}
 	if err != nil {
-		return fmt.Errorf("adapter write approval %q is pending for run %q. ACTION REQUIRED: ask the user to choose one option, and do not choose for them: [Approve] allow all configured adapter writes for this run; [Deny] block adapter writes for this run. After the user explicitly chooses, call respond_to_adapter_approval with approval_id=%q, decision=approve|deny, and confirmed_by=<user>, then retry the original operation only if approved. CLI alternative: `punakawan approvals approve %s --by <your-name>` or `punakawan approvals deny %s --by <your-name>`", rec.Id, runID, rec.Id, rec.Id, rec.Id)
+		return fmt.Errorf("adapter write approval %q is pending for run %q. ACTION REQUIRED: ask the user to choose one option, and do not choose for them: [Approve] allow all configured adapter writes for this run; [Deny] block adapter writes for this run. After the user explicitly chooses, call respond_to_adapter_approval with approval_id=%q, decision=approve|deny, and confirmed_by=<user>, then retry the original operation only if approved. This approval is durable per run_id, so if the session stops before the user answers, a later or resumed session can re-check it with list_pending_approvals (run_id=%q) and continue from there rather than starting over. CLI alternative: `punakawan approvals approve %s --by <your-name>` or `punakawan approvals deny %s --by <your-name>`", rec.Id, runID, rec.Id, runID, rec.Id, rec.Id)
 	}
 	if result == nil {
 		return fmt.Errorf("elicit adapter write approval %q: client returned no result", rec.Id)

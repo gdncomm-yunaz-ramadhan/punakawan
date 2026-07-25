@@ -58,6 +58,23 @@ func (t *TaskSource) readySet(ctx context.Context) (map[string]bool, error) {
 // byte-for-byte identical whether or not the shared cache is in play.
 func (t *TaskSource) snapshot(ctx context.Context) (*tasksnapshot.ProjectTaskSnapshot, error) {
 	projectID := t.App.Workspace.ID
+
+	// Beads-less project: read from Punakawan's fallback task store instead of
+	// bd. It emits the same (issues, readyIDs) BuildSnapshot consumes, so the
+	// derived board/graph is identical in shape to the bd-backed path. Gated
+	// ahead of the shared-snapshot branch so it applies to every reader.
+	if !beads.ProjectInitialized(t.App.Workspace.Root) {
+		store, err := t.App.OpenTaskStore()
+		if err != nil {
+			return nil, fmt.Errorf("sources: open task store: %w", err)
+		}
+		issues, readyIDs, err := store.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("sources: list tasks (fallback store): %w", err)
+		}
+		return tasksnapshot.BuildSnapshot(projectID, issues, readyIDs), nil
+	}
+
 	if t.Snapshot != nil {
 		if snap, ok := t.Snapshot.Get(projectID); ok && snap != nil && !snap.Stale {
 			return snap, nil
@@ -122,6 +139,17 @@ func (t *TaskSource) List(ctx context.Context, workspaceID string, filter contra
 func (t *TaskSource) Get(ctx context.Context, workspaceID, taskID string) (beads.Issue, error) {
 	if err := t.checkWorkspace(workspaceID); err != nil {
 		return beads.Issue{}, err
+	}
+	if !beads.ProjectInitialized(t.App.Workspace.Root) {
+		store, err := t.App.OpenTaskStore()
+		if err != nil {
+			return beads.Issue{}, fmt.Errorf("sources: open task store: %w", err)
+		}
+		issue, err := store.Get(ctx, taskID)
+		if err != nil {
+			return beads.Issue{}, fmt.Errorf("sources: get task %q (fallback store): %w", taskID, err)
+		}
+		return issue, nil
 	}
 	issue, err := beads.Show(ctx, t.App.Supervisor, t.App.Workspace.Root, taskID)
 	if err != nil {

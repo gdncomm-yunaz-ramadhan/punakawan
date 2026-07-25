@@ -7,8 +7,7 @@
   import { onPanelEvent } from "../../lib/events/sse.svelte";
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
-  import StatusCard from "../../lib/components/cards/StatusCard.svelte";
-  import ChartCard from "../../lib/components/cards/ChartCard.svelte";
+    import ChartCard from "../../lib/components/cards/ChartCard.svelte";
   import TableCard from "../../lib/components/cards/TableCard.svelte";
   import BlockedTasksChart from "../../lib/components/charts/BlockedTasksChart.svelte";
   import DataTable from "../../lib/components/data/DataTable.svelte";
@@ -99,15 +98,6 @@
       {/snippet}
     </ChartCard>
 
-    <StatusCard
-      size="medium"
-      variant={ov.needs_attention.length === 0 ? "success" : "warning"}
-      label={ov.needs_attention.length === 0 ? "Nothing needs attention" : "Needs attention"}
-      description={ov.needs_attention.length === 0
-        ? "All workspaces are healthy."
-        : `${ov.needs_attention.length} item(s) across workspaces.`}
-    />
-
     <TableCard title="Active Now" size="wide" state={ov.active_sessions.length === 0 ? "empty" : "default"} emptyMessage="No active sessions.">
       {#snippet children()}
         {#if ov.primary_workspace_id}
@@ -143,27 +133,30 @@
       {/snippet}
     </TableCard>
 
-    {#if ov.needs_attention.length > 0}
-      <TableCard title="Needs Attention" size="full">
-        {#snippet children()}
-          <ol class="attention">
-            {#each ov.needs_attention as item, i (i)}
-              <li>
-                <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
-                <span>{item.message}</span>
-                <button
-                  type="button"
-                  class="link-button"
-                  onclick={() => navigate(`/workspaces/${encodeURIComponent(item.workspace_id)}`)}
-                >
-                  {item.workspace_id}
-                </button>
-              </li>
-            {/each}
-          </ol>
-        {/snippet}
-      </TableCard>
-    {/if}
+    <TableCard
+      title="Needs Attention"
+      size="full"
+      state={ov.needs_attention.length === 0 ? "empty" : "default"}
+      emptyMessage="Nothing needs attention — all workspaces are healthy."
+    >
+      {#snippet children()}
+        <ol class="attention">
+          {#each ov.needs_attention as item, i (i)}
+            <li>
+              <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
+              <span>{item.message}</span>
+              <button
+                type="button"
+                class="link-button"
+                onclick={() => navigate(`/workspaces/${encodeURIComponent(item.workspace_id)}`)}
+              >
+                {item.workspace_id}
+              </button>
+            </li>
+          {/each}
+        </ol>
+      {/snippet}
+    </TableCard>
 
     <TableCard title="Recent Sessions" size="full">
       {#snippet children()}

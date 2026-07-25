@@ -182,6 +182,11 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, respondToAdapterApprovalHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_pending_approvals",
+		Description: "Read-only re-check of this project's durable approval queue (optionally filtered by run_id). Approvals persist per run_id across sessions, so call this to see what is still pending before proceeding - especially in a loop, or after a session stopped/resumed - instead of blindly retrying a write. Returns each pending approval's id, run, operation, and target so you can surface Approve/Deny to the user and then call respond_to_adapter_approval.",
+	}, listPendingApprovalsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "request_jira_clarification",
 		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup). Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + approvalGateNote,
 	}, requestJiraClarificationHandler(a))

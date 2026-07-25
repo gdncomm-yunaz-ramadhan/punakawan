@@ -47,7 +47,13 @@ func (r *AppResolver) with(ctx context.Context, projectID string, fn func(a *app
 	}
 	rt, release, err := r.Runtime.Acquire(ctx, projectID, root)
 	if err != nil {
-		return fmt.Errorf("sources: acquire project %q: %w", projectID, err)
+		// A project that cannot be loaded (e.g. the path is neither a git
+		// repository nor carries a .punakawan/workspace.yaml, so
+		// workspace.Discover fails) is unavailable, not an internal error -
+		// map it to ErrWorkspaceUnavailable so the read routes return 404 and
+		// the panel shows an "unavailable" state instead of a 500. Mirrors the
+		// Resolve-failure branch above.
+		return fmt.Errorf("sources: acquire project %q: %w: %v", projectID, contract.ErrWorkspaceUnavailable, err)
 	}
 	defer release()
 	return fn(rt.App)
@@ -105,6 +111,23 @@ func (p ProjectSessionReader) Get(ctx context.Context, workspaceID, sessionID st
 	err := p.with(ctx, workspaceID, func(a *app.App) error {
 		var e error
 		out, e = (&SessionSource{App: a}).Get(ctx, workspaceID, sessionID)
+		return e
+	})
+	return out, err
+}
+
+// ProjectApprovalReader is a contract.ApprovalReader resolved per project id,
+// so the panel can list a non-primary project's approvals (via the runtime
+// pool) rather than only the workspace it was started for. This is what makes
+// one panel instance able to surface approvals across every registered
+// project instead of needing a separate panel per project.
+type ProjectApprovalReader struct{ *AppResolver }
+
+func (p ProjectApprovalReader) List(ctx context.Context, workspaceID string, filter contract.ApprovalFilter) ([]protocol.ApprovalRecord, error) {
+	var out []protocol.ApprovalRecord
+	err := p.with(ctx, workspaceID, func(a *app.App) error {
+		var e error
+		out, e = (&ApprovalSource{App: a}).List(ctx, workspaceID, filter)
 		return e
 	})
 	return out, err

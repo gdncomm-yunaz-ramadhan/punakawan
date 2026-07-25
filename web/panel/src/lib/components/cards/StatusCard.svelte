@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import BentoCard, { type BentoSize } from "./BentoCard.svelte";
   import type { CardState } from "./Card.svelte";
   import Icon, { type IconName } from "../Icon.svelte";
@@ -12,8 +13,12 @@
     size?: BentoSize;
     state?: CardState;
     emptyMessage?: string;
+    // Optional body rendered under the label/description. Use it to give the
+    // card real content (e.g. a short preview list) so a large cell is not
+    // left mostly empty behind a single count.
+    children?: Snippet;
   }
-  let { variant, label, description, size = "medium", state = "default", emptyMessage }: Props = $props();
+  let { variant, label, description, size = "medium", state = "default", emptyMessage, children }: Props = $props();
 
   // Per §15 accessibility rules: color is never the only signal, so every
   // variant pairs a semantic color with a distinct icon glyph and a text
@@ -43,6 +48,9 @@
         <span class="label">{label}</span>
         {#if description}
           <span class="description">{description}</span>
+        {/if}
+        {#if children}
+          <div class="body">{@render children()}</div>
         {/if}
       </div>
     </div>
@@ -92,6 +100,11 @@
   .text {
     display: grid;
     gap: 0.2rem;
+    min-width: 0;
+    width: 100%;
+  }
+  .body {
+    margin-top: 0.55rem;
   }
   .label {
     font-weight: 600;

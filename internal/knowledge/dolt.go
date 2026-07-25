@@ -90,6 +90,14 @@ func newReusedStore(key string, db *sql.DB, eventsPath string) *Store {
 	return st
 }
 
+// DB returns the underlying *sql.DB. It exists so a sibling store in the same
+// Punakawan Dolt database (internal/taskstore, the Beads-less fallback task
+// graph) can reuse this connection and server lifecycle rather than clone it.
+// The returned handle is owned by this Store; callers must not Close it.
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 // Open ensures dataDir is an initialized Dolt repository, starts a Dolt
 // sql-server rooted at it, connects to it, and applies the knowledge schema.
 func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
