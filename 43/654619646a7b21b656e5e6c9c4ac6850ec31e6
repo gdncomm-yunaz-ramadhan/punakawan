@@ -1,0 +1,40 @@
+docs/architecture/ADR-0018-punakawan-managed-dolt-is-the-beads-less-fallback-task-graph.md
+  d98638225f35480d 1-21
+docs/architecture/README.md
+  d98638225f35480d 24
+docs/architecture/ADR-0006-beads-is-the-execution-task-graph.md
+  d98638225f35480d 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "43654619646a7b21b656e5e6c9c4ac6850ec31e6",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 1,
+      "accepted_lines": 24,
+      "overriden_lines": 0
+    }
+  }
+}
