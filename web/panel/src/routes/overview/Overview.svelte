@@ -106,7 +106,26 @@
       description={ov.needs_attention.length === 0
         ? "All workspaces are healthy."
         : `${ov.needs_attention.length} item(s) across workspaces.`}
-    />
+    >
+      {#snippet children()}
+        {#if ov.needs_attention.length > 0}
+          <!-- Preview the top few items so the card carries real content
+               rather than a lone count; the full list is the "Needs
+               Attention" card below. -->
+          <ul class="attention-preview">
+            {#each ov.needs_attention.slice(0, 3) as item, i (i)}
+              <li>
+                <span class="kind">{attentionLabels[item.kind] ?? item.kind}</span>
+                <span class="where">{item.workspace_id}</span>
+              </li>
+            {/each}
+          </ul>
+          {#if ov.needs_attention.length > 3}
+            <span class="attention-more">…{ov.needs_attention.length - 3} more below</span>
+          {/if}
+        {/if}
+      {/snippet}
+    </StatusCard>
 
     <TableCard title="Active Now" size="wide" state={ov.active_sessions.length === 0 ? "empty" : "default"} emptyMessage="No active sessions.">
       {#snippet children()}
@@ -236,6 +255,39 @@
     cursor: pointer;
     font-size: inherit;
     text-decoration: underline;
+  }
+
+  /* Compact preview inside the "Needs attention" summary card. */
+  ul.attention-preview {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.3rem;
+  }
+  ul.attention-preview li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    min-width: 0;
+  }
+  ul.attention-preview .kind {
+    font-size: 0.8rem;
+  }
+  ul.attention-preview .where {
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 55%;
+  }
+  .attention-more {
+    display: block;
+    margin-top: 0.4rem;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
   }
 
   /* Let the chart fill the card's content box so it uses the full tile
