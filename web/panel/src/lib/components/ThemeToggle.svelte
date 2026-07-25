@@ -4,6 +4,14 @@
   import { reapplyStoredAccent } from "../accent";
   import Icon, { type IconName } from "./Icon.svelte";
 
+  // onselect fires after a preference is applied, letting a caller (e.g. the
+  // mobile theme popover) dismiss itself once the user picks. Optional, so the
+  // sidebar's inline usage is unaffected.
+  interface Props {
+    onselect?: (pref: ThemePreference) => void;
+  }
+  let { onselect }: Props = $props();
+
   let selected: ThemePreference = $state("system");
 
   onMount(() => {
@@ -22,6 +30,7 @@
     // The stored accent preset has distinct light/dark hex pairs, so
     // switching the resolved theme needs to re-apply it.
     reapplyStoredAccent();
+    onselect?.(pref);
   }
 </script>
 

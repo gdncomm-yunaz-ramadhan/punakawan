@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SystemInfo } from "../api/client";
   import { getConnectionStatus } from "../events/sse.svelte";
+  import { navigate } from "../router/router.svelte";
   import Icon from "./Icon.svelte";
 
   interface Props {
@@ -28,6 +29,23 @@
   assistive tech (aria-label), rather than always-on chips.
 -->
 <header>
+  <!--
+    Mobile-only brand: the sidebar (which normally carries the logo) is hidden
+    below 640px, so surface the Punakawan mark in the top bar there. Hidden at
+    wider widths so the desktop bar stays a right-aligned status strip.
+  -->
+  <a
+    class="brand-mobile"
+    href="/"
+    aria-label="Punakawan home"
+    onclick={(e) => {
+      e.preventDefault();
+      navigate("/");
+    }}
+  >
+    <img src="/logo.svg" alt="" aria-hidden="true" width="26" height="26" />
+    <span class="brand-name">Punakawan</span>
+  </a>
   {#if system}
     <span class="info" data-testid="panel-version" title={versionTitle} aria-label={versionTitle}><Icon name="info" size={16} /></span>
   {/if}
@@ -66,6 +84,24 @@
     right: 0;
     height: 3px;
     background: var(--gradient-brand);
+  }
+  /* Brand is desktop-hidden (the sidebar carries it); it appears only on
+     mobile and pushes the status strip to the right. */
+  .brand-mobile {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    margin-right: auto;
+    text-decoration: none;
+    color: var(--color-text);
+  }
+  .brand-mobile img {
+    display: block;
+  }
+  .brand-mobile .brand-name {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
   }
   .info {
     display: inline-flex;
@@ -107,5 +143,22 @@
   }
   .connection-connecting {
     color: var(--color-warning);
+  }
+
+  @media (max-width: 639px) {
+    header {
+      padding: 0.5rem 1rem;
+    }
+    .brand-mobile {
+      display: inline-flex;
+    }
+    /* Reclaim horizontal room on small screens: drop the verbose connection
+       label to just its dot; the aria-label/title still carry the state. */
+    .connection {
+      padding: 0.22rem 0.4rem;
+    }
+    .connection-label {
+      display: none;
+    }
   }
 </style>
