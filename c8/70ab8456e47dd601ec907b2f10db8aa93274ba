@@ -1,0 +1,40 @@
+web/panel/src/lib/components/ThemeToggle.svelte
+  d98638225f35480d 7-14,33
+web/panel/src/lib/components/TopBar.svelte
+  d98638225f35480d 4,32-48,88-105,147-163
+web/panel/src/lib/components/MobileNavigation.svelte
+  d98638225f35480d 3-4,10-13,23-27,29-31,33-34,38,45-53,65,72-76,78-79,87-88,128-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "c870ab8456e47dd601ec907b2f10db8aa93274ba",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 135,
+      "overriden_lines": 0
+    }
+  }
+}
