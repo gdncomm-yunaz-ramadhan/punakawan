@@ -1,0 +1,62 @@
+internal/mcpserver/tools_contradiction.go
+  d98638225f35480d 44,94-101
+protocol/panelevent.schema.json
+  d98638225f35480d 22-26
+internal/mcpserver/tools_roles.go
+  d98638225f35480d 10,111-114,119-134
+internal/mcpserver/tools_impact.go
+  d98638225f35480d 70-112
+internal/contradiction/contradiction_test.go
+  d98638225f35480d 281-437
+internal/panel/events/reconciler.go
+  d98638225f35480d 25-35,47-48,57-59,64-72,87-91,94,97,103-104,113-114,119-129,132,137,204-352
+internal/contradiction/links.go
+  d98638225f35480d 1-108
+internal/mcpserver/tools.go
+  d98638225f35480d 305-309
+internal/handoffprobe/handoffprobe_test.go
+  d98638225f35480d 1-133
+internal/mcpserver/tools_handoff.go
+  d98638225f35480d 14,82-87
+internal/handoffprobe/handoffprobe.go
+  d98638225f35480d 1-79,81-242
+internal/panel/deps_subsystems.go
+  d98638225f35480d 11,391-395
+internal/panel/events/reconciler_test.go
+  d98638225f35480d 10-12,78-183,351-489
+internal/contradiction/contradiction.go
+  d98638225f35480d 145-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "05881cf6fd37213f398672a7c98bbc7a8c1a80b4",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1263,
+      "total_deletions": 76,
+      "accepted_lines": 1200,
+      "overriden_lines": 1
+    }
+  }
+}
