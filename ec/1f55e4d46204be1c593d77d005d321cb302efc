@@ -1,0 +1,62 @@
+internal/mcpserver/tools_newsubsystems_test.go
+  d98638225f35480d 5,278-288
+internal/handoff/builder_test.go
+  d98638225f35480d 1-307
+internal/impact/builder.go
+  d98638225f35480d 4,6-9,13,21-43,45-66,118-148,151-475,477-596,599-602,604-609
+internal/scenario/scenario_test.go
+  d98638225f35480d 1-13,16-276
+internal/contradiction/contradiction_test.go
+  d98638225f35480d 235-280
+internal/dossier/changedossier_test.go
+  d98638225f35480d 322-433
+internal/impact/impact_test.go
+  d98638225f35480d 280-282,291,296-443
+internal/mcpserver/tools_semar.go
+  d98638225f35480d 6,11,27-35,55-64
+internal/mcpserver/tools_changedossier.go
+  d98638225f35480d 183-241
+internal/handoff/builder.go
+  d98638225f35480d 1-201
+internal/dossier/changedossier_sections.go
+  d98638225f35480d 1-119
+internal/dossier/changedossier_export.go
+  d98638225f35480d 55-56,241-258
+internal/mcpserver/tools.go
+  d98638225f35480d 332-340
+internal/contradiction/lifecycle.go
+  d98638225f35480d 140-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ec1f55e4d46204be1c593d77d005d321cb302efc",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1916,
+      "total_deletions": 47,
+      "accepted_lines": 1906,
+      "overriden_lines": 1
+    }
+  }
+}
