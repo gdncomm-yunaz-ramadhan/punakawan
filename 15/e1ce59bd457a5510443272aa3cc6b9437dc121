@@ -1,0 +1,88 @@
+web/panel/tests/ProjectWorkflows.test.ts
+  d98638225f35480d 51-54,81,104
+web/panel/src/routes/overview/Overview.svelte
+  d98638225f35480d 79-84,210,213-216,219-224
+web/panel/src/lib/components/review/CommentThread.svelte
+  d98638225f35480d 3,82-83,91-92,151
+web/panel/src/routes/knowledge/KnowledgeDetail.svelte
+  d98638225f35480d 11,183-185
+web/panel/src/routes/projects/ProjectHealth.svelte
+  d98638225f35480d 4,71-75
+web/panel/src/routes/tasks/TaskDetailDrawer.svelte
+  d98638225f35480d 4,52
+web/panel/src/routes/projects/ProjectHandoffs.svelte
+  d98638225f35480d 15,194-201,203-204,206,239-241,246,252,275-282,290,297,328-330,343-345,347-354
+web/panel/src/routes/projects/ProjectMetadata.svelte
+  d98638225f35480d 13,29,33,108-124,218-223,226,254-255,261,263-264,266,278-317,363-364,366,386,389-390,392-395,399,401-405,429-435,438-440,442,445,447-449,451-454,542-554
+web/panel/src/routes/projects/ProjectImpact.svelte
+  d98638225f35480d 13,154,156-157,159,239,244-247,299,301-308,325-328,331-340,347
+web/panel/src/lib/assets/roles/index.ts
+  d98638225f35480d 1-16
+web/panel/src/routes/projects/ProjectKnowledge.svelte
+  d98638225f35480d 16,154-190,309-311,314-316,319-341,343-347,349,351-352,355-357,359,361,367-384,523-534
+web/panel/src/routes/review/ReviewMode.svelte
+  d98638225f35480d 4,556-557,559,643
+web/panel/tests/ProjectMetadata.test.ts
+  d98638225f35480d 63-65,148-149,170-171
+web/panel/src/lib/components/Tabs.svelte
+  d98638225f35480d 76,78-79,83,86,92-93,99
+web/panel/src/routes/projects/ProjectRoles.svelte
+  d98638225f35480d 12-14,266-280,290-291,367-382,405-406,409-420,422-424,427-429,432,435-447,451,469-470,472-473,482-484,556
+web/panel/src/routes/projects/ProjectWorkflows.svelte
+  d98638225f35480d 12,189-202,331-335
+web/panel/src/routes/projects/ProjectDossiers.svelte
+  d98638225f35480d 14,272-284,382-389,397,411-414,426,428-430,432-439
+web/panel/src/lib/components/review/ProposalReview.svelte
+  d98638225f35480d 9,295,297,305,307
+web/panel/tests/ProjectHealth.test.ts
+  d98638225f35480d 54-56,82
+web/panel/src/routes/projects/ProjectDetail.svelte
+  d98638225f35480d 163,285-286
+web/panel/src/routes/knowledge/KnowledgeList.svelte
+  d98638225f35480d 7,80-116,162-164,167-169,172-175,177-194,196-200,202,204-205,208-210,212,214,220-237,293-304
+web/panel/src/routes/review/StartReview.svelte
+  d98638225f35480d 3,110-114,150
+web/panel/src/routes/projects/ProjectContradictions.svelte
+  d98638225f35480d 15,287,289-290,292,392-395,398-407,415,428,446-453,461,468,486-490,503-504,520,522-529
+web/panel/src/routes/projects/ProjectsList.svelte
+  d98638225f35480d 90-94,97-106,109,115-116,155-156,198-199
+web/panel/src/lib/components/Button.svelte
+  d98638225f35480d 1-188
+web/panel/src/lib/components/review/AddCommentPopover.svelte
+  d98638225f35480d 2-3,77-78,80,135
+web/panel/src/routes/approvals/ApprovalsList.svelte
+  d98638225f35480d 5,104,106,110,112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "15e1ce59bd457a5510443272aa3cc6b9437dc121",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1002,
+      "total_deletions": 678,
+      "accepted_lines": 953,
+      "overriden_lines": 0
+    }
+  }
+}
