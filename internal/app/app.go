@@ -20,11 +20,14 @@ import (
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
+	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
+	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/internal/workspace"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // App bundles a loaded workspace and the services built from it.
@@ -41,6 +44,13 @@ type App struct {
 	SyncQueue       *syncqueue.Queue
 	PrReviews       *prreview.Store
 	ContextRequests *contextrequest.Store
+	// RoleConfig is the shared §47 role-configuration resolver: it maps a
+	// project id + optional workflow to a role's effective configuration
+	// (project settings intersected with any workflow restriction). It is the
+	// single foundation the ROLE-* wiring (prompt injection, workflow
+	// restriction, run snapshot, Authorize gating) builds on. May be nil if
+	// construction failed; every call site must guard nil.
+	RoleConfig *roleconfig.Resolver
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
@@ -134,6 +144,8 @@ func Load(startDir string) (*App, error) {
 	registry.SetApprovalScope(pol.Approvals.Scope)
 	registry.SetSyncQueue(syncQueue)
 
+	roleResolver := newRoleResolver(ws)
+
 	return &App{
 		Workspace:       ws,
 		Policy:          pol,
@@ -147,7 +159,61 @@ func Load(startDir string) (*App, error) {
 		SyncQueue:       syncQueue,
 		PrReviews:       prReviews,
 		ContextRequests: contextRequests,
+		RoleConfig:      roleResolver,
 	}, nil
+}
+
+// newRoleResolver builds the shared §47 role-configuration resolver for a
+// workspace. Both lookups are resilient: a read failure surfaces as an error
+// to the caller of Effective/Authorize (which guard it) but never panics, and
+// a nil resolver is tolerated everywhere it is used.
+//
+// Limitation: the App currently holds no registry of non-primary project
+// roots, so Load resolves every project id to the primary workspace root. An
+// empty id, or an id equal to the primary workspace id, is the primary
+// workspace; any other id also falls back to the primary root today (there is
+// no other root to resolve it to). When multi-project support lands this is the
+// single seam to extend.
+func newRoleResolver(ws *workspace.Workspace) *roleconfig.Resolver {
+	rootFor := func(projectID string) string {
+		// Only the primary workspace root is known here; see the limitation
+		// documented above.
+		return ws.Root
+	}
+	return &roleconfig.Resolver{
+		Load: func(projectID string) (*protocol.RoleConfiguration, error) {
+			return roleconfig.Load(rootFor(projectID))
+		},
+		Restrictions: func(projectID, workflowID string, role roleconfig.Role) (*roleconfig.Restriction, error) {
+			if workflowID == "" {
+				return nil, nil
+			}
+			store, err := workflowdef.Open(rootFor(projectID))
+			if err != nil {
+				return nil, err
+			}
+			def, err := store.Get(workflowID)
+			if errors.Is(err, workflowdef.ErrNotFound) {
+				return nil, nil // no definition: no restriction
+			}
+			if err != nil {
+				return nil, err
+			}
+			rr, ok := def.Roles[string(role)]
+			if !ok {
+				return nil, nil // role not restricted by this workflow
+			}
+			var mode *protocol.RoleConfigMode
+			if rr.Mode != nil {
+				m := protocol.RoleConfigMode(*rr.Mode)
+				mode = &m
+			}
+			return &roleconfig.Restriction{
+				Mode:         mode,
+				Capabilities: rr.Capabilities,
+			}, nil
+		},
+	}
 }
 
 // RepoPath resolves a repository id declared in the workspace to its

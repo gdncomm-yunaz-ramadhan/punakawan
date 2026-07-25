@@ -2326,6 +2326,13 @@ type ContextCapsule struct {
 	// Role corresponds to the JSON schema field "role".
 	Role ContextCapsuleRole `json:"role" yaml:"role" mapstructure:"role"`
 
+	// Compact role-configuration guidance block (plan §48, ROLE-011) rendered from
+	// the effective role configuration and injected into the role's prompt. Like
+	// project_metadata, it is deliberately NOT one of the digest fields (§6.3): it is
+	// derived project configuration, not part of the capsule's reasoning inputs, so
+	// attaching it must not change the capsule's identity.
+	RoleGuidance *string `json:"role_guidance,omitempty,omitzero" yaml:"role_guidance,omitempty" mapstructure:"role_guidance,omitempty"`
+
 	// TaskId corresponds to the JSON schema field "task_id".
 	TaskId string `json:"task_id" yaml:"task_id" mapstructure:"task_id"`
 
@@ -7280,6 +7287,12 @@ type WorkflowRun struct {
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
 
+	// Snapshot of the effective role settings (enabled/style/mode/capabilities) for
+	// each of the four roles at run-creation time (plan §50, ROLE-012). A map keyed
+	// by role name; values are permissive objects so the snapshot stays
+	// forward-compatible with future role-config fields.
+	EffectiveRoleSettings WorkflowRunEffectiveRoleSettings `json:"effective_role_settings,omitempty,omitzero" yaml:"effective_role_settings,omitempty" mapstructure:"effective_role_settings,omitempty"`
+
 	// Id corresponds to the JSON schema field "id".
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
@@ -7292,6 +7305,11 @@ type WorkflowRun struct {
 	// (punakawan-panel-implementation-plan.md §8.3); Punakawan never infers or edits
 	// this itself.
 	Objective *string `json:"objective,omitempty,omitzero" yaml:"objective,omitempty" mapstructure:"objective,omitempty"`
+
+	// The roles.yaml revision in effect when this run was created (plan §50,
+	// ROLE-012). Stamped once at creation so a historical run remains reproducible
+	// even after the project role configuration is later edited.
+	RoleConfigRevision *int `json:"role_config_revision,omitempty,omitzero" yaml:"role_config_revision,omitempty" mapstructure:"role_config_revision,omitempty"`
 
 	// State corresponds to the JSON schema field "state".
 	State WorkflowRunState `json:"state" yaml:"state" mapstructure:"state"`
@@ -7371,6 +7389,12 @@ func (j *WorkflowRunCheckpointsElem) UnmarshalJSON(value []byte) error {
 	*j = WorkflowRunCheckpointsElem(plain)
 	return nil
 }
+
+// Snapshot of the effective role settings (enabled/style/mode/capabilities) for
+// each of the four roles at run-creation time (plan §50, ROLE-012). A map keyed by
+// role name; values are permissive objects so the snapshot stays
+// forward-compatible with future role-config fields.
+type WorkflowRunEffectiveRoleSettings map[string]map[string]interface{}
 
 type WorkflowRunState string
 

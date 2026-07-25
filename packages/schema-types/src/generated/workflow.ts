@@ -43,4 +43,16 @@ export interface WorkflowRun {
     at: string;
     note?: string;
   }[];
+  /**
+   * The roles.yaml revision in effect when this run was created (plan §50, ROLE-012). Stamped once at creation so a historical run remains reproducible even after the project role configuration is later edited.
+   */
+  role_config_revision?: number;
+  /**
+   * Snapshot of the effective role settings (enabled/style/mode/capabilities) for each of the four roles at run-creation time (plan §50, ROLE-012). A map keyed by role name; values are permissive objects so the snapshot stays forward-compatible with future role-config fields.
+   */
+  effective_role_settings?: {
+    [k: string]: {
+      [k: string]: unknown;
+    };
+  };
 }

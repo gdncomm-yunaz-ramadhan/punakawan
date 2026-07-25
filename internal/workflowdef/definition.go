@@ -39,7 +39,26 @@ type Definition struct {
 	AllowedCapabilities []string       `yaml:"allowed_capabilities,omitempty" json:"allowed_capabilities,omitempty"`
 	Approval            ApprovalPolicy `yaml:"approval,omitempty" json:"approval,omitempty"`
 	Output              OutputSpec     `yaml:"output,omitempty" json:"output,omitempty"`
-	Revision            int            `yaml:"revision" json:"revision"`
+	// Roles carries this workflow's optional per-role restrictions (plan §15,
+	// ROLE-010), keyed by role name (semar|gareng|petruk|bagong). A workflow may
+	// only *reduce* a role's project authority; internal/roleconfig.Effective
+	// enforces the reduce-never-increase rule when this is applied. A missing
+	// key means the workflow imposes no restriction on that role.
+	Roles    map[string]RoleRestriction `yaml:"roles,omitempty" json:"roles,omitempty"`
+	Revision int                        `yaml:"revision" json:"revision"`
+}
+
+// RoleRestriction is a workflow's per-role restriction (plan §15, ROLE-010). It
+// mirrors the shape internal/roleconfig.Restriction consumes: Mode, if set, is
+// a ceiling the effective mode is clamped down to (it can never raise the mode);
+// Capabilities entries that are false switch that capability off (entries that
+// are true are ignored, since a workflow cannot grant a capability the project
+// disabled). Required records whether the workflow expects this role to
+// participate at all.
+type RoleRestriction struct {
+	Required     bool            `yaml:"required,omitempty" json:"required,omitempty"`
+	Mode         *string         `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Capabilities map[string]bool `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 }
 
 // Input is one declared workflow input parameter (§6.1 inputs[]).

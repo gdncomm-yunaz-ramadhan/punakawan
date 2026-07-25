@@ -12,6 +12,7 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/sources"
+	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -30,6 +31,12 @@ func createWorkflowRunHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		}
 
 		run := workflow.New(in.RunId, a.Workspace.ID, workflowName, time.Now().UTC())
+		// ROLE-012 (§50): stamp the role-config revision and an effective-role
+		// settings snapshot onto the run so a historical run stays reproducible
+		// even after the project role configuration is later edited. A role-config
+		// read failure must never fail run creation - it is best-effort metadata,
+		// so on any error we log-and-skip (leaving the fields unset).
+		stampRoleConfig(a, &run)
 		if err := a.Workflow.Append(run); err != nil {
 			return nil, protocol.WorkflowRun{}, fmt.Errorf("mcpserver: create workflow run: %w", err)
 		}
@@ -38,6 +45,41 @@ func createWorkflowRunHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		}
 		return nil, run, nil
 	}
+}
+
+// stampRoleConfig records the project's current role-config revision and an
+// effective-role settings snapshot onto run (ROLE-012, §50). It is best-effort:
+// any read/lookup failure leaves the fields unset rather than failing run
+// creation, since historical role settings are metadata, not a gate. There is
+// no workflow restriction to apply at creation time, so Effective reflects the
+// project-level configuration for each of the four roles.
+func stampRoleConfig(a *app.App, run *protocol.WorkflowRun) {
+	cfg, err := roleconfig.Load(a.Workspace.Root)
+	if err != nil {
+		return
+	}
+	rev := cfg.Revision
+	run.RoleConfigRevision = &rev
+
+	settings := make(protocol.WorkflowRunEffectiveRoleSettings, len(roleconfig.AllRoles))
+	for _, role := range roleconfig.AllRoles {
+		rc, err := roleconfig.RoleOf(cfg, role)
+		if err != nil {
+			continue
+		}
+		eff := roleconfig.Effective(*rc, nil)
+		caps := make(map[string]interface{}, len(eff.Capabilities))
+		for k, v := range eff.Capabilities {
+			caps[k] = v
+		}
+		settings[string(role)] = map[string]interface{}{
+			"enabled":      eff.Enabled,
+			"style":        string(eff.Style),
+			"mode":         string(eff.Mode),
+			"capabilities": caps,
+		}
+	}
+	run.EffectiveRoleSettings = settings
 }
 
 // GetWorkflowStateInput is get_workflow_state's input.

@@ -39,6 +39,10 @@ export interface ContextCapsule {
   expected_output?: string;
   token_budget?: number;
   /**
+   * Compact role-configuration guidance block (plan §48, ROLE-011) rendered from the effective role configuration and injected into the role's prompt. Like project_metadata, it is deliberately NOT one of the digest fields (§6.3): it is derived project configuration, not part of the capsule's reasoning inputs, so attaching it must not change the capsule's identity.
+   */
+  role_guidance?: string;
+  /**
    * Bounded, relevance-selected project metadata (performance plan §4.4) injected when the capsule was built. Deliberately NOT one of the digest fields (§6.3): it is derived project context, not part of the capsule's reasoning inputs, so adding or refreshing it must not change the capsule's identity.
    */
   project_metadata?: {

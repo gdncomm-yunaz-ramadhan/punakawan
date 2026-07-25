@@ -9,6 +9,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/capsule"
+	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -131,6 +132,18 @@ func requestCapsuleHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		}
 		if err != nil {
 			return nil, protocol.ContextCapsule{}, fmt.Errorf("mcpserver: build capsule: %w", err)
+		}
+
+		// ROLE-011 (§48): attach the effective role-configuration guidance block
+		// to the capsule. Set AFTER Build has computed the digest so it never
+		// changes the capsule's identity - role_guidance is excluded from the
+		// digest field set (§6.3), exactly like project_metadata. A nil resolver
+		// (no roles wiring, e.g. older tests) simply skips guidance.
+		if a.RoleConfig != nil {
+			if eff, effErr := a.RoleConfig.Effective("", "", roleconfig.Role(role)); effErr == nil {
+				guidance := roleconfig.PromptBlock(roleconfig.Role(role), eff)
+				c.RoleGuidance = &guidance
+			}
 		}
 
 		if err := a.Capsules.Put(c); err != nil {
