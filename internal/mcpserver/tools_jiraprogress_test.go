@@ -17,7 +17,7 @@ func progressTestManifest() protocol.AdapterManifest {
 }
 
 func approveOp(t *testing.T, gate interface {
-	RequestApproval(runID, op string, by protocol.ApprovalRecordRequestedBy) (protocol.ApprovalRecord, error)
+	RequestApproval(runID, op string, by protocol.ApprovalRecordRequestedBy, preview ...string) (protocol.ApprovalRecord, error)
 	Approve(runID, approvedBy string) error
 }, runID, op string) {
 	t.Helper()

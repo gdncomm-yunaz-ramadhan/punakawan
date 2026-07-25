@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,6 +12,66 @@ import (
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// sensitiveKeyRe matches param keys whose values must never appear verbatim in
+// an approval preview - tokens, passwords, and the like. The whole point of
+// the preview is to let a human see WHAT is being written, so it renders the
+// payload; that must not become a channel for leaking a secret that happened
+// to ride along in the same params map.
+var sensitiveKeyRe = regexp.MustCompile(`(?i)(token|secret|password|passwd|api[_-]?key|apikey|authorization|auth|cookie|credential|private[_-]?key)`)
+
+// approvalPreviewMaxLen bounds a rendered preview so a large adapter payload
+// (an attachment body, a long Confluence page) can't bloat the append-only
+// approvals.jsonl or the panel that renders it.
+const approvalPreviewMaxLen = 2000
+
+// BuildApprovalPreview renders a bounded, secret-redacted view of an adapter
+// operation and its params, so a human resolving the approval - on the panel
+// or through MCP elicitation - can see the actual content they are
+// authorizing, not just the operation category. Values under sensitive-looking
+// keys (see sensitiveKeyRe) are masked, and the whole preview is capped at
+// approvalPreviewMaxLen. Returns "" when there is nothing meaningful to show,
+// so RequestApproval leaves Preview unset rather than storing an empty shell.
+func BuildApprovalPreview(op string, params map[string]any) string {
+	redacted := redactParams(params)
+	var b strings.Builder
+	fmt.Fprintf(&b, "operation: %s\n", op)
+	if len(redacted) == 0 {
+		b.WriteString("params: (none)")
+	} else if enc, err := json.MarshalIndent(redacted, "", "  "); err != nil {
+		fmt.Fprintf(&b, "params: (unrenderable: %v)", err)
+	} else {
+		b.WriteString("params:\n")
+		b.Write(enc)
+	}
+	out := b.String()
+	if len(out) > approvalPreviewMaxLen {
+		out = out[:approvalPreviewMaxLen] + "\n… (truncated)"
+	}
+	return out
+}
+
+// redactParams deep-copies params, masking any value whose key looks sensitive
+// (recursing into nested maps). Non-map values are copied by reference, which
+// is fine because the result is only ever marshaled to JSON, never mutated.
+func redactParams(params map[string]any) map[string]any {
+	if len(params) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(params))
+	for k, v := range params {
+		if sensitiveKeyRe.MatchString(k) {
+			out[k] = "***redacted***"
+			continue
+		}
+		if nested, ok := v.(map[string]any); ok {
+			out[k] = redactParams(nested)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
 
 // caller is the subset of *Client's behavior Gate depends on, so tests can
 // substitute a fake instead of spawning a real adapter subprocess.
@@ -129,7 +190,7 @@ func operationCategory(op string) protocol.ApprovalRecordOperation {
 // manifest does not require approval for; callers should check
 // requiresApproval-equivalent behavior implicitly by simply calling Call,
 // which only enforces the gate when the manifest asks for it.
-func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRecordRequestedBy) (protocol.ApprovalRecord, error) {
+func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRecordRequestedBy, preview ...string) (protocol.ApprovalRecord, error) {
 	if !g.requiresApproval(op) {
 		return protocol.ApprovalRecord{}, nil
 	}
@@ -155,6 +216,15 @@ func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRe
 		RequestedBy: requestedBy,
 		Status:      protocol.ApprovalRecordStatusPending,
 		CreatedAt:   time.Now().UTC(),
+	}
+	// The approval is scoped to the run, so the preview reflects the first
+	// operation that triggered it - the same "first requested" framing the
+	// reason string uses. This is what the human sees on the panel / in the
+	// elicitation prompt: the actual content being authorized, not just the
+	// operation category.
+	if len(preview) > 0 && preview[0] != "" {
+		p := preview[0]
+		rec.Preview = &p
 	}
 	if err := g.approvals.Append(rec); err != nil {
 		return protocol.ApprovalRecord{}, err

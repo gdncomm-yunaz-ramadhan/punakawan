@@ -25,7 +25,7 @@ func invokeAdapterOperation(
 	params map[string]any,
 	requestedBy protocol.ApprovalRecordRequestedBy,
 ) (json.RawMessage, error) {
-	if err := ensureAdapterApproval(ctx, req, gate, runID, op, requestedBy); err != nil {
+	if err := ensureAdapterApproval(ctx, req, gate, runID, op, params, requestedBy); err != nil {
 		return nil, err
 	}
 	return gate.Call(ctx, runID, op, params)
@@ -37,13 +37,19 @@ func ensureAdapterApproval(
 	gate *adapters.Gate,
 	runID string,
 	op string,
+	params map[string]any,
 	requestedBy protocol.ApprovalRecordRequestedBy,
 ) error {
 	if !gate.RequiresApproval(op) {
 		return nil
 	}
 
-	rec, err := gate.RequestApproval(runID, op, requestedBy)
+	// Capture a redacted preview of the operation payload so the human
+	// resolving this (panel or elicitation) sees what they authorize, not
+	// just the category. RequestApproval is idempotent per run, so this only
+	// sticks for the first op that triggers the run's approval.
+	preview := adapters.BuildApprovalPreview(op, params)
+	rec, err := gate.RequestApproval(runID, op, requestedBy, preview)
 	if err != nil {
 		return fmt.Errorf("request adapter approval: %w", err)
 	}
@@ -68,8 +74,8 @@ func ensureAdapterApproval(
 		result, err = req.Session.Elicit(ctx, &mcp.ElicitParams{
 			Mode: "form",
 			Message: fmt.Sprintf(
-				"Punakawan requests permission to write for run %q. Choose Approve to allow all configured adapter writes in this run, or Deny to block them. First target: %q; operation: %q.",
-				runID, recTarget(rec), op,
+				"Punakawan requests permission to write for run %q. Choose Approve to allow all configured adapter writes in this run, or Deny to block them. First target: %q; operation: %q.\n\n%s",
+				runID, recTarget(rec), op, elicitationPreview(rec),
 			),
 		})
 	} else {
@@ -110,6 +116,22 @@ func elicitationApprover(req *mcp.CallToolRequest) string {
 		return channel
 	}
 	return fmt.Sprintf("%s:%s", channel, init.ClientInfo.Name)
+}
+
+// elicitationPreview renders the approval's stored content preview for the
+// elicitation prompt, bounded shorter than the panel's copy since a chat
+// elicitation dialog has far less room than a rendered <pre>. Falls back to a
+// neutral line when no preview was captured.
+func elicitationPreview(rec protocol.ApprovalRecord) string {
+	if rec.Preview == nil || *rec.Preview == "" {
+		return "(no content preview available)"
+	}
+	const maxLen = 800
+	p := *rec.Preview
+	if len(p) > maxLen {
+		p = p[:maxLen] + "\n… (truncated - see the panel Approvals tab for the full content)"
+	}
+	return "Content to be written:\n" + p
 }
 
 func recTarget(rec protocol.ApprovalRecord) string {
