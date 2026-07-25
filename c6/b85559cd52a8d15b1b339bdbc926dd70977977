@@ -1,0 +1,84 @@
+internal/contradiction/matching.go
+  d98638225f35480d 1-65
+internal/contradiction/contradiction.go
+  d98638225f35480d 1-240
+internal/contradiction/lifecycle.go
+  d98638225f35480d 1-139
+internal/dossier/changedossier_lifecycle.go
+  d98638225f35480d 1-171
+protocol/workflow.schema.json
+  d98638225f35480d 65-76
+internal/impact/impact.go
+  d98638225f35480d 1-185
+internal/impact/impact_test.go
+  d98638225f35480d 1-296
+internal/mcpserver/tools_roleconfig_wiring_test.go
+  d98638225f35480d 1-66
+internal/handoff/validate.go
+  d98638225f35480d 1-230
+internal/handoff/handoff_test.go
+  d98638225f35480d 1-268
+internal/workflowdef/definition.go
+  d98638225f35480d 42-61
+internal/impact/query.go
+  d98638225f35480d 1-163
+internal/dossier/changedossier.go
+  d98638225f35480d 1-316
+internal/impact/builder.go
+  d98638225f35480d 1-107
+internal/mcpserver/tools_roles.go
+  d98638225f35480d 10,15-42,71-73,99-101,130-132
+internal/mcpserver/tools_workflow.go
+  d98638225f35480d 15,34-39,50-84
+internal/contradiction/contradiction_test.go
+  d98638225f35480d 1-278
+protocol/capsule.schema.json
+  d98638225f35480d 71-75
+internal/app/app.go
+  d98638225f35480d 23,28,30,47-53,147-148,162,166-216
+internal/dossier/changedossier_export.go
+  d98638225f35480d 1-291
+internal/dossier/changedossier_claims.go
+  d98638225f35480d 1-218
+internal/mcpserver/tools_capsule.go
+  d98638225f35480d 12,137-148
+internal/dossier/changedossier_test.go
+  d98638225f35480d 1-359
+internal/app/roleconfig_resolver_test.go
+  d98638225f35480d 1-79
+internal/handoff/handoff.go
+  d98638225f35480d 1-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "c6b85559cd52a8d15b1b339bdbc926dd70977977",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 3844,
+      "total_deletions": 18,
+      "accepted_lines": 3828,
+      "overriden_lines": 0
+    }
+  }
+}
