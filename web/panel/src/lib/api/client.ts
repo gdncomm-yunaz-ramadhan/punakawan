@@ -781,6 +781,90 @@ export async function deleteMetadata(id: string, key: string, baseRevision: numb
   }
 }
 
+// --- Project Roles (role configuration) ----------------------------------
+//
+// A project's four Punakawan roles (Semar/Gareng/Petruk/Bagong) each carry
+// an enabled flag, a `style` (strict|balanced|creative), a `mode`
+// (assist|propose|execute) and a set of capability toggles. Writes are
+// optimistically locked with the same monotonically increasing `revision`
+// pattern as project metadata: send the last-loaded revision as
+// base_revision on every mutation; a stale one 409s (code
+// "revision_conflict"). `owned` declares which capability keys each role is
+// allowed to render — a role never shows another role's toggles.
+
+export interface RoleConfig {
+  enabled: boolean;
+  style: string;
+  mode: string;
+  capabilities: Record<string, boolean>;
+}
+
+export interface RolesConfiguration {
+  semar: RoleConfig;
+  gareng: RoleConfig;
+  petruk: RoleConfig;
+  bagong: RoleConfig;
+}
+
+// The capability toggle keys a given role owns (and may render). Only these
+// keys are shown for that role.
+export interface RoleCapabilityInfo {
+  role: string;
+  capabilities: string[];
+}
+
+export interface RolesResponse {
+  roles: RolesConfiguration;
+  revision: number;
+  owned: RoleCapabilityInfo[];
+}
+
+// The write endpoints echo the full role map plus the new revision the
+// caller must carry into its next optimistic-locked write.
+export interface RolesMutationResult {
+  roles: RolesConfiguration;
+  revision: number;
+}
+
+// The 4xx error codes the role write endpoints can return. Kept as a union
+// so the UI's message map stays exhaustive.
+export type RoleErrorCode =
+  | "revision_conflict"
+  | "unknown_role"
+  | "invalid_style"
+  | "invalid_mode"
+  | "unowned_capability";
+
+export function getRoles(projectId: string): Promise<RolesResponse> {
+  return getJSON<RolesResponse>(`/projects/${encodeURIComponent(projectId)}/roles`);
+}
+
+export interface UpdateRolePatch {
+  enabled?: boolean;
+  style?: string;
+  mode?: string;
+  capabilities?: Record<string, boolean>;
+}
+
+export function updateRole(
+  projectId: string,
+  role: string,
+  patch: UpdateRolePatch,
+  baseRevision: number,
+): Promise<RolesMutationResult> {
+  return mutateJSON<RolesMutationResult>(
+    `/projects/${encodeURIComponent(projectId)}/roles/${encodeURIComponent(role)}`,
+    { method: "PATCH", body: JSON.stringify({ ...patch, base_revision: baseRevision }) },
+  );
+}
+
+export function resetRole(projectId: string, role: string, baseRevision: number): Promise<RolesMutationResult> {
+  return mutateJSON<RolesMutationResult>(
+    `/projects/${encodeURIComponent(projectId)}/roles/${encodeURIComponent(role)}/reset`,
+    { method: "POST", body: JSON.stringify({ base_revision: baseRevision }) },
+  );
+}
+
 // --- Project Workflows (Phase 6, plan §6) --------------------------------
 //
 // A workflow Definition is a declarative, versioned recipe: an ordered

@@ -17,6 +17,8 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/tasksnapshot"
 	"github.com/ygrip/punakawan/internal/project"
+	"github.com/ygrip/punakawan/internal/roleconfig"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // Version is the Punakawan Panel's own release version.
@@ -34,6 +36,7 @@ type Readers struct {
 	Approval     contract.ApprovalReader
 	GlobalSearch contract.GlobalSearchReader
 	Project      contract.ProjectReader
+	Roles        contract.RolesReader
 
 	// Runtime is the bounded *app.App pool (Phase 3). The server owns its
 	// lifecycle: it runs a periodic CloseIdle sweep and Closes all non-primary
@@ -63,6 +66,16 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 	// request (Phase 1, §10.2). ttl=0 keeps snapshot.DefaultTTL.
 	wsSource := &sources.WorkspaceSource{App: a, Registry: reg, Runtime: runtimeMgr}
 	workspaceReader := sources.NewCachedWorkspaceReader(wsSource, reg, a.Workspace.ID, 0)
+	// The project source composes the (cached) workspace reader for its counts
+	// and the registry for id->root resolution; it serves both the metadata
+	// (ProjectReader) and role-config (RolesReader) surfaces, which share the
+	// same id->root resolution and per-project .punakawan tree.
+	projectSource := &ProjectSource{
+		Workspace:   workspaceReader,
+		Registry:    reg,
+		PrimaryID:   a.Workspace.ID,
+		PrimaryRoot: a.Workspace.Root,
+	}
 	return Readers{
 		Workspace:    workspaceReader,
 		Session:      &sources.SessionSource{App: a},
@@ -75,12 +88,8 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		// counts and the registry for id->root resolution, so it never
 		// re-runs the deep bd/dolt/git inspection the workspace reader
 		// already performs (plan §8's "one snapshot, reused everywhere").
-		Project: &ProjectSource{
-			Workspace:   workspaceReader,
-			Registry:    reg,
-			PrimaryID:   a.Workspace.ID,
-			PrimaryRoot: a.Workspace.Root,
-		},
+		Project: projectSource,
+		Roles:   projectSource,
 		Runtime: runtimeMgr,
 	}
 }
@@ -236,4 +245,71 @@ func (s *ProjectSource) mutate(projectID, action, key string, apply func(*projec
 		return nil, err
 	}
 	return p, nil
+}
+
+// GetRoles loads the project's four-role configuration and returns it alongside
+// the static owned-capability catalog for all four roles (so the Panel renders
+// which toggles each role carries in one round-trip). A project that has never
+// had roles.yaml written yields the recommended defaults at revision 0, not an
+// error, matching roleconfig.Load's "absent file is a normal state" contract.
+func (s *ProjectSource) GetRoles(ctx context.Context, projectID string) (*protocol.RoleConfiguration, []contract.RoleCapabilityInfo, error) {
+	root, err := s.resolveRoot(projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, err := roleconfig.Load(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	owned := make([]contract.RoleCapabilityInfo, 0, len(roleconfig.AllRoles))
+	for _, role := range roleconfig.AllRoles {
+		owned = append(owned, contract.RoleCapabilityInfo{
+			Role:         string(role),
+			Capabilities: roleconfig.OwnedCapabilities(role),
+		})
+	}
+	return cfg, owned, nil
+}
+
+// UpdateRole applies patch to one role under optimistic locking, then persists a
+// new immutable revision. An unknown role name yields roleconfig.ErrUnknownRole
+// so the handler answers 404 rather than mutating the wrong field.
+func (s *ProjectSource) UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RoleConfiguration, error) {
+	return s.mutateRoles(projectID, role, "update", func(cfg *protocol.RoleConfiguration) error {
+		return roleconfig.Update(cfg, roleconfig.Role(role), patch, baseRevision)
+	})
+}
+
+// ResetRole restores one role to its recommended defaults under the same
+// optimistic locking as UpdateRole, then persists a new revision.
+func (s *ProjectSource) ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RoleConfiguration, error) {
+	return s.mutateRoles(projectID, role, "reset", func(cfg *protocol.RoleConfiguration) error {
+		return roleconfig.Reset(cfg, roleconfig.Role(role), baseRevision)
+	})
+}
+
+// mutateRoles is the shared load -> apply -> save path for the two role-config
+// mutations, mirroring mutate for metadata. The role string is validated up
+// front so an unknown role never reaches Load/Save (roleconfig.ErrUnknownRole is
+// surfaced unchanged for the handler to map). apply returns a roleconfig error
+// (revision conflict, invalid style/mode, unowned capability) surfaced verbatim.
+func (s *ProjectSource) mutateRoles(projectID, role, action string, apply func(*protocol.RoleConfiguration) error) (*protocol.RoleConfiguration, error) {
+	if !roleconfig.IsRole(role) {
+		return nil, fmt.Errorf("panel: role %q: %w", role, roleconfig.ErrUnknownRole)
+	}
+	root, err := s.resolveRoot(projectID)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := roleconfig.Load(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := apply(cfg); err != nil {
+		return nil, err
+	}
+	if err := roleconfig.Save(root, cfg, roleconfig.SaveOptions{Action: action, Role: role}); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }

@@ -204,6 +204,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/metadata/{key}", session.RequireSession(s.sessions, api.MetadataUpdateHandler(s.readers.Project)))
 	mux.HandleFunc("DELETE /api/v1/projects/{projectId}/metadata/{key}", session.RequireSession(s.sessions, api.MetadataDeleteHandler(s.readers.Project)))
 
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/roles", api.RolesListHandler(s.readers.Roles))
+	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/roles/{role}", session.RequireSession(s.sessions, api.RoleUpdateHandler(s.readers.Roles)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/roles/{role}/reset", session.RequireSession(s.sessions, api.RoleResetHandler(s.readers.Roles)))
+
 	// Project-scoped plans (Phase 7), workflow definitions (Phase 6), and
 	// cached health (Phase 8). All resolve a {projectId} to its workspace
 	// root through the registry, falling back to the primary workspace so it

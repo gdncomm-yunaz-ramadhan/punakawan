@@ -10,6 +10,7 @@
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import type { IconName } from "../../lib/components/Icon.svelte";
   import ProjectMetadata from "./ProjectMetadata.svelte";
+  import ProjectRoles from "./ProjectRoles.svelte";
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
   import ProjectHealth from "./ProjectHealth.svelte";
@@ -33,6 +34,7 @@
   const activeTabs = new Set([
     "summary",
     "metadata",
+    "roles",
     "workflows",
     "knowledge",
     "tasks",
@@ -44,6 +46,7 @@
   const tabs = [
     { id: "summary", label: "Summary", icon: "dashboard" as IconName },
     { id: "metadata", label: "Metadata", icon: "database" as IconName },
+    { id: "roles", label: "Roles", icon: "users" as IconName },
     { id: "workflows", label: "Workflows", icon: "git-branch" as IconName },
     { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
     { id: "tasks", label: "Tasks", icon: "list" as IconName },
@@ -152,6 +155,10 @@
   {:else if activeId === "metadata"}
     <div id="tabpanel-metadata" role="tabpanel" aria-labelledby="tab-metadata">
       <ProjectMetadata {projectId} />
+    </div>
+  {:else if activeId === "roles"}
+    <div id="tabpanel-roles" role="tabpanel" aria-labelledby="tab-roles">
+      <ProjectRoles {projectId} />
     </div>
   {:else if activeId === "workflows"}
     <div id="tabpanel-workflows" role="tabpanel" aria-labelledby="tab-workflows">

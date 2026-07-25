@@ -44,6 +44,8 @@ export * from './generated/panelworkspace.js';
 export * from './generated/panelworkspace.zod.js';
 export * from './generated/reviewfinding.js';
 export * from './generated/reviewfinding.zod.js';
+export * from './generated/roleconfig.js';
+export * from './generated/roleconfig.zod.js';
 export * from './generated/task.js';
 export * from './generated/task.zod.js';
 export * from './generated/workflow.js';

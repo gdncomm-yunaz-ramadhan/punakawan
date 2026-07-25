@@ -5315,6 +5315,216 @@ func (j *ReviewFinding) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type RoleConfig struct {
+	// Role-specific capability toggles. Keys are validated against the set owned by
+	// the role (see internal/roleconfig defaults); a capability not owned by the role
+	// is rejected by the API.
+	Capabilities RoleConfigCapabilities `json:"capabilities" yaml:"capabilities" mapstructure:"capabilities"`
+
+	// Enabled corresponds to the JSON schema field "enabled".
+	Enabled bool `json:"enabled" yaml:"enabled" mapstructure:"enabled"`
+
+	// Action ceiling. assist: read/search/analyze/report only, no durable state
+	// changes. propose: may create reviewable proposals, nothing applied
+	// automatically. execute: may perform enabled capabilities, still under
+	// policy/workflow/approval.
+	Mode RoleConfigMode `json:"mode" yaml:"mode" mapstructure:"mode"`
+
+	// Reasoning posture. strict: stronger evidence, fewer assumptions, blocks on
+	// unresolved issues more readily. balanced: reasonable assumptions, flags
+	// uncertainty without over-blocking. creative: explores more alternatives,
+	// searches more broadly. Never changes permissions.
+	Style RoleConfigStyle `json:"style" yaml:"style" mapstructure:"style"`
+}
+
+// Role-specific capability toggles. Keys are validated against the set owned by
+// the role (see internal/roleconfig defaults); a capability not owned by the role
+// is rejected by the API.
+type RoleConfigCapabilities map[string]bool
+
+type RoleConfigMode string
+
+const RoleConfigModeAssist RoleConfigMode = "assist"
+const RoleConfigModeExecute RoleConfigMode = "execute"
+const RoleConfigModePropose RoleConfigMode = "propose"
+
+var enumValues_RoleConfigMode = []interface{}{
+	"assist",
+	"propose",
+	"execute",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *RoleConfigMode) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_RoleConfigMode {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_RoleConfigMode, v)
+	}
+	*j = RoleConfigMode(v)
+	return nil
+}
+
+type RoleConfigStyle string
+
+const RoleConfigStyleBalanced RoleConfigStyle = "balanced"
+const RoleConfigStyleCreative RoleConfigStyle = "creative"
+const RoleConfigStyleStrict RoleConfigStyle = "strict"
+
+var enumValues_RoleConfigStyle = []interface{}{
+	"strict",
+	"balanced",
+	"creative",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *RoleConfigStyle) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_RoleConfigStyle {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_RoleConfigStyle, v)
+	}
+	*j = RoleConfigStyle(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *RoleConfig) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["capabilities"]; raw != nil && !ok {
+		return fmt.Errorf("field capabilities in RoleConfig: required")
+	}
+	if _, ok := raw["enabled"]; raw != nil && !ok {
+		return fmt.Errorf("field enabled in RoleConfig: required")
+	}
+	if _, ok := raw["mode"]; raw != nil && !ok {
+		return fmt.Errorf("field mode in RoleConfig: required")
+	}
+	if _, ok := raw["style"]; raw != nil && !ok {
+		return fmt.Errorf("field style in RoleConfig: required")
+	}
+	type Plain RoleConfig
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = RoleConfig(plain)
+	return nil
+}
+
+// Per-project configuration for the four Punakawan roles (Semar coordinates,
+// Gareng challenges, Petruk plans and builds, Bagong verifies). Persisted at
+// .punakawan/roles.yaml. See
+// punakawan-role-config-distinguished-improvements-plan.md Part I. User-facing
+// surface is deliberately small: enabled, style, mode, and a short list of
+// role-specific capability toggles. Style changes reasoning behavior, not
+// permissions; Mode gates whether a role may read (assist), propose (propose), or
+// execute (execute) durable changes, always still constrained by workflow
+// restrictions, project policy, and human approval. revision is bumped on every
+// save for optimistic locking.
+type RoleConfiguration struct {
+	// Revision corresponds to the JSON schema field "revision".
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// Roles corresponds to the JSON schema field "roles".
+	Roles RoleConfigurationRoles `json:"roles" yaml:"roles" mapstructure:"roles"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version string `json:"version" yaml:"version" mapstructure:"version"`
+}
+
+type RoleConfigurationRoles struct {
+	// Bagong corresponds to the JSON schema field "bagong".
+	Bagong RoleConfig `json:"bagong" yaml:"bagong" mapstructure:"bagong"`
+
+	// Gareng corresponds to the JSON schema field "gareng".
+	Gareng RoleConfig `json:"gareng" yaml:"gareng" mapstructure:"gareng"`
+
+	// Petruk corresponds to the JSON schema field "petruk".
+	Petruk RoleConfig `json:"petruk" yaml:"petruk" mapstructure:"petruk"`
+
+	// Semar corresponds to the JSON schema field "semar".
+	Semar RoleConfig `json:"semar" yaml:"semar" mapstructure:"semar"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *RoleConfigurationRoles) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["bagong"]; raw != nil && !ok {
+		return fmt.Errorf("field bagong in RoleConfigurationRoles: required")
+	}
+	if _, ok := raw["gareng"]; raw != nil && !ok {
+		return fmt.Errorf("field gareng in RoleConfigurationRoles: required")
+	}
+	if _, ok := raw["petruk"]; raw != nil && !ok {
+		return fmt.Errorf("field petruk in RoleConfigurationRoles: required")
+	}
+	if _, ok := raw["semar"]; raw != nil && !ok {
+		return fmt.Errorf("field semar in RoleConfigurationRoles: required")
+	}
+	type Plain RoleConfigurationRoles
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = RoleConfigurationRoles(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *RoleConfiguration) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in RoleConfiguration: required")
+	}
+	if _, ok := raw["roles"]; raw != nil && !ok {
+		return fmt.Errorf("field roles in RoleConfiguration: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in RoleConfiguration: required")
+	}
+	type Plain RoleConfiguration
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	if plain.Version != "punakawan.roles/v1" {
+		return fmt.Errorf("field %s: must be equal to %s", "version", "punakawan.roles/v1")
+	}
+	*j = RoleConfiguration(plain)
+	return nil
+}
+
 // A dependency-aware Beads work item generated from an approved plan. See
 // punakawan-go-typescript-detailed-plan.md §10.
 type TaskContract struct {
