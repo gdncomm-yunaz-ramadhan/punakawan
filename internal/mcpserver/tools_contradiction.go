@@ -41,6 +41,7 @@ type SubmitContradictionInput struct {
 	Subject    protocol.ContradictionSubject      `json:"subject" jsonschema:"the thing in disagreement: type plus a normalized key used for deterministic dedup"`
 	Claims     []protocol.ContradictionClaimsElem `json:"claims" jsonschema:"the conflicting claims, each a source, a statement, and optional evidence ids"`
 	DetectedBy string                             `json:"detected_by,omitempty" jsonschema:"role or subsystem that detected the contradiction"`
+	Links      *protocol.ContradictionLinks       `json:"links,omitempty" jsonschema:"entity ids this contradiction affects (plans/tasks/repositories/dossiers/handoffs); merged with any self-links derived from the claims"`
 }
 
 // SubmitContradictionOutput carries the stored (or matched) record plus whether
@@ -89,6 +90,14 @@ func submitContradictionHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		}
 		if err := contradiction.Put(root, rec, contradiction.PutOptions{}); err != nil {
 			return nil, SubmitContradictionOutput{}, fmt.Errorf("mcpserver: put contradiction: %w", err)
+		}
+		// CONTRA-011: merge any caller-supplied entity links onto the record
+		// (self-links from claim refs are derived at Put time). SetLinks merges
+		// idempotently, so re-detection enriches rather than clobbers.
+		if in.Links != nil {
+			if _, err := contradiction.SetLinks(root, id, *in.Links, contradiction.PutOptions{}); err != nil {
+				return nil, SubmitContradictionOutput{}, fmt.Errorf("mcpserver: set contradiction links: %w", err)
+			}
 		}
 		stored, err := contradiction.Get(root, id)
 		if err != nil {

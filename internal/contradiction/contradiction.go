@@ -142,6 +142,20 @@ func Put(root string, c protocol.Contradiction, opts PutOptions) error {
 	}
 	c.Version = Version
 
+	// Enrich Links with the obvious self-links implied by c's own claim
+	// sources (see deriveSelfLinks), merging so any explicit caller-supplied
+	// Links are preserved and deduplicated rather than clobbered. This reads
+	// only c, so it stays cycle-free and depends on no other subsystem, and
+	// only attaches a Links block when at least one link results.
+	var existingLinks protocol.ContradictionLinks
+	if c.Links != nil {
+		existingLinks = *c.Links
+	}
+	mergedLinks := MergeLinks(existingLinks, deriveSelfLinks(c))
+	if hasLinks(mergedLinks) {
+		c.Links = &mergedLinks
+	}
+
 	// Preserve the original CreatedAt across updates: if the caller-supplied
 	// record has no CreatedAt, adopt the on-disk one (an update) or stamp now
 	// (a first write). This keeps created_at stable regardless of whether the

@@ -8,6 +8,7 @@ import (
 	"github.com/ygrip/punakawan/internal/contradiction"
 	"github.com/ygrip/punakawan/internal/dossier"
 	"github.com/ygrip/punakawan/internal/handoff"
+	"github.com/ygrip/punakawan/internal/handoffprobe"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/roleconfig"
@@ -387,9 +388,11 @@ func (s *ProjectSource) buildValidationDeps(root string) handoff.ValidationDeps 
 			}
 			return loaded.Dossier.Status == protocol.ChangeDossierStatusSuperseded, nil
 		},
-		// TODO(handoff): TaskIsCurrent, EvidenceExists, RepositoryStateMatches
-		// are intentionally nil (cannot cheaply/honestly check from a project
-		// root here); handoff.Validate treats a nil dep as passing.
+		// Git tree-state, evidence-ledger, and task-currency probes come from
+		// internal/handoffprobe (see that package for each probe's contract).
+		RepositoryStateMatches: handoffprobe.RepositoryStateMatches(root),
+		EvidenceExists:         handoffprobe.EvidenceExists(root),
+		TaskIsCurrent:          handoffprobe.TaskIsCurrent(root),
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/roles"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -107,8 +108,30 @@ func submitPetrukPlanHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		if err != nil {
 			return nil, SubmitOutput{}, err
 		}
+		// IMPACT-013: record the accepted plan in the impact graph so a later
+		// analyze_impact can traverse from it. Best-effort: a graph write error
+		// must not fail an otherwise-valid plan submission.
+		recordPetrukPlanImpact(a, rec.Id, in.Title, in.Plan)
 		return nil, SubmitOutput{Id: rec.Id, Type: rec.Type}, nil
 	}
+}
+
+// recordPetrukPlanImpact upserts a `plan` node for the submitted plan into the
+// impact graph (IMPACT-013). Repository linkage is limited to what the plan
+// carries as structured data: repository_changes entries are free-form step
+// descriptions, not repository ids, so we do not fabricate repository edges
+// from them - the plan node is created and left for explicit record_impact_edge
+// calls (or the on-disk scanners) to connect. Any error is swallowed: this is a
+// derived side effect, not part of the plan's own validity.
+func recordPetrukPlanImpact(a *app.App, planID, title string, plan protocol.KnowledgeRecordPetrukPlan) {
+	if a == nil || a.Workspace.Root == "" {
+		return
+	}
+	_ = impact.BuildFromPlanTasks(a.Workspace.Root, []impact.PlanTaskRef{{
+		ID:    planID,
+		Kind:  "plan",
+		Title: title,
+	}})
 }
 
 // SubmitBagongReviewInput is submit_bagong_review's input. RunId (unlike

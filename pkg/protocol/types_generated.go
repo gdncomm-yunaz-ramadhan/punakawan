@@ -6327,8 +6327,18 @@ type PanelEventType string
 const PanelEventTypeAdapterHealthChanged PanelEventType = "adapter.health_changed"
 const PanelEventTypeApprovalRequested PanelEventType = "approval.requested"
 const PanelEventTypeApprovalResolved PanelEventType = "approval.resolved"
+const PanelEventTypeContradictionDetected PanelEventType = "contradiction.detected"
+const PanelEventTypeContradictionResolved PanelEventType = "contradiction.resolved"
+const PanelEventTypeContradictionUpdated PanelEventType = "contradiction.updated"
+const PanelEventTypeDossierCreated PanelEventType = "dossier.created"
+const PanelEventTypeDossierFinalized PanelEventType = "dossier.finalized"
+const PanelEventTypeDossierStatusChanged PanelEventType = "dossier.status_changed"
 const PanelEventTypeEvidenceCreated PanelEventType = "evidence.created"
 const PanelEventTypeGitStateChanged PanelEventType = "git.state_changed"
+const PanelEventTypeHandoffCreated PanelEventType = "handoff.created"
+const PanelEventTypeHandoffSuperseded PanelEventType = "handoff.superseded"
+const PanelEventTypeHandoffValidated PanelEventType = "handoff.validated"
+const PanelEventTypeImpactSnapshotUpdated PanelEventType = "impact.snapshot_updated"
 const PanelEventTypeKnowledgeCreated PanelEventType = "knowledge.created"
 const PanelEventTypeKnowledgeSuperseded PanelEventType = "knowledge.superseded"
 const PanelEventTypeKnowledgeUpdated PanelEventType = "knowledge.updated"
@@ -6370,6 +6380,16 @@ var enumValues_PanelEventType = []interface{}{
 	"evidence.created",
 	"git.state_changed",
 	"adapter.health_changed",
+	"contradiction.detected",
+	"contradiction.updated",
+	"contradiction.resolved",
+	"impact.snapshot_updated",
+	"dossier.created",
+	"dossier.status_changed",
+	"dossier.finalized",
+	"handoff.created",
+	"handoff.validated",
+	"handoff.superseded",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

@@ -286,3 +286,88 @@ func errorText(res *mcp.CallToolResult) string {
 	}
 	return b.String()
 }
+
+// TestVerifyImpactCoverageReportsGaps checks IMPACT-014: an impacted symbol
+// with no incoming `tests` edge is reported as missing coverage (covered=false),
+// and once a test covers it the verdict flips to covered.
+func TestVerifyImpactCoverageReportsGaps(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+	root := a.Workspace.Root
+
+	repo := "repo-api"
+	sym := "symbol:repo-api:PayoutService"
+	cfg := "config:repo-api:payout.retry"
+	for _, n := range []protocol.ImpactNode{
+		{Id: sym, Type: protocol.ImpactNodeTypeSourceSymbol, Repository: &repo},
+		{Id: cfg, Type: protocol.ImpactNodeTypeConfigurationKey, Repository: &repo},
+	} {
+		if err := impact.UpsertNode(root, n); err != nil {
+			t.Fatalf("upsert node: %v", err)
+		}
+	}
+	if err := impact.UpsertEdge(root, protocol.ImpactEdge{From: cfg, To: sym, Type: protocol.ImpactEdgeTypeConfigures, Confidence: protocol.ImpactEdgeConfidenceObserved}); err != nil {
+		t.Fatalf("upsert edge: %v", err)
+	}
+
+	var gap VerifyImpactCoverageOutput
+	callTool(t, cs, "verify_impact_coverage", map[string]any{"subject_id": cfg}, &gap)
+	if gap.Covered {
+		t.Fatalf("expected covered=false while %s has no test", sym)
+	}
+	if len(gap.MissingCoverage) == 0 {
+		t.Fatal("expected the untested symbol in missing_coverage")
+	}
+
+	// Add a test covering the symbol; coverage should now be complete.
+	test := "test:repo-api:PayoutServiceTest"
+	if err := impact.UpsertNode(root, protocol.ImpactNode{Id: test, Type: protocol.ImpactNodeTypeTest, Repository: &repo}); err != nil {
+		t.Fatalf("upsert test node: %v", err)
+	}
+	if err := impact.UpsertEdge(root, protocol.ImpactEdge{From: test, To: sym, Type: protocol.ImpactEdgeTypeTests, Confidence: protocol.ImpactEdgeConfidenceObserved}); err != nil {
+		t.Fatalf("upsert tests edge: %v", err)
+	}
+	var covered VerifyImpactCoverageOutput
+	callTool(t, cs, "verify_impact_coverage", map[string]any{"subject_id": cfg}, &covered)
+	if !covered.Covered {
+		t.Fatalf("expected covered=true after adding a test; missing=%v", covered.MissingCoverage)
+	}
+}
+
+// TestSubmitContradictionMergesLinks checks CONTRA-011 wiring: caller-supplied
+// entity links are persisted on the stored contradiction.
+func TestSubmitContradictionMergesLinks(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	var out SubmitContradictionOutput
+	callTool(t, cs, "submit_contradiction", map[string]any{
+		"title":    "retry disagreement with links",
+		"severity": "material",
+		"subject":  map[string]any{"type": "configuration", "key": "payout.retry.links"},
+		"claims": []any{
+			map[string]any{"source": map[string]any{"type": "repository", "ref": "repo-api"}, "statement": "3"},
+			map[string]any{"source": map[string]any{"type": "jira", "ref": "TRF-9"}, "statement": "5"},
+		},
+		"links": map[string]any{"plans": []string{"plan-42"}, "repositories": []string{"repo-api"}},
+	}, &out)
+
+	if out.Contradiction.Links == nil {
+		t.Fatal("expected links on the stored contradiction")
+	}
+	if !containsStr(out.Contradiction.Links.Plans, "plan-42") {
+		t.Fatalf("plans = %v, want plan-42", out.Contradiction.Links.Plans)
+	}
+	if !containsStr(out.Contradiction.Links.Repositories, "repo-api") {
+		t.Fatalf("repositories = %v, want repo-api", out.Contradiction.Links.Repositories)
+	}
+}
+
+func containsStr(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/ygrip/punakawan/internal/contradiction"
 	"github.com/ygrip/punakawan/internal/dossier"
 	"github.com/ygrip/punakawan/internal/handoff"
+	"github.com/ygrip/punakawan/internal/handoffprobe"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -78,10 +79,12 @@ func handoffValidationDeps(a *app.App) handoff.ValidationDeps {
 			}
 			return true, nil
 		},
-		// TODO: TaskIsCurrent needs a task/beads current-task lookup.
-		// TODO: RepositoryStateMatches needs a git tree-state comparison.
-		// TODO: EvidenceExists needs the evidence bundle store.
-		// Left nil: handoff.Validate treats a nil dep as a passing check.
+		// Repository/evidence/task probes come from internal/handoffprobe
+		// (git HEAD resolvability, the evidence ledger, and a conservative
+		// task-currency default). See that package for each probe's contract.
+		RepositoryStateMatches: handoffprobe.RepositoryStateMatches(root),
+		EvidenceExists:         handoffprobe.EvidenceExists(root),
+		TaskIsCurrent:          handoffprobe.TaskIsCurrent(root),
 	}
 }
 

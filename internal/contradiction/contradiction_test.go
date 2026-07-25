@@ -278,6 +278,163 @@ func TestOpenBlocking(t *testing.T) {
 	}
 }
 
+func TestMergeLinksDedupsAndUnions(t *testing.T) {
+	existing := protocol.ContradictionLinks{
+		Plans:        []string{"plan-1", "plan-2"},
+		Tasks:        []string{"task-1"},
+		Repositories: []string{"repo-a"},
+	}
+	add := protocol.ContradictionLinks{
+		Plans:    []string{"plan-2", "plan-3", ""}, // plan-2 dup, empty dropped
+		Tasks:    []string{"task-1", "task-2"},     // task-1 dup
+		Handoffs: []string{"handoff-1"},
+	}
+	got := MergeLinks(existing, add)
+
+	if want := []string{"plan-1", "plan-2", "plan-3"}; !equalStrings(got.Plans, want) {
+		t.Errorf("Plans = %v, want %v", got.Plans, want)
+	}
+	if want := []string{"task-1", "task-2"}; !equalStrings(got.Tasks, want) {
+		t.Errorf("Tasks = %v, want %v", got.Tasks, want)
+	}
+	if want := []string{"repo-a"}; !equalStrings(got.Repositories, want) {
+		t.Errorf("Repositories = %v, want %v", got.Repositories, want)
+	}
+	if want := []string{"handoff-1"}; !equalStrings(got.Handoffs, want) {
+		t.Errorf("Handoffs = %v, want %v", got.Handoffs, want)
+	}
+	if got.Dossiers != nil {
+		t.Errorf("Dossiers = %v, want nil", got.Dossiers)
+	}
+}
+
+func TestSetLinksPersistsAndMergesOnSecondCall(t *testing.T) {
+	root := t.TempDir()
+	if err := Put(root, sample("c1", "payout.retry.max", protocol.ContradictionSeverityMaterial), PutOptions{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// First SetLinks records some affected entities.
+	stored, err := SetLinks(root, "c1", protocol.ContradictionLinks{
+		Plans: []string{"plan-1"},
+		Tasks: []string{"task-1", "task-2"},
+	}, PutOptions{})
+	if err != nil {
+		t.Fatalf("SetLinks 1: %v", err)
+	}
+	if stored.Links == nil {
+		t.Fatalf("returned record has nil Links")
+	}
+
+	// Persisted: read it back from disk.
+	got, err := Get(root, "c1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Links == nil || !equalStrings(got.Links.Plans, []string{"plan-1"}) ||
+		!equalStrings(got.Links.Tasks, []string{"task-1", "task-2"}) {
+		t.Fatalf("links not persisted: %+v", got.Links)
+	}
+
+	// Second SetLinks MERGES rather than replaces: overlapping id dedups, new
+	// ids union in, and previously recorded sections survive.
+	if _, err := SetLinks(root, "c1", protocol.ContradictionLinks{
+		Tasks:        []string{"task-2", "task-3"},
+		Repositories: []string{"repo-a"},
+	}, PutOptions{}); err != nil {
+		t.Fatalf("SetLinks 2: %v", err)
+	}
+	got, err = Get(root, "c1")
+	if err != nil {
+		t.Fatalf("Get 2: %v", err)
+	}
+	if !equalStrings(got.Links.Plans, []string{"plan-1"}) {
+		t.Errorf("Plans = %v, want [plan-1] (survives merge)", got.Links.Plans)
+	}
+	if !equalStrings(got.Links.Tasks, []string{"task-1", "task-2", "task-3"}) {
+		t.Errorf("Tasks = %v, want [task-1 task-2 task-3] (merged, deduped)", got.Links.Tasks)
+	}
+	if !equalStrings(got.Links.Repositories, []string{"repo-a"}) {
+		t.Errorf("Repositories = %v, want [repo-a]", got.Links.Repositories)
+	}
+}
+
+func TestSetLinksNotFound(t *testing.T) {
+	if _, err := SetLinks(t.TempDir(), "missing", protocol.ContradictionLinks{Plans: []string{"p"}}, PutOptions{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetLinks on missing id err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPutDerivesSelfLinksFromClaims(t *testing.T) {
+	root := t.TempDir()
+	c := sample("c1", "payout.retry.max", protocol.ContradictionSeverityMaterial)
+	planRef := "PLAN-42"
+	repoRef := "github.com/acme/payments"
+	jiraRef := "PROJ-7" // must NOT become a link (no unambiguous mapping)
+	c.Claims = []protocol.ContradictionClaimsElem{
+		{Source: protocol.ContradictionClaimsElemSource{Type: protocol.ContradictionClaimsElemSourceTypePlan, Ref: &planRef}, Statement: "A"},
+		{Source: protocol.ContradictionClaimsElemSource{Type: protocol.ContradictionClaimsElemSourceTypeRepository, Ref: &repoRef}, Statement: "B"},
+		{Source: protocol.ContradictionClaimsElemSource{Type: protocol.ContradictionClaimsElemSourceTypeJira, Ref: &jiraRef}, Statement: "C"},
+	}
+	if err := Put(root, c, PutOptions{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	got, err := Get(root, "c1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Links == nil {
+		t.Fatalf("expected derived Links, got nil")
+	}
+	if !equalStrings(got.Links.Plans, []string{planRef}) {
+		t.Errorf("Plans = %v, want [%s]", got.Links.Plans, planRef)
+	}
+	if !equalStrings(got.Links.Repositories, []string{repoRef}) {
+		t.Errorf("Repositories = %v, want [%s]", got.Links.Repositories, repoRef)
+	}
+	if len(got.Links.Tasks) != 0 {
+		t.Errorf("Tasks = %v, want empty (jira ref must not map to a task)", got.Links.Tasks)
+	}
+
+	// Derivation composes with SetLinks: explicit ids are added, derived
+	// self-links survive.
+	if _, err := SetLinks(root, "c1", protocol.ContradictionLinks{Plans: []string{"PLAN-99"}}, PutOptions{}); err != nil {
+		t.Fatalf("SetLinks: %v", err)
+	}
+	got, _ = Get(root, "c1")
+	if !equalStrings(got.Links.Plans, []string{planRef, "PLAN-99"}) {
+		t.Errorf("Plans after SetLinks = %v, want [%s PLAN-99]", got.Links.Plans, planRef)
+	}
+}
+
+// TestPutNoSelfLinksWhenClaimsHaveNoRef guards that records whose claims carry
+// no Ref (the common case, e.g. the sample fixture) get no Links block at all.
+func TestPutNoSelfLinksWhenClaimsHaveNoRef(t *testing.T) {
+	root := t.TempDir()
+	if err := Put(root, sample("c1", "k", protocol.ContradictionSeverityMinor), PutOptions{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	got, err := Get(root, "c1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Links != nil {
+		t.Errorf("Links = %+v, want nil", got.Links)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestNormalizeKey(t *testing.T) {
 	cases := map[string]string{
 		"payout.retry.max_attempts":     "payout retry max attempts",

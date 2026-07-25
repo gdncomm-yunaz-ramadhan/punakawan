@@ -302,6 +302,11 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Description: "Record a discovered dependency edge (from->to of a given type and confidence) into the impact graph (§29/IMPACT-012). Idempotent by (from,to,type): re-recording an edge supersedes the prior one. Gated to role Gareng's cross_repository_impact capability.",
 	}, recordImpactEdgeHandler(a))
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "verify_impact_coverage",
+		Description: "Bagong's coverage check (§30/IMPACT-014): traverse the impact graph from subject_id and report whether every reachable symbol/operation is tested and whether any reachable edge is in dispute. Returns covered=true only when nothing is missing coverage and nothing is disputed, plus the affected repositories, missing-coverage nodes, and related contradictions. Gated to role Bagong's cross_repository_verification capability.",
+	}, verifyImpactCoverageHandler(a))
+
 	// Change Dossier (§32-39): the durable, versioned proof artifact for a change.
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_change_dossier",

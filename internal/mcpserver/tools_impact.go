@@ -67,6 +67,49 @@ func analyzeImpactHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 	}
 }
 
+// VerifyImpactCoverageInput is verify_impact_coverage's input.
+type VerifyImpactCoverageInput struct {
+	SubjectId string `json:"subject_id" jsonschema:"the impact-graph node id to verify coverage from"`
+	Depth     int    `json:"depth,omitempty" jsonschema:"traversal depth in hops (default 3)"`
+}
+
+// VerifyImpactCoverageOutput is verify_impact_coverage's output: Bagong's
+// coverage verdict over the affected set (§30/IMPACT-014). Covered is true when
+// nothing reachable is missing a test edge and no reachable edge is in dispute.
+type VerifyImpactCoverageOutput struct {
+	Covered               bool                  `json:"covered"`
+	AffectedRepositories  []string              `json:"affected_repositories,omitempty"`
+	MissingCoverage       []protocol.ImpactNode `json:"missing_coverage,omitempty"`
+	RelatedContradictions []string              `json:"related_contradictions,omitempty"`
+}
+
+// verifyImpactCoverageHandler lets Bagong check whether every impacted symbol
+// or operation is tested and whether any reachable edge is disputed - the §68
+// step-7 "is this affected or properly excluded?" check. It is a read over the
+// graph (impact.Query already derives MissingCoverage), gated to Bagong's
+// cross_repository_verification capability.
+func verifyImpactCoverageHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, VerifyImpactCoverageInput) (*mcp.CallToolResult, VerifyImpactCoverageOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in VerifyImpactCoverageInput) (*mcp.CallToolResult, VerifyImpactCoverageOutput, error) {
+		if err := authorizeRoleSubmit(a, roleconfig.Bagong, "cross_repository_verification"); err != nil {
+			return nil, VerifyImpactCoverageOutput{}, err
+		}
+		depth := in.Depth
+		if depth <= 0 {
+			depth = defaultImpactDepth
+		}
+		res, err := impact.Query(a.Workspace.Root, in.SubjectId, depth, nil)
+		if err != nil {
+			return nil, VerifyImpactCoverageOutput{}, fmt.Errorf("mcpserver: verify impact coverage: %w", err)
+		}
+		return nil, VerifyImpactCoverageOutput{
+			Covered:               len(res.MissingCoverage) == 0 && len(res.RelatedContradictions) == 0,
+			AffectedRepositories:  res.AffectedRepositories,
+			MissingCoverage:       res.MissingCoverage,
+			RelatedContradictions: res.RelatedContradictions,
+		}, nil
+	}
+}
+
 // RecordImpactEdgeInput is record_impact_edge's input.
 type RecordImpactEdgeInput struct {
 	From         string                            `json:"from" jsonschema:"source node id"`
