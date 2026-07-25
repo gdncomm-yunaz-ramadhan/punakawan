@@ -172,14 +172,22 @@ keyboard-accessible and served entirely from the Go binary (the Svelte frontend
 is embedded via `go:embed`). Nothing leaves your machine; the listener binds to
 loopback and mutating routes are session- and CSRF-gated.
 
-The interface is a single design system themed on the wayang batik palette drawn
-from the artwork above — gold, teal, terracotta, and indigo — with accented
-metric tiles, status pills, charts, and modals that all read from the same
-tokens in both light and dark:
+Each project drills into tabbed surfaces — Summary, Metadata, **Roles**,
+Workflows, Knowledge, Tasks, Plans, **Contradictions**, **Impact**, and **Change
+Dossiers** — so the four Punakawan roles, their open blockers, cross-repository
+impact, and handoff state all read from one place. The Roles tab configures
+Semar, Gareng, Petruk, and Bagong directly — each with its wayang portrait,
+per-role style/mode, and toggleable capabilities:
 
 <p align="center">
-  <img src="assets/panel-showcase.png" alt="Punakawan Panel — component/theme system" width="820" />
+  <img src="assets/panel-showcase.png" alt="Punakawan Panel — role configuration" width="820" />
 </p>
+
+The interface is a single design system themed on the wayang batik palette drawn
+from the artwork above — gold, teal, terracotta, and indigo — with accented
+metric tiles, status pills, charts, cards, buttons, and modals that all read from
+the same tokens, stay responsive down to a single column on mobile, and render in
+both light and dark.
 
 ## Architecture in one line
 
