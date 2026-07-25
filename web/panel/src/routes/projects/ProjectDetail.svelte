@@ -15,6 +15,7 @@
   import ProjectTasks from "./ProjectTasks.svelte";
   import ProjectSessions from "./ProjectSessions.svelte";
   import ProjectKnowledge from "./ProjectKnowledge.svelte";
+  import ApprovalsList from "../approvals/ApprovalsList.svelte";
 
   interface Props {
     projectId: string;
@@ -36,6 +37,7 @@
     "tasks",
     "plans",
     "sessions",
+    "approvals",
     "health",
   ]);
   const tabs = [
@@ -46,6 +48,7 @@
     { id: "tasks", label: "Tasks" },
     { id: "plans", label: "Plans" },
     { id: "sessions", label: "Sessions" },
+    { id: "approvals", label: "Approvals" },
     { id: "health", label: "Health" },
   ];
   let activeId = $state("summary");
@@ -152,6 +155,10 @@
   {:else if activeId === "plans"}
     <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">
       <ProjectPlans {projectId} />
+    </div>
+  {:else if activeId === "approvals"}
+    <div id="tabpanel-approvals" role="tabpanel" aria-labelledby="tab-approvals">
+      <ApprovalsList workspaceId={projectId} />
     </div>
   {:else if activeId === "health"}
     <div id="tabpanel-health" role="tabpanel" aria-labelledby="tab-health">
