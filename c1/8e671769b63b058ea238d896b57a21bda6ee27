@@ -1,0 +1,25 @@
+web/panel/tests/ProposalReview.test.ts
+  d98638225f35480d 122-153
+web/panel/src/lib/components/review/ProposalReview.svelte
+  d98638225f35480d 384,397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "c18e671769b63b058ea238d896b57a21bda6ee27",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 35,
+      "overriden_lines": 0
+    }
+  }
+}
