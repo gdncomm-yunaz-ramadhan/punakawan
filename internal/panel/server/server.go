@@ -319,6 +319,8 @@ func (s *Server) Start() error {
 	projTasks := sources.ProjectTaskReader{AppResolver: projResolver}
 	projSessions := sources.ProjectSessionReader{AppResolver: projResolver}
 	projKnowledge := sources.ProjectKnowledgeReader{AppResolver: projResolver}
+	projApprovals := sources.ProjectApprovalReader{AppResolver: projResolver}
+	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/approvals", api.ApprovalsHandler(projApprovals))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks", api.TasksHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks/{taskId}", api.TaskHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/task-graph", api.TaskGraphHandler(projTasks))

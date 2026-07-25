@@ -116,6 +116,23 @@ func (p ProjectSessionReader) Get(ctx context.Context, workspaceID, sessionID st
 	return out, err
 }
 
+// ProjectApprovalReader is a contract.ApprovalReader resolved per project id,
+// so the panel can list a non-primary project's approvals (via the runtime
+// pool) rather than only the workspace it was started for. This is what makes
+// one panel instance able to surface approvals across every registered
+// project instead of needing a separate panel per project.
+type ProjectApprovalReader struct{ *AppResolver }
+
+func (p ProjectApprovalReader) List(ctx context.Context, workspaceID string, filter contract.ApprovalFilter) ([]protocol.ApprovalRecord, error) {
+	var out []protocol.ApprovalRecord
+	err := p.with(ctx, workspaceID, func(a *app.App) error {
+		var e error
+		out, e = (&ApprovalSource{App: a}).List(ctx, workspaceID, filter)
+		return e
+	})
+	return out, err
+}
+
 // ProjectKnowledgeReader is a contract.KnowledgeReader resolved per project id.
 type ProjectKnowledgeReader struct{ *AppResolver }
 
