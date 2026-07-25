@@ -1,0 +1,27 @@
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 465-475,1000-1005
+web/panel/src/routes/projects/ProjectKnowledge.svelte
+  d98638225f35480d 7-8,35,43-70,98,104,108,111,115,234-263,265-273,276,280-287,426-430,438-445,447-469
+internal/mcpserver/tools_projectmetadata_test.go
+  d98638225f35480d 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "46e3a388d0f20a4bc53feec037ce2673bb82d889",
+  "prompts": {
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 197,
+      "total_deletions": 4,
+      "accepted_lines": 197,
+      "overriden_lines": 0
+    }
+  }
+}
