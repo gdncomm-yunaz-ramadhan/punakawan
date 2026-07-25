@@ -1,5 +1,6 @@
 <script lang="ts">
   import { groupIntoSections, parseDocument, snippetForSection, type Section } from "../../review/markdown";
+  import Icon from "../Icon.svelte";
 
   export interface SectionCommentRequest {
     headingPath: string[];
@@ -94,10 +95,16 @@
 <svelte:document onselectionchange={handleSelectionChange} />
 
 <div class="plan-document" bind:this={containerEl} data-testid="plan-document">
+  <div class="document-toolbar">
+    <span class="document-type"><Icon name="file" size={16} /> Plan review document</span>
+    <span class="document-hint">Select text or review a section to leave focused feedback</span>
+  </div>
+  <div class="document-body">
   {#each sections as section, i (i)}
-    <section data-heading-path={JSON.stringify(section.headingPath)}>
+    <section class:lead-section={i === 0} data-heading-path={JSON.stringify(section.headingPath)}>
       {#if section.heading}
         <div class="heading-row">
+          <span class="section-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
           <svelte:element this={headingTag(section.heading.level)} class="heading">
             {section.heading.text}
           </svelte:element>
@@ -107,7 +114,7 @@
             data-testid="add-section-comment"
             onclick={() => commentOnSection(section)}
           >
-            + Comment on section
+            <Icon name="comment" size={14} /> Comment
           </button>
         </div>
       {/if}
@@ -120,6 +127,7 @@
       {/each}
     </section>
   {/each}
+  </div>
 
   {#if selectionText}
     <div
@@ -136,30 +144,112 @@
 <style>
   .plan-document {
     color: var(--color-text);
-    line-height: 1.6;
+    line-height: 1.68;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+  .document-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 48px;
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-surface-subtle) 92%, transparent);
+    backdrop-filter: blur(10px);
+  }
+  .document-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--color-text);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .document-hint {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+  }
+  .document-body {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: clamp(1.2rem, 3vw, 2.25rem);
   }
   section {
-    margin-bottom: 1.25rem;
+    position: relative;
+    margin: 0 0 1.35rem;
+    padding: 0 0 1.35rem 2.85rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+  }
+  section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+  }
+  section::before {
+    content: "";
+    position: absolute;
+    left: 1.02rem;
+    top: 2.15rem;
+    bottom: -0.45rem;
+    width: 1px;
+    background: linear-gradient(var(--color-border-strong), transparent);
+  }
+  section:last-child::before {
+    display: none;
   }
   .heading-row {
+    position: relative;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.6rem;
     flex-wrap: wrap;
+    min-height: 38px;
+  }
+  .section-index {
+    position: absolute;
+    left: -2.85rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.05rem;
+    height: 2.05rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+    border-radius: 9px;
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.69rem;
+    font-weight: 750;
   }
   .heading {
     margin: 0;
     color: var(--color-text);
+    letter-spacing: -0.015em;
+    line-height: 1.3;
   }
   .add-comment-affordance {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     border: 1px solid var(--color-border);
     background: var(--color-surface);
-    color: var(--color-text-muted);
-    border-radius: 6px;
-    padding: 0.15rem 0.5rem;
+    color: var(--color-accent);
+    border-radius: 7px;
+    padding: 0.25rem 0.55rem;
     font-size: 0.75rem;
+    font-weight: 650;
     cursor: pointer;
-    min-height: 44px;
+    min-height: 32px;
+  }
+  .add-comment-affordance:hover {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
   }
   /* Hover-reveal is a nice-to-have declutter on pointer-capable/hover
      devices only (§13.4 "no essential action depends on hover") - touch
@@ -183,6 +273,8 @@
   }
   p {
     color: var(--color-text);
+    margin: 0.65rem 0;
+    max-width: 76ch;
   }
   .selection-popover {
     position: absolute;
@@ -202,5 +294,20 @@
     font-size: 0.8rem;
     cursor: pointer;
     min-height: 44px;
+  }
+
+  @media (max-width: 639px) {
+    .document-hint {
+      display: none;
+    }
+    .document-body {
+      padding: 1rem;
+    }
+    section {
+      padding-left: 2.5rem;
+    }
+    .section-index {
+      left: -2.5rem;
+    }
   }
 </style>

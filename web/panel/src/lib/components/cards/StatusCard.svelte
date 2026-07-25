@@ -1,6 +1,7 @@
 <script lang="ts">
   import BentoCard, { type BentoSize } from "./BentoCard.svelte";
   import type { CardState } from "./Card.svelte";
+  import Icon, { type IconName } from "../Icon.svelte";
 
   export type StatusVariant = "success" | "warning" | "danger" | "info";
 
@@ -17,18 +18,27 @@
   // Per §15 accessibility rules: color is never the only signal, so every
   // variant pairs a semantic color with a distinct icon glyph and a text
   // label (same convention StatusBadge already uses).
-  const icons: Record<StatusVariant, string> = {
+  const icons: Record<StatusVariant, IconName> = {
+    success: "check",
+    warning: "alert",
+    danger: "x",
+    info: "info",
+  };
+  const glyphs: Record<StatusVariant, string> = {
     success: "✓",
     warning: "⚠",
     danger: "✕",
-    info: "ℹ",
+    info: "i",
   };
 </script>
 
 <BentoCard {size} {state} {emptyMessage}>
   {#snippet children()}
     <div class="status status-{variant}">
-      <span class="icon" aria-hidden="true">{icons[variant]}</span>
+      <span class="icon" aria-hidden="true">
+        <Icon name={icons[variant]} size={17} strokeWidth={2.1} />
+        <span class="icon-glyph">{glyphs[variant]}</span>
+      </span>
       <div class="text">
         <span class="label">{label}</span>
         {#if description}
@@ -50,26 +60,33 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.6rem;
-    height: 1.6rem;
+    width: 2rem;
+    height: 2rem;
     border-radius: 50%;
     flex-shrink: 0;
-    font-size: 0.9rem;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent);
+  }
+  .icon-glyph {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
   }
   .status-success .icon {
-    background: var(--color-accent-soft);
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
     color: var(--color-success);
   }
   .status-warning .icon {
-    background: var(--color-accent-soft);
+    background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
     color: var(--color-warning);
   }
   .status-danger .icon {
-    background: var(--color-accent-soft);
+    background: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
     color: var(--color-danger);
   }
   .status-info .icon {
-    background: var(--color-accent-soft);
+    background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface));
     color: var(--color-info);
   }
   .text {

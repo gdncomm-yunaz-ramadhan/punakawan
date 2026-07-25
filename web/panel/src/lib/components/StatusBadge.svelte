@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Availability } from "../api/client";
+  import Icon, { type IconName } from "./Icon.svelte";
 
   // Generic semantic variants for callers that aren't rendering a
   // workspace Availability (e.g. DataTable status cells, ReviewCard).
@@ -28,24 +29,37 @@
     invalid: "Invalid",
   };
 
-  const icons: Record<Availability, string> = {
+  const icons: Record<Availability, IconName> = {
+    available: "check",
+    partially_available: "alert",
+    busy: "clock",
+    unavailable: "x",
+    invalid: "info",
+  };
+
+  const variantIcons: Record<BadgeVariant, IconName> = {
+    success: "check",
+    warning: "alert",
+    danger: "x",
+    info: "info",
+    neutral: "clock",
+  };
+  const glyphs: Record<Availability | BadgeVariant, string> = {
     available: "✓",
     partially_available: "⚠",
     busy: "●",
     unavailable: "✕",
     invalid: "?",
-  };
-
-  const variantIcons: Record<BadgeVariant, string> = {
     success: "✓",
     warning: "⚠",
     danger: "✕",
-    info: "ℹ",
+    info: "i",
     neutral: "●",
   };
 
   const resolvedClass = $derived(availability ? `status-${availability}` : `status-variant-${variant}`);
   const resolvedIcon = $derived(availability ? icons[availability] : variantIcons[variant as BadgeVariant]);
+  const resolvedGlyph = $derived(glyphs[(availability ?? variant) as Availability | BadgeVariant]);
   const resolvedLabel = $derived(availability ? labels[availability] : label);
 </script>
 
@@ -57,7 +71,10 @@
   creating a second competing badge component.
 -->
 <span class="status {resolvedClass}">
-  <span aria-hidden="true">{resolvedIcon}</span>
+  <span class="status-icon" aria-hidden="true">
+    <Icon name={resolvedIcon} size={13} strokeWidth={2.2} />
+    <span class="icon-glyph">{resolvedGlyph}</span>
+  </span>
   {resolvedLabel}
 </span>
 
@@ -65,13 +82,24 @@
   .status {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    font-size: 0.8rem;
-    padding: 0.15rem 0.6rem;
+    gap: 0.32rem;
+    font-size: 0.76rem;
+    padding: 0.2rem 0.58rem;
     border-radius: 999px;
     font-weight: 600;
     line-height: 1.4;
     border: 1px solid transparent;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+  }
+  .status-icon {
+    display: inline-flex;
+  }
+  .icon-glyph {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
   }
   /* Semantic pill tints: each background is a low-alpha mix of the
      semantic/batik token over the surface, so contrast holds in both

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
+  import Icon from "../Icon.svelte";
 
   interface Props {
     open: boolean;
@@ -85,7 +86,7 @@
     <div class="dialog" role="dialog" aria-modal="true" aria-label={title ?? "Dialog"} tabindex="-1" bind:this={dialogEl}>
       <div class="dialog-head">
         {#if title}<h2>{title}</h2>{/if}
-        <button type="button" class="close" onclick={onclose} aria-label="Close">✕</button>
+        <button type="button" class="close" onclick={onclose} aria-label="Close"><Icon name="x" size={18} /></button>
       </div>
       <div class="dialog-body">
         {@render children()}
@@ -98,7 +99,8 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgb(10 18 30 / 0.54);
+    backdrop-filter: blur(5px);
     z-index: 30;
   }
   .dialog-wrap {
@@ -112,21 +114,25 @@
     box-sizing: border-box;
   }
   .dialog {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
-    width: min(480px, 100%);
+    overflow: hidden;
+    background: var(--surface-card-bg, var(--color-surface));
+    border: 1px solid var(--surface-card-border, var(--color-border));
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: min(520px, 100%);
     max-height: calc(100vh - 2rem);
     overflow-y: auto;
-    padding: 1.25rem;
+    padding: 0;
     box-sizing: border-box;
   }
   .dialog-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.75rem;
+    min-height: 58px;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-surface-subtle) 76%, transparent);
   }
   .dialog-head h2 {
     font-size: 1.05rem;
@@ -134,16 +140,25 @@
     color: var(--color-text);
   }
   .close {
-    background: none;
-    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
     font-size: 1rem;
     cursor: pointer;
     color: var(--color-text);
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 34px;
+    min-width: 34px;
+  }
+  .close:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
   }
   .dialog-body {
     color: var(--color-text);
+    padding: 1rem 1.15rem 1.15rem;
   }
 
   @media (prefers-reduced-motion: no-preference) {
@@ -153,7 +168,7 @@
   }
   @keyframes pop-in {
     from {
-      transform: scale(0.97);
+      transform: translateY(8px) scale(0.985);
       opacity: 0;
     }
     to {

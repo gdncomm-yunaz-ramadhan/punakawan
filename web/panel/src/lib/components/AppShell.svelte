@@ -35,8 +35,15 @@
   .shell {
     display: flex;
     min-height: 100vh;
-    background: var(--color-bg);
+    background: transparent;
     color: var(--color-text);
+  }
+  .sidebar-slot {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    z-index: 20;
   }
   .content-area {
     flex: 1;
@@ -48,9 +55,9 @@
     /* Fill the available canvas (no narrow left-hugging column), but cap
        line length on very wide monitors and center what remains. */
     width: 100%;
-    max-width: 1600px;
+    max-width: 1520px;
     margin: 0 auto;
-    padding: 1.5rem 2rem 2.5rem;
+    padding: 1.75rem 2rem 3rem;
     box-sizing: border-box;
   }
 

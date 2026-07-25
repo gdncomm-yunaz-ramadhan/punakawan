@@ -63,7 +63,10 @@
 
 <div class="panel" data-testid="review-instruction-panel">
   <div class="head">
-    <h2 id="review-instruction-heading">Review Instruction</h2>
+    <div>
+      <span class="eyebrow">Review focus</span>
+      <h2 id="review-instruction-heading">What should the next revision prioritize?</h2>
+    </div>
     {#if saving}
       <span class="status saving" data-testid="instruction-status">Saving…</span>
     {:else if dirty}
@@ -74,7 +77,7 @@
   </div>
   <textarea
     class="instruction-input"
-    placeholder="General instructions for this review (not anchored to any section)…"
+    placeholder="Add overall guidance, priorities, or constraints for the reviewer…"
     aria-labelledby="review-instruction-heading"
     value={draft}
     oninput={handleInput}
@@ -89,7 +92,15 @@
   .panel {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-info) 24%, var(--color-border));
+    border-radius: var(--radius-card);
+    background:
+      linear-gradient(120deg, color-mix(in srgb, var(--color-info) 7%, transparent), transparent 42%),
+      var(--color-surface);
+    box-shadow: var(--shadow-sm);
   }
   .head {
     display: flex;
@@ -97,9 +108,18 @@
     justify-content: space-between;
   }
   h2 {
-    font-size: 0.9rem;
+    font-size: 0.92rem;
     margin: 0;
     color: var(--color-text);
+  }
+  .eyebrow {
+    display: block;
+    margin-bottom: 0.1rem;
+    color: var(--color-info);
+    font-size: 0.66rem;
+    font-weight: 750;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
   }
   .status {
     font-size: 0.75rem;
@@ -119,13 +139,18 @@
     box-sizing: border-box;
     min-height: 4.5rem;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
-    padding: 0.5rem;
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
     font-family: inherit;
     font-size: 0.85rem;
     color: var(--color-text);
     background: var(--color-surface);
     resize: vertical;
+    box-shadow: inset 0 1px 2px rgb(16 24 40 / 0.04);
+  }
+  .instruction-input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 13%, transparent);
   }
   .error {
     margin: 0;

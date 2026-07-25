@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import Icon from "../Icon.svelte";
 
   interface Props {
     open: boolean;
@@ -27,7 +28,7 @@
   <aside class="drawer" aria-label={title ?? "Drawer"}>
     <div class="drawer-head">
       {#if title}<h2>{title}</h2>{/if}
-      <button type="button" class="close" onclick={onclose} aria-label="Close">✕</button>
+      <button type="button" class="close" onclick={onclose} aria-label="Close"><Icon name="x" size={18} /></button>
     </div>
     <div class="drawer-body">
       {@render children()}
@@ -39,7 +40,8 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgb(0 0 0 / 0.4);
+    background: rgb(10 18 30 / 0.54);
+    backdrop-filter: blur(5px);
     z-index: 30;
   }
   .drawer {
@@ -47,13 +49,13 @@
     top: 0;
     right: 0;
     height: 100vh;
-    width: min(420px, 100vw);
-    background: var(--color-surface-raised);
+    width: min(460px, 100vw);
+    background: var(--surface-card-bg, var(--color-surface-raised));
     border-left: 1px solid var(--color-border);
     border-top-left-radius: var(--radius-lg);
     border-bottom-left-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
-    padding: 1rem 1.25rem;
+    padding: 0;
     overflow-y: auto;
     z-index: 31;
     box-sizing: border-box;
@@ -62,7 +64,9 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.75rem;
+    min-height: 60px;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--color-border);
   }
   .drawer-head h2 {
     font-size: 1rem;
@@ -70,16 +74,21 @@
     color: var(--color-text);
   }
   .close {
-    background: none;
-    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
     font-size: 1rem;
     cursor: pointer;
     color: var(--color-text);
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 34px;
+    min-width: 34px;
   }
   .drawer-body {
     color: var(--color-text);
+    padding: 1rem 1.15rem;
   }
 
   @media (prefers-reduced-motion: no-preference) {

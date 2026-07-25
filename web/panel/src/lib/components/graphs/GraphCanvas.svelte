@@ -76,9 +76,9 @@
   function layoutOptions(name: GraphLayoutName, reducedMotion: boolean): LayoutOptions {
     const base = { name, animate: !reducedMotion, animationDuration: reducedMotion ? 0 : 300 };
     if (name === "breadthfirst") {
-      return { ...base, directed: true, spacingFactor: 1.2 } as LayoutOptions;
+      return { ...base, directed: true, spacingFactor: 1.45, circle: false } as LayoutOptions;
     }
-    return { ...base, nodeRepulsion: 4500, idealEdgeLength: 80 } as LayoutOptions;
+    return { ...base, nodeRepulsion: 9000, idealEdgeLength: 135, nodeOverlap: 24 } as LayoutOptions;
   }
 
   async function render() {
@@ -194,9 +194,14 @@
   .cy-container {
     width: 100%;
     height: var(--graph-height);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-card);
-    background: var(--color-surface);
+    background-color: var(--color-surface);
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--color-border) 38%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--color-border) 38%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), var(--shadow-sm);
   }
   .skeleton {
     width: 100%;

@@ -591,6 +591,11 @@
     gap: 0.75rem;
     flex-wrap: wrap;
     margin-bottom: 1rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
   }
   .diff-badge {
     display: inline-flex;
@@ -598,6 +603,9 @@
     font-weight: 700;
     font-family: monospace;
     font-size: 0.9rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 7px;
+    background: var(--color-surface-subtle);
   }
   .diff-badge .added {
     color: var(--color-success);
@@ -612,17 +620,18 @@
     flex-basis: 100%;
   }
   .panel-block {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    background: var(--surface-card-bg, var(--color-surface));
+    border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
-    padding: 1rem 1.25rem;
+    padding: 1rem 1.1rem;
     margin-bottom: 1rem;
   }
   .panel-block h2 {
-    font-size: 0.95rem;
-    margin: 0 0 0.6rem;
+    font-size: 1rem;
+    margin: 0 0 0.8rem;
     color: var(--color-text);
+    letter-spacing: -0.01em;
   }
   .muted {
     color: var(--color-text-muted);

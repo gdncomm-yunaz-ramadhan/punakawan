@@ -9,6 +9,7 @@
     type WorkflowDefinition,
   } from "../../lib/api/client";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
+  import Icon from "../../lib/components/Icon.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
 
@@ -70,6 +71,12 @@
 
   function replaceInList(updated: WorkflowDefinition) {
     workflows = workflows.map((w) => (w.id === updated.id ? updated : w));
+  }
+
+  function stepKind(capability: string) {
+    if (capability.includes("approval") || capability.includes("review")) return "approval";
+    if (capability.includes("git") || capability.includes("code")) return "code";
+    return "action";
   }
 
   async function toggle(wf: WorkflowDefinition) {
@@ -135,62 +142,65 @@
       message="This project has no workflow definitions."
     />
   {:else}
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Status</th>
-            <th scope="col">Steps</th>
-            <th scope="col">Required metadata</th>
-            <th scope="col"><span class="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each workflows as wf (wf.id)}
-            <tr
-              class="row"
-              class:selected={selectedId === wf.id}
-              role="button"
-              tabindex="0"
-              aria-expanded={selectedId === wf.id}
-              onclick={() => select(wf)}
-              onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), select(wf))}
-              data-testid={`workflow-row-${wf.id}`}
+    <header class="workflow-toolbar">
+      <div>
+        <span class="eyebrow">Automation library</span>
+        <h3>{workflows.length} workflow{workflows.length === 1 ? "" : "s"}</h3>
+        <p>Select a workflow to inspect its execution path and run configuration.</p>
+      </div>
+      <div class="toolbar-stat">
+        <span class="live-dot"></span>
+        {workflows.filter((wf) => wf.enabled).length} active
+      </div>
+    </header>
+
+    <div class="workflow-grid">
+      {#each workflows as wf (wf.id)}
+        <div
+          class="workflow-card"
+          class:selected={selectedId === wf.id}
+          role="button"
+          tabindex="0"
+          aria-expanded={selectedId === wf.id}
+          onclick={() => select(wf)}
+          onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), select(wf))}
+          data-testid={`workflow-row-${wf.id}`}
+        >
+          <div class="workflow-card-head">
+            <span class="workflow-mark"><Icon name="git-branch" size={19} /></span>
+            <div class="workflow-title">
+              <strong>{wf.name || wf.id}</strong>
+              <code>{wf.id}</code>
+            </div>
+            {#if wf.enabled}
+              <StatusBadge variant="success" label="Enabled" />
+            {:else}
+              <StatusBadge variant="neutral" label="Disabled" />
+            {/if}
+          </div>
+          <p>{wf.description || "Declarative automation workflow"}</p>
+          <div class="workflow-stats">
+            <span><Icon name="list" size={14} /> {wf.steps?.length ?? 0} steps</span>
+            <span><Icon name="database" size={14} /> {wf.required_metadata?.length ?? 0} metadata</span>
+          </div>
+          <div class="workflow-actions">
+            <span class="inspect">Open canvas <span aria-hidden="true">→</span></span>
+            <button
+              type="button"
+              class="btn compact"
+              onclick={(e) => {
+                e.stopPropagation();
+                toggle(wf);
+              }}
+              disabled={toggling[wf.id]}
+              data-testid={`toggle-${wf.id}`}
+              aria-label={`${wf.enabled ? "Disable" : "Enable"} ${wf.name || wf.id}`}
             >
-              <td class="name">{wf.name || wf.id}</td>
-              <td>
-                {#if wf.enabled}
-                  <StatusBadge variant="success" label="Enabled" />
-                {:else}
-                  <StatusBadge variant="neutral" label="Disabled" />
-                {/if}
-              </td>
-              <td class="steps">{wf.steps?.length ?? 0}</td>
-              <td class="meta">{wf.required_metadata?.length ? wf.required_metadata.join(", ") : "—"}</td>
-              <td class="actions">
-                <button
-                  type="button"
-                  class="btn"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    toggle(wf);
-                  }}
-                  disabled={toggling[wf.id]}
-                  data-testid={`toggle-${wf.id}`}
-                  aria-label={`${wf.enabled ? "Disable" : "Enable"} ${wf.name || wf.id}`}
-                >
-                  {#if toggling[wf.id]}
-                    …
-                  {:else}
-                    {wf.enabled ? "Disable" : "Enable"}
-                  {/if}
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+              {#if toggling[wf.id]}…{:else}{wf.enabled ? "Disable" : "Enable"}{/if}
+            </button>
+          </div>
+        </div>
+      {/each}
     </div>
 
     {#each workflows as wf (wf.id)}
@@ -206,20 +216,69 @@
       {#if wf}
         <div class="detail" data-testid="workflow-detail">
           <header class="detail-head">
-            <h3>{wf.name || wf.id}</h3>
-            {#if wf.enabled}
-              <StatusBadge variant="success" label="Enabled" />
-            {:else}
-              <StatusBadge variant="neutral" label="Disabled" />
-            {/if}
+            <div class="detail-title">
+              <span class="workflow-mark large"><Icon name="git-branch" size={20} /></span>
+              <div>
+                <span class="eyebrow">Workflow canvas</span>
+                <h3>{wf.name || wf.id}</h3>
+              </div>
+            </div>
+            <div class="detail-actions">
+              {#if wf.enabled}
+                <StatusBadge variant="success" label="Enabled" />
+              {:else}
+                <StatusBadge variant="neutral" label="Disabled" />
+              {/if}
+              <span class="version">v{wf.version}</span>
+            </div>
           </header>
           {#if wf.description}<p class="description">{wf.description}</p>{/if}
+
+          <div class="workflow-canvas" aria-label={`${wf.name || wf.id} workflow graph`}>
+            <div class="canvas-label">
+              <span><Icon name="activity" size={14} /> Execution path</span>
+              <span>{wf.steps.length} nodes</span>
+            </div>
+            <div class="node-track">
+              <div class="flow-node trigger">
+                <span class="node-icon"><Icon name="activity" size={18} /></span>
+                <div><small>TRIGGER</small><strong>Invoke</strong></div>
+                <span class="port output"></span>
+              </div>
+              {#each wf.steps as step, index (step.id)}
+                <span class="connector" aria-hidden="true"><span></span></span>
+                <div class="flow-node" class:approval={stepKind(step.capability) === "approval"}>
+                  <span class="port input"></span>
+                  <span class="node-icon">
+                    <Icon
+                      name={stepKind(step.capability) === "approval"
+                        ? "approval"
+                        : stepKind(step.capability) === "code"
+                          ? "code"
+                          : "settings"}
+                      size={18}
+                    />
+                  </span>
+                  <div>
+                    <small>STEP {index + 1}</small>
+                    <strong>{step.intent || step.id}</strong>
+                    <code>{step.capability}</code>
+                  </div>
+                  <span class="port output"></span>
+                </div>
+              {/each}
+              <span class="connector" aria-hidden="true"><span></span></span>
+              <div class="flow-node finish">
+                <span class="port input"></span>
+                <span class="node-icon"><Icon name="check" size={18} /></span>
+                <div><small>OUTPUT</small><strong>{wf.output?.type || "Complete"}</strong></div>
+              </div>
+            </div>
+          </div>
 
           <dl class="meta-list">
             <dt>Workflow ID</dt>
             <dd><code>{wf.id}</code></dd>
-            <dt>Version</dt>
-            <dd>{wf.version}</dd>
             {#if wf.output?.type}
               <dt>Output</dt>
               <dd>{wf.output.type}</dd>
@@ -238,47 +297,41 @@
             {/if}
           </dl>
 
-          <h4>Steps</h4>
-          <ol class="steps-list">
-            {#each wf.steps as step (step.id)}
-              <li>
-                <code>{step.capability}</code>
-                {#if step.intent}<span class="intent"> — {step.intent}</span>{/if}
-                {#if step.input_from?.length}
-                  <span class="input-from">(from: {step.input_from.join(", ")})</span>
-                {/if}
-              </li>
-            {/each}
-          </ol>
-
-          <h4>Invoke</h4>
-          <form
-            class="invoke-form"
-            onsubmit={(e) => {
-              e.preventDefault();
-              invoke(wf);
-            }}
-          >
-            {#if wf.inputs?.length}
-              <div class="fields">
-                {#each wf.inputs as inp (inp.name)}
-                  <label>
-                    <span>{inp.name}{inp.required ? " *" : ""} <em>({inp.type})</em></span>
-                    <input
-                      type="text"
-                      bind:value={invokeInputs[inp.name]}
-                      aria-label={`Workflow input ${inp.name}`}
-                    />
-                  </label>
-                {/each}
-              </div>
-            {:else}
-              <p class="no-inputs">This workflow takes no inputs.</p>
-            {/if}
-            <button type="submit" class="btn primary" disabled={invoking} data-testid="invoke-btn">
-              {invoking ? "Invoking…" : "Invoke"}
-            </button>
-          </form>
+          <div class="invoke-panel">
+            <div>
+              <span class="eyebrow">Manual trigger</span>
+              <h4>Run this workflow</h4>
+              <p>Provide the execution inputs, then send the workflow to the run engine.</p>
+            </div>
+            <form
+              class="invoke-form"
+              onsubmit={(e) => {
+                e.preventDefault();
+                invoke(wf);
+              }}
+            >
+              {#if wf.inputs?.length}
+                <div class="fields">
+                  {#each wf.inputs as inp (inp.name)}
+                    <label>
+                      <span>{inp.name}{inp.required ? " *" : ""} <em>({inp.type})</em></span>
+                      <input
+                        type="text"
+                        bind:value={invokeInputs[inp.name]}
+                        aria-label={`Workflow input ${inp.name}`}
+                      />
+                    </label>
+                  {/each}
+                </div>
+              {:else}
+                <p class="no-inputs">This workflow takes no inputs.</p>
+              {/if}
+              <button type="submit" class="btn primary" disabled={invoking} data-testid="invoke-btn">
+                <Icon name="activity" size={15} />
+                {invoking ? "Invoking…" : "Execute workflow"}
+              </button>
+            </form>
+          </div>
 
           {#if invokeRunId}
             <p class="invoke-ok" role="status" data-testid="invoke-run-id">
@@ -295,57 +348,148 @@
 </section>
 
 <style>
-  .table-scroll {
-    overflow-x: auto;
+  section {
+    display: grid;
+    gap: 1rem;
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
+  .workflow-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 1rem;
   }
-  th,
-  td {
-    text-align: left;
-    padding: 0.55rem 0.65rem;
-    border-bottom: 1px solid var(--color-border);
-    vertical-align: top;
+  .workflow-toolbar h3 {
+    margin: 0.15rem 0 0;
+    font-size: 1rem;
   }
-  th {
+  .workflow-toolbar p {
+    margin: 0.25rem 0 0;
     color: var(--color-text-muted);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    font-size: 0.82rem;
   }
-  tr.row {
+  .eyebrow {
+    color: var(--color-text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .toolbar-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-success);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-success) 14%, transparent);
+  }
+  .workflow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.75rem;
+  }
+  .workflow-card {
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: linear-gradient(145deg, var(--color-surface-raised), var(--color-surface));
+    box-shadow: var(--shadow-card);
     cursor: pointer;
   }
-  tr.row:hover {
-    background: var(--color-surface-subtle);
+  .workflow-card:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    box-shadow: var(--shadow-card-hover);
   }
-  tr.row.selected {
-    background: var(--color-accent-soft);
+  .workflow-card.selected {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--color-accent-soft), var(--shadow-card);
   }
-  tr.row:focus-visible {
+  .workflow-card:focus-visible {
     outline: 2px solid var(--color-accent);
-    outline-offset: -2px;
+    outline-offset: 2px;
   }
-  td.name {
-    font-weight: 600;
+  .workflow-card-head {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
   }
-  td.steps {
-    text-align: center;
+  .workflow-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 10px;
+    color: #cf4d17;
+    background: color-mix(in srgb, #ff6d2e 14%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, #ff6d2e 30%, var(--color-border));
   }
-  td.meta {
-    color: var(--color-text-muted);
-    word-break: break-word;
+  .workflow-mark.large {
+    width: 40px;
+    height: 40px;
   }
-  td.actions {
+  .workflow-title {
+    min-width: 0;
+    display: grid;
+    gap: 0.12rem;
+    flex: 1;
+  }
+  .workflow-title strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.92rem;
+  }
+  .workflow-title code {
+    color: var(--color-text-muted);
+    font-size: 0.68rem;
+  }
+  .workflow-card > p {
+    min-height: 2.4em;
+    margin: 0.65rem 0;
+    color: var(--color-text-muted);
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+  .workflow-stats,
+  .workflow-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  .workflow-stats {
+    color: var(--color-text-muted);
+    font-size: 0.73rem;
+  }
+  .workflow-stats span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .workflow-actions {
+    justify-content: space-between;
+    padding-top: 0.7rem;
+    margin-top: 0.7rem;
+    border-top: 1px solid var(--color-border);
+  }
+  .inspect {
+    color: var(--color-accent);
+    font-size: 0.75rem;
+    font-weight: 700;
   }
   .error {
     color: var(--color-danger);
     font-size: 0.85rem;
-    margin: 0.5rem 0 0;
+    margin: 0;
   }
   .btn {
     font: inherit;
@@ -358,6 +502,15 @@
     background: var(--color-surface);
     color: var(--color-text);
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+  .btn.compact {
+    min-height: 32px;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.72rem;
   }
   .btn:hover:not(:disabled) {
     border-color: var(--color-accent);
@@ -372,34 +525,185 @@
     color: var(--color-accent-contrast);
   }
   .detail {
-    margin-top: 1rem;
-    padding: 1rem 1.1rem;
-    background: var(--color-surface-subtle);
+    padding: 1rem;
+    background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
   }
   .detail-head {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    justify-content: space-between;
+    gap: 1rem;
     flex-wrap: wrap;
   }
+  .detail-title,
+  .detail-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
   .detail-head h3 {
-    margin: 0;
+    margin: 0.12rem 0 0;
     font-size: 1.05rem;
   }
+  .version {
+    color: var(--color-text-muted);
+    font: 600 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
   .description {
-    margin: 0.4rem 0 0;
-    color: var(--color-text);
+    margin: 0.55rem 0 0;
+    color: var(--color-text-muted);
     font-size: 0.9rem;
   }
+  .workflow-canvas {
+    min-width: 0;
+    margin-top: 0.9rem;
+    padding: 0.75rem;
+    overflow: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background-color: color-mix(in srgb, var(--color-surface-subtle) 85%, var(--color-surface));
+    background-image: radial-gradient(circle, color-mix(in srgb, var(--color-text-muted) 28%, transparent) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .canvas-label {
+    position: sticky;
+    left: 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--color-text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .canvas-label span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .node-track {
+    min-width: max-content;
+    display: flex;
+    align-items: center;
+    padding: 1.6rem 0.65rem 1.2rem;
+  }
+  .flow-node {
+    position: relative;
+    width: 164px;
+    min-height: 74px;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.72rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 9px;
+    background: var(--color-surface-raised);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--color-text) 9%, transparent);
+  }
+  .flow-node.trigger {
+    border-color: color-mix(in srgb, #ff6d2e 55%, var(--color-border));
+  }
+  .flow-node.approval {
+    border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
+  }
+  .flow-node.finish {
+    border-color: color-mix(in srgb, var(--color-success) 55%, var(--color-border));
+  }
+  .node-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+  .trigger .node-icon {
+    color: #cf4d17;
+    background: color-mix(in srgb, #ff6d2e 14%, var(--color-surface));
+  }
+  .finish .node-icon {
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+  }
+  .flow-node > div {
+    min-width: 0;
+    display: grid;
+    gap: 0.15rem;
+  }
+  .flow-node small {
+    color: var(--color-text-muted);
+    font-size: 0.58rem;
+    font-weight: 750;
+    letter-spacing: 0.07em;
+  }
+  .flow-node strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+  }
+  .flow-node code {
+    overflow: hidden;
+    color: var(--color-text-muted);
+    font-size: 0.62rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .port {
+    position: absolute;
+    top: calc(50% - 5px);
+    width: 8px;
+    height: 8px;
+    border: 2px solid var(--color-surface-raised);
+    border-radius: 50%;
+    background: var(--color-border-strong);
+  }
+  .port.input {
+    left: -5px;
+  }
+  .port.output {
+    right: -5px;
+  }
+  .connector {
+    width: 38px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .connector span {
+    position: relative;
+    width: 100%;
+    height: 2px;
+    background: var(--color-border-strong);
+  }
+  .connector span::after {
+    content: "";
+    position: absolute;
+    right: -1px;
+    top: -3px;
+    width: 6px;
+    height: 6px;
+    border-top: 2px solid var(--color-border-strong);
+    border-right: 2px solid var(--color-border-strong);
+    transform: rotate(45deg);
+  }
   dl.meta-list {
-    margin: 0.9rem 0 0;
+    margin: 0.8rem 0 0;
+    padding: 0.75rem;
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 0.35rem 0.85rem;
     align-items: baseline;
     font-size: 0.85rem;
+    border-radius: 9px;
+    background: var(--color-surface-subtle);
   }
   dl.meta-list dt {
     color: var(--color-text-muted);
@@ -411,28 +715,26 @@
   }
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--color-surface);
-    border-radius: 4px;
-    padding: 0.05rem 0.35rem;
   }
-  h4 {
-    margin: 1rem 0 0.4rem;
+  .invoke-panel {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.65fr) minmax(280px, 1.35fr);
+    gap: 1rem;
+    margin-top: 0.8rem;
+    padding: 0.85rem;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--color-surface-subtle), var(--color-surface));
+  }
+  .invoke-panel h4 {
+    margin: 0.12rem 0 0;
     font-size: 0.9rem;
   }
-  ol.steps-list {
-    margin: 0;
-    padding-left: 1.2rem;
-    display: grid;
-    gap: 0.3rem;
-    font-size: 0.85rem;
-  }
-  .intent {
-    color: var(--color-text);
-  }
-  .input-from {
+  .invoke-panel > div > p {
+    margin: 0.25rem 0 0;
     color: var(--color-text-muted);
-    font-size: 0.8rem;
-    margin-left: 0.3rem;
+    font-size: 0.75rem;
+    line-height: 1.45;
   }
   .invoke-form {
     display: flex;
@@ -487,15 +789,23 @@
     font-size: 0.85rem;
     margin: 0.6rem 0 0;
   }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+
+  @media (max-width: 760px) {
+    .workflow-toolbar,
+    .detail-head {
+      align-items: flex-start;
+    }
+    .invoke-panel {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .workflow-card {
+      transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+    }
+    .workflow-card:hover {
+      transform: translateY(-1px);
+    }
   }
 </style>

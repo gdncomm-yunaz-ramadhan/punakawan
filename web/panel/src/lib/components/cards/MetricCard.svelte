@@ -1,6 +1,7 @@
 <script lang="ts">
   import BentoCard, { type BentoSize } from "./BentoCard.svelte";
   import type { CardState } from "./Card.svelte";
+  import Icon, { type IconName } from "../Icon.svelte";
 
   export type TrendDirection = "up" | "down";
   // Optional batik accent tint for the metric. "none" (default) keeps the
@@ -20,7 +21,7 @@
     emptyMessage?: string;
     accent?: MetricAccent;
     /** Optional glyph shown in the emphasis chip when accent is set. */
-    icon?: string;
+    icon?: IconName;
   }
   let {
     label,
@@ -61,7 +62,7 @@
       style:--metric-accent={accentColor[accent]}
     >
       {#if accent !== "none" && icon}
-        <span class="chip" aria-hidden="true">{icon}</span>
+        <span class="chip" aria-hidden="true"><Icon name={icon} size={18} strokeWidth={1.9} /></span>
       {/if}
       <span class="value">{value}</span>
       <span class="label">{label}</span>
@@ -86,7 +87,7 @@
   /* Colored left edge + inset padding when an accent is set. The plain
      (accent="none") metric is untouched. */
   .metric.accented {
-    padding-left: 0.85rem;
+    padding-left: 0.95rem;
   }
   .metric.accented::before {
     content: "";
@@ -94,7 +95,7 @@
     left: 0;
     top: 0.1rem;
     bottom: 0.1rem;
-    width: 3px;
+    width: 4px;
     border-radius: 999px;
     background: var(--metric-accent);
   }
@@ -102,18 +103,18 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.7rem;
-    height: 1.7rem;
-    margin-bottom: 0.15rem;
+    width: 2.15rem;
+    height: 2.15rem;
+    margin-bottom: 0.2rem;
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--metric-accent) 16%, var(--color-surface));
     color: var(--metric-accent);
-    font-size: 0.95rem;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--metric-accent) 18%, transparent);
     line-height: 1;
   }
   .value {
-    font-size: 2.2rem;
-    font-weight: 750;
+    font-size: 2.35rem;
+    font-weight: 760;
     letter-spacing: -0.01em;
     color: var(--color-text);
     line-height: 1.05;
@@ -121,8 +122,9 @@
   }
   .label {
     color: var(--color-text-muted);
-    font-size: 0.85rem;
-    font-weight: 500;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
   }
   .trend {
     display: inline-flex;

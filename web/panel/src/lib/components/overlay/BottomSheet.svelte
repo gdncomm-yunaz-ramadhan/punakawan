@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
+  import Icon from "../Icon.svelte";
 
   interface Props {
     open: boolean;
@@ -83,7 +84,7 @@
     <div class="handle" aria-hidden="true"></div>
     <div class="sheet-head">
       {#if title}<h2>{title}</h2>{/if}
-      <button type="button" class="close" onclick={onclose} aria-label="Close">✕</button>
+      <button type="button" class="close" onclick={onclose} aria-label="Close"><Icon name="x" size={18} /></button>
     </div>
     <div class="sheet-body">
       {@render children()}
@@ -95,7 +96,8 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgb(0 0 0 / 0.4);
+    background: rgb(10 18 30 / 0.54);
+    backdrop-filter: blur(5px);
     z-index: 30;
   }
   .sheet {
@@ -104,7 +106,7 @@
     right: 0;
     bottom: 0;
     max-height: min(80vh, 640px);
-    background: var(--color-surface-raised);
+    background: var(--surface-card-bg, var(--color-surface-raised));
     border: 1px solid var(--color-border);
     border-bottom: none;
     border-top-left-radius: var(--radius-lg);
@@ -135,13 +137,17 @@
     color: var(--color-text);
   }
   .close {
-    background: none;
-    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
     font-size: 1rem;
     cursor: pointer;
     color: var(--color-text);
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 34px;
+    min-width: 34px;
   }
   .sheet-body {
     color: var(--color-text);

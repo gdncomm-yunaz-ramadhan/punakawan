@@ -76,10 +76,10 @@
     .filter((w) => w.blocked_task_count > 0)
     .sort((a, b) => b.blocked_task_count - a.blocked_task_count)}
   <BentoGrid>
-    <MetricCard label="Active sessions" value={ov.active_sessions.length} size="small" accent="indigo" icon="●" />
-    <MetricCard label="Blocked tasks" value={ov.blocked_tasks} size="small" accent="terracotta" icon="⚠" />
-    <MetricCard label="Pending approvals" value={ov.pending_approvals.length} size="small" accent="gold" icon="◆" />
-    <MetricCard label="Available workspaces" value={ov.available_workspaces} size="small" accent="teal" icon="✓" />
+    <MetricCard label="Active sessions" value={ov.active_sessions.length} size="small" accent="indigo" icon="activity" />
+    <MetricCard label="Blocked tasks" value={ov.blocked_tasks} size="small" accent="terracotta" icon="alert" />
+    <MetricCard label="Pending approvals" value={ov.pending_approvals.length} size="small" accent="gold" icon="approval" />
+    <MetricCard label="Available workspaces" value={ov.available_workspaces} size="small" accent="teal" icon="workspace" />
 
     <ChartCard
       title="Blocked tasks by workspace"

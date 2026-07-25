@@ -8,6 +8,7 @@
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard, { type MetricAccent } from "../../lib/components/cards/MetricCard.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
+  import type { IconName } from "../../lib/components/Icon.svelte";
   import ProjectMetadata from "./ProjectMetadata.svelte";
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
@@ -41,17 +42,33 @@
     "health",
   ]);
   const tabs = [
-    { id: "summary", label: "Summary" },
-    { id: "metadata", label: "Metadata" },
-    { id: "workflows", label: "Workflows" },
-    { id: "knowledge", label: "Knowledge" },
-    { id: "tasks", label: "Tasks" },
-    { id: "plans", label: "Plans" },
-    { id: "sessions", label: "Sessions" },
-    { id: "approvals", label: "Approvals" },
-    { id: "health", label: "Health" },
+    { id: "summary", label: "Summary", icon: "dashboard" as IconName },
+    { id: "metadata", label: "Metadata", icon: "database" as IconName },
+    { id: "workflows", label: "Workflows", icon: "git-branch" as IconName },
+    { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
+    { id: "tasks", label: "Tasks", icon: "list" as IconName },
+    { id: "plans", label: "Plans", icon: "file" as IconName },
+    { id: "sessions", label: "Sessions", icon: "activity" as IconName },
+    { id: "approvals", label: "Approvals", icon: "approval" as IconName },
+    { id: "health", label: "Health", icon: "heart" as IconName },
   ];
-  let activeId = $state("summary");
+
+  function tabFromUrl(): string {
+    if (typeof window === "undefined") return "summary";
+    const requested = new URL(window.location.href).searchParams.get("tab") ?? "summary";
+    return activeTabs.has(requested) ? requested : "summary";
+  }
+
+  let activeId = $state(tabFromUrl());
+
+  function selectTab(id: string) {
+    activeId = id;
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (id === "summary") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", id);
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
 
   async function load(id: string) {
     loading = true;
@@ -78,17 +95,17 @@
     label: string;
     value: number;
     accent: MetricAccent;
-    icon: string;
+    icon: IconName;
   }
   function buildMetrics(p: ProjectDetail | null): Metric[] {
     if (!p) return [];
     return [
-      { label: "Repositories", value: p.repository_count, accent: "indigo", icon: "▤" },
-      { label: "Open tasks", value: p.open_task_count, accent: "gold", icon: "◔" },
-      { label: "Blocked tasks", value: p.blocked_task_count, accent: "danger", icon: "▰" },
-      { label: "Active sessions", value: p.active_session_count, accent: "teal", icon: "◈" },
-      { label: "Knowledge records", value: p.knowledge_count, accent: "terracotta", icon: "❋" },
-      { label: "Metadata entries", value: p.metadata_count, accent: "success", icon: "≣" },
+      { label: "Repositories", value: p.repository_count, accent: "indigo", icon: "folder" },
+      { label: "Open tasks", value: p.open_task_count, accent: "gold", icon: "list" },
+      { label: "Blocked tasks", value: p.blocked_task_count, accent: "danger", icon: "alert" },
+      { label: "Active sessions", value: p.active_session_count, accent: "teal", icon: "activity" },
+      { label: "Knowledge records", value: p.knowledge_count, accent: "terracotta", icon: "book" },
+      { label: "Metadata entries", value: p.metadata_count, accent: "success", icon: "database" },
     ];
   }
   const metrics = $derived(buildMetrics(project));
@@ -122,7 +139,7 @@
   {#if project.description}<p class="description">{project.description}</p>{/if}
   <p class="path">{project.path}</p>
 
-  <Tabs {tabs} {activeId} onchange={(id) => (activeId = id)} ariaLabel="Project sections" />
+  <Tabs {tabs} {activeId} onchange={selectTab} ariaLabel="Project sections" />
 
   {#if activeId === "summary"}
     <div id="tabpanel-summary" role="tabpanel" aria-labelledby="tab-summary">

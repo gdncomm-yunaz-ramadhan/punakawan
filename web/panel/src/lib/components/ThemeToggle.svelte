@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { applyTheme, getStoredThemePreference, type ThemePreference } from "../theme";
   import { reapplyStoredAccent } from "../accent";
+  import Icon, { type IconName } from "./Icon.svelte";
 
   let selected: ThemePreference = $state("system");
 
@@ -9,10 +10,10 @@
     selected = getStoredThemePreference();
   });
 
-  const options: { id: ThemePreference; label: string }[] = [
-    { id: "light", label: "Light" },
-    { id: "dark", label: "Dark" },
-    { id: "system", label: "System" },
+  const options: { id: ThemePreference; label: string; icon: IconName }[] = [
+    { id: "light", label: "Light", icon: "sun" },
+    { id: "dark", label: "Dark", icon: "moon" },
+    { id: "system", label: "System", icon: "monitor" },
   ];
 
   function select(pref: ThemePreference) {
@@ -40,35 +41,47 @@
       class:active={selected === opt.id}
       onclick={() => select(opt.id)}
     >
-      {opt.label}
+      <Icon name={opt.icon} size={14} strokeWidth={2} />
+      <span>{opt.label}</span>
     </button>
   {/each}
 </div>
 
 <style>
   .segmented {
-    display: inline-flex;
-    gap: 2px;
-    padding: 2px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    width: 100%;
+    padding: 3px;
     border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-surface-subtle);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-surface-subtle) 88%, transparent);
+    box-shadow: inset 0 1px 1px color-mix(in srgb, var(--color-text) 5%, transparent);
   }
   .segment {
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    font-size: 0.85rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.45rem 0.25rem;
+    border-radius: 7px;
     cursor: pointer;
-    min-height: 32px;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
   }
   .segment.active {
     background: var(--color-surface-raised);
     color: var(--color-text);
-    font-weight: 600;
-    box-shadow: var(--shadow-card);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text) 15%, transparent);
+  }
+  .segment:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
   }
 
   @media (prefers-reduced-motion: no-preference) {

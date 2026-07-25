@@ -8,6 +8,7 @@
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import Icon from "../../lib/components/Icon.svelte";
 
   let projects: ProjectSummary[] = $state([]);
   let error: string | null = $state(null);
@@ -52,7 +53,10 @@
       <li>
         <button type="button" class="card" onclick={() => open(p.id)}>
           <div class="row">
-            <strong class="name">{p.name || p.id}</strong>
+            <span class="project-title">
+              <span class="project-icon"><Icon name="folder" size={20} /></span>
+              <strong class="name">{p.name || p.id}</strong>
+            </span>
             <span class="markers">
               {#if p.primary}<span class="tag primary" title="Primary project">primary</span>{/if}
               {#if p.pinned}<span title="Pinned" aria-label="Pinned">📌</span>{/if}
@@ -62,11 +66,15 @@
           <span class="path">{p.path}</span>
           <div class="row wrap">
             <StatusBadge availability={p.availability as Availability} />
-            <span class="counts">
-              {p.repository_count} repos · {p.open_task_count} open · {p.blocked_task_count} blocked ·
-              {p.active_session_count} active · {p.knowledge_count} knowledge · {p.metadata_count} metadata
-            </span>
           </div>
+          <span class="stats" aria-label="Project snapshot">
+            <span><strong>{p.repository_count}</strong> repos</span>
+            <span><strong>{p.open_task_count}</strong> open</span>
+            <span class:danger={p.blocked_task_count > 0}><strong>{p.blocked_task_count}</strong> blocked</span>
+            <span><strong>{p.active_session_count}</strong> active</span>
+            <span><strong>{p.knowledge_count}</strong> knowledge</span>
+          </span>
+          <span class="open-hint">Open project <span aria-hidden="true">→</span></span>
         </button>
       </li>
     {/each}
@@ -88,21 +96,30 @@
     display: flex;
   }
   .card {
+    position: relative;
+    overflow: hidden;
     width: 100%;
     text-align: left;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
-    padding: 0.85rem 1.1rem;
+    padding: 1.05rem 1.15rem;
     display: grid;
-    gap: 0.3rem;
-    background: var(--color-surface);
+    gap: 0.55rem;
+    background: var(--surface-card-bg, var(--color-surface));
     cursor: pointer;
     font: inherit;
     color: var(--color-text);
   }
   .card:hover {
     border-color: var(--color-accent);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .card {
+      transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+    }
   }
   .card:focus-visible {
     outline: 2px solid var(--color-accent);
@@ -119,7 +136,24 @@
     justify-content: flex-start;
   }
   .name {
-    font-size: 1.02rem;
+    font-size: 1.05rem;
+  }
+  .project-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+  }
+  .project-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.3rem;
+    height: 2.3rem;
+    border-radius: 10px;
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 14%, transparent);
   }
   .markers {
     display: inline-flex;
@@ -145,8 +179,32 @@
     font-size: 0.82rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  .counts {
-    font-size: 0.82rem;
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding-top: 0.3rem;
+    border-top: 1px solid var(--color-border);
+  }
+  .stats > span {
+    padding: 0.2rem 0.42rem;
+    border-radius: 6px;
+    background: var(--color-surface-subtle);
     color: var(--color-text-muted);
+    font-size: 0.72rem;
+  }
+  .stats strong {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .stats .danger,
+  .stats .danger strong {
+    color: var(--color-danger);
+  }
+  .open-hint {
+    justify-self: end;
+    color: var(--color-accent);
+    font-size: 0.76rem;
+    font-weight: 650;
   }
 </style>

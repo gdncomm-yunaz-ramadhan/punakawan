@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SystemInfo } from "../api/client";
   import { getConnectionStatus } from "../events/sse.svelte";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     system: SystemInfo | null;
@@ -28,7 +29,7 @@
 -->
 <header>
   {#if system}
-    <span class="info" data-testid="panel-version" title={versionTitle} aria-label={versionTitle}>ⓘ</span>
+    <span class="info" data-testid="panel-version" title={versionTitle} aria-label={versionTitle}><Icon name="info" size={16} /></span>
   {/if}
   <span
     class="connection connection-{getConnectionStatus()}"
@@ -36,7 +37,8 @@
     title={connectionLabels[getConnectionStatus()]}
     aria-label={`Connection: ${connectionLabels[getConnectionStatus()]}`}
   >
-    <span aria-hidden="true">●</span>
+    <span class="connection-dot" aria-hidden="true"></span>
+    <span class="connection-label">{connectionLabels[getConnectionStatus()]}</span>
   </span>
   <time title="Local time">{now.toLocaleTimeString()}</time>
 </header>
@@ -47,10 +49,12 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.85rem;
-    padding: 0.6rem 2rem;
+    gap: 0.75rem;
+    min-height: 52px;
+    padding: 0.55rem 2rem;
     border-bottom: 1px solid var(--color-border);
-    background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-subtle) 100%);
+    background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+    backdrop-filter: blur(14px);
   }
   /* Signature batik ribbon: a 3px gold->terracotta->teal->indigo bar
      running the full width of the header's top edge. */
@@ -64,6 +68,7 @@
     background: var(--gradient-brand);
   }
   .info {
+    display: inline-flex;
     color: var(--color-text-muted);
     font-size: 0.95rem;
     line-height: 1;
@@ -77,9 +82,22 @@
   .connection {
     display: inline-flex;
     align-items: center;
-    font-size: 0.7rem;
+    gap: 0.35rem;
+    padding: 0.22rem 0.55rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-surface);
+    font-size: 0.72rem;
+    font-weight: 600;
     color: var(--color-text-muted);
     cursor: default;
+  }
+  .connection-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 13%, transparent);
   }
   .connection-open {
     color: var(--color-success);

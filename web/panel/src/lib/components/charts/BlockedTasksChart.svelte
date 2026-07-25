@@ -46,8 +46,11 @@
             data: chartData.series[0]?.values ?? [],
             backgroundColor: barColors,
             borderColor: barColors,
-            borderRadius: 4,
-            maxBarThickness: 34,
+            borderWidth: 1,
+            borderRadius: 8,
+            borderSkipped: false,
+            maxBarThickness: 30,
+            hoverBorderWidth: 2,
           },
         ],
       },
@@ -61,18 +64,23 @@
           x: {
             beginAtZero: true,
             // Blocked-task counts are whole numbers; drop fractional ticks.
-            ticks: { color: palette.textMuted, precision: 0 },
-            grid: { color: palette.border },
-            title: { display: true, text: chartData.xLabel, color: palette.textMuted },
+            ticks: { color: palette.textMuted, precision: 0, padding: 8 },
+            grid: { color: palette.border, tickLength: 0 },
+            border: { display: false },
+            title: { display: true, text: chartData.xLabel, color: palette.textMuted, padding: { top: 10 } },
           },
           y: {
-            ticks: { color: palette.text },
+            ticks: { color: palette.text, padding: 10, font: { weight: 600 } },
             grid: { display: false },
+            border: { display: false },
           },
         },
         plugins: {
           legend: { display: false },
           tooltip: {
+            displayColors: false,
+            padding: 10,
+            cornerRadius: 8,
             callbacks: {
               label: (ctx) => ` ${ctx.parsed.x} blocked`,
             },
