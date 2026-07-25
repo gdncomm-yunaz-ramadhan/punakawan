@@ -6,6 +6,7 @@
   // why this replaces ActiveRevisionSummary rather than living alongside
   // it once a proposal actually exists.
   import StickyActionBar from "../StickyActionBar.svelte";
+  import Button from "../Button.svelte";
   import Dialog from "../overlay/Dialog.svelte";
   import Tabs from "../Tabs.svelte";
   import StatusBadge, { type BadgeVariant } from "../StatusBadge.svelte";
@@ -291,9 +292,9 @@
           - accepting is blocked until you rebase onto the latest version. Rebasing returns this review to draft so you
           can review the refreshed document and resubmit.
         </p>
-        <button type="button" class="primary-button" onclick={doRebase} disabled={actionBusy}>
+        <Button variant="primary" onclick={doRebase} disabled={actionBusy}>
           {actionBusy ? "Rebasing…" : "Rebase onto latest version"}
-        </button>
+        </Button>
       </div>
     {:else if showConflictFromAccept}
       <div class="conflict-banner" role="alert" data-testid="conflict-banner">
@@ -301,9 +302,9 @@
           <strong>Accept failed: the canonical artifact changed underneath this proposal.</strong> Rebase to re-anchor
           this review at the current version, then review and resubmit.
         </p>
-        <button type="button" class="primary-button" onclick={doRebase} disabled={actionBusy}>
+        <Button variant="primary" onclick={doRebase} disabled={actionBusy}>
           {actionBusy ? "Rebasing…" : "Rebase onto latest version"}
-        </button>
+        </Button>
       </div>
     {:else if review.metadata.status === "revision_requested"}
       <div class="inflight-banner" data-testid="revision-in-flight-banner">

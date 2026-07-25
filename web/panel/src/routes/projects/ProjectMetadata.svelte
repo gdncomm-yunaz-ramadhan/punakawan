@@ -10,6 +10,7 @@
   } from "../../lib/api/client";
   import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     projectId: string;
@@ -25,10 +26,11 @@
   // A banner shown after a 409: the list was reloaded to the latest.
   let conflictNotice: string | null = $state(null);
 
-  // Add form.
+  // Add form (lives in a modal, opened by the "Add metadata" button).
   let addKey = $state("");
   let addDescription = $state("");
   let addValueText = $state("");
+  let addOpen = $state(false);
 
   // Inline edit state (only one row editable at a time).
   let editingKey: string | null = $state(null);
@@ -101,6 +103,23 @@
       oldEntry: null,
       newEntry: { description: addDescription, value: parseValue(addValueText) },
     };
+  }
+
+  // Add modal handled separately from the confirm dialog: submitting the
+  // add form closes this modal first, then startAdd() opens the confirm
+  // dialog (old->new diff). The two dialogs are never open at once.
+  function submitAdd() {
+    if (!addKey.trim()) return;
+    addOpen = false;
+    startAdd();
+  }
+
+  function closeAddModal() {
+    addOpen = false;
+    // Reset the add fields whenever the modal closes without submitting.
+    addKey = "";
+    addDescription = "";
+    addValueText = "";
   }
 
   function beginEdit(entry: MetadataEntry) {
@@ -196,43 +215,15 @@
   {:else if error}
     <p class="error" role="alert">Failed to load metadata: {error}</p>
   {:else}
-    <!-- Add form -->
-    <form
-      class="add-form"
-      onsubmit={(e) => {
-        e.preventDefault();
-        startAdd();
-      }}
-    >
-      <div class="fields">
-        <label>
-          <span>Key</span>
-          <input type="text" bind:value={addKey} aria-label="New metadata key" placeholder="deploy_target" />
-        </label>
-        <label>
-          <span>Description</span>
-          <input
-            type="text"
-            bind:value={addDescription}
-            aria-label="New metadata description"
-            placeholder="What this value means"
-          />
-        </label>
-        <label>
-          <span>Value</span>
-          <input
-            type="text"
-            bind:value={addValueText}
-            aria-label="New metadata value"
-            placeholder="production (or JSON)"
-          />
-        </label>
-      </div>
-      <button type="submit" class="btn primary" disabled={!addKey.trim()}>Add</button>
-    </form>
+    <!-- Add metadata: opens a modal with the key/description/value fields. -->
+    <div class="section-head">
+      <button type="button" class="add-metadata-btn" data-testid="add-metadata" onclick={() => (addOpen = true)}>
+        Add metadata
+      </button>
+    </div>
 
     {#if entries.length === 0}
-      <EmptyStateCard title="No metadata yet" message="Add a key/value entry above to describe this project." />
+      <EmptyStateCard title="No metadata yet" message="Add a key/value entry to describe this project." />
     {:else}
       <div class="table-scroll">
         <table>
@@ -260,24 +251,19 @@
                     <input type="text" bind:value={editValueText} aria-label={`Edit value for ${entry.key}`} />
                   </td>
                   <td class="actions">
-                    <button type="button" class="btn primary" onclick={() => startUpdate(entry)}>Save</button>
-                    <button type="button" class="btn" onclick={cancelEdit}>Cancel</button>
+                    <Button variant="primary" onclick={() => startUpdate(entry)}>Save</Button>
+                    <Button variant="secondary" onclick={cancelEdit}>Cancel</Button>
                   </td>
                 {:else}
                   <td class="description">{entry.description}</td>
                   <td class="value">{valueToText(entry.value)}</td>
                   <td class="actions">
-                    <button type="button" class="btn" onclick={() => beginEdit(entry)} aria-label={`Edit ${entry.key}`}>
+                    <Button variant="secondary" onclick={() => beginEdit(entry)} ariaLabel={`Edit ${entry.key}`}>
                       Edit
-                    </button>
-                    <button
-                      type="button"
-                      class="btn danger"
-                      onclick={() => startDelete(entry)}
-                      aria-label={`Delete ${entry.key}`}
-                    >
+                    </Button>
+                    <Button variant="danger" onclick={() => startDelete(entry)} ariaLabel={`Delete ${entry.key}`}>
                       Delete
-                    </button>
+                    </Button>
                   </td>
                 {/if}
               </tr>
@@ -288,6 +274,46 @@
     {/if}
   {/if}
 </section>
+
+<!-- Add metadata form modal. Submitting closes this and opens the confirm dialog. -->
+<Dialog open={addOpen} title="Add metadata" onclose={closeAddModal}>
+  <form
+    class="modal-form"
+    onsubmit={(e) => {
+      e.preventDefault();
+      submitAdd();
+    }}
+  >
+    <div class="fields">
+      <label>
+        <span>Key</span>
+        <input type="text" bind:value={addKey} aria-label="New metadata key" placeholder="deploy_target" />
+      </label>
+      <label>
+        <span>Description</span>
+        <input
+          type="text"
+          bind:value={addDescription}
+          aria-label="New metadata description"
+          placeholder="What this value means"
+        />
+      </label>
+      <label>
+        <span>Value</span>
+        <input
+          type="text"
+          bind:value={addValueText}
+          aria-label="New metadata value"
+          placeholder="production (or JSON)"
+        />
+      </label>
+    </div>
+    <div class="modal-actions">
+      <Button variant="secondary" onclick={closeAddModal}>Cancel</Button>
+      <Button type="submit" variant="primary" disabled={!addKey.trim()}>Add</Button>
+    </div>
+  </form>
+</Dialog>
 
 <!-- Compact confirm with the old->new diff (plan §4.3). -->
 <Dialog open={pending !== null} title="Confirm change" onclose={closeDialog}>
@@ -334,16 +360,10 @@
       {/if}
 
       <div class="confirm-actions">
-        <button type="button" class="btn" onclick={closeDialog} disabled={busy}>Cancel</button>
-        <button
-          type="button"
-          class="btn primary"
-          class:danger={pending.action === "delete"}
-          onclick={confirm}
-          disabled={busy}
-        >
+        <Button variant="secondary" onclick={closeDialog} disabled={busy}>Cancel</Button>
+        <Button variant={pending.action === "delete" ? "danger" : "primary"} onclick={confirm} disabled={busy}>
           {busy ? "Saving…" : "Confirm"}
-        </button>
+        </Button>
       </div>
     </div>
   {/if}
@@ -363,29 +383,33 @@
     color: var(--color-danger);
     font-size: 0.85rem;
   }
-  .add-form {
+  .section-head {
     display: flex;
-    align-items: flex-end;
-    gap: 0.75rem;
     flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
     margin-bottom: 1.25rem;
-    padding: 0.9rem 1rem;
-    background: var(--color-surface-subtle);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
+  }
+  .modal-form {
+    display: grid;
+    gap: 1.1rem;
   }
   .fields {
     display: flex;
+    flex-direction: column;
     gap: 0.75rem;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
     flex-wrap: wrap;
-    flex: 1;
   }
   label {
     display: grid;
     gap: 0.2rem;
     font-size: 0.78rem;
     color: var(--color-text-muted);
-    flex: 1 1 10rem;
   }
   input {
     font: inherit;
@@ -402,39 +426,32 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 1px;
   }
-  .btn {
+  /* "Add metadata" stays a native <button> because a test clicks it via its
+     data-testid, and the shared Button doesn't forward data-testid. Styled to
+     match the primary Button variant via theme tokens. */
+  .add-metadata-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font: inherit;
     font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
+    font-size: 0.875rem;
+    padding: 8px 18px;
+    min-height: 38px;
     border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
+    border: 1px solid var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-accent-contrast);
     cursor: pointer;
   }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
+  .add-metadata-btn:hover {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
   }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
-  }
-  .btn.danger {
-    color: var(--color-danger);
-    border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
-    background: var(--color-surface);
-  }
-  .btn.primary.danger {
-    background: var(--color-danger);
-    border-color: var(--color-danger);
-    color: var(--color-accent-contrast);
+  @media (max-width: 768px) {
+    .add-metadata-btn {
+      min-height: 44px;
+    }
   }
   .table-scroll {
     overflow-x: auto;
@@ -522,6 +539,19 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  /* Dialog action rows stack full-width on mobile so each button stays an
+     easy tap target. Targets the shared Button's global .btn class. */
+  @media (max-width: 639px) {
+    .modal-actions,
+    .confirm-actions {
+      flex-direction: column;
+    }
+    .modal-actions :global(.btn),
+    .confirm-actions :global(.btn) {
+      width: 100%;
+    }
   }
   .sr-only {
     position: absolute;

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Button from "../Button.svelte";
+
   interface Props {
     // Markdown anchor context (plan review). Leave both undefined for a
     // recipe's field_path context instead - the two are mutually
@@ -72,10 +74,10 @@
     <p class="validation-error" role="alert">Comment cannot be empty.</p>
   {/if}
   <div class="actions">
-    <button type="button" class="cancel" onclick={oncancel} disabled={submitting}>Cancel</button>
-    <button type="button" class="submit" onclick={submit} disabled={!canSubmit}>
+    <Button variant="secondary" size="sm" onclick={oncancel} disabled={submitting}>Cancel</Button>
+    <Button variant="primary" size="sm" onclick={submit} disabled={!canSubmit}>
       {submitting ? "Saving…" : "Add Comment"}
-    </button>
+    </Button>
   </div>
 </div>
 
@@ -130,28 +132,6 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
-  }
-  .cancel,
-  .submit {
-    border-radius: 6px;
-    padding: 0.4rem 0.75rem;
-    font-size: 0.85rem;
-    cursor: pointer;
-    min-height: 44px;
-  }
-  .cancel {
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text);
-  }
-  .submit {
-    border: none;
-    background: var(--color-accent);
-    color: var(--color-accent-contrast);
-  }
-  .submit:disabled,
-  .cancel:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    flex-wrap: wrap;
   }
 </style>

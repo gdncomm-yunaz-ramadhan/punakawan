@@ -10,6 +10,7 @@
   } from "../../lib/api/client";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     projectId: string;
@@ -150,12 +151,12 @@
     </fieldset>
 
     <div class="form-actions">
-      <button type="button" class="btn" onclick={doRefresh} disabled={refreshing}>
+      <Button variant="secondary" onclick={doRefresh} disabled={refreshing}>
         {refreshing ? "Refreshing…" : "Refresh"}
-      </button>
-      <button type="submit" class="btn primary" disabled={querying || !subjectId.trim()}>
+      </Button>
+      <Button type="submit" variant="primary" disabled={querying || !subjectId.trim()}>
         {querying ? "Querying…" : "Query"}
-      </button>
+      </Button>
     </div>
   </form>
 
@@ -235,9 +236,15 @@
   }
   .field.subject {
     flex: 1 1 16rem;
+    min-width: 0;
   }
   .field.depth {
     width: 6rem;
+  }
+  @media (max-width: 639px) {
+    .field.depth {
+      width: 100%;
+    }
   }
   input {
     font: inherit;
@@ -289,30 +296,16 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
+    flex-wrap: wrap;
   }
-  .btn {
-    font: inherit;
-    font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
-  }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
+  @media (max-width: 639px) {
+    .form-actions {
+      flex-direction: column;
+    }
+    /* Stretch the shared Button (global .btn) full-width when stacked. */
+    .form-actions :global(.btn) {
+      width: 100%;
+    }
   }
   .hint {
     color: var(--color-danger);
@@ -329,8 +322,21 @@
   }
   .results {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    /* Explicit responsive cap (4/2/1 rule): 1 column on mobile (<640px),
+       2 on tablet (>=640px), 4 on desktop (>=1024px). minmax(0,1fr) lets
+       tracks shrink so long labels wrap instead of overflowing. */
+    grid-template-columns: 1fr;
     gap: 1rem;
+  }
+  @media (min-width: 640px) {
+    .results {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1024px) {
+    .results {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
   }
   .result-group {
     background: var(--color-surface);
@@ -338,6 +344,7 @@
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
     padding: 0.85rem 1rem;
+    min-width: 0;
   }
   .result-group h4 {
     margin: 0 0 0.5rem;

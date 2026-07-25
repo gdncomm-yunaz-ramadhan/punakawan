@@ -4,6 +4,7 @@
   import { navigate } from "../../lib/router/router.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
+  import Icon from "../../lib/components/Icon.svelte";
 
   interface Props {
     workspaceId: string;
@@ -76,35 +77,43 @@
   };
 </script>
 
-<div class="layout">
-  <aside class="filters">
-    <h2>Filters</h2>
-    <label>
-      Search
-      <input type="search" bind:value={q} onchange={() => load(workspaceId)} placeholder="free text" />
-    </label>
-    <label>
-      Type
-      <input type="text" bind:value={type} onchange={() => load(workspaceId)} placeholder="e.g. requirement" />
-    </label>
-    <label>
-      Validity state
-      <select bind:value={validityState} onchange={() => load(workspaceId)}>
-        <option value="">Any</option>
-        {#each Object.entries(validityLabels) as [value, label] (value)}
-          <option {value}>{label}</option>
-        {/each}
-      </select>
-    </label>
-    <label>
-      Repository
-      <input type="text" bind:value={repository} onchange={() => load(workspaceId)} />
-    </label>
-    <label class="checkbox">
-      <input type="checkbox" bind:checked={staleOnly} onchange={() => load(workspaceId)} />
-      Stale only
-    </label>
-  </aside>
+<div class="knowledge">
+  <div class="toolbar" role="search">
+    <div class="search-field">
+      <span class="search-icon" aria-hidden="true"><Icon name="search" size={18} /></span>
+      <input
+        class="search-input"
+        type="search"
+        bind:value={q}
+        onchange={() => load(workspaceId)}
+        placeholder="Search knowledge"
+        aria-label="Search knowledge"
+      />
+    </div>
+    <div class="filters">
+      <label class="field">
+        <span>Type</span>
+        <input type="text" bind:value={type} onchange={() => load(workspaceId)} placeholder="e.g. requirement" />
+      </label>
+      <label class="field">
+        <span>Validity state</span>
+        <select bind:value={validityState} onchange={() => load(workspaceId)}>
+          <option value="">Any</option>
+          {#each Object.entries(validityLabels) as [value, label] (value)}
+            <option {value}>{label}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="field">
+        <span>Repository</span>
+        <input type="text" bind:value={repository} onchange={() => load(workspaceId)} />
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" bind:checked={staleOnly} onchange={() => load(workspaceId)} />
+        Stale only
+      </label>
+    </div>
+  </div>
 
   <main class="results">
     {#if loading}
@@ -150,40 +159,82 @@
 </div>
 
 <style>
-  .layout {
-    display: grid;
-    grid-template-columns: 200px 1fr;
+  .knowledge {
+    display: flex;
+    flex-direction: column;
     gap: 1.25rem;
   }
-  .filters {
-    display: grid;
+  .toolbar {
+    display: flex;
+    flex-direction: column;
     gap: 0.75rem;
-    align-content: start;
   }
-  .filters h2 {
-    font-size: 0.9rem;
-    margin: 0;
+  .search-field {
+    position: relative;
+    display: flex;
+    align-items: center;
   }
-  .filters label {
+  .search-icon {
+    position: absolute;
+    left: 0.7rem;
+    display: inline-flex;
+    color: var(--color-text-muted);
+    pointer-events: none;
+  }
+  .search-input {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0.55rem 0.75rem 0.55rem 2.2rem;
+    font: inherit;
+    font-size: 0.95rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+  }
+  .field {
     display: grid;
-    gap: 0.2rem;
-    font-size: 0.8rem;
+    gap: 0.25rem;
+    font-size: 0.75rem;
     color: var(--color-text-muted);
   }
-  .filters input,
-  .filters select {
+  .field input,
+  .field select {
+    min-height: 40px;
     font-size: 0.85rem;
-    padding: 0.3rem 0.4rem;
+    padding: 0.35rem 0.5rem;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: var(--color-surface);
     color: var(--color-text);
   }
   .checkbox {
-    flex-direction: row;
-    align-items: center;
     display: flex;
-    gap: 0.4rem;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 40px;
+    font-size: 0.85rem;
+    color: var(--color-text);
+  }
+  .checkbox input {
+    width: 1rem;
+    height: 1rem;
+  }
+  .toolbar input:focus-visible,
+  .toolbar select:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+    border-color: var(--color-accent);
+  }
+  .results {
+    min-width: 0;
   }
   ul {
     list-style: none;
@@ -239,9 +290,18 @@
     color: var(--color-danger);
   }
 
-  @media (max-width: 720px) {
-    .layout {
-      grid-template-columns: 1fr;
+  @media (max-width: 639px) {
+    .filters {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .field,
+    .checkbox {
+      width: 100%;
+    }
+    .field input,
+    .field select {
+      width: 100%;
     }
   }
 </style>

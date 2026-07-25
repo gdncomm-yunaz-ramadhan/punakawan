@@ -11,6 +11,7 @@
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     projectId: string;
@@ -268,12 +269,19 @@
           {/if}
 
           <div class="action-buttons">
-            <button type="button" class="btn" onclick={doExport} disabled={exporting} data-testid="export-dossier">
-              {exporting ? "Exporting…" : "Export .md"}
-            </button>
-            <button type="button" class="btn primary" onclick={doFinalize} disabled={busy} data-testid="finalize-dossier">
-              {busy ? "Finalizing…" : "Finalize"}
-            </button>
+            <!-- data-testid lives on a display:contents wrapper span because the
+                 shared Button doesn't forward data-testid; these testids are only
+                 asserted present (never clicked via testid), so wrapping is safe. -->
+            <span class="btn-wrap" data-testid="export-dossier">
+              <Button variant="secondary" onclick={doExport} disabled={exporting}>
+                {exporting ? "Exporting…" : "Export .md"}
+              </Button>
+            </span>
+            <span class="btn-wrap" data-testid="finalize-dossier">
+              <Button variant="primary" onclick={doFinalize} disabled={busy}>
+                {busy ? "Finalizing…" : "Finalize"}
+              </Button>
+            </span>
           </div>
         {/if}
       </div>
@@ -371,6 +379,14 @@
     align-items: baseline;
     font-size: 0.85rem;
   }
+  /* On mobile the two-column definition grid crushes labels/values —
+     stack to a single column below 640px. */
+  @media (max-width: 639px) {
+    dl.meta {
+      grid-template-columns: 1fr;
+      gap: 0.15rem 0;
+    }
+  }
   dl.meta dt {
     color: var(--color-text-muted);
     font-weight: 600;
@@ -378,6 +394,7 @@
   dl.meta dd {
     margin: 0;
     word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .claims-list {
     margin: 0;
@@ -391,6 +408,10 @@
     background: var(--color-surface);
     border-radius: 4px;
     padding: 0.05rem 0.35rem;
+    overflow-wrap: anywhere;
+  }
+  .claims-list li {
+    overflow-wrap: anywhere;
   }
   .error {
     color: var(--color-danger);
@@ -402,29 +423,19 @@
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 1rem;
+    flex-wrap: wrap;
   }
-  .btn {
-    font: inherit;
-    font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
+  /* testid wrapper is layout-transparent so the Button is the flex item. */
+  .btn-wrap {
+    display: contents;
   }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
+  @media (max-width: 639px) {
+    .action-buttons {
+      flex-direction: column;
+    }
+    /* Stretch the shared Button (global .btn) full-width when stacked. */
+    .action-buttons :global(.btn) {
+      width: 100%;
+    }
   }
 </style>

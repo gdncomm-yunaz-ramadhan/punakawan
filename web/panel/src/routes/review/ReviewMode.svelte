@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
+  import Button from "../../lib/components/Button.svelte";
   import StickyActionBar from "../../lib/components/StickyActionBar.svelte";
   import BottomSheet from "../../lib/components/overlay/BottomSheet.svelte";
   import Dialog from "../../lib/components/overlay/Dialog.svelte";
@@ -552,12 +553,10 @@
     <p class="error" role="alert">{cancelError}</p>
   {/if}
   <div class="dialog-actions">
-    <button type="button" class="secondary-button" onclick={closeCancelConfirm} disabled={cancelling}>
-      Keep Review
-    </button>
-    <button type="button" class="danger-button" onclick={confirmCancel} disabled={cancelling}>
+    <Button variant="secondary" onclick={closeCancelConfirm} disabled={cancelling}>Keep Review</Button>
+    <Button variant="danger" onclick={confirmCancel} disabled={cancelling}>
       {cancelling ? "Cancelling…" : "Cancel Review"}
-    </button>
+    </Button>
   </div>
 </Dialog>
 
@@ -641,30 +640,6 @@
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 1rem;
-  }
-  .secondary-button {
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
-    color: var(--color-text);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
-  }
-  .danger-button {
-    border: none;
-    border-radius: 6px;
-    background: var(--color-danger);
-    color: var(--color-accent-contrast);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 44px;
-  }
-  .secondary-button:disabled,
-  .danger-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    flex-wrap: wrap;
   }
 </style>

@@ -160,7 +160,7 @@
     <div id="tabpanel-summary" role="tabpanel" aria-labelledby="tab-summary">
       <BentoGrid>
         {#each metrics as m (m.label)}
-          <MetricCard size="small" columns={2} label={m.label} value={m.value} accent={m.accent} icon={m.icon} />
+          <MetricCard size="small" columns={3} label={m.label} value={m.value} accent={m.accent} icon={m.icon} />
         {/each}
       </BentoGrid>
     </div>
@@ -282,5 +282,7 @@
     font-size: 0.82rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     margin: 0.15rem 0 1rem;
+    /* Long paths wrap instead of forcing horizontal page scroll. */
+    overflow-wrap: anywhere;
   }
 </style>

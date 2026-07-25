@@ -1,5 +1,6 @@
 <script lang="ts">
   import StatusBadge, { type BadgeVariant } from "../StatusBadge.svelte";
+  import Button from "../Button.svelte";
   import type { ArtifactComment, CommentStatus } from "../../review/api";
 
   interface Props {
@@ -78,8 +79,8 @@
       data-testid="comment-edit-input"
     ></textarea>
     <div class="actions">
-      <button type="button" onclick={cancelEdit} disabled={busy}>Cancel</button>
-      <button type="button" onclick={saveEdit} disabled={busy || !draft.trim()}>Save</button>
+      <Button variant="secondary" size="sm" onclick={cancelEdit} disabled={busy}>Cancel</Button>
+      <Button variant="primary" size="sm" onclick={saveEdit} disabled={busy || !draft.trim()}>Save</Button>
     </div>
   {:else}
     <p class="body">{comment.body}</p>
@@ -87,8 +88,8 @@
       <span class="author">{comment.author}</span>
       {#if editable && !isObsolete}
         <div class="actions">
-          <button type="button" onclick={startEdit} disabled={busy}>Edit</button>
-          <button type="button" class="delete" onclick={ondelete} disabled={busy}>Delete</button>
+          <Button variant="ghost" size="sm" onclick={startEdit} disabled={busy}>Edit</Button>
+          <Button variant="danger" size="sm" onclick={ondelete} disabled={busy}>Delete</Button>
         </div>
       {/if}
     </div>
@@ -147,24 +148,7 @@
     display: flex;
     gap: 0.4rem;
     justify-content: flex-end;
-  }
-  .actions button {
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text);
-    border-radius: 6px;
-    padding: 0.25rem 0.55rem;
-    font-size: 0.78rem;
-    cursor: pointer;
-    min-height: 44px;
-    min-width: 44px;
-  }
-  .actions button.delete {
-    color: var(--color-danger);
-  }
-  .actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    flex-wrap: wrap;
   }
   .edit-input {
     width: 100%;

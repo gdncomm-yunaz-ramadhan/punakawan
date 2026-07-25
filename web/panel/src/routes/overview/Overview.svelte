@@ -76,10 +76,12 @@
     .filter((w) => w.blocked_task_count > 0)
     .sort((a, b) => b.blocked_task_count - a.blocked_task_count)}
   <BentoGrid>
-    <MetricCard label="Active sessions" value={ov.active_sessions.length} size="small" accent="indigo" icon="activity" />
-    <MetricCard label="Blocked tasks" value={ov.blocked_tasks} size="small" accent="terracotta" icon="alert" />
-    <MetricCard label="Pending approvals" value={ov.pending_approvals.length} size="small" accent="gold" icon="approval" />
-    <MetricCard label="Available workspaces" value={ov.available_workspaces} size="small" accent="teal" icon="workspace" />
+    <!-- span 3 on the 12/6/1-col BentoGrid => 4 per row (desktop),
+         2 per row (tablet), 1 per row (mobile): the 4/2/1 cap. -->
+    <MetricCard label="Active sessions" value={ov.active_sessions.length} size="small" columns={3} accent="indigo" icon="activity" />
+    <MetricCard label="Blocked tasks" value={ov.blocked_tasks} size="small" columns={3} accent="terracotta" icon="alert" />
+    <MetricCard label="Pending approvals" value={ov.pending_approvals.length} size="small" columns={3} accent="gold" icon="approval" />
+    <MetricCard label="Available workspaces" value={ov.available_workspaces} size="small" columns={3} accent="teal" icon="workspace" />
 
     <ChartCard
       title="Blocked tasks by workspace"
@@ -205,10 +207,21 @@
     border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
+    min-height: 40px;
     display: flex;
     align-items: center;
+    /* Wrap onto a second line on narrow widths instead of forcing the
+       body to scroll horizontally; long ids/objectives break rather
+       than overflow. */
+    flex-wrap: wrap;
     gap: 0.5rem;
     justify-content: space-between;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  ul.sessions li > *,
+  ol.attention li > * {
+    min-width: 0;
   }
   .kind {
     font-weight: 600;

@@ -60,6 +60,9 @@ describe("ProjectMetadata", () => {
     installBackend({ items: [], revision: 5 });
     render(ProjectMetadata, { props: { projectId: "p1" } });
 
+    // The add fields now live in a modal opened by the "Add metadata" button.
+    await waitFor(() => expect(screen.getByTestId("add-metadata")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("add-metadata"));
     await waitFor(() => expect(screen.getByLabelText("New metadata key")).toBeTruthy());
 
     await fireEvent.input(screen.getByLabelText("New metadata key"), { target: { value: "env" } });
@@ -142,6 +145,8 @@ describe("ProjectMetadata", () => {
     );
     render(ProjectMetadata, { props: { projectId: "p1" } });
 
+    await waitFor(() => expect(screen.getByTestId("add-metadata")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("add-metadata"));
     await waitFor(() => expect(screen.getByLabelText("New metadata key")).toBeTruthy());
     await fireEvent.input(screen.getByLabelText("New metadata key"), { target: { value: "env" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -162,6 +167,8 @@ describe("ProjectMetadata", () => {
     );
     render(ProjectMetadata, { props: { projectId: "p1" } });
 
+    await waitFor(() => expect(screen.getByTestId("add-metadata")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("add-metadata"));
     await waitFor(() => expect(screen.getByLabelText("New metadata key")).toBeTruthy());
     await fireEvent.input(screen.getByLabelText("New metadata key"), { target: { value: "env" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add" }));

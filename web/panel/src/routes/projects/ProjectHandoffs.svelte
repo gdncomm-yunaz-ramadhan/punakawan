@@ -12,6 +12,7 @@
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     projectId: string;
@@ -190,25 +191,19 @@
           {/if}
 
           <div class="card-actions">
-            <button type="button" class="btn" onclick={() => copyId(h.id)} data-testid={`copy-${h.id}`}>
-              {copiedId === h.id ? "Copied" : "Copy capsule id"}
-            </button>
-            <button
-              type="button"
-              class="btn"
-              onclick={() => doSupersede(h.id)}
-              disabled={busyId === h.id || h.superseded}
-            >
+            <!-- data-testid on a display:contents wrapper span (Button doesn't
+                 forward data-testid); this testid is only asserted present. -->
+            <span class="btn-wrap" data-testid={`copy-${h.id}`}>
+              <Button variant="ghost" onclick={() => copyId(h.id)}>
+                {copiedId === h.id ? "Copied" : "Copy capsule id"}
+              </Button>
+            </span>
+            <Button variant="secondary" onclick={() => doSupersede(h.id)} disabled={busyId === h.id || h.superseded}>
               Supersede
-            </button>
-            <button
-              type="button"
-              class="btn primary"
-              onclick={() => doValidate(h.id)}
-              disabled={busyId === h.id}
-            >
+            </Button>
+            <Button variant="primary" onclick={() => doValidate(h.id)} disabled={busyId === h.id}>
               {busyId === h.id ? "Validating…" : "Validate"}
-            </button>
+            </Button>
           </div>
         </li>
       {/each}
@@ -241,15 +236,20 @@
     gap: 0.75rem;
     flex-wrap: wrap;
   }
+  .obj {
+    min-width: 0;
+  }
   .objective {
     margin: 0;
     font-weight: 600;
     font-size: 0.95rem;
+    overflow-wrap: anywhere;
   }
   .run {
     margin: 0.25rem 0 0;
     font-size: 0.8rem;
     color: var(--color-text-muted);
+    overflow-wrap: anywhere;
   }
   .superseded {
     display: inline-block;
@@ -272,6 +272,14 @@
     align-items: baseline;
     font-size: 0.85rem;
   }
+  /* On mobile the two-column definition grid crushes labels/values —
+     stack to a single column below 640px. */
+  @media (max-width: 639px) {
+    dl.meta {
+      grid-template-columns: 1fr;
+      gap: 0.15rem 0;
+    }
+  }
   dl.meta dt {
     color: var(--color-text-muted);
     font-weight: 600;
@@ -279,12 +287,14 @@
   dl.meta dd {
     margin: 0;
     word-break: break-word;
+    overflow-wrap: anywhere;
   }
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     background: var(--color-surface-subtle);
     border-radius: 4px;
     padding: 0.05rem 0.35rem;
+    overflow-wrap: anywhere;
   }
   .validation {
     background: var(--color-surface-subtle);
@@ -315,6 +325,9 @@
     gap: 0.2rem;
     font-size: 0.82rem;
   }
+  .validation-list li {
+    overflow-wrap: anywhere;
+  }
   .error {
     color: var(--color-danger);
     font-size: 0.85rem;
@@ -327,28 +340,17 @@
     flex-wrap: wrap;
     margin-top: auto;
   }
-  .btn {
-    font: inherit;
-    font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
+  /* testid wrapper is layout-transparent so the Button is the flex item. */
+  .btn-wrap {
+    display: contents;
   }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
+  @media (max-width: 639px) {
+    .card-actions {
+      flex-direction: column;
+    }
+    /* Stretch the shared Button (global .btn) full-width when stacked. */
+    .card-actions :global(.btn) {
+      width: 100%;
+    }
   }
 </style>

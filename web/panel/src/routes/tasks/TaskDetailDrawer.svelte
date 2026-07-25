@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getTask, type TaskDetail } from "../../lib/api/client";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     workspaceId: string;
@@ -48,7 +49,7 @@
 <aside class="drawer" aria-label="Task detail">
   <div class="drawer-head">
     <h2>{taskId}</h2>
-    <button type="button" class="close" onclick={onclose} aria-label="Close">✕</button>
+    <Button variant="ghost" size="sm" icon="x" ariaLabel="Close" onclick={onclose} />
   </div>
 
   {#if loading}
@@ -140,12 +141,6 @@
   .drawer-head h2 {
     font-size: 1rem;
     margin: 0;
-  }
-  .close {
-    background: none;
-    border: none;
-    font-size: 1rem;
-    cursor: pointer;
   }
   .title {
     font-size: 1.05rem;

@@ -87,18 +87,33 @@
     padding: 0;
     margin: 0;
     display: grid;
-    /* Reflowing bento grid: cards fill the full canvas width and wrap into
-       as many columns as fit, instead of one left-hugging column. */
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    /* Explicit responsive cap (matches the 4/2/1 rule): 1 column on
+       mobile (<640px), 2 on tablet (>=640px), 4 on desktop (>=1024px).
+       minmax(0, 1fr) lets tracks shrink so long paths/titles wrap
+       instead of forcing horizontal page scroll. */
+    grid-template-columns: 1fr;
     gap: 1rem;
+  }
+  @media (min-width: 640px) {
+    ul.projects {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1024px) {
+    ul.projects {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
   }
   ul.projects li {
     display: flex;
+    min-width: 0;
   }
   .card {
     position: relative;
     overflow: hidden;
     width: 100%;
+    min-width: 0;
+    min-height: 40px;
     text-align: left;
     border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-card);
@@ -137,6 +152,8 @@
   }
   .name {
     font-size: 1.05rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .project-title {
     display: inline-flex;
@@ -178,6 +195,8 @@
     color: var(--color-text-muted);
     font-size: 0.82rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* Long paths wrap instead of forcing horizontal page scroll. */
+    overflow-wrap: anywhere;
   }
   .stats {
     display: flex;

@@ -9,6 +9,9 @@
     type RolesConfiguration,
     type RoleCapabilityInfo,
   } from "../../lib/api/client";
+  import { roleAvatars } from "../../lib/assets/roles";
+  import Card from "../../lib/components/cards/Card.svelte";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     projectId: string;
@@ -260,9 +263,21 @@
         {@const owned = ownedByRole[role] ?? []}
         {@const preview = effectivePreview(role)}
         {@const dirty = isDirty(role)}
-        <article class="card" aria-label={`${meta.label} role`}>
-          <header class="card-head">
-            <h3>{meta.label}</h3>
+        <article class="role-cell" aria-label={`${meta.label} role`}>
+        <Card>
+          {#snippet header()}
+            <div class="role-identity">
+              <img
+                class="role-portrait"
+                src={roleAvatars[role]}
+                alt={`${meta.label} portrait`}
+                width="64"
+                height="72"
+                loading="lazy"
+                decoding="async"
+              />
+              <h3>{meta.label}</h3>
+            </div>
             <label class="switch">
               <input
                 type="checkbox"
@@ -272,7 +287,8 @@
               />
               <span>Enabled</span>
             </label>
-          </header>
+          {/snippet}
+
           <p class="responsibility">{meta.responsibility}</p>
 
           <div class="field">
@@ -348,19 +364,22 @@
             <p class="error" role="alert" data-testid={`role-error-${role}`}>{roleError[role]}</p>
           {/if}
 
-          <div class="card-actions">
-            <button type="button" class="btn" onclick={() => reset(role)} disabled={busyRole === role}>
-              Reset defaults
-            </button>
-            <button
-              type="button"
-              class="btn primary"
-              onclick={() => save(role)}
-              disabled={!dirty || busyRole === role}
-            >
-              {busyRole === role ? "Saving…" : "Save"}
-            </button>
-          </div>
+          {#snippet footer()}
+            <div class="card-actions">
+              <Button variant="secondary" fullWidth onclick={() => reset(role)} disabled={busyRole === role}>
+                Reset defaults
+              </Button>
+              <Button
+                variant="primary"
+                fullWidth
+                onclick={() => save(role)}
+                disabled={!dirty || busyRole === role}
+              >
+                {busyRole === role ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          {/snippet}
+        </Card>
         </article>
       {/each}
     </div>
@@ -383,30 +402,53 @@
   }
   .roles {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    /* Hard column cap: 1 column below 640px so nothing overflows on phones. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
   }
-  .card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
-    padding: 1.05rem 1.15rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    box-sizing: border-box;
-    min-width: 0;
+  /* 2 columns on tablets. */
+  @media (min-width: 640px) {
+    .roles {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
-  .card-head {
+  /* At most 4 columns on desktop — the four roles fit in a single row and
+     never over-column on ultrawide displays. */
+  @media (min-width: 1024px) {
+    .roles {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  /* Each grid cell just carries the role's accessible label; the visual
+     surface is the shared Setara Card inside it. */
+  .role-cell {
+    min-width: 0;
+    display: flex;
+  }
+  .role-cell :global(.card) {
+    width: 100%;
+    gap: 0.75rem;
+  }
+  .role-identity {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.7rem;
+    min-width: 0;
+  }
+  .role-portrait {
+    flex: none;
+    width: 64px;
+    height: 72px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    /* contain (not cover) so the full wayang figure shows, uncropped. */
+    object-fit: contain;
+    background: var(--color-surface-subtle);
+    padding: 2px;
   }
   h3 {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 1.1rem;
   }
   .responsibility {
     margin: 0;
@@ -424,19 +466,22 @@
     color: var(--color-text-muted);
     font-weight: 600;
   }
+  /* Full-width segmented control with equal-width segments, so Style and
+     Mode line up proportionally (each option the same width across both). */
   .segmented {
-    display: inline-flex;
+    display: flex;
+    width: 100%;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius-sm);
     overflow: hidden;
-    align-self: flex-start;
   }
   .segment {
     font: inherit;
     font-size: 0.8rem;
     font-weight: 600;
-    padding: 0.35rem 0.7rem;
-    min-height: 36px;
+    flex: 1 1 0;
+    padding: 0.4rem 0.5rem;
+    min-height: 38px;
     border: 0;
     border-right: 1px solid var(--color-border);
     background: var(--color-surface);
@@ -508,34 +553,9 @@
     background: var(--color-surface);
     border: 1px solid var(--color-border);
   }
+  /* Proportional action row: Reset and Save share the width equally. */
   .card-actions {
     display: flex;
-    justify-content: flex-end;
     gap: 0.5rem;
-    margin-top: auto;
-  }
-  .btn {
-    font: inherit;
-    font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
-  }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
   }
 </style>

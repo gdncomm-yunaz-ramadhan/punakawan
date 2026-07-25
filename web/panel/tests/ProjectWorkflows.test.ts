@@ -48,7 +48,10 @@ describe("ProjectWorkflows", () => {
     await waitFor(() => expect(screen.getByText("Deploy")).toBeTruthy());
     expect(screen.getByText("Disabled")).toBeTruthy();
 
-    await fireEvent.click(screen.getByTestId("toggle-deploy"));
+    // Toggle is now the shared Button primitive; its accessible name comes
+    // from the preserved aria-label. The data-testid="toggle-deploy" span
+    // still wraps it.
+    await fireEvent.click(screen.getByRole("button", { name: "Enable Deploy" }));
 
     await waitFor(() => {
       const post = (fetch as unknown as FetchMock).mock.calls.find((c) => c[1]?.method === "POST");
@@ -75,7 +78,7 @@ describe("ProjectWorkflows", () => {
     await fireEvent.click(screen.getByTestId("workflow-row-deploy"));
     await waitFor(() => expect(screen.getByTestId("invoke-btn")).toBeTruthy());
 
-    await fireEvent.click(screen.getByTestId("invoke-btn"));
+    await fireEvent.click(screen.getByRole("button", { name: "Execute workflow" }));
 
     await waitFor(() =>
       expect(screen.getByTestId("invoke-error").textContent).toContain("not connected to the run engine"),
@@ -98,7 +101,7 @@ describe("ProjectWorkflows", () => {
 
     await fireEvent.click(screen.getByTestId("workflow-row-deploy"));
     await waitFor(() => expect(screen.getByTestId("invoke-btn")).toBeTruthy());
-    await fireEvent.click(screen.getByTestId("invoke-btn"));
+    await fireEvent.click(screen.getByRole("button", { name: "Execute workflow" }));
 
     await waitFor(() => expect(screen.getByTestId("invoke-error").textContent).toContain("enable it before invoking"));
   });

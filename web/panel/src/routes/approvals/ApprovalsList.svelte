@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { listApprovals, type ApprovalRecord } from "../../lib/api/client";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import Button from "../../lib/components/Button.svelte";
   import Card from "../../lib/components/cards/Card.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
 
@@ -100,15 +101,15 @@
               <div class="commands">
                 <div class="command-row">
                   <code>{rec.approve_command}</code>
-                  <button type="button" onclick={() => copy(rec.approve_command ?? "", rec.id + "-approve")}>
+                  <Button variant="ghost" size="sm" onclick={() => copy(rec.approve_command ?? "", rec.id + "-approve")}>
                     {copiedId === rec.id + "-approve" ? "Copied" : "Copy"}
-                  </button>
+                  </Button>
                 </div>
                 <div class="command-row">
                   <code>{rec.deny_command}</code>
-                  <button type="button" onclick={() => copy(rec.deny_command ?? "", rec.id + "-deny")}>
+                  <Button variant="ghost" size="sm" onclick={() => copy(rec.deny_command ?? "", rec.id + "-deny")}>
                     {copiedId === rec.id + "-deny" ? "Copied" : "Copy"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             {/if}
@@ -200,15 +201,6 @@
     border-radius: 4px;
     overflow-x: auto;
     white-space: pre;
-  }
-  .command-row button {
-    font-size: 0.78rem;
-    padding: 0.3rem 0.6rem;
-    border: 1px solid var(--color-accent);
-    background: var(--color-surface);
-    color: var(--color-accent);
-    border-radius: 6px;
-    cursor: pointer;
   }
   .error {
     color: var(--color-danger);

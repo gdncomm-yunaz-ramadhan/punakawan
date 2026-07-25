@@ -9,6 +9,7 @@
     type WorkflowDefinition,
   } from "../../lib/api/client";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
+  import Button from "../../lib/components/Button.svelte";
   import Icon from "../../lib/components/Icon.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
@@ -185,19 +186,20 @@
           </div>
           <div class="workflow-actions">
             <span class="inspect">Open canvas <span aria-hidden="true">→</span></span>
-            <button
-              type="button"
-              class="btn compact"
-              onclick={(e) => {
-                e.stopPropagation();
-                toggle(wf);
-              }}
-              disabled={toggling[wf.id]}
-              data-testid={`toggle-${wf.id}`}
-              aria-label={`${wf.enabled ? "Disable" : "Enable"} ${wf.name || wf.id}`}
-            >
-              {#if toggling[wf.id]}…{:else}{wf.enabled ? "Disable" : "Enable"}{/if}
-            </button>
+            <span data-testid={`toggle-${wf.id}`}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  toggle(wf);
+                }}
+                disabled={toggling[wf.id]}
+                ariaLabel={`${wf.enabled ? "Disable" : "Enable"} ${wf.name || wf.id}`}
+              >
+                {#if toggling[wf.id]}…{:else}{wf.enabled ? "Disable" : "Enable"}{/if}
+              </Button>
+            </span>
           </div>
         </div>
       {/each}
@@ -326,10 +328,11 @@
               {:else}
                 <p class="no-inputs">This workflow takes no inputs.</p>
               {/if}
-              <button type="submit" class="btn primary" disabled={invoking} data-testid="invoke-btn">
-                <Icon name="activity" size={15} />
-                {invoking ? "Invoking…" : "Execute workflow"}
-              </button>
+              <span data-testid="invoke-btn">
+                <Button type="submit" variant="primary" icon="activity" disabled={invoking}>
+                  {invoking ? "Invoking…" : "Execute workflow"}
+                </Button>
+              </span>
             </form>
           </div>
 
@@ -490,39 +493,6 @@
     color: var(--color-danger);
     font-size: 0.85rem;
     margin: 0;
-  }
-  .btn {
-    font: inherit;
-    font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-  }
-  .btn.compact {
-    min-height: 32px;
-    padding: 0.25rem 0.65rem;
-    font-size: 0.72rem;
-  }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
   }
   .detail {
     padding: 1rem;

@@ -12,6 +12,7 @@
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import Button from "../../lib/components/Button.svelte";
 
   interface Props {
     projectId: string;
@@ -283,22 +284,12 @@
                 <p class="error" role="alert" data-testid="action-error">{actionError}</p>
               {/if}
               <div class="action-buttons">
-                <button
-                  type="button"
-                  class="btn"
-                  onclick={doAcceptDivergence}
-                  disabled={busy}
-                >
+                <Button variant="secondary" onclick={doAcceptDivergence} disabled={busy}>
                   Accept divergence
-                </button>
-                <button
-                  type="button"
-                  class="btn primary"
-                  onclick={doResolve}
-                  disabled={busy || !resolveStatement.trim()}
-                >
+                </Button>
+                <Button variant="primary" onclick={doResolve} disabled={busy || !resolveStatement.trim()}>
                   {busy ? "Saving…" : "Resolve"}
-                </button>
+                </Button>
               </div>
             </div>
           {/if}
@@ -398,8 +389,21 @@
   }
   .claims {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    /* Explicit responsive cap (4/2/1 rule): 1 column on mobile (<640px),
+       2 on tablet (>=640px), 4 on desktop (>=1024px). minmax(0,1fr) lets
+       tracks shrink so long statements wrap instead of overflowing. */
+    grid-template-columns: 1fr;
     gap: 0.75rem;
+  }
+  @media (min-width: 640px) {
+    .claims {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1024px) {
+    .claims {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
   }
   .claim {
     background: var(--color-surface);
@@ -408,6 +412,7 @@
     padding: 0.7rem 0.8rem;
     display: grid;
     gap: 0.35rem;
+    min-width: 0;
   }
   .claim-source {
     margin: 0;
@@ -420,6 +425,7 @@
   .claim-statement {
     margin: 0;
     font-size: 0.88rem;
+    overflow-wrap: anywhere;
   }
   .evidence {
     list-style: none;
@@ -437,6 +443,14 @@
     align-items: baseline;
     font-size: 0.85rem;
   }
+  /* On mobile the two-column definition grid crushes labels/values —
+     stack to a single column below 640px. */
+  @media (max-width: 639px) {
+    dl.meta {
+      grid-template-columns: 1fr;
+      gap: 0.15rem 0;
+    }
+  }
   dl.meta dt {
     color: var(--color-text-muted);
     font-weight: 600;
@@ -444,12 +458,14 @@
   dl.meta dd {
     margin: 0;
     word-break: break-word;
+    overflow-wrap: anywhere;
   }
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     background: var(--color-surface);
     border-radius: 4px;
     padding: 0.05rem 0.35rem;
+    overflow-wrap: anywhere;
   }
   .actions {
     margin-top: 1rem;
@@ -467,6 +483,11 @@
   .field.by {
     max-width: 16rem;
   }
+  @media (max-width: 639px) {
+    .field.by {
+      max-width: none;
+    }
+  }
   textarea,
   input {
     font: inherit;
@@ -478,6 +499,9 @@
     width: 100%;
     box-sizing: border-box;
     resize: vertical;
+  }
+  input {
+    min-height: 40px;
   }
   textarea:focus-visible,
   input:focus-visible {
@@ -493,29 +517,15 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
+    flex-wrap: wrap;
   }
-  .btn {
-    font: inherit;
-    font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
-  }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
+  @media (max-width: 639px) {
+    .action-buttons {
+      flex-direction: column;
+    }
+    /* Stretch the shared Button (global .btn) full-width when stacked. */
+    .action-buttons :global(.btn) {
+      width: 100%;
+    }
   }
 </style>

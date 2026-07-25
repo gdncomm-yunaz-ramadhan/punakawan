@@ -73,28 +73,30 @@
 <style>
   .tabs {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.4rem;
     overflow-x: auto;
-    gap: 0.25rem;
+    /* The row scrolls horizontally, so tabs never need to cram to fit -
+       give each room to breathe and don't stretch them to fill. */
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
     background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-    padding: 0.35rem;
+    padding: 0.4rem 0.5rem;
     margin-bottom: 1.15rem;
     box-shadow: var(--shadow-sm);
+    scrollbar-width: thin;
   }
   .tab {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.34rem;
-    flex: 1 0 auto;
+    gap: 0.4rem;
+    flex: 0 0 auto;
     border: none;
     background: none;
     color: var(--color-text-muted);
     font-size: 0.85rem;
     font-weight: 600;
-    padding: 0.5rem 0.55rem;
+    padding: 0.55rem 0.95rem;
     min-height: 44px;
     cursor: pointer;
     border: 1px solid transparent;

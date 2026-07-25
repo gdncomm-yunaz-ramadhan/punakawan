@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getHealth, refreshHealth, type Availability, type HealthResponse } from "../../lib/api/client";
+  import Button from "../../lib/components/Button.svelte";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
@@ -67,15 +68,11 @@
           <span class="fresh" data-testid="fresh-indicator">Up to date</span>
         {/if}
       </div>
-      <button
-        type="button"
-        class="btn primary"
-        onclick={refresh}
-        disabled={refreshing}
-        data-testid="refresh-health"
-      >
-        {refreshing ? "Refreshing…" : "Refresh"}
-      </button>
+      <span data-testid="refresh-health">
+        <Button variant="primary" onclick={refresh} disabled={refreshing}>
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      </span>
     </div>
 
     {#if refreshError}
@@ -137,30 +134,6 @@
     color: var(--color-danger);
     font-size: 0.85rem;
     margin: 0 0 1rem;
-  }
-  .btn {
-    font: inherit;
-    font-weight: 600;
-    font-size: 0.82rem;
-    padding: 0.4rem 0.8rem;
-    min-height: 40px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
-  }
-  .btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-contrast);
   }
   .table-scroll {
     overflow-x: auto;

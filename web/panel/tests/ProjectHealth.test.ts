@@ -51,7 +51,9 @@ describe("ProjectHealth", () => {
     render(ProjectHealth, { props: { projectId: "p1" } });
     await waitFor(() => expect(screen.getByTestId("stale-indicator")).toBeTruthy());
 
-    await fireEvent.click(screen.getByTestId("refresh-health"));
+    // Refresh is now the shared Button primitive (a real <button>), still
+    // wrapped in the data-testid="refresh-health" span for locating it.
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => {
       const post = (fetch as unknown as FetchMock).mock.calls.find((c) => c[1]?.method === "POST");
@@ -77,7 +79,7 @@ describe("ProjectHealth", () => {
     render(ProjectHealth, { props: { projectId: "p1" } });
     await waitFor(() => expect(screen.getByText("jira")).toBeTruthy());
 
-    await fireEvent.click(screen.getByTestId("refresh-health"));
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => expect(screen.getByTestId("refresh-error").textContent).toContain("probe failed"));
     // Table still on screen after a failed refresh.
