@@ -1,0 +1,38 @@
+web/panel/src/routes/overview/Overview.svelte
+  d98638225f35480d 109-128,260-292
+web/panel/src/lib/components/cards/StatusCard.svelte
+  d98638225f35480d 2,16-19,21,52-54,103-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "193f5bd212adee2ee32196b1da988d34955a2737",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 67,
+      "total_deletions": 2,
+      "accepted_lines": 68,
+      "overriden_lines": 0
+    }
+  }
+}
