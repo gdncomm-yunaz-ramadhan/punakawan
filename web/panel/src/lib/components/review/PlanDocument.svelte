@@ -116,7 +116,7 @@
           <p>{node.text}</p>
         {/if}
         <!-- blockMarker nodes are deliberately invisible: they are an
-             anchoring aid (<!-- pk:block:... -->), not visible content. -->
+             anchoring aid (a pk:block HTML marker), not visible content. -->
       {/each}
     </section>
   {/each}
