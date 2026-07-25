@@ -21,5 +21,6 @@ This directory contains the Architecture Decision Records (ADRs) formalizing the
 | [ADR-0015](./ADR-0015-bagong-reviews-raw-evidence-independently.md) | Bagong reviews raw evidence independently. |
 | [ADR-0016](./ADR-0016-punakawans-mcp-server-exposes-roles-to-connected-llm-clients.md) | Punakawan's own MCP server exposes roles to connected LLM clients. |
 | [ADR-0017](./ADR-0017-direct-atlassian-rest-replaces-rovo-mcp.md) | Direct Atlassian REST replaces Rovo MCP. |
+| [ADR-0018](./ADR-0018-punakawan-managed-dolt-is-the-beads-less-fallback-task-graph.md) | Punakawan-managed Dolt is the Beads-less fallback task graph (qualifies ADR-0006). |
 
 See `punakawan-go-typescript-detailed-plan.md` §25 for the original decision list (ADR-0001 through ADR-0015) and §28 for the role-invocation design (ADR-0016).
