@@ -23,6 +23,7 @@ import (
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/syncqueue"
+	"github.com/ygrip/punakawan/internal/taskstore"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -54,6 +55,9 @@ type App struct {
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
+
+	taskStoreMu sync.Mutex
+	taskStore   *taskstore.Store
 
 	searchIndexMu sync.Mutex
 	searchIndex   *search.Index
@@ -262,6 +266,33 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 		return nil, err
 	}
 	a.knowledgeStore = store
+	return store, nil
+}
+
+// OpenTaskStore lazily opens the Beads-less fallback task store, memoizing the
+// result. It shares the knowledge store's Dolt connection (the task tables
+// live in the same per-project Punakawan database), so it implicitly opens
+// knowledge first. Used only for projects with no .beads directory; a
+// Beads-backed project reads/writes tasks through bd instead.
+func (a *App) OpenTaskStore() (*taskstore.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.taskStoreMu.Lock()
+	defer a.taskStoreMu.Unlock()
+
+	if a.taskStore != nil {
+		return a.taskStore, nil
+	}
+	k, err := a.OpenKnowledge()
+	if err != nil {
+		return nil, err
+	}
+	store := taskstore.New(k.DB())
+	if err := store.Migrate(); err != nil {
+		return nil, err
+	}
+	a.taskStore = store
 	return store, nil
 }
 

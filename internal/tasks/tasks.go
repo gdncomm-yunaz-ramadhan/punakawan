@@ -26,6 +26,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/taskstore"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -204,14 +205,35 @@ func createTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir st
 	}
 
 	description := in.Scope
-	beadsID, err := beads.CreateTask(ctx, sup, dir, req.Title, description, beads.CreateTaskOptions{
+	opts := beads.CreateTaskOptions{
 		Type:               in.BeadsType,
 		Parent:             in.BeadsParent,
 		Labels:             in.BeadsLabels,
 		AcceptanceCriteria: in.AcceptanceCriteria,
-	})
+	}
+	// Beads-less project: persist to Punakawan's fallback task store instead
+	// of shelling out to bd (which would fail without a .beads database). The
+	// returned id plays the same role bd's does - BeadsEpic and the wiring key.
+	var beadsID string
+	var err error
+	if beads.ProjectInitialized(dir) {
+		beadsID, err = beads.CreateTask(ctx, sup, dir, req.Title, description, opts)
+	} else {
+		ts, terr := fallbackTaskStore(store)
+		if terr != nil {
+			return protocol.TaskContract{}, terr
+		}
+		beadsID, err = ts.Create(ctx, taskstore.CreateInput{
+			Title:              req.Title,
+			Description:        description,
+			Type:               opts.Type,
+			Parent:             opts.Parent,
+			Labels:             opts.Labels,
+			AcceptanceCriteria: opts.AcceptanceCriteria,
+		})
+	}
 	if err != nil {
-		return protocol.TaskContract{}, fmt.Errorf("tasks: create beads issue for %s: %w", in.TaskID, err)
+		return protocol.TaskContract{}, fmt.Errorf("tasks: create task issue for %s: %w", in.TaskID, err)
 	}
 	contract.BeadsEpic = &beadsID
 
@@ -321,6 +343,16 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 		resultByKey[item.LocalKey] = results[i]
 	}
 
+	// Resolve the fallback store once for the whole graph when this project
+	// has no .beads; nil means the bd-backed WireDependency path.
+	var ts *taskstore.Store
+	if !beads.ProjectInitialized(dir) {
+		var err error
+		if ts, err = fallbackTaskStore(store); err != nil {
+			return nil, err
+		}
+	}
+
 	for _, item := range items {
 		from := resultByKey[item.LocalKey]
 		if from.Contract.BeadsEpic == nil {
@@ -331,6 +363,16 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 			if to.Contract.BeadsEpic == nil {
 				continue
 			}
+			if ts != nil {
+				bdType, err := beadsDependencyType(dep.Type)
+				if err != nil {
+					return nil, err
+				}
+				if err := ts.AddDependency(ctx, *from.Contract.BeadsEpic, *to.Contract.BeadsEpic, bdType); err != nil {
+					return nil, fmt.Errorf("tasks: wire dependency %q -> %q: %w", item.LocalKey, dep.LocalKey, err)
+				}
+				continue
+			}
 			if err := WireDependency(ctx, sup, dir, *from.Contract.BeadsEpic, *to.Contract.BeadsEpic, dep.Type); err != nil {
 				return nil, fmt.Errorf("tasks: wire dependency %q -> %q: %w", item.LocalKey, dep.LocalKey, err)
 			}
@@ -338,6 +380,17 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 	}
 
 	return results, nil
+}
+
+// fallbackTaskStore builds a taskstore over the knowledge store's shared Dolt
+// connection (the fallback task tables live in the same Punakawan database).
+// Migrate is idempotent, so calling this per write is safe and cheap.
+func fallbackTaskStore(store *knowledge.Store) (*taskstore.Store, error) {
+	ts := taskstore.New(store.DB())
+	if err := ts.Migrate(); err != nil {
+		return nil, fmt.Errorf("tasks: open fallback task store: %w", err)
+	}
+	return ts, nil
 }
 
 // WireDependency creates a Beads dependency edge matching a
