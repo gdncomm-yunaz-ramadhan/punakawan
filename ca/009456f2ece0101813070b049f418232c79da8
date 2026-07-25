@@ -1,0 +1,83 @@
+internal/roleconfig/resolver.go
+  d98638225f35480d 1-195
+.beads/issues.jsonl
+  2f887451c47c71bf 47-48
+internal/panel/api/roles_handler_test.go
+  d98638225f35480d 1-209
+internal/roleconfig/defaults.go
+  d98638225f35480d 1-77
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 784-867
+web/panel/src/routes/projects/ProjectDetail.svelte
+  d98638225f35480d 13,37,49,159-162
+web/panel/src/routes/projects/ProjectRoles.svelte
+  d98638225f35480d 1-541
+internal/panel/contract/readers.go
+  d98638225f35480d 19,309-341
+internal/roleconfig/mutate.go
+  d98638225f35480d 1-115
+internal/roleconfig/resolver_test.go
+  d98638225f35480d 1-235
+pkg/protocol/doc.go
+  d98638225f35480d 6
+web/panel/tests/ProjectRoles.test.ts
+  d98638225f35480d 1-133
+protocol/roleconfig.schema.json
+  d98638225f35480d 1-49
+internal/panel/server/server.go
+  d98638225f35480d 207-210
+internal/roleconfig/roleconfig.go
+  d98638225f35480d 1-275
+internal/roleconfig/roleconfig_test.go
+  d98638225f35480d 1-461
+internal/panel/api/roles_handler.go
+  d98638225f35480d 1-113
+internal/panel/deps.go
+  d98638225f35480d 20-21,39,69-78,91-92,249-315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ca009456f2ece0101813070b049f418232c79da8",
+  "prompts": {
+    "0f1fa4996cc8b504": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9728-7796-7f82-b4c5-2e639726123c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2636,
+      "total_deletions": 28,
+      "accepted_lines": 2616,
+      "overriden_lines": 0
+    }
+  }
+}
