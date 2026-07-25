@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -231,4 +232,57 @@ func TestHandoffValidateAndResume(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("resume from a superseded capsule should be an error")
 	}
+}
+
+// TestSemarFinalizeBlockedByOpenContradiction checks CONTRA-008: Semar cannot
+// submit a final plan while a blocking contradiction is still open. A critical
+// contradiction is blocking by default (§19), so submitting one and then a
+// final_plan must be refused with a message naming the blocker.
+func TestSemarFinalizeBlockedByOpenContradiction(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	var con SubmitContradictionOutput
+	callTool(t, cs, "submit_contradiction", map[string]any{
+		"title":    "critical retry disagreement",
+		"severity": "critical",
+		"subject":  map[string]any{"type": "configuration", "key": "payout.retry.max"},
+		"claims": []any{
+			map[string]any{"source": map[string]any{"type": "repository", "ref": "a"}, "statement": "3"},
+			map[string]any{"source": map[string]any{"type": "jira", "ref": "b"}, "statement": "5"},
+		},
+	}, &con)
+	if con.Contradiction.Blocking == nil || !*con.Contradiction.Blocking {
+		t.Fatalf("a critical contradiction should be blocking by default: %+v", con.Contradiction)
+	}
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "submit_semar_synthesis",
+		Arguments: map[string]any{
+			"id":         "run-1",
+			"title":      "final plan",
+			"final_plan": map[string]any{"requirements": []string{"r1"}, "acceptance_criteria": []string{"a1"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool submit_semar_synthesis: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("final plan submission should be refused while a blocking contradiction is open")
+	}
+	msg := errorText(res)
+	if !strings.Contains(msg, "blocking contradiction") || !strings.Contains(msg, con.Contradiction.Id) {
+		t.Fatalf("error %q should name the blocking contradiction %q", msg, con.Contradiction.Id)
+	}
+}
+
+// errorText concatenates the text content blocks of an error tool result.
+func errorText(res *mcp.CallToolResult) string {
+	var b strings.Builder
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			b.WriteString(tc.Text)
+		}
+	}
+	return b.String()
 }

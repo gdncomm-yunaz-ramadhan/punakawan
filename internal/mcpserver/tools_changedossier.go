@@ -180,6 +180,65 @@ func addDossierEvidenceHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 	}
 }
 
+// SetDossierContradictionsInput is set_dossier_contradictions's input. The
+// unresolved set drives Finalize blocking (§34): a dossier with unresolved
+// contradictions cannot be finalized.
+type SetDossierContradictionsInput struct {
+	DossierId  string   `json:"dossier_id" jsonschema:"the dossier to update"`
+	Resolved   []string `json:"resolved,omitempty" jsonschema:"resolved contradiction ids"`
+	Unresolved []string `json:"unresolved,omitempty" jsonschema:"unresolved contradiction ids; these block finalization"`
+}
+
+func setDossierContradictionsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SetDossierContradictionsInput) (*mcp.CallToolResult, ChangeDossierOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in SetDossierContradictionsInput) (*mcp.CallToolResult, ChangeDossierOutput, error) {
+		if err := authorizeRoleSubmit(a, roleconfig.Semar, "change_dossier"); err != nil {
+			return nil, ChangeDossierOutput{}, err
+		}
+		d, err := dossier.SetContradictions(a.Workspace.Root, in.DossierId, in.Resolved, in.Unresolved, dossier.PutOptions{})
+		if err != nil {
+			return nil, ChangeDossierOutput{}, fmt.Errorf("mcpserver: set dossier contradictions: %w", err)
+		}
+		return nil, ChangeDossierOutput{Dossier: d}, nil
+	}
+}
+
+// DossierExcludedRepoInput mirrors dossier.ExcludedRepository at the MCP
+// boundary: a repository deliberately left out of the change, with the reason
+// (§33 impact section).
+type DossierExcludedRepoInput struct {
+	Repository string `json:"repository" jsonschema:"the excluded repository"`
+	Reason     string `json:"reason" jsonschema:"why it is excluded from this change"`
+}
+
+// SetDossierImpactInput is set_dossier_impact's input.
+type SetDossierImpactInput struct {
+	DossierId            string                     `json:"dossier_id" jsonschema:"the dossier to update"`
+	Repositories         []string                   `json:"repositories,omitempty" jsonschema:"repositories this change affects"`
+	ExcludedRepositories []DossierExcludedRepoInput `json:"excluded_repositories,omitempty" jsonschema:"repositories deliberately excluded, each with a reason"`
+	MissingCoverage      []string                   `json:"missing_coverage,omitempty" jsonschema:"impacted areas with no test/verification coverage"`
+}
+
+func setDossierImpactHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SetDossierImpactInput) (*mcp.CallToolResult, ChangeDossierOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in SetDossierImpactInput) (*mcp.CallToolResult, ChangeDossierOutput, error) {
+		if err := authorizeRoleSubmit(a, roleconfig.Semar, "change_dossier"); err != nil {
+			return nil, ChangeDossierOutput{}, err
+		}
+		excluded := make([]dossier.ExcludedRepository, 0, len(in.ExcludedRepositories))
+		for _, e := range in.ExcludedRepositories {
+			excluded = append(excluded, dossier.ExcludedRepository{Repository: e.Repository, Reason: e.Reason})
+		}
+		d, err := dossier.SetImpact(a.Workspace.Root, in.DossierId, dossier.ImpactSection{
+			Repositories:         in.Repositories,
+			ExcludedRepositories: excluded,
+			MissingCoverage:      in.MissingCoverage,
+		}, dossier.PutOptions{})
+		if err != nil {
+			return nil, ChangeDossierOutput{}, fmt.Errorf("mcpserver: set dossier impact: %w", err)
+		}
+		return nil, ChangeDossierOutput{Dossier: d}, nil
+	}
+}
+
 // FinalizeDossierInput is finalize_dossier's input.
 type FinalizeDossierInput struct {
 	DossierId string `json:"dossier_id" jsonschema:"the dossier to finalize (must be at verified status and free of blocking findings)"`

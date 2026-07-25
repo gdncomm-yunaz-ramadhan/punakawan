@@ -277,6 +277,9 @@ func TestBuildFromWorkspaceCreatesProjectAndRepoNodes(t *testing.T) {
 
 func TestStubBuildersReturnNil(t *testing.T) {
 	root := t.TempDir()
+	// Run outside any workspace: the on-disk scanners must degrade to no-ops
+	// (no workspace discoverable) rather than erroring, and the remaining
+	// stubs must return nil, and none may write any data.
 	for name, fn := range map[string]func(string) error{
 		"openapi": BuildFromOpenAPI,
 		"tests":   BuildFromTests,
@@ -285,12 +288,158 @@ func TestStubBuildersReturnNil(t *testing.T) {
 		"sources": BuildFromSources,
 	} {
 		if err := fn(root); err != nil {
-			t.Errorf("%s stub returned %v, want nil", name, err)
+			t.Errorf("%s builder returned %v, want nil", name, err)
 		}
 	}
-	// Stubs must not have written any data.
 	nodes, _ := Nodes(root)
 	if len(nodes) != 0 {
-		t.Fatalf("stubs wrote %d nodes, want 0", len(nodes))
+		t.Fatalf("builders wrote %d nodes, want 0 (no workspace)", len(nodes))
+	}
+}
+
+// TestBuildFromWorkspaceScansOnDiskSources creates a small single-repo
+// workspace with an OpenAPI spec, a test file, and a Dockerfile, then asserts
+// BuildFromWorkspace populates the graph with the expected node/edge types and
+// that Query surfaces them.
+func TestBuildFromWorkspaceScansOnDiskSources(t *testing.T) {
+	root := t.TempDir()
+	punakawanDir := filepath.Join(root, ".punakawan")
+	if err := os.MkdirAll(punakawanDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Single repo rooted at the workspace root itself.
+	ws := "version: punakawan.workspace/v1\nid: shop\nname: Shop\nrepositories:\n  - id: api\n    path: .\n"
+	if err := os.WriteFile(filepath.Join(punakawanDir, "workspace.yaml"), []byte(ws), 0o644); err != nil {
+		t.Fatalf("write workspace.yaml: %v", err)
+	}
+
+	// OpenAPI spec with one operation.
+	openapi := "openapi: 3.0.0\ninfo:\n  title: Shop\n  version: 1.0.0\npaths:\n  /merchants/{id}/badge:\n    get:\n      operationId: getMerchantBadge\n      summary: Get badge\n"
+	if err := os.WriteFile(filepath.Join(root, "openapi.yaml"), []byte(openapi), 0o644); err != nil {
+		t.Fatalf("write openapi: %v", err)
+	}
+	// A Go source file and its sibling test.
+	if err := os.WriteFile(filepath.Join(root, "merchant.go"), []byte("package shop\n\nfunc Badge() {}\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "merchant_test.go"), []byte("package shop\n\nimport \"testing\"\n\nfunc TestBadge(t *testing.T) {}\n"), 0o644); err != nil {
+		t.Fatalf("write test: %v", err)
+	}
+	// A Dockerfile (deployment artifact).
+	if err := os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatalf("write dockerfile: %v", err)
+	}
+
+	if err := BuildFromWorkspace(root); err != nil {
+		t.Fatalf("BuildFromWorkspace: %v", err)
+	}
+	// Idempotent: a second pass must not change the folded graph.
+	if err := Refresh(root); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+
+	nodes, err := Nodes(root)
+	if err != nil {
+		t.Fatalf("Nodes: %v", err)
+	}
+	byType := map[protocol.ImpactNodeType]int{}
+	for _, n := range nodes {
+		byType[n.Type]++
+	}
+	for _, want := range []protocol.ImpactNodeType{
+		protocol.ImpactNodeTypeProject,
+		protocol.ImpactNodeTypeRepository,
+		protocol.ImpactNodeTypeApiOperation,
+		protocol.ImpactNodeTypeTest,
+		protocol.ImpactNodeTypeSourceSymbol,
+		protocol.ImpactNodeTypeDeploymentArtifact,
+	} {
+		if byType[want] == 0 {
+			t.Errorf("no node of type %s produced; nodes=%+v", want, nodes)
+		}
+	}
+
+	// The OpenAPI operation node uses its operationId key.
+	apiID := apiNodeID("api", "getMerchantBadge")
+	if _, ok, _ := GetNode(root, apiID); !ok {
+		t.Errorf("missing api_operation node %s", apiID)
+	}
+	// The Dockerfile deployment artifact node.
+	deployID := deployNodeID("api", "Dockerfile")
+	if _, ok, _ := GetNode(root, deployID); !ok {
+		t.Errorf("missing deployment_artifact node %s", deployID)
+	}
+
+	// Edge types produced by the scanners are present.
+	edges, err := Edges(root)
+	if err != nil {
+		t.Fatalf("Edges: %v", err)
+	}
+	haveEdge := map[protocol.ImpactEdgeType]bool{}
+	for _, e := range edges {
+		haveEdge[e.Type] = true
+	}
+	for _, want := range []protocol.ImpactEdgeType{
+		protocol.ImpactEdgeTypeDocumentedBy,
+		protocol.ImpactEdgeTypeTests,
+		protocol.ImpactEdgeTypeConfigures,
+	} {
+		if !haveEdge[want] {
+			t.Errorf("no edge of type %s produced; edges=%+v", want, edges)
+		}
+	}
+
+	// Query from the repository reaches the scanned artifacts.
+	res, err := Query(root, repositoryNodeID("api"), 3, nil)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(res.DeploymentArtifacts) == 0 {
+		t.Errorf("Query DeploymentArtifacts empty, want the Dockerfile artifact")
+	}
+	foundAPI := false
+	for _, n := range append(res.DirectImpact, res.TransitiveImpact...) {
+		if n.Id == apiID {
+			foundAPI = true
+		}
+	}
+	if !foundAPI {
+		t.Errorf("Query did not reach api_operation %s; direct=%+v transitive=%+v", apiID, res.DirectImpact, res.TransitiveImpact)
+	}
+}
+
+// TestInjectedDataBuilders exercises the DI adapters that other packages feed.
+func TestInjectedDataBuilders(t *testing.T) {
+	root := t.TempDir()
+	if err := UpsertNode(root, node("api:shop:getBadge", protocol.ImpactNodeTypeApiOperation)); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	if err := BuildFromKnowledge(root, []KnowledgeRef{
+		{ID: "k1", Title: "Badge rules", Relates: []string{"api:shop:getBadge"}},
+	}); err != nil {
+		t.Fatalf("BuildFromKnowledge: %v", err)
+	}
+	if err := BuildFromPlanTasks(root, []PlanTaskRef{
+		{ID: "t1", Kind: "task", Title: "Ship badge", Tracks: []string{"api:shop:getBadge"}},
+	}); err != nil {
+		t.Fatalf("BuildFromPlanTasks: %v", err)
+	}
+	if _, ok, _ := GetNode(root, "knowledge:k1"); !ok {
+		t.Errorf("missing knowledge_record node knowledge:k1")
+	}
+	if _, ok, _ := GetNode(root, "task:t1"); !ok {
+		t.Errorf("missing task node task:t1")
+	}
+	// The knowledge record and task are reachable from the operation.
+	res, err := Query(root, "api:shop:getBadge", 2, nil)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	got := map[string]bool{}
+	for _, n := range append(res.DirectImpact, res.TransitiveImpact...) {
+		got[n.Id] = true
+	}
+	if !got["knowledge:k1"] || !got["task:t1"] {
+		t.Errorf("Query did not reach injected nodes; reached=%v", got)
 	}
 }

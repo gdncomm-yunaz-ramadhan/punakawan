@@ -319,6 +319,118 @@ func TestExportMarkdownContainsSummaryIndicators(t *testing.T) {
 	}
 }
 
+func TestSetContradictionsBlocksFinalize(t *testing.T) {
+	root := t.TempDir()
+	d := sampleDossier("d1")
+	d.Status = protocol.ChangeDossierStatusVerified
+	if _, err := Create(root, d); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// One unresolved contradiction should make Finalize refuse and name it.
+	if _, err := SetContradictions(root, "d1", []string{"c-resolved"}, []string{"c-open"}, PutOptions{}); err != nil {
+		t.Fatalf("SetContradictions: %v", err)
+	}
+	got, _ := Get(root, "d1")
+	if got.Dossier.Contradictions == nil ||
+		len(got.Dossier.Contradictions.Unresolved) != 1 ||
+		got.Dossier.Contradictions.Unresolved[0] != "c-open" {
+		t.Fatalf("persisted contradictions = %+v, want one unresolved c-open", got.Dossier.Contradictions)
+	}
+
+	err := Finalize(root, "d1")
+	if !errors.Is(err, ErrBlockingFindings) {
+		t.Fatalf("Finalize with unresolved contradiction = %v, want ErrBlockingFindings", err)
+	}
+	var be *BlockingError
+	if !errors.As(err, &be) {
+		t.Fatalf("Finalize error not *BlockingError: %v", err)
+	}
+	if !strings.Contains(be.Error(), "c-open") {
+		t.Fatalf("blocker list %q should mention the unresolved contradiction c-open", be.Error())
+	}
+
+	// Resolving it (no unresolved) unblocks Finalize.
+	if _, err := SetContradictions(root, "d1", []string{"c-resolved", "c-open"}, nil, PutOptions{}); err != nil {
+		t.Fatalf("SetContradictions resolve: %v", err)
+	}
+	if err := Finalize(root, "d1"); err != nil {
+		t.Fatalf("Finalize after resolving = %v, want nil", err)
+	}
+	if got, _ := Get(root, "d1"); got.Dossier.Status != protocol.ChangeDossierStatusCompleted {
+		t.Fatalf("status after clean Finalize = %s, want completed", got.Dossier.Status)
+	}
+}
+
+func TestSetImpactRendersInExports(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Create(root, sampleDossier("d1")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	section := ImpactSection{
+		Repositories: []string{"repo-x", "repo-y"},
+		ExcludedRepositories: []ExcludedRepository{
+			{Repository: "repo-legacy", Reason: "frozen, no owner"},
+		},
+		MissingCoverage: []string{"repo-z"},
+	}
+	if _, err := SetImpact(root, "d1", section, PutOptions{}); err != nil {
+		t.Fatalf("SetImpact: %v", err)
+	}
+
+	got, _ := Get(root, "d1")
+	if got.Dossier.Impact == nil || len(got.Dossier.Impact.Repositories) != 2 ||
+		len(got.Dossier.Impact.ExcludedRepositories) != 1 {
+		t.Fatalf("persisted impact = %+v", got.Dossier.Impact)
+	}
+
+	md, err := ExportMarkdown(root, "d1")
+	if err != nil {
+		t.Fatalf("ExportMarkdown: %v", err)
+	}
+	for _, want := range []string{
+		"## Impact",
+		"Repositories: repo-x",
+		"Excluded repo-legacy: frozen, no owner",
+		"Missing coverage: repo-z",
+	} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("ExportMarkdown missing %q\n---\n%s", want, md)
+		}
+	}
+
+	pr, err := PRSummary(root, "d1")
+	if err != nil {
+		t.Fatalf("PRSummary: %v", err)
+	}
+	for _, want := range []string{"### Impact", "Excluded repo-legacy: frozen, no owner"} {
+		if !strings.Contains(pr, want) {
+			t.Fatalf("PRSummary missing %q\n---\n%s", want, pr)
+		}
+	}
+}
+
+func TestPutOptionsExpectedRevision(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Create(root, sampleDossier("d1")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A freshly created dossier is at revision 0; a matching guard succeeds and
+	// (via Put) advances the revision to 1.
+	if _, err := SetImpact(root, "d1", ImpactSection{Repositories: []string{"r"}}, PutOptions{ExpectedRevision: ptr(0)}); err != nil {
+		t.Fatalf("SetImpact rev 0: %v", err)
+	}
+	// A stale expectation now mismatches and mutates nothing.
+	if _, err := SetContradictions(root, "d1", nil, []string{"c"}, PutOptions{ExpectedRevision: ptr(0)}); !errors.Is(err, ErrRevisionMismatch) {
+		t.Fatalf("stale revision guard = %v, want ErrRevisionMismatch", err)
+	}
+	if got, _ := Get(root, "d1"); got.Dossier.Contradictions != nil {
+		t.Fatalf("mismatched write must not mutate; contradictions = %+v", got.Dossier.Contradictions)
+	}
+}
+
 func TestExportJSONStableAndDeterministic(t *testing.T) {
 	root := t.TempDir()
 	if _, err := Create(root, sampleDossier("d1")); err != nil {

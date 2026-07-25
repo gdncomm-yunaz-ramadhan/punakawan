@@ -137,3 +137,38 @@ func AcceptDivergence(root, id, by string) error {
 func DefaultBlocking(sev protocol.ContradictionSeverity) bool {
 	return sev == protocol.ContradictionSeverityCritical
 }
+
+// resolvedStatuses are the terminal states in which a contradiction no longer
+// halts progress: resolved (settled), accepted_divergence (chosen to live
+// with), superseded (no longer applies). Any other status is "open".
+var resolvedStatuses = map[protocol.ContradictionStatus]bool{
+	protocol.ContradictionStatusResolved:           true,
+	protocol.ContradictionStatusAcceptedDivergence: true,
+	protocol.ContradictionStatusSuperseded:         true,
+}
+
+// IsResolvedStatus reports whether a status is terminal/non-blocking (§18).
+func IsResolvedStatus(s protocol.ContradictionStatus) bool {
+	return resolvedStatuses[s]
+}
+
+// OpenBlocking returns the project's contradictions that are both unresolved
+// (IsResolvedStatus is false) and marked blocking. Semar must not finalize a
+// plan while any of these exist (§22/CONTRA-008); callers surface them to the
+// human rather than silently proceeding.
+func OpenBlocking(root string) ([]protocol.Contradiction, error) {
+	all, err := List(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []protocol.Contradiction
+	for _, c := range all {
+		if IsResolvedStatus(c.Status) {
+			continue
+		}
+		if c.Blocking != nil && *c.Blocking {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}

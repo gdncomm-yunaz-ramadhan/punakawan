@@ -232,6 +232,52 @@ func TestDefaultBlockingPerSeverity(t *testing.T) {
 	}
 }
 
+func TestOpenBlocking(t *testing.T) {
+	root := t.TempDir()
+	blocking := true
+	notBlocking := false
+
+	// open + blocking -> counts
+	open := sample("open-block", "a.key", protocol.ContradictionSeverityCritical)
+	open.Blocking = &blocking
+	// open but not blocking -> excluded
+	warn := sample("open-warn", "b.key", protocol.ContradictionSeverityMinor)
+	warn.Blocking = &notBlocking
+	// blocking but resolved -> excluded
+	resolved := sample("resolved-block", "c.key", protocol.ContradictionSeverityCritical)
+	resolved.Blocking = &blocking
+	resolved.Status = protocol.ContradictionStatusResolved
+	// blocking but accepted divergence -> excluded
+	accepted := sample("accepted-block", "d.key", protocol.ContradictionSeverityCritical)
+	accepted.Blocking = &blocking
+	accepted.Status = protocol.ContradictionStatusAcceptedDivergence
+
+	for _, c := range []protocol.Contradiction{open, warn, resolved, accepted} {
+		if err := Put(root, c, PutOptions{}); err != nil {
+			t.Fatalf("Put(%s): %v", c.Id, err)
+		}
+	}
+
+	got, err := OpenBlocking(root)
+	if err != nil {
+		t.Fatalf("OpenBlocking: %v", err)
+	}
+	if len(got) != 1 || got[0].Id != "open-block" {
+		ids := make([]string, len(got))
+		for i, c := range got {
+			ids[i] = c.Id
+		}
+		t.Fatalf("OpenBlocking = %v, want [open-block]", ids)
+	}
+
+	if !IsResolvedStatus(protocol.ContradictionStatusResolved) {
+		t.Error("resolved should be a resolved status")
+	}
+	if IsResolvedStatus(protocol.ContradictionStatusDetected) {
+		t.Error("detected should not be a resolved status")
+	}
+}
+
 func TestNormalizeKey(t *testing.T) {
 	cases := map[string]string{
 		"payout.retry.max_attempts":     "payout retry max attempts",

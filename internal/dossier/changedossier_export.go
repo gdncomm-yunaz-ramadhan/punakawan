@@ -52,6 +52,8 @@ func ExportMarkdown(root, id string) (string, error) {
 
 	if d.Contradictions != nil {
 		b.WriteString("## Contradictions\n\n")
+		fmt.Fprintf(&b, "- Counts: %d resolved, %d unresolved\n",
+			len(d.Contradictions.Resolved), len(d.Contradictions.Unresolved))
 		writeBullets(&b, "Resolved", d.Contradictions.Resolved)
 		writeBullets(&b, "Unresolved", d.Contradictions.Unresolved)
 		b.WriteString("\n")
@@ -235,6 +237,24 @@ func PRSummary(root, id string) (string, error) {
 	b.WriteString("### Summary\n\n")
 	for _, line := range summaryIndicators(loaded) {
 		fmt.Fprintf(&b, "- %s\n", line)
+	}
+	if d.Contradictions != nil &&
+		(len(d.Contradictions.Resolved) > 0 || len(d.Contradictions.Unresolved) > 0) {
+		b.WriteString("\n### Contradictions\n\n")
+		fmt.Fprintf(&b, "- Counts: %d resolved, %d unresolved\n",
+			len(d.Contradictions.Resolved), len(d.Contradictions.Unresolved))
+		writeBullets(&b, "Resolved", d.Contradictions.Resolved)
+		writeBullets(&b, "Unresolved", d.Contradictions.Unresolved)
+	}
+	if d.Impact != nil &&
+		(len(d.Impact.Repositories) > 0 || len(d.Impact.ExcludedRepositories) > 0 ||
+			len(d.Impact.MissingCoverage) > 0) {
+		b.WriteString("\n### Impact\n\n")
+		writeBullets(&b, "Repositories", d.Impact.Repositories)
+		writeBullets(&b, "Missing coverage", d.Impact.MissingCoverage)
+		for _, ex := range d.Impact.ExcludedRepositories {
+			fmt.Fprintf(&b, "- Excluded %s: %s\n", ex.Repository, ex.Reason)
+		}
 	}
 	if d.Implementation != nil && len(d.Implementation.ChangedRepositories) > 0 {
 		b.WriteString("\n### Changed repositories\n\n")

@@ -329,6 +329,16 @@ func registerTools(server *mcp.Server, a *app.App) {
 	}, addDossierEvidenceHandler(a))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_dossier_contradictions",
+		Description: "Set a dossier's resolved/unresolved contradiction sets (§34). Unresolved contradictions are blocking findings that prevent finalize_dossier. Gated to role Semar's change_dossier capability.",
+	}, setDossierContradictionsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_dossier_impact",
+		Description: "Set a dossier's impact section (§33): affected repositories, deliberately excluded repositories (each with a reason), and areas with missing coverage. Rendered in the markdown/PR-summary exports. Gated to role Semar's change_dossier capability.",
+	}, setDossierImpactHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "finalize_dossier",
 		Description: "Complete a dossier, but only when it is at verified status and free of blocking findings (§36): no unresolved contradictions, no missing plan items or unapproved deviations, and no disputed/rejected claims. Returns a clear error listing every blocker when it cannot complete. Gated to role Semar's change_dossier capability.",
 	}, finalizeDossierHandler(a))
