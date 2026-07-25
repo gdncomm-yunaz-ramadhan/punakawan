@@ -1,0 +1,17 @@
+# Fallback allow-list for the raw Atlassian MCP (route-to-punakawan.sh).
+#
+# The hook denies raw Atlassian tools by default and steers the model to the
+# mcp__punakawan__* equivalents. List here the raw tools Punakawan does NOT
+# cover, so they remain usable as a fallback. One entry per line; glob patterns
+# (*, ?) allowed; text after # is ignored.
+#
+# Full tool names look like: mcp__claude_ai_Atlassian__<toolName>
+# Run /mcp in Claude Code to see the exact connected names.
+#
+# Examples (uncomment / edit to widen the fallback as you find gaps):
+#
+# mcp__claude_ai_Atlassian__getConfluencePage         # rich Confluence page reads
+# mcp__claude_ai_Atlassian__getConfluencePageDescendants
+# mcp__claude_ai_Atlassian__searchConfluenceUsingCql  # CQL search (no punakawan equiv)
+# mcp__claude_ai_Atlassian__getTeamworkGraphContext   # Teamwork Graph relationships
+# mcp__claude_ai_Atlassian__*Compass*                 # Compass ops (glob)
