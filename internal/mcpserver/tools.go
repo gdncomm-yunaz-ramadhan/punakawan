@@ -274,4 +274,88 @@ func registerTools(server *mcp.Server, a *app.App) {
 		Name:        "reset_project_knowledge",
 		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module (an empty scope would match everything). Defaults to a dry run: returns the matching record ids without deleting anything unless confirm=true.",
 	}, resetProjectKnowledgeHandler(a))
+
+	// Contradiction Ledger (Gareng, §16-22). Deterministic, no reasoning.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "submit_contradiction",
+		Description: "Record a detected contradiction - a disagreement between sources about one subject (§21/CONTRA-007). Deduplicates deterministically by normalized subject.key (§20): if a contradiction already exists for the same subject the existing record is returned (deduplicated=true) rather than a duplicate created. New records start at status detected and block by default only when severity is critical. Gated to role Gareng's contradictions capability.",
+	}, submitContradictionHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_contradictions",
+		Description: "List contradictions in the ledger. With no status filter it returns only still-open ones (detected/triaged/needs_clarification/resolution_proposed); pass status to filter to exactly one lifecycle state. Read-only.",
+	}, listContradictionsHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "resolve_contradiction",
+		Description: "Record a contradiction's confirmed resolution statement and who confirmed it, advancing it to resolved (§18). Only valid from resolution_proposed. Gated to role Gareng's contradictions capability.",
+	}, resolveContradictionHandler(a))
+
+	// Cross-Repository Impact Graph (Gareng, §23-31). Deterministic query, no reasoning.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "analyze_impact",
+		Description: "Answer \"if subject_id changes, what else is affected?\" by a cycle-safe traversal of the impact graph (§26/§29), returning direct/transitive impact plus affected repositories, tests, deployments, owners, missing coverage, and any related contradictions. depth defaults to 3; set refresh=true to reconcile the structural graph from the workspace first. Read-only against durable state.",
+	}, analyzeImpactHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "record_impact_edge",
+		Description: "Record a discovered dependency edge (from->to of a given type and confidence) into the impact graph (§29/IMPACT-012). Idempotent by (from,to,type): re-recording an edge supersedes the prior one. Gated to role Gareng's cross_repository_impact capability.",
+	}, recordImpactEdgeHandler(a))
+
+	// Change Dossier (§32-39): the durable, versioned proof artifact for a change.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_change_dossier",
+		Description: "Create a new Change Dossier (§37) - the durable proof artifact tracking a change from objective to completion. Starts at status draft. Gated to role Semar's change_dossier capability.",
+	}, createChangeDossierHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_dossier_claim",
+		Description: "Attach a claim (producer role, type, statement, optional evidence ids) to a dossier's append-only claim log (§34). Status defaults to claimed. Gated to role Semar's change_dossier capability.",
+	}, addDossierClaimHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "verify_dossier_claim",
+		Description: "Record an independent verification of a dossier claim (§34). Rejected if by_role equals the claim's producer role - a role cannot verify its own claim. Sets the claim to verified.",
+	}, verifyDossierClaimHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "dispute_dossier_claim",
+		Description: "Record an independent dispute of a dossier claim (§34), setting it to disputed - a blocking finding for finalize_dossier. Rejected if by_role equals the claim's producer role.",
+	}, disputeDossierClaimHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_dossier_evidence",
+		Description: "Attach an evidence record (type, artifacts, source, result) to a dossier (§35). The caller supplies any artifact sha256; the store does not compute it. Gated to role Semar's change_dossier capability.",
+	}, addDossierEvidenceHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "finalize_dossier",
+		Description: "Complete a dossier, but only when it is at verified status and free of blocking findings (§36): no unresolved contradictions, no missing plan items or unapproved deviations, and no disputed/rejected claims. Returns a clear error listing every blocker when it cannot complete. Gated to role Semar's change_dossier capability.",
+	}, finalizeDossierHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "export_dossier",
+		Description: "Render a dossier as human-readable markdown (format=md, default) or deterministic JSON (format=json), including the §38 summary indicators. Read-only.",
+	}, exportDossierHandler(a))
+
+	// Handoff Capsule (§40-43): compact, resumable snapshots of in-progress work.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_handoff_capsule",
+		Description: "Create a Handoff Capsule (§40) - a compact, resumable snapshot of in-progress work that references plan/task/dossier/contradictions/evidence by id rather than copying them, so work can continue across sessions, clients, and people without the transcript. Stamps the current role-config revision for resume-time validation. Gated to role Semar's handoff_capsule capability.",
+	}, createHandoffCapsuleHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_handoff_capsule",
+		Description: "Read a handoff capsule by id (§41). A capsule that was never written is returned as an empty capsule carrying just the id. Read-only.",
+	}, getHandoffCapsuleHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "validate_handoff_capsule",
+		Description: "Classify whether a capsule can be resumed (§42): resumable, refresh_required (inputs moved but still resumable after reloading the listed items), blocked (a referenced dependency is gone), invalid (repository state diverged), or superseded (must not resume silently). Read-only.",
+	}, validateHandoffCapsuleHandler(a))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "resume_from_handoff",
+		Description: "Validate a capsule and, if resumable or refresh_required, return only the smallest necessary verified context (§43) - objective, current phase/task and next action, accepted plan ref, open contradictions, unresolved risks - plus any required refresh steps. Errors when superseded, blocked, or invalid, explaining why.",
+	}, resumeFromHandoffHandler(a))
 }

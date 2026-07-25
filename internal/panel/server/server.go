@@ -208,6 +208,45 @@ func (s *Server) Start() error {
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/roles/{role}", session.RequireSession(s.sessions, api.RoleUpdateHandler(s.readers.Roles)))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/roles/{role}/reset", session.RequireSession(s.sessions, api.RoleResetHandler(s.readers.Roles)))
 
+	// Contradiction Ledger (plan section 21). GET reads are unwrapped; the
+	// create and lifecycle mutations require a mutation session.
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/contradictions", api.ContradictionsListHandler(s.readers.Contradiction))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions", session.RequireSession(s.sessions, api.ContradictionCreateHandler(s.readers.Contradiction)))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/contradictions/{id}", api.ContradictionGetHandler(s.readers.Contradiction))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions/{id}/propose-resolution", session.RequireSession(s.sessions, api.ContradictionProposeResolutionHandler(s.readers.Contradiction)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions/{id}/resolve", session.RequireSession(s.sessions, api.ContradictionResolveHandler(s.readers.Contradiction)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions/{id}/accept-divergence", session.RequireSession(s.sessions, api.ContradictionAcceptDivergenceHandler(s.readers.Contradiction)))
+
+	// Cross-Repository Impact Graph (plan section 29). Node reads are unwrapped;
+	// query is a read but POST (it carries a body); refresh mutates.
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/impact/nodes", api.ImpactNodesHandler(s.readers.Impact))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/impact/nodes/{nodeId}", api.ImpactNodeHandler(s.readers.Impact))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/impact/query", api.ImpactQueryHandler(s.readers.Impact))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/impact/refresh", session.RequireSession(s.sessions, api.ImpactRefreshHandler(s.readers.Impact)))
+
+	// Change Dossiers (plan section 37). GET reads (list/detail/exports) are
+	// unwrapped; create, claim/evidence mutations, and finalize require a session.
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers", api.DossiersListHandler(s.readers.Dossier))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers", session.RequireSession(s.sessions, api.DossierCreateHandler(s.readers.Dossier)))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}", api.DossierGetHandler(s.readers.Dossier))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/claims", session.RequireSession(s.sessions, api.DossierAddClaimHandler(s.readers.Dossier)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/claims/{claimId}/verify", session.RequireSession(s.sessions, api.DossierVerifyClaimHandler(s.readers.Dossier)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/claims/{claimId}/dispute", session.RequireSession(s.sessions, api.DossierDisputeClaimHandler(s.readers.Dossier)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/evidence", session.RequireSession(s.sessions, api.DossierAddEvidenceHandler(s.readers.Dossier)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/finalize", session.RequireSession(s.sessions, api.DossierFinalizeHandler(s.readers.Dossier)))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}/export.md", api.DossierExportMarkdownHandler(s.readers.Dossier))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}/export.json", api.DossierExportJSONHandler(s.readers.Dossier))
+
+	// Handoff Capsules (plan section 43). GET reads are unwrapped; create,
+	// validate, resume, and supersede require a mutation session (validate and
+	// resume are POST: they run a validation pass and resume gates on its verdict).
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/handoffs", api.HandoffsListHandler(s.readers.Handoff))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs", session.RequireSession(s.sessions, api.HandoffCreateHandler(s.readers.Handoff)))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/handoffs/{id}", api.HandoffGetHandler(s.readers.Handoff))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/validate", session.RequireSession(s.sessions, api.HandoffValidateHandler(s.readers.Handoff)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/resume", session.RequireSession(s.sessions, api.HandoffResumeHandler(s.readers.Handoff)))
+	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/supersede", session.RequireSession(s.sessions, api.HandoffSupersedeHandler(s.readers.Handoff)))
+
 	// Project-scoped plans (Phase 7), workflow definitions (Phase 6), and
 	// cached health (Phase 8). All resolve a {projectId} to its workspace
 	// root through the registry, falling back to the primary workspace so it

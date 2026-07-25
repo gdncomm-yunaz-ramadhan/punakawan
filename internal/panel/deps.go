@@ -28,15 +28,19 @@ const Version = "0.1.0"
 // (internal/panel/contract) that every HTTP handler reaches Punakawan's
 // data through.
 type Readers struct {
-	Workspace    contract.WorkspaceReader
-	Session      contract.SessionReader
-	Task         contract.TaskReader
-	Knowledge    contract.KnowledgeReader
-	Evidence     contract.EvidenceReader
-	Approval     contract.ApprovalReader
-	GlobalSearch contract.GlobalSearchReader
-	Project      contract.ProjectReader
-	Roles        contract.RolesReader
+	Workspace     contract.WorkspaceReader
+	Session       contract.SessionReader
+	Task          contract.TaskReader
+	Knowledge     contract.KnowledgeReader
+	Evidence      contract.EvidenceReader
+	Approval      contract.ApprovalReader
+	GlobalSearch  contract.GlobalSearchReader
+	Project       contract.ProjectReader
+	Roles         contract.RolesReader
+	Contradiction contract.ContradictionReader
+	Impact        contract.ImpactReader
+	Dossier       contract.DossierReader
+	Handoff       contract.HandoffReader
 
 	// Runtime is the bounded *app.App pool (Phase 3). The server owns its
 	// lifecycle: it runs a periodic CloseIdle sweep and Closes all non-primary
@@ -90,7 +94,15 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		// already performs (plan §8's "one snapshot, reused everywhere").
 		Project: projectSource,
 		Roles:   projectSource,
-		Runtime: runtimeMgr,
+		// The same shared ProjectSource also serves the four project-scoped
+		// subsystems (Contradiction Ledger, Impact Graph, Change Dossiers,
+		// Handoff Capsules); they all reuse its id->root resolution and
+		// per-project .punakawan tree.
+		Contradiction: projectSource,
+		Impact:        projectSource,
+		Dossier:       projectSource,
+		Handoff:       projectSource,
+		Runtime:       runtimeMgr,
 	}
 }
 

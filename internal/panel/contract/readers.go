@@ -14,12 +14,21 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/beads"
+	"github.com/ygrip/punakawan/internal/dossier"
+	"github.com/ygrip/punakawan/internal/handoff"
+	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// ErrHandoffSuperseded is returned by HandoffReader.ResumeHandoff when the
+// capsule (or its dossier) has been superseded: a superseded capsule must not
+// resume silently (handoff §43), so resume is refused rather than returning a
+// stale context. Handlers detect it with errors.Is and answer 409.
+var ErrHandoffSuperseded = errors.New("handoff: capsule is superseded and cannot resume")
 
 // ErrWorkspaceUnavailable is returned by the non-workspace sources
 // (session, task, knowledge, evidence, approval) when asked for a
@@ -338,4 +347,70 @@ type RolesReader interface {
 	GetRoles(ctx context.Context, projectID string) (*protocol.RoleConfiguration, []RoleCapabilityInfo, error)
 	UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RoleConfiguration, error)
 	ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RoleConfiguration, error)
+}
+
+// ContradictionReader reads and mutates a project's Contradiction Ledger, per
+// the role-config distinguished-improvements plan Part II §16-22. It mirrors
+// the metadata/role mutations on the other readers: reads never mutate; the
+// mutators load the ledger fresh, apply the stateless internal/contradiction
+// change, and persist, returning the resulting record so the handler can render
+// it. Errors returned wrap contradiction's exported vars (ErrNotFound,
+// ErrIllegalTransition) and ErrWorkspaceUnavailable for an unknown project id,
+// all matchable with errors.Is.
+type ContradictionReader interface {
+	ListContradictions(ctx context.Context, projectID string) ([]protocol.Contradiction, error)
+	GetContradiction(ctx context.Context, projectID, id string) (*protocol.Contradiction, error)
+	// CreateContradiction persists c through contradiction.Put; the handler
+	// assigns an id when the caller left it empty.
+	CreateContradiction(ctx context.Context, projectID string, c protocol.Contradiction) (*protocol.Contradiction, error)
+	ProposeContradictionResolution(ctx context.Context, projectID, id, proposedStatement, rationale string, requiresHumanConfirmation bool) (*protocol.Contradiction, error)
+	ResolveContradiction(ctx context.Context, projectID, id, statement, by string) (*protocol.Contradiction, error)
+	AcceptContradictionDivergence(ctx context.Context, projectID, id, by string) (*protocol.Contradiction, error)
+}
+
+// ImpactReader reads and queries a project's Cross-Repository Impact Graph, per
+// the plan Part III §23-31. Nodes/QueryImpact never mutate; RefreshImpact
+// re-runs the stateless internal/impact builders to reconcile the persisted
+// graph with the current workspace. QueryImpact returns impact.ImpactResult
+// verbatim (a derived query view, not a stored entity).
+type ImpactReader interface {
+	ImpactNodes(ctx context.Context, projectID string) ([]protocol.ImpactNode, error)
+	ImpactNode(ctx context.Context, projectID, nodeID string) (protocol.ImpactNode, bool, error)
+	QueryImpact(ctx context.Context, projectID, subjectID string, depth int, include []string) (impact.ImpactResult, error)
+	RefreshImpact(ctx context.Context, projectID string) error
+}
+
+// DossierReader reads and mutates a project's durable Change Dossiers, per the
+// plan Part IV §32-39. ListDossiers returns the current dossier per id (a
+// lightweight summary carrying id/title/status/... without claims or evidence);
+// GetDossier returns the full dossier.Loaded (dossier plus its claims and
+// evidence). FinalizeDossier surfaces *dossier.BlockingError verbatim so the
+// handler can 409 with the blocker list; the claim mutators surface
+// ErrSelfVerification/ErrClaimNotFound.
+type DossierReader interface {
+	ListDossiers(ctx context.Context, projectID string) ([]protocol.ChangeDossier, error)
+	CreateDossier(ctx context.Context, projectID string, d protocol.ChangeDossier) (protocol.ChangeDossier, error)
+	GetDossier(ctx context.Context, projectID, id string) (dossier.Loaded, error)
+	AddDossierClaim(ctx context.Context, projectID, id string, claim protocol.DossierClaim) (protocol.DossierClaim, error)
+	VerifyDossierClaim(ctx context.Context, projectID, id, claimID, byRole, note string) (protocol.DossierClaim, error)
+	DisputeDossierClaim(ctx context.Context, projectID, id, claimID, byRole, note string) (protocol.DossierClaim, error)
+	AddDossierEvidence(ctx context.Context, projectID, id string, ev protocol.DossierEvidence) (protocol.DossierEvidence, error)
+	FinalizeDossier(ctx context.Context, projectID, id string) error
+	ExportDossierMarkdown(ctx context.Context, projectID, id string) (string, error)
+	ExportDossierJSON(ctx context.Context, projectID, id string) ([]byte, error)
+}
+
+// HandoffReader reads, mutates, and validates a project's Handoff Capsules, per
+// the plan Part V §40-43. ListHandoffs/GetHandoff never mutate. ValidateHandoff
+// builds the internal/handoff.ValidationDeps from the project's own stores and
+// returns the resulting ValidationResult. ResumeHandoff refuses a superseded
+// capsule with ErrHandoffSuperseded (handlers 409); otherwise it returns the
+// smallest necessary resume context.
+type HandoffReader interface {
+	ListHandoffs(ctx context.Context, projectID string) ([]protocol.HandoffCapsule, error)
+	GetHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
+	CreateHandoff(ctx context.Context, projectID string, h protocol.HandoffCapsule) (protocol.HandoffCapsule, error)
+	ValidateHandoff(ctx context.Context, projectID, id string) (handoff.ValidationResult, error)
+	ResumeHandoff(ctx context.Context, projectID, id string) (map[string]any, error)
+	SupersedeHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
 }
