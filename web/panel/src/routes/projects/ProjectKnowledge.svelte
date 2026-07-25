@@ -4,6 +4,8 @@
     listProjectKnowledge,
     getProjectKnowledge,
     getProjectKnowledgeRelations,
+    getProjectKnowledgeHistory,
+    type KnowledgeEvent,
     type KnowledgeRecord,
     type SearchResult,
   } from "../../lib/api/client";
@@ -30,12 +32,42 @@
   let selectedId: string | null = $state(null);
   let detail: KnowledgeRecord | null = $state(null);
   let relations: KnowledgeRecord[] = $state([]);
+  let history: KnowledgeEvent[] = $state([]);
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
 
   function isSearchResult(item: KnowledgeRecord | SearchResult): item is SearchResult {
     return "Record" in item;
   }
+
+  // The record's substance usually lives in a type-specific structured body
+  // rather than free-form summary/content. Pick whichever is present and
+  // return it with a human label so the detail view never renders blank for
+  // a role/context record. Pretty-printed generically (the panel doesn't
+  // hand-craft a view per body type beyond retrieval recipes elsewhere).
+  const TYPED_BODIES: { key: keyof KnowledgeRecord; label: string }[] = [
+    { key: "requirement", label: "Requirement" },
+    { key: "petruk_plan", label: "Petruk plan" },
+    { key: "context_dossier", label: "Context dossier" },
+    { key: "semar_synthesis", label: "Semar synthesis" },
+    { key: "gareng_review", label: "Gareng review" },
+    { key: "bagong_review", label: "Bagong review" },
+    { key: "convention_profile", label: "Convention profile" },
+    { key: "retrieval_recipe", label: "Retrieval recipe" },
+  ];
+  function typedBody(rec: KnowledgeRecord): { label: string; json: string } | null {
+    for (const { key, label } of TYPED_BODIES) {
+      const v = rec[key];
+      if (v != null) return { label, json: JSON.stringify(v, null, 2) };
+    }
+    return null;
+  }
+
+  const eventLabels: Record<string, string> = {
+    put: "Created or updated",
+    supersede: "Superseded",
+    delete: "Deleted",
+  };
 
   async function load(id: string) {
     loading = true;
@@ -63,20 +95,24 @@
       selectedId = null;
       detail = null;
       relations = [];
+      history = [];
       return;
     }
     selectedId = recordId;
     detail = null;
     relations = [];
+    history = [];
     detailError = null;
     detailLoading = true;
     try {
-      const [rec, rel] = await Promise.all([
+      const [rec, rel, hist] = await Promise.all([
         getProjectKnowledge(projectId, recordId),
         getProjectKnowledgeRelations(projectId, recordId).catch(() => ({ items: [] as KnowledgeRecord[] })),
+        getProjectKnowledgeHistory(projectId, recordId).catch(() => ({ items: [] as KnowledgeEvent[] })),
       ]);
       detail = rec;
       relations = rel.items ?? [];
+      history = hist.items ?? [];
     } catch (e) {
       detailError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -195,13 +231,60 @@
                   {:else if detail.summary}
                     <p>{detail.summary}</p>
                   {/if}
-                  {#if relations.length > 0}
-                    <h5>Related records</h5>
+
+                  {#if typedBody(detail)}
+                    {@const body = typedBody(detail)}
+                    <h5>{body?.label}</h5>
+                    <pre class="content">{body?.json}</pre>
+                  {/if}
+
+                  <h5>Provenance</h5>
+                  <dl class="provenance">
+                    <dt>Type</dt><dd>{detail.type}</dd>
+                    <dt>Status</dt><dd>{detail.status}</dd>
+                    <dt>Validity</dt>
+                    <dd>
+                      {validityLabels[detail.validity.state] ?? detail.validity.state}
+                      {#if detail.validity.verified_by?.length}· verified by {detail.validity.verified_by.join(", ")}{/if}
+                    </dd>
+                    <dt>Source</dt><dd>{detail.source.provider}</dd>
+                    {#if detail.source.external_id}<dt>External ID</dt><dd>{detail.source.external_id}</dd>{/if}
+                    {#if detail.source.uri}<dt>URI</dt><dd class="break">{detail.source.uri}</dd>{/if}
+                    {#if detail.source.section}<dt>Section</dt><dd>{detail.source.section}</dd>{/if}
+                    <dt>Retrieved</dt><dd>{new Date(detail.source.retrieved_at).toLocaleString()}</dd>
+                    <dt>Extraction</dt><dd>{detail.extraction.method}</dd>
+                    {#if detail.scope?.repository}<dt>Repository</dt><dd>{detail.scope.repository}</dd>{/if}
+                    {#if detail.aliases?.length}<dt>Aliases</dt><dd>{detail.aliases.join(", ")}</dd>{/if}
+                  </dl>
+
+                  <h5>Relations</h5>
+                  {#if !detail.relations?.length}
+                    <p class="muted">No outgoing relations declared.</p>
+                  {:else}
                     <ul class="relations">
-                      {#each relations as rel (rel.id)}
-                        <li><strong>{rel.title || rel.id}</strong> <span class="muted">{rel.type}</span></li>
+                      {#each detail.relations as rel, i (i)}
+                        <li><span class="muted">{rel.type}</span> <button type="button" class="link-button" onclick={() => open(rel.target)}>{rel.target}</button></li>
                       {/each}
                     </ul>
+                  {/if}
+                  <h6>Referenced by</h6>
+                  {#if relations.length === 0}
+                    <p class="muted">No other record declares a relation to this one.</p>
+                  {:else}
+                    <ul class="relations">
+                      {#each relations as rel (rel.id)}
+                        <li><span class="muted">{rel.type}</span> <button type="button" class="link-button" onclick={() => open(rel.id)}>{rel.title || rel.id}</button></li>
+                      {/each}
+                    </ul>
+                  {/if}
+
+                  {#if history.length > 0}
+                    <h5>History</h5>
+                    <ol class="history">
+                      {#each history as ev, i (i)}
+                        <li><span class="muted">{new Date(ev.timestamp).toLocaleString()}</span> {eventLabels[ev.type] ?? ev.type}{#if ev.superseded_by} · by {ev.superseded_by}{/if}</li>
+                      {/each}
+                    </ol>
                   {/if}
                 {/if}
               </div>
@@ -340,12 +423,50 @@
     margin: 0.75rem 0 0.35rem;
     font-size: 0.82rem;
   }
+  h6 {
+    margin: 0.6rem 0 0.3rem;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+  }
   ul.relations {
     gap: 0.25rem;
     font-size: 0.82rem;
   }
   .muted {
     color: var(--color-text-muted);
+  }
+  dl.provenance {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.2rem 0.75rem;
+    font-size: 0.82rem;
+    margin: 0;
+  }
+  dl.provenance dt {
+    color: var(--color-text-muted);
+  }
+  dl.provenance dd {
+    margin: 0;
+  }
+  dl.provenance dd.break {
+    word-break: break-all;
+  }
+  .link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--color-accent);
+    cursor: pointer;
+    font: inherit;
+    text-decoration: underline;
+  }
+  ol.history {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.82rem;
   }
 
   @media (max-width: 720px) {

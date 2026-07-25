@@ -462,6 +462,17 @@ export interface KnowledgeRecord {
   // Present when type === "retrieval_recipe" (punakawan-procedural-
   // knowledge-retrieval-recipe-plan-final.md Phase 0/5).
   retrieval_recipe?: RetrievalRecipe;
+  // Type-specific structured bodies carried by role/context records. The
+  // panel renders whichever is present as the record's substance (a record
+  // often has no free-form summary/content — its body lives here). Kept as
+  // `unknown` because the panel only pretty-prints them generically.
+  requirement?: unknown;
+  petruk_plan?: unknown;
+  context_dossier?: unknown;
+  semar_synthesis?: unknown;
+  gareng_review?: unknown;
+  bagong_review?: unknown;
+  convention_profile?: unknown;
 }
 
 export interface KnowledgeEvent {
@@ -984,5 +995,11 @@ export function getProjectKnowledge(id: string, knowledgeId: string): Promise<Kn
 export function getProjectKnowledgeRelations(id: string, knowledgeId: string): Promise<{ items: KnowledgeRecord[] }> {
   return getJSON<{ items: KnowledgeRecord[] }>(
     `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/relations`,
+  );
+}
+
+export function getProjectKnowledgeHistory(id: string, knowledgeId: string): Promise<{ items: KnowledgeEvent[] }> {
+  return getJSON<{ items: KnowledgeEvent[] }>(
+    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/history`,
   );
 }
