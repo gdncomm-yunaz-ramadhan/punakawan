@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Punakawan installer: installs prerequisites, builds Punakawan once, and
-# offers a wizard for registering it with Codex, Claude Code, both, or another
-# STDIO MCP client. The global setup then attaches to any git-tracked project
-# directory (workspace.Discover's zero-config fallback), with no per-project
-# files required.
+# Punakawan installer for macOS and Linux: installs prerequisites, builds
+# Punakawan once, and offers a wizard for registering it with Codex, Claude
+# Code, both, or another STDIO MCP client. The global setup then attaches to
+# any git-tracked project directory (workspace.Discover's zero-config
+# fallback), with no per-project files required.
+#
+# Windows users: use scripts/install.ps1 instead.
 #
 # Usage: scripts/install.sh
 set -euo pipefail
@@ -12,49 +14,203 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 log() { printf '\n==> %s\n' "$1"; }
+warn() { printf '\nWARNING: %s\n' "$1" >&2; }
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "This installer currently supports macOS only (detected: $(uname -s))." >&2
-  echo "See README.md for manual setup steps on other platforms." >&2
-  exit 1
+# --- 0. Platform detection --------------------------------------------------
+# macOS installs via Homebrew; Linux uses the distro package manager (apt /
+# dnf / yum / pacman / zypper) with tool-specific fallbacks for anything not
+# packaged. Windows is handled by scripts/install.ps1.
+
+OS="$(uname -s)"
+case "$OS" in
+  Darwin) PLATFORM="macos" ;;
+  Linux) PLATFORM="linux" ;;
+  *)
+    echo "Unsupported OS: $OS." >&2
+    echo "macOS and Linux use this script; Windows uses scripts/install.ps1." >&2
+    exit 1
+    ;;
+esac
+log "Detected platform: $PLATFORM ($OS)"
+
+# Package-manager plumbing (Linux only; macOS uses brew directly).
+PKG_MGR=""
+SUDO=""
+APT_UPDATED=0
+
+detect_linux_pkg_mgr() {
+  if command -v apt-get >/dev/null 2>&1; then
+    PKG_MGR="apt"
+  elif command -v dnf >/dev/null 2>&1; then
+    PKG_MGR="dnf"
+  elif command -v yum >/dev/null 2>&1; then
+    PKG_MGR="yum"
+  elif command -v pacman >/dev/null 2>&1; then
+    PKG_MGR="pacman"
+  elif command -v zypper >/dev/null 2>&1; then
+    PKG_MGR="zypper"
+  fi
+  # System package managers need root; use sudo when we are not already root.
+  if [[ "$(id -u)" -ne 0 ]] && command -v sudo >/dev/null 2>&1; then
+    SUDO="sudo"
+  fi
+}
+
+# Map a logical tool name to the package name for the detected manager. Most
+# packages share a name; the exceptions (node, go) are spelled out.
+linux_pkg_name() {
+  local tool="$1"
+  case "$tool:$PKG_MGR" in
+    node:apt | node:dnf | node:yum | node:zypper | node:pacman) echo "nodejs" ;;
+    go:apt) echo "golang-go" ;;
+    go:dnf | go:yum) echo "golang" ;;
+    go:pacman | go:zypper) echo "go" ;;
+    *) echo "$tool" ;;
+  esac
+}
+
+linux_pkg_install() {
+  local pkg="$1"
+  case "$PKG_MGR" in
+    apt)
+      if [[ "$APT_UPDATED" -eq 0 ]]; then
+        $SUDO apt-get update -y
+        APT_UPDATED=1
+      fi
+      $SUDO apt-get install -y "$pkg"
+      ;;
+    dnf) $SUDO dnf install -y "$pkg" ;;
+    yum) $SUDO yum install -y "$pkg" ;;
+    pacman) $SUDO pacman -S --needed --noconfirm "$pkg" ;;
+    zypper) $SUDO zypper install -y "$pkg" ;;
+    *) return 1 ;;
+  esac
+}
+
+# --- 1. Prerequisites -------------------------------------------------------
+
+if [[ "$PLATFORM" == "macos" ]]; then
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew is required: https://brew.sh" >&2
+    exit 1
+  fi
+else
+  detect_linux_pkg_mgr
+  if [[ -z "$PKG_MGR" ]]; then
+    warn "No supported package manager found (apt/dnf/yum/pacman/zypper)."
+    echo "Install the prerequisites manually, then rerun: git, ripgrep, node, go, dolt, bd." >&2
+  else
+    log "Using package manager: $PKG_MGR${SUDO:+ (via sudo)}"
+  fi
 fi
 
-# --- 1. Prerequisites (installed once, globally, via Homebrew) --------------
-
-if ! command -v brew >/dev/null 2>&1; then
-  echo "Homebrew is required: https://brew.sh" >&2
-  exit 1
-fi
-
+# install_if_missing <command> <brew_formula> [linux_tool]
+# linux_tool defaults to <command>; it is the logical name fed to
+# linux_pkg_name(). A missing package manager (Linux) is a non-fatal warning
+# so the rest of the setup can still proceed for tools already present.
 install_if_missing() {
-  local cmd="$1" formula="$2"
+  local cmd="$1" brew_formula="$2" linux_tool="${3:-$1}"
   if command -v "$cmd" >/dev/null 2>&1; then
     log "$cmd already installed ($(command -v "$cmd"))"
+    return 0
+  fi
+  if [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
+    log "[dry-run] would install $cmd"
+    return 0
+  fi
+  if [[ "$PLATFORM" == "macos" ]]; then
+    log "Installing $brew_formula (provides $cmd)"
+    brew install "$brew_formula"
   else
-    log "Installing $formula (provides $cmd)"
-    brew install "$formula"
+    if [[ -z "$PKG_MGR" ]]; then
+      warn "Cannot install $cmd automatically (no package manager). Install it manually."
+      return 1
+    fi
+    local pkg
+    pkg="$(linux_pkg_name "$linux_tool")"
+    log "Installing $pkg (provides $cmd) via $PKG_MGR"
+    linux_pkg_install "$pkg"
   fi
 }
 
 install_if_missing git git
-install_if_missing rg ripgrep
-install_if_missing node node
-install_if_missing dolt dolt
-install_if_missing bd beads
-install_if_missing rtk rtk
+install_if_missing curl curl
+install_if_missing rg ripgrep ripgrep
+install_if_missing node node node
+install_if_missing go go go
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  log "Installing pnpm"
-  npm install -g pnpm
+# dolt: Homebrew formula on macOS; official install script on Linux (not in
+# distro repos). Fatal on macOS, best-effort with a clear pointer on Linux.
+install_dolt() {
+  if command -v dolt >/dev/null 2>&1; then
+    log "dolt already installed ($(command -v dolt))"
+    return 0
+  fi
+  if [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
+    log "[dry-run] would install dolt"
+    return 0
+  fi
+  if [[ "$PLATFORM" == "macos" ]]; then
+    log "Installing dolt"
+    brew install dolt
+  else
+    log "Installing dolt via the official install script"
+    if ! curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | $SUDO bash; then
+      warn "dolt install failed. Install it manually: https://docs.dolthub.com/introduction/installation"
+    fi
+  fi
+}
+install_dolt
+
+# bd (beads): Homebrew formula on macOS. On Linux it is not in distro repos;
+# try `go install` and fall back to a clear pointer. Non-fatal - Punakawan's
+# beads-backed features degrade gracefully (health reports bd unavailable).
+install_beads() {
+  if command -v bd >/dev/null 2>&1; then
+    log "bd already installed ($(command -v bd))"
+    return 0
+  fi
+  if [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
+    log "[dry-run] would install bd (beads)"
+    return 0
+  fi
+  if [[ "$PLATFORM" == "macos" ]]; then
+    log "Installing beads (provides bd)"
+    brew install beads || warn "beads install failed. See https://github.com/gastownhall/beads"
+  else
+    log "Installing beads (provides bd) via go install"
+    if command -v go >/dev/null 2>&1 && GOBIN="$HOME/.local/bin" go install github.com/gastownhall/beads/cmd/bd@latest 2>/dev/null; then
+      log "Installed bd -> $HOME/.local/bin/bd"
+    else
+      warn "Could not auto-install bd. Install beads manually: https://github.com/gastownhall/beads"
+    fi
+  fi
+}
+install_beads
+
+# rtk (Rust Token Killer): optional token-compression proxy. macOS installs
+# the brew formula; on Linux there is no unambiguous package (the name collides
+# with an unrelated crate), so we only point at the source. Never fatal.
+if command -v rtk >/dev/null 2>&1; then
+  log "rtk already installed ($(command -v rtk))"
+elif [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
+  log "[dry-run] would install rtk"
+elif [[ "$PLATFORM" == "macos" ]]; then
+  log "Installing rtk"
+  brew install rtk || warn "rtk install failed - optional, Punakawan works without it."
 else
-  log "pnpm already installed ($(command -v pnpm))"
+  warn "rtk is optional and not auto-installed on Linux; install it manually if you use it."
 fi
 
-if ! command -v go >/dev/null 2>&1; then
-  log "Installing go"
-  brew install go
+if ! command -v pnpm >/dev/null 2>&1; then
+  if [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
+    log "[dry-run] would install pnpm"
+  else
+    log "Installing pnpm"
+    npm install -g pnpm
+  fi
 else
-  log "go already installed ($(command -v go))"
+  log "pnpm already installed ($(command -v pnpm))"
 fi
 
 # --- 1b. Optional security scanners (Sonar / CVE / OSV) ---------------------
@@ -64,7 +220,7 @@ fi
 # OPTIONAL and never fatal: a failed scanner install warns and continues.
 #
 # Control non-interactively with PUNAKAWAN_INSTALL_SCANNERS=yes|no (default:
-# prompt). PUNAKAWAN_DRY_RUN=1 prints the brew commands without running them.
+# prompt). PUNAKAWAN_DRY_RUN=1 prints the install commands without running them.
 
 SCANNER_CHOICE="${PUNAKAWAN_INSTALL_SCANNERS:-}"
 if [[ -z "$SCANNER_CHOICE" ]]; then
@@ -84,18 +240,28 @@ EOF
 fi
 
 install_scanner() {
-  local cmd="$1" formula="$2"
+  local cmd="$1" brew_formula="$2"
   if command -v "$cmd" >/dev/null 2>&1; then
     log "$cmd already installed ($(command -v "$cmd"))"
     return 0
   fi
   if [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
-    log "[dry-run] brew install $formula (provides $cmd)"
+    if [[ "$PLATFORM" == "macos" ]]; then
+      log "[dry-run] brew install $brew_formula (provides $cmd)"
+    else
+      log "[dry-run] install $cmd via $PKG_MGR (provides $cmd)"
+    fi
     return 0
   fi
-  log "Installing $formula (provides $cmd)"
-  if ! brew install "$formula"; then
-    echo "Warning: failed to install $formula - skipping (Punakawan still works without it)." >&2
+  log "Installing $brew_formula (provides $cmd)"
+  if [[ "$PLATFORM" == "macos" ]]; then
+    brew install "$brew_formula" ||
+      echo "Warning: failed to install $brew_formula - skipping (Punakawan still works without it)." >&2
+  else
+    if [[ -z "$PKG_MGR" ]] || ! linux_pkg_install "$cmd"; then
+      echo "Warning: could not install $cmd via $PKG_MGR - skipping (Punakawan still works without it)." >&2
+      echo "         See the scanner's own docs for a Linux binary if you need it." >&2
+    fi
   fi
 }
 
@@ -133,9 +299,16 @@ case ":$PATH:" in
   *) echo "Note: $LOCAL_BIN is not on your PATH. Add it in your shell profile." ;;
 esac
 
-# --- 3. Global config location (matches Go's os.UserConfigDir on macOS) -----
+# --- 3. Global config location (matches Go's os.UserConfigDir) --------------
+# os.UserConfigDir() resolves to ~/Library/Application Support on macOS and
+# $XDG_CONFIG_HOME (or ~/.config) on Linux - mirror that here so the installer
+# writes where the binary reads.
 
-GLOBAL_DIR="$HOME/Library/Application Support/punakawan"
+if [[ "$PLATFORM" == "macos" ]]; then
+  GLOBAL_DIR="$HOME/Library/Application Support/punakawan"
+else
+  GLOBAL_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/punakawan"
+fi
 mkdir -p "$GLOBAL_DIR"
 GLOBAL_CONFIG="$GLOBAL_DIR/config.yaml"
 GLOBAL_ENV="$GLOBAL_DIR/.env"

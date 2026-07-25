@@ -242,20 +242,42 @@ Model context is the scarce resource, so Punakawan spends it deliberately:
 - **Bounded knowledge** — search results, task context, and dossiers are
   scope-filtered and capped rather than dumping the whole store into context.
 
-## Install on macOS
+## Install
 
 The global installer installs missing prerequisites, builds Punakawan and its
 Atlassian adapter, collects Jira credentials outside git-tracked projects,
 optionally installs security scanners (Trivy / OSV / Sonar), and opens a wizard
 to integrate `punakawan` with Codex, Claude Code, both, another STDIO MCP
-client, or no client yet:
+client, or no client yet.
+
+**macOS and Linux** — run the shell installer:
 
 ```bash
 ./scripts/install.sh
 ```
 
+On macOS it installs prerequisites through Homebrew. On Linux it uses the
+distro package manager it detects (apt / dnf / yum / pacman / zypper) for git,
+ripgrep, Node, and Go, installs Dolt via its official script, and installs
+Beads (`bd`) via `go install`. `rtk` is optional and left to you on Linux. It
+writes config to `$XDG_CONFIG_HOME/punakawan` (i.e. `~/.config/punakawan`),
+matching `os.UserConfigDir()`.
+
+**Windows** — run the PowerShell installer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+It mirrors the shell installer (winget prerequisites, build, PATH, `%APPDATA%\
+punakawan` config, an MCP launcher `run-mcp.cmd`, and `doctor`), but does not
+drive the interactive client wizard — it writes a generic MCP config and prints
+the command to register it.
+
 The final wizard offers Codex, Claude Code, both, a generic STDIO MCP config,
-or skip. To add or change clients later, rerun only the integration wizard:
+or skip. To add or change clients later, rerun only the integration wizard,
+pointing it at the generated launcher (macOS path shown; on Linux it lives at
+`~/.config/punakawan/run-mcp.sh`):
 
 ```bash
 ./scripts/configure-agent.sh "$HOME/Library/Application Support/punakawan/run-mcp.sh"
@@ -264,7 +286,7 @@ or skip. To add or change clients later, rerun only the integration wizard:
 For automated provisioning, set `PUNAKAWAN_AGENT_SELECTION` to `codex`,
 `claude`, `both`, `generic`, or `skip`. Set `PUNAKAWAN_INSTALL_SCANNERS` to
 `yes`/`no` to control the optional scanner step non-interactively, and
-`PUNAKAWAN_DRY_RUN=1` to preview registration/brew commands without changing
+`PUNAKAWAN_DRY_RUN=1` to preview the install commands without changing
 anything.
 
 Punakawan calls Jira Cloud REST API v3 directly; it does not require or use
@@ -277,19 +299,23 @@ project permissions. It also asks for the site host (for example
 Punakawan file is required; an optional `.punakawan/workspace.yaml` can override
 global defaults.
 
-### Other platforms
+### Platform support
 
 - **macOS** — fully supported via `scripts/install.sh` (Homebrew-based).
-- **Linux** — supported by building from source (`make bootstrap && make build`).
-  The installer script is macOS-only, but the Go core, TS adapters, and panel
-  are portable; `os.UserConfigDir()` resolves config to `~/.config/punakawan`.
-  A native Linux installer is not yet provided — register the MCP launcher with
-  your client manually (see `scripts/configure-agent.sh`).
-- **Windows** — **not yet supported.** The tool supervisor uses POSIX
-  process-group termination (`internal/tools/supervisor.go`) and will not compile
-  under `GOOS=windows` in its current form. Config resolution (`%AppData%`) and
-  the panel are already portable; Windows support is tracked as follow-up work
-  (a Windows supervisor backend + a PowerShell installer). WSL2 works today.
+- **Linux** — fully supported via `scripts/install.sh`. It detects the distro
+  package manager (apt / dnf / yum / pacman / zypper) for git, ripgrep, Node,
+  and Go, installs Dolt from its official script and Beads via `go install`,
+  and writes config to `~/.config/punakawan` (`os.UserConfigDir()`). `rtk` is
+  optional and not auto-installed; missing tools degrade gracefully (health
+  reports them unavailable). If no supported package manager is found, install
+  the prerequisites manually and rerun.
+- **Windows** — supported via `scripts/install.ps1` (PowerShell). The tool
+  supervisor has a Windows backend (`internal/tools/supervisor_windows.go`,
+  `//go:build windows`) so the binary cross-compiles under `GOOS=windows`; the
+  installer wires prerequisites (winget), PATH, `%APPDATA%\punakawan` config,
+  and an MCP launcher. The interactive client wizard is bash-only, so the
+  PowerShell installer prints the manual registration command instead. WSL2
+  also works via the Linux path.
 
 ### Jira authentication
 
