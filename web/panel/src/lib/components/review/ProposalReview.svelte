@@ -381,7 +381,7 @@
               variant={structural?.passed ? "success" : "danger"}
               label={structural?.passed ? "Structural: passed" : "Structural: failed"}
             />
-            {#if structural?.issues.length}
+            {#if structural?.issues?.length}
               <ul class="issue-list">
                 {#each structural.issues as issue}
                   <li><strong>{issue.check}</strong>: {issue.message}</li>
@@ -394,7 +394,7 @@
               variant={compliance?.passed ? "success" : "danger"}
               label={compliance?.passed ? "Review compliance: passed" : "Review compliance: failed"}
             />
-            {#if compliance?.issues.length}
+            {#if compliance?.issues?.length}
               <ul class="issue-list">
                 {#each compliance.issues as issue}
                   <li><strong>{issue.check}</strong>: {issue.message}</li>
