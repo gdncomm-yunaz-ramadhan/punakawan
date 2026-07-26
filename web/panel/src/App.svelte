@@ -13,6 +13,7 @@
   import KnowledgeList from "./routes/knowledge/KnowledgeList.svelte";
   import KnowledgeDetail from "./routes/knowledge/KnowledgeDetail.svelte";
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
+  import ContextImprovements from "./routes/improvements/ContextImprovements.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
   import StartReview from "./routes/review/StartReview.svelte";
   import ReviewMode from "./routes/review/ReviewMode.svelte";
@@ -49,6 +50,8 @@
     <Overview />
   {:else if getPath() === "/projects"}
     <ProjectsList />
+  {:else if getPath() === "/improvements"}
+    <ContextImprovements />
   {:else if getPath() === "/system"}
     <SystemPage />
   {:else if startReviewPath.exec(getPath())}

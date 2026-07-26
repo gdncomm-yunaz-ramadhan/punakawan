@@ -99,6 +99,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, completeWorkflowStepHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "propose_project_learning",
+		Description: "Open (or reinforce) a reviewed learning proposal for a workflow, project_metadata, or knowledge improvement (agent-context plan §6.2/§6.3). Supply the target_id and the proposed candidate content; it becomes a proposal in the existing artifact-review flow - NEVER a direct canonical write. A human accepts/rejects it in the panel. Deterministic dedup (plan §6.4): an equivalent pending proposal absorbs your evidence_ids/source_run_ids and increments support_count instead of opening a duplicate. Proposals must reference the structured outcome/evidence, not mined chat. Acceptance writes a new immutable revision; for workflows, acceptance never enables the new revision (activation is separate).",
+	}, proposeProjectLearningHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "record_work_outcome",
 		Description: "Persist the structured result of a context-aware run before completing it (agent-context plan §6.1): status (success|partial|failed), a concise summary, evidence ids, output refs, any workflow deviations, missing/stale context encountered, and reusable observations classified for a later learning proposal (workflow|metadata|knowledge|contradiction|workflow-revision). An observation is a traceable input to a proposal, NOT canonical knowledge. A context-aware run cannot be advanced to completed until this is recorded.",
 	}, recordWorkOutcomeHandler(a))

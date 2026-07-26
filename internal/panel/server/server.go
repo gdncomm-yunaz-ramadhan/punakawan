@@ -173,6 +173,8 @@ func (s *Server) Start() error {
 			}
 			return &recipe.RecipeStore{Repo: &recipe.Repository{Store: knowledgeStore}}, nil
 		},
+		Root:      s.app.Workspace.Root,
+		Knowledge: s.app.OpenKnowledge,
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
@@ -398,6 +400,7 @@ func (s *Server) Start() error {
 	projectArtifacts := api.NewProjectArtifactStores(
 		projectStores,
 		recipesFactory,
+		s.app.OpenKnowledge,
 		func(projectID string) revision.Dispatcher {
 			root, _ := s.resolveRoot(projectID)
 			return &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: root}
@@ -405,6 +408,7 @@ func (s *Server) Start() error {
 		s.logger,
 	)
 	pa := "/api/v1/projects/{projectId}"
+	mux.HandleFunc("GET "+pa+"/context-improvements", projectArtifacts.ContextImprovements())
 	mux.HandleFunc("GET "+pa+"/artifacts/{type}/{id}/current", projectArtifacts.ArtifactCurrent())
 	mux.HandleFunc("POST "+pa+"/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, projectArtifacts.CreateReview()))
 	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}", projectArtifacts.Review())

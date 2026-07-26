@@ -10,6 +10,7 @@
   const links: { path: string; label: string; icon: IconName }[] = [
     { path: "/", label: "Overview", icon: "dashboard" },
     { path: "/projects", label: "Projects", icon: "folder" },
+    { path: "/improvements", label: "Context", icon: "comment" },
     { path: "/system", label: "System", icon: "settings" },
   ];
 

@@ -711,12 +711,18 @@ func (j *ArtifactReferenceFormat) UnmarshalJSON(value []byte) error {
 
 type ArtifactReferenceType string
 
+const ArtifactReferenceTypeKnowledge ArtifactReferenceType = "knowledge"
 const ArtifactReferenceTypePlan ArtifactReferenceType = "plan"
+const ArtifactReferenceTypeProjectMetadata ArtifactReferenceType = "project_metadata"
 const ArtifactReferenceTypeRetrievalRecipe ArtifactReferenceType = "retrieval_recipe"
+const ArtifactReferenceTypeWorkflow ArtifactReferenceType = "workflow"
 
 var enumValues_ArtifactReferenceType = []interface{}{
 	"plan",
 	"retrieval_recipe",
+	"workflow",
+	"project_metadata",
+	"knowledge",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -807,12 +813,18 @@ type ArtifactReviewArtifact struct {
 
 type ArtifactReviewArtifactType string
 
+const ArtifactReviewArtifactTypeKnowledge ArtifactReviewArtifactType = "knowledge"
 const ArtifactReviewArtifactTypePlan ArtifactReviewArtifactType = "plan"
+const ArtifactReviewArtifactTypeProjectMetadata ArtifactReviewArtifactType = "project_metadata"
 const ArtifactReviewArtifactTypeRetrievalRecipe ArtifactReviewArtifactType = "retrieval_recipe"
+const ArtifactReviewArtifactTypeWorkflow ArtifactReviewArtifactType = "workflow"
 
 var enumValues_ArtifactReviewArtifactType = []interface{}{
 	"plan",
 	"retrieval_recipe",
+	"workflow",
+	"project_metadata",
+	"knowledge",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -1409,12 +1421,18 @@ type ArtifactRevisionRequestBaseArtifact struct {
 
 type ArtifactRevisionRequestBaseArtifactType string
 
+const ArtifactRevisionRequestBaseArtifactTypeKnowledge ArtifactRevisionRequestBaseArtifactType = "knowledge"
 const ArtifactRevisionRequestBaseArtifactTypePlan ArtifactRevisionRequestBaseArtifactType = "plan"
+const ArtifactRevisionRequestBaseArtifactTypeProjectMetadata ArtifactRevisionRequestBaseArtifactType = "project_metadata"
 const ArtifactRevisionRequestBaseArtifactTypeRetrievalRecipe ArtifactRevisionRequestBaseArtifactType = "retrieval_recipe"
+const ArtifactRevisionRequestBaseArtifactTypeWorkflow ArtifactRevisionRequestBaseArtifactType = "workflow"
 
 var enumValues_ArtifactRevisionRequestBaseArtifactType = []interface{}{
 	"plan",
 	"retrieval_recipe",
+	"workflow",
+	"project_metadata",
+	"knowledge",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

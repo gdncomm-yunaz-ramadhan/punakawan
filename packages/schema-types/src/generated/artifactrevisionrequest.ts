@@ -15,7 +15,7 @@ export interface ArtifactRevisionRequest {
     submitted_by: string;
   };
   base_artifact: {
-    type: "plan" | "retrieval_recipe";
+    type: "plan" | "retrieval_recipe" | "workflow" | "project_metadata" | "knowledge";
     id: string;
     version: number;
     revision_hash: string;
