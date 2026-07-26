@@ -1,0 +1,60 @@
+internal/mcpserver/tools_workflowsteps.go
+  d98638225f35480d 1-234
+internal/workflow/steps_test.go
+  d98638225f35480d 1-106
+internal/mcpserver/tools_workflowsteps_test.go
+  d98638225f35480d 1-137
+internal/mcpserver/tools.go
+  d98638225f35480d 88,91-104
+internal/mcpserver/tools_workflow.go
+  d98638225f35480d 122-127
+internal/mcpserver/server.go
+  d98638225f35480d 44-45
+protocol/workflow.schema.json
+  d98638225f35480d 143,148-151,156-203
+internal/workcontext/prepare.go
+  d98638225f35480d 92-96,135,142,263-281
+internal/workflow/definition.go
+  d98638225f35480d 19-20,31,42-43
+internal/panel/server/server.go
+  d98638225f35480d 295,307
+internal/mcpserver/tools_workcontext.go
+  d98638225f35480d 201
+internal/workflow/steps.go
+  d98638225f35480d 1-201
+internal/workflow/events.go
+  d98638225f35480d 1-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "976f58532615516fef8dff14e9fbe1efe90dc0fb",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 891,
+      "total_deletions": 24,
+      "accepted_lines": 892,
+      "overriden_lines": 0
+    }
+  }
+}
