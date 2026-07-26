@@ -85,7 +85,7 @@
     <ChartCard
       title="Blocked tasks by workspace"
       description="Where blocked work is concentrated right now."
-      size="wide"
+      size="full"
       state={blockedByWorkspace.length === 0 ? "empty" : "default"}
       emptyMessage="No blocked tasks across workspaces."
     >

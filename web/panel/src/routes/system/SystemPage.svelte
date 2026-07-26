@@ -1,13 +1,32 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getSystem, type SystemInfo } from "../../lib/api/client";
+  import {
+    getSystem,
+    getPanelSettings,
+    updatePanelSettings,
+    type SystemInfo,
+    type PanelSettings,
+  } from "../../lib/api/client";
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import Icon, { type IconName } from "../../lib/components/Icon.svelte";
   import AccentPicker from "../../lib/components/AccentPicker.svelte";
+  import Button from "../../lib/components/Button.svelte";
 
   let info: SystemInfo | null = $state(null);
   let error: string | null = $state(null);
   let loading = $state(true);
+
+  // Runtime pool settings: loaded independently of the diagnostics above so
+  // a failure in one doesn't blank the other.
+  let settings: PanelSettings | null = $state(null);
+  let settingsError: string | null = $state(null);
+  let settingsLoading = $state(true);
+  // Form model, seeded from the loaded settings and edited in place.
+  let maxActiveRuntimes = $state(1);
+  let idleTimeoutSeconds = $state(1);
+  let saving = $state(false);
+  let saved = $state(false);
+  let saveError: string | null = $state(null);
 
   async function load() {
     loading = true;
@@ -21,13 +40,124 @@
     }
   }
 
-  onMount(load);
+  async function loadSettings() {
+    settingsLoading = true;
+    settingsError = null;
+    try {
+      const s = await getPanelSettings();
+      settings = s;
+      maxActiveRuntimes = s.max_active_runtimes;
+      idleTimeoutSeconds = s.runtime_idle_timeout_seconds;
+    } catch (e) {
+      settingsError = e instanceof Error ? e.message : String(e);
+    } finally {
+      settingsLoading = false;
+    }
+  }
+
+  // Clear a stale "Saved"/error banner as soon as the user edits a field.
+  function onEdit() {
+    saved = false;
+    saveError = null;
+  }
+
+  async function saveSettings() {
+    saving = true;
+    saved = false;
+    saveError = null;
+    try {
+      const updated = await updatePanelSettings({
+        max_active_runtimes: maxActiveRuntimes,
+        runtime_idle_timeout_seconds: idleTimeoutSeconds,
+      });
+      settings = updated;
+      maxActiveRuntimes = updated.max_active_runtimes;
+      idleTimeoutSeconds = updated.runtime_idle_timeout_seconds;
+      saved = true;
+    } catch (e) {
+      saveError = e instanceof Error ? e.message : String(e);
+    } finally {
+      saving = false;
+    }
+  }
+
+  onMount(() => {
+    load();
+    loadSettings();
+  });
 </script>
 
 <PageHeader
   title="System"
   description="Local diagnostic info about this panel process. Never shows tokens, secrets, environment variables, or agent reasoning - only the facts below."
 />
+
+<section class="runtime-pool" aria-labelledby="runtime-pool-heading">
+  <div class="section-heading">
+    <div>
+      <span class="eyebrow">Resources</span>
+      <h2 id="runtime-pool-heading">Runtime pool</h2>
+    </div>
+  </div>
+
+  {#if settingsLoading}
+    <p>Loading…</p>
+  {:else if settingsError}
+    <p role="alert" class="error">Failed to load runtime settings: {settingsError}</p>
+  {:else if settings}
+    <form
+      class="runtime-form"
+      onsubmit={(e) => {
+        e.preventDefault();
+        saveSettings();
+      }}
+    >
+      <label>
+        <span class="field-label">Max active runtimes</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          bind:value={maxActiveRuntimes}
+          oninput={onEdit}
+          aria-label="Max active runtimes"
+        />
+        <span class="help">
+          Caps how many project workspaces run their own <code>dolt sql-server</code> at once;
+          least-recently-used idle projects are shut down when the cap is exceeded (the primary
+          project is never evicted, and lowering the cap frees memory immediately).
+        </span>
+      </label>
+
+      <label>
+        <span class="field-label">Idle timeout (seconds)</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          bind:value={idleTimeoutSeconds}
+          oninput={onEdit}
+          aria-label="Runtime idle timeout in seconds"
+        />
+        <span class="help">
+          How long an idle non-primary project's <code>dolt sql-server</code> lingers before it is
+          shut down.
+        </span>
+      </label>
+
+      <div class="runtime-actions">
+        <Button type="submit" variant="primary" disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+        {#if saved}
+          <span class="save-status ok" role="status">Saved</span>
+        {:else if saveError}
+          <span class="save-status error" role="alert">{saveError}</span>
+        {/if}
+      </div>
+    </form>
+  {/if}
+</section>
 
 {#if loading}
   <p>Loading…</p>
@@ -214,6 +344,78 @@
     font-weight: 500;
   }
   .error {
+    color: var(--color-danger);
+  }
+
+  .runtime-pool {
+    margin-top: 1rem;
+    padding: 1.1rem;
+    border: 1px solid var(--surface-card-border, var(--color-border));
+    border-radius: var(--radius-card);
+    background: var(--surface-card-bg, var(--color-surface));
+    box-shadow: var(--shadow-card);
+  }
+  .runtime-pool .section-heading {
+    margin-top: 0;
+  }
+  .runtime-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.1rem;
+    margin-top: 1rem;
+  }
+  .runtime-form label {
+    display: grid;
+    gap: 0.35rem;
+    align-content: start;
+  }
+  .field-label {
+    color: var(--color-text);
+    font-size: 0.8rem;
+    font-weight: 650;
+  }
+  .runtime-form input {
+    font: inherit;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--color-border-strong, var(--color-border));
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    min-height: 40px;
+    max-width: 12rem;
+    box-sizing: border-box;
+  }
+  .runtime-form input:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  .help {
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    line-height: 1.5;
+  }
+  .help code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    background: var(--color-surface-subtle);
+    border-radius: 4px;
+    padding: 0.05rem 0.3rem;
+  }
+  .runtime-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .save-status {
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .save-status.ok {
+    color: var(--color-accent);
+  }
+  .save-status.error {
     color: var(--color-danger);
   }
 

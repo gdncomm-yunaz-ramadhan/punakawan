@@ -1,0 +1,373 @@
+package learning
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/ygrip/punakawan/internal/artifact"
+	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/project"
+	"github.com/ygrip/punakawan/internal/workflowdef"
+	"github.com/ygrip/punakawan/pkg/protocol"
+)
+
+// The three adapters below make workflow definitions, project metadata, and
+// knowledge records reviewable through the existing artifact-review acceptance
+// path (agent-context plan §6.3). Each implements artifact.Store: the review
+// UI reads Current/Version, and acceptance calls CreateVersion, which is the
+// ONLY place canonical state is written — a proposal cannot alter canonical
+// context before acceptance (plan Phase 4 exit criterion). Stale-base is
+// detected by the accept handler comparing Current().RevisionHash to the
+// proposal's recorded base; each adapter's RevisionHash therefore folds in the
+// live revision so any intervening change is caught.
+
+func marshalCanonical(v any) ([]byte, error) {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func clampVersion(v int) int {
+	if v < 1 {
+		return 1
+	}
+	return v
+}
+
+func mintVersionID(headID string) (string, error) {
+	buf := make([]byte, 4)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("learning: mint version id: %w", err)
+	}
+	return fmt.Sprintf("%s+%s", headID, hex.EncodeToString(buf)), nil
+}
+
+// ---------------------------------------------------------------------------
+// Workflow adapter
+// ---------------------------------------------------------------------------
+
+// WorkflowAdapter reviews a workflow definition. On acceptance it writes a new
+// immutable definition revision but NEVER enables it: activation stays a
+// separate explicit action (plan §8.5).
+type WorkflowAdapter struct {
+	Root      string
+	locksOnce sync.Once
+	locks     *artifact.KeyedMutex
+}
+
+func (a *WorkflowAdapter) LockArtifact(id string) func() {
+	a.locksOnce.Do(func() { a.locks = artifact.NewKeyedMutex() })
+	return a.locks.Lock(id)
+}
+
+func (a *WorkflowAdapter) reference(def workflowdef.Definition) (protocol.ArtifactReference, error) {
+	content, err := marshalCanonical(def)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return protocol.ArtifactReference{
+		Type:         protocol.ArtifactReferenceTypeWorkflow,
+		Id:           def.ID,
+		Version:      clampVersion(def.Revision),
+		RevisionHash: artifact.Hash(content),
+		Format:       protocol.ArtifactReferenceFormatJson,
+	}, nil
+}
+
+func (a *WorkflowAdapter) Current(id string) (protocol.ArtifactReference, error) {
+	store, err := workflowdef.Open(a.Root)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	def, err := store.Get(id)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return a.reference(def)
+}
+
+func (a *WorkflowAdapter) Version(id string, version int) ([]byte, protocol.ArtifactReference, error) {
+	ref, err := a.Current(id)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	if ref.Version != version {
+		return nil, protocol.ArtifactReference{}, fmt.Errorf("learning: workflow %q version %d not available (current is %d)", id, version, ref.Version)
+	}
+	store, _ := workflowdef.Open(a.Root)
+	def, err := store.Get(id)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	content, err := marshalCanonical(def)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	return content, ref, nil
+}
+
+func (a *WorkflowAdapter) CreateVersion(id, workspaceID string, content []byte, now time.Time) (protocol.ArtifactReference, error) {
+	var proposed workflowdef.Definition
+	if err := json.Unmarshal(content, &proposed); err != nil {
+		return protocol.ArtifactReference{}, fmt.Errorf("learning: workflow candidate is not a valid definition: %w", err)
+	}
+	proposed.ID = id
+	if proposed.Version == "" {
+		proposed.Version = workflowdef.SchemaVersion
+	}
+
+	store, err := workflowdef.Open(a.Root)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	// Preserve the current enabled state (or start disabled for a new
+	// definition). Acceptance must never silently enable a workflow.
+	enabled := false
+	if cur, err := store.Get(id); err == nil {
+		proposed.Revision = cur.Revision // satisfy optimistic-concurrency on Save
+		enabled = cur.Enabled
+	} else if !errors.Is(err, workflowdef.ErrNotFound) {
+		return protocol.ArtifactReference{}, err
+	}
+	proposed.Enabled = enabled
+
+	saved, err := store.Save(proposed)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return a.reference(saved)
+}
+
+// ---------------------------------------------------------------------------
+// Project-metadata adapter
+// ---------------------------------------------------------------------------
+
+// MetadataAdapter reviews a single project-metadata entry, keyed by its
+// metadata key. Current folds the project revision into the revision hash so
+// any intervening metadata change on the project invalidates a stale base.
+type MetadataAdapter struct {
+	Root      string
+	locksOnce sync.Once
+	locks     *artifact.KeyedMutex
+}
+
+func (a *MetadataAdapter) LockArtifact(id string) func() {
+	a.locksOnce.Do(func() { a.locks = artifact.NewKeyedMutex() })
+	return a.locks.Lock(id)
+}
+
+// metadataDigestInput is what the revision hash is taken over: the entry (or
+// its absence) AND the project revision, so any project mutation moves the
+// hash and a stale-base acceptance is rejected.
+type metadataDigestInput struct {
+	Key             string `json:"key"`
+	Present         bool   `json:"present"`
+	Description     string `json:"description,omitempty"`
+	Value           any    `json:"value,omitempty"`
+	ProjectRevision int    `json:"project_revision"`
+}
+
+func (a *MetadataAdapter) reference(key string) (protocol.ArtifactReference, []byte, error) {
+	proj, err := project.Load(a.Root)
+	if err != nil {
+		return protocol.ArtifactReference{}, nil, err
+	}
+	entry, present := proj.MetadataFor(key)
+	digest := metadataDigestInput{Key: key, Present: present, ProjectRevision: proj.Revision}
+	if present {
+		digest.Description = entry.Description
+		digest.Value = entry.Value
+	}
+	digestBytes, err := marshalCanonical(digest)
+	if err != nil {
+		return protocol.ArtifactReference{}, nil, err
+	}
+	// The diffable content is the entry itself (or an empty object).
+	var content []byte
+	if present {
+		content, err = marshalCanonical(entry)
+	} else {
+		content, err = marshalCanonical(struct{}{})
+	}
+	if err != nil {
+		return protocol.ArtifactReference{}, nil, err
+	}
+	ref := protocol.ArtifactReference{
+		Type:         protocol.ArtifactReferenceTypeProjectMetadata,
+		Id:           key,
+		Version:      clampVersion(proj.Revision),
+		RevisionHash: artifact.Hash(digestBytes),
+		WorkspaceId:  proj.ID,
+		Format:       protocol.ArtifactReferenceFormatJson,
+	}
+	return ref, content, nil
+}
+
+func (a *MetadataAdapter) Current(id string) (protocol.ArtifactReference, error) {
+	ref, _, err := a.reference(id)
+	return ref, err
+}
+
+func (a *MetadataAdapter) Version(id string, version int) ([]byte, protocol.ArtifactReference, error) {
+	ref, content, err := a.reference(id)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	if ref.Version != version {
+		return nil, protocol.ArtifactReference{}, fmt.Errorf("learning: metadata %q version %d not available (current is %d)", id, version, ref.Version)
+	}
+	return content, ref, nil
+}
+
+func (a *MetadataAdapter) CreateVersion(id, workspaceID string, content []byte, now time.Time) (protocol.ArtifactReference, error) {
+	var entry project.MetadataEntry
+	if err := json.Unmarshal(content, &entry); err != nil {
+		return protocol.ArtifactReference{}, fmt.Errorf("learning: metadata candidate is not a valid entry: %w", err)
+	}
+	entry.Key = id
+
+	proj, err := project.Load(a.Root)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	base := proj.Revision
+	action := "add"
+	if _, present := proj.MetadataFor(id); present {
+		action = "update"
+		desc := entry.Description
+		if err := proj.UpdateMetadata(id, &desc, entry.Value, base); err != nil {
+			return protocol.ArtifactReference{}, err
+		}
+	} else {
+		if err := proj.AddMetadata(entry, base); err != nil {
+			return protocol.ArtifactReference{}, err
+		}
+	}
+	if err := project.Save(a.Root, proj, project.SaveOptions{Now: now, Actor: "learning-acceptance", Action: action, Key: id}); err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return a.Current(id)
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge adapter
+// ---------------------------------------------------------------------------
+
+// KnowledgeAdapter reviews a knowledge record. On acceptance it writes a new
+// immutable record version and supersedes the previous one (plan §6.3),
+// mirroring the retrieval-recipe adapter but for any record type.
+type KnowledgeAdapter struct {
+	Store     *knowledge.Store
+	locksOnce sync.Once
+	locks     *artifact.KeyedMutex
+}
+
+func (a *KnowledgeAdapter) LockArtifact(id string) func() {
+	a.locksOnce.Do(func() { a.locks = artifact.NewKeyedMutex() })
+	return a.locks.Lock(id)
+}
+
+// head follows the SupersededBy chain to the live record.
+func (a *KnowledgeAdapter) head(id string) (protocol.KnowledgeRecord, error) {
+	rec, err := a.Store.Get(id)
+	if err != nil {
+		return protocol.KnowledgeRecord{}, err
+	}
+	seen := map[string]bool{rec.Id: true}
+	for rec.SupersededBy != nil {
+		next := *rec.SupersededBy
+		if seen[next] {
+			break
+		}
+		nr, err := a.Store.Get(next)
+		if err != nil {
+			break
+		}
+		rec = nr
+		seen[next] = true
+	}
+	return rec, nil
+}
+
+func (a *KnowledgeAdapter) reference(rec protocol.KnowledgeRecord) (protocol.ArtifactReference, error) {
+	content, err := marshalCanonical(rec)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	ws := ""
+	if rec.Scope != nil && rec.Scope.Project != nil {
+		ws = *rec.Scope.Project
+	}
+	return protocol.ArtifactReference{
+		Type:         protocol.ArtifactReferenceTypeKnowledge,
+		Id:           rec.Id,
+		Version:      1,
+		RevisionHash: artifact.Hash(content),
+		WorkspaceId:  ws,
+		Format:       protocol.ArtifactReferenceFormatJson,
+	}, nil
+}
+
+func (a *KnowledgeAdapter) Current(id string) (protocol.ArtifactReference, error) {
+	head, err := a.head(id)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return a.reference(head)
+}
+
+func (a *KnowledgeAdapter) Version(id string, version int) ([]byte, protocol.ArtifactReference, error) {
+	head, err := a.head(id)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	ref, err := a.reference(head)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	content, err := marshalCanonical(head)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	return content, ref, nil
+}
+
+func (a *KnowledgeAdapter) CreateVersion(id, workspaceID string, content []byte, now time.Time) (protocol.ArtifactReference, error) {
+	var proposed protocol.KnowledgeRecord
+	if err := json.Unmarshal(content, &proposed); err != nil {
+		return protocol.ArtifactReference{}, fmt.Errorf("learning: knowledge candidate is not a valid record: %w", err)
+	}
+	head, err := a.head(id)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	newID, err := mintVersionID(head.Id)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	proposed.Id = newID
+	if proposed.Type == "" {
+		proposed.Type = head.Type
+	}
+	if err := a.Store.Put(proposed); err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	if err := a.Store.Supersede(head.Id, newID); err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return a.reference(proposed)
+}
+
+// Compile-time assertions that all three adapters satisfy artifact.Store.
+var (
+	_ artifact.Store = (*WorkflowAdapter)(nil)
+	_ artifact.Store = (*MetadataAdapter)(nil)
+	_ artifact.Store = (*KnowledgeAdapter)(nil)
+)

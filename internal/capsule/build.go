@@ -175,9 +175,10 @@ func toKnowledgeRefs(recs []protocol.KnowledgeRecord, reasons map[string]string)
 	return out
 }
 
+// summaryPtr renders a bounded summary of a record from its actual content
+// (indexed summary, type-specific payload, body, then title) rather than
+// reducing every record to just its title, which discarded the very content a
+// reviewing role needs (agent-context plan §4.5).
 func summaryPtr(r protocol.KnowledgeRecord) *string {
-	if r.Title == "" {
-		return nil
-	}
-	return &r.Title
+	return knowledge.BoundedSummary(r)
 }

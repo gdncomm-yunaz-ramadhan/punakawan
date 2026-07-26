@@ -1,0 +1,51 @@
+version: punakawan.workflow/v1
+id: implementation-with-tests
+name: Implementation with Tests
+description: >-
+  Implement a ready task and prove it with tests before review: build the
+  bounded task context, write the change, run the project's tests, check the
+  diff, then submit an independent Bagong review. Requires the project's test
+  command to be known up front.
+enabled: true
+revision: 1
+selectors:
+  - capability: task
+    intent: implement
+required_metadata:
+  - test.command
+allowed_capabilities:
+  - build_task_context
+  - write_file
+  - run_tests
+  - check_diff
+  - submit_bagong_review
+approval:
+  required_for:
+    - write_file
+steps:
+  - id: context
+    capability: build_task_context
+    intent: assemble
+  - id: implement
+    capability: write_file
+    intent: change
+    input_from:
+      - context
+  - id: test
+    capability: run_tests
+    intent: verify
+    input_from:
+      - implement
+  - id: diff
+    capability: check_diff
+    intent: verify
+    input_from:
+      - implement
+  - id: review
+    capability: submit_bagong_review
+    intent: review
+    input_from:
+      - test
+      - diff
+output:
+  type: bagong-review

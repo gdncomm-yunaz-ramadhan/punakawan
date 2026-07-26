@@ -5,7 +5,10 @@ import (
 	"fmt"
 
 	"github.com/ygrip/punakawan/internal/artifact"
+	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/recipe"
+	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -31,6 +34,13 @@ import (
 type ArtifactStores struct {
 	Plans   *artifact.PlanStore
 	Recipes func() (*recipe.RecipeStore, error)
+
+	// Root is the workspace root the workflow and project-metadata learning
+	// adapters operate on (agent-context plan §6.3); those are file-backed and
+	// need no lazy factory. Knowledge is a lazy factory like Recipes, since the
+	// knowledge adapter opens the Dolt-backed store.
+	Root      string
+	Knowledge func() (*knowledge.Store, error)
 }
 
 // resolveArtifactType maps a {type} path segment to the matching store,
@@ -52,8 +62,27 @@ func resolveArtifactType(stores ArtifactStores, artifactType string) (artifact.S
 			return nil, "", fmt.Errorf("api: retrieval_recipe review is not available in this workspace: %w", err)
 		}
 		return recipeStore, protocol.ArtifactReviewArtifactTypeRetrievalRecipe, nil
+	case string(protocol.ArtifactReviewArtifactTypeWorkflow):
+		if stores.Root == "" {
+			return nil, "", fmt.Errorf("api: workflow review is not available (no workspace root configured)")
+		}
+		return &learning.WorkflowAdapter{Root: stores.Root}, protocol.ArtifactReviewArtifactTypeWorkflow, nil
+	case string(protocol.ArtifactReviewArtifactTypeProjectMetadata):
+		if stores.Root == "" {
+			return nil, "", fmt.Errorf("api: project_metadata review is not available (no workspace root configured)")
+		}
+		return &learning.MetadataAdapter{Root: stores.Root}, protocol.ArtifactReviewArtifactTypeProjectMetadata, nil
+	case string(protocol.ArtifactReviewArtifactTypeKnowledge):
+		if stores.Knowledge == nil {
+			return nil, "", fmt.Errorf("api: knowledge review is not available in this workspace (no knowledge store configured)")
+		}
+		ks, err := stores.Knowledge()
+		if err != nil {
+			return nil, "", fmt.Errorf("api: knowledge review is not available in this workspace: %w", err)
+		}
+		return &learning.KnowledgeAdapter{Store: ks}, protocol.ArtifactReviewArtifactTypeKnowledge, nil
 	default:
-		return nil, "", fmt.Errorf("api: unsupported artifact type %q (want %q or %q)", artifactType, protocol.ArtifactReviewArtifactTypePlan, protocol.ArtifactReviewArtifactTypeRetrievalRecipe)
+		return nil, "", fmt.Errorf("api: unsupported artifact type %q", artifactType)
 	}
 }
 
@@ -69,5 +98,8 @@ func storeFor(stores ArtifactStores, artifactType protocol.ArtifactReviewArtifac
 // not-found sentinel - the handlers that call this only need to know
 // "404 or not," not which concrete store produced it.
 func isArtifactNotFound(err error) bool {
-	return errors.Is(err, artifact.ErrPlanNotFound) || errors.Is(err, recipe.ErrRecipeNotFound)
+	return errors.Is(err, artifact.ErrPlanNotFound) ||
+		errors.Is(err, recipe.ErrRecipeNotFound) ||
+		errors.Is(err, workflowdef.ErrNotFound) ||
+		errors.Is(err, knowledge.ErrNotFound)
 }

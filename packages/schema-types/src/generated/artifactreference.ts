@@ -11,7 +11,7 @@ export interface ArtifactReference {
   /**
    * Artifact type. Only "plan" is implemented by this plan; "retrieval_recipe" is reserved for punakawan-procedural-knowledge-retrieval-recipe-plan-final.md's own review/mutation reuse once its compiler and validation lifecycle exist (§4), not enabled here.
    */
-  type: "plan" | "retrieval_recipe";
+  type: "plan" | "retrieval_recipe" | "workflow" | "project_metadata" | "knowledge";
   id: string;
   version: number;
   revision_hash: string;

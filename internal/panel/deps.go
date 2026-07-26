@@ -9,11 +9,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/runtime"
+	"github.com/ygrip/punakawan/internal/panel/settings"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/tasksnapshot"
 	"github.com/ygrip/punakawan/internal/project"
@@ -61,8 +63,15 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 	// Bounded pool of loaded *app.App runtimes, seeded with the long-lived
 	// primary. Non-primary workspaces are Acquire'd and reused across requests
 	// instead of app.Load/Close per call; the primary is never evicted or
-	// closed by the manager (Phase 3, §10.3).
-	runtimeMgr := runtime.NewManager(a.Workspace.ID, a)
+	// closed by the manager (Phase 3, §10.3). The cap and idle-shutdown window
+	// come from the user-tunable panel settings (each live runtime backs one
+	// dolt sql-server, so this bounds dolt resource use); a live SetMaxActive
+	// from the System panel adjusts the running pool.
+	st := settings.Load(a.Workspace.Root)
+	runtimeMgr := runtime.NewManager(a.Workspace.ID, a,
+		runtime.WithMaxActive(st.MaxActiveRuntimes),
+		runtime.WithIdleTimeout(time.Duration(st.RuntimeIdleTimeoutSeconds)*time.Second),
+	)
 
 	// Front the deep per-workspace inspector with a stale-while-revalidate
 	// snapshot cache so /workspaces, /overview, and the Tier-2 reconciler

@@ -38,7 +38,7 @@ import (
 
 // Default pool bounds. Both are overridable via options.
 const (
-	defaultMaxActive   = 6
+	defaultMaxActive   = 4
 	defaultIdleTimeout = 12 * time.Minute
 )
 
@@ -238,6 +238,50 @@ func (m *ProjectRuntimeManager) Acquire(ctx context.Context, projectID, path str
 		_ = m.closer(e.App)
 	}
 	return rt, m.releaseFunc(projectID), nil
+}
+
+// MaxActive returns the current pool cap (including the primary).
+func (m *ProjectRuntimeManager) MaxActive() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.maxActive
+}
+
+// SetMaxActive changes the pool cap at runtime (configurable via the system
+// panel). Values < 1 are ignored. Lowering the cap immediately evicts the LRU
+// idle, non-primary runtimes now over the new cap — each closed App stops its
+// project's dolt sql-server — so shrinking the cap frees resources at once
+// rather than only on the next admission. Runtimes still in use are never
+// evicted; the pool may stay temporarily over cap until they are released.
+func (m *ProjectRuntimeManager) SetMaxActive(n int) {
+	if n < 1 {
+		return
+	}
+	m.mu.Lock()
+	m.maxActive = n
+	evicted := m.selectEvictionsLocked()
+	m.mu.Unlock()
+	for _, e := range evicted {
+		_ = m.closer(e.App)
+	}
+}
+
+// IdleTimeout returns the current idle-shutdown timeout.
+func (m *ProjectRuntimeManager) IdleTimeout() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.idleTimeout
+}
+
+// SetIdleTimeout changes how long a non-primary, unused runtime may sit idle
+// before the periodic CloseIdle sweep reclaims it. Values <= 0 are ignored.
+func (m *ProjectRuntimeManager) SetIdleTimeout(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	m.mu.Lock()
+	m.idleTimeout = d
+	m.mu.Unlock()
 }
 
 // releaseFunc returns an idempotent release closure bound to projectID.

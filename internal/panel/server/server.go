@@ -11,6 +11,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/artifact"
+	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
 	"github.com/ygrip/punakawan/internal/panel/events"
@@ -20,6 +21,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
+	"github.com/ygrip/punakawan/internal/workcontext"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -171,8 +173,12 @@ func (s *Server) Start() error {
 			}
 			return &recipe.RecipeStore{Repo: &recipe.Repository{Store: knowledgeStore}}, nil
 		},
+		Root:      s.app.Workspace.Root,
+		Knowledge: s.app.OpenKnowledge,
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
+	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
+	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
 	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
 	// /workspaces is the pre-project-model name for the same registry entries
@@ -255,7 +261,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans", api.ListPlansHandler(projectStores))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(projectStores))
 
-	caps := workflowdef.NewCapabilitySet(workflowdef.KnownMCPCapabilities(), nil)
+	// The capability set a workflow definition is validated against is derived
+	// from the MCP server's actual tool registration (agent-context plan §4.3),
+	// not a hand-maintained mirror — so the two can no longer drift. Adapter
+	// operations are contributed to the registry when adapters load (a later
+	// phase); MCP tool names are the source that had actually drifted.
+	caps := workflowdef.NewCapabilitySet(mcpserver.CapabilityRegistry(s.app).Names(), nil)
 	// Invoke validates enabled + capabilities in workflowdef, then this
 	// RunCreator binds the accepted definition to the run engine by creating a
 	// WorkflowRun. A definition id is not one of the fixed WorkflowRun name
@@ -267,12 +278,40 @@ func (s *Server) Start() error {
 	// .punakawan/workflow/runs.jsonl receives the run, then released.
 	newInvoker := func(projectID, root string) workflowdef.Invoker {
 		return workflowdef.NewInvoker(caps, func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
+			now := time.Now().UTC()
+			// Compose the bounded context through the shared workcontext
+			// service — the same path prepare_work_context uses — so the panel
+			// invoke route and the MCP tool cannot diverge (agent-context plan
+			// §5.2). No retrieval query is passed here, so no knowledge store is
+			// opened; this validates+defaults inputs, resolves required metadata
+			// (missing → awaiting-clarification), and builds the snapshot+digest.
+			prepared, err := workcontext.Prepare(workcontext.Request{
+				WorkspaceRoot: root,
+				Definitions:   []workflowdef.Definition{def},
+				WorkflowID:    def.ID,
+				Inputs:        inputs,
+				Now:           now,
+			}, nil, nil)
+			if err != nil {
+				return "", err
+			}
+			defRef := &protocol.WorkflowRunDefinitionRef{Id: def.ID, Revision: def.Revision, ContentHash: def.ContentHash()}
+			stepProgress := prepared.StepProgress
+			snapshot := prepared.Snapshot
 			createRun := func(a *app.App) (string, error) {
-				now := time.Now().UTC()
 				runID := fmt.Sprintf("pkw:run/%s/%s-%d", a.Workspace.ID, def.ID, now.UnixNano())
+				// A definition id is not one of the fixed WorkflowRun name enums,
+				// so the run is created under the generic "implementation-only"
+				// carrier; the binding to the originating definition is now the
+				// immutable definition_ref (id/revision/content_hash), NOT a
+				// magic prefix parsed back out of Objective.
 				run := workflow.New(runID, a.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
-				objective := "workflow-definition:" + def.ID
+				objective := def.Name
 				run.Objective = &objective
+				run, err := workflow.StampContext(run, defRef, prepared.ResolvedInputs, stepProgress, &snapshot, now)
+				if err != nil {
+					return "", fmt.Errorf("stamp context onto run for definition %q: %w", def.ID, err)
+				}
 				if err := a.Workflow.Append(run); err != nil {
 					return "", fmt.Errorf("create workflow run for definition %q: %w", def.ID, err)
 				}
@@ -363,6 +402,7 @@ func (s *Server) Start() error {
 	projectArtifacts := api.NewProjectArtifactStores(
 		projectStores,
 		recipesFactory,
+		s.app.OpenKnowledge,
 		func(projectID string) revision.Dispatcher {
 			root, _ := s.resolveRoot(projectID)
 			return &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: root}
@@ -370,6 +410,7 @@ func (s *Server) Start() error {
 		s.logger,
 	)
 	pa := "/api/v1/projects/{projectId}"
+	mux.HandleFunc("GET "+pa+"/context-improvements", projectArtifacts.ContextImprovements())
 	mux.HandleFunc("GET "+pa+"/artifacts/{type}/{id}/current", projectArtifacts.ArtifactCurrent())
 	mux.HandleFunc("POST "+pa+"/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, projectArtifacts.CreateReview()))
 	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}", projectArtifacts.Review())

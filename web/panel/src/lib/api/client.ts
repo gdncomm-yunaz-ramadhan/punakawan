@@ -184,6 +184,32 @@ export function getSystem(): Promise<SystemInfo> {
   return getJSON<SystemInfo>("/system");
 }
 
+// --- Panel Settings (runtime pool) ---------------------------------------
+//
+// Panel-wide runtime settings. Each active project workspace runs its own
+// `dolt sql-server`; `max_active_runtimes` caps how many are live at once
+// (LRU eviction of idle non-primary projects) and
+// `runtime_idle_timeout_seconds` is how long an idle non-primary project
+// lingers before it is shut down. The PATCH is a session-gated mutation
+// (goes through mutateJSON so it carries the CSRF header); the server
+// rejects values < 1 with a 400 whose message surfaces as an ApiError.
+
+export interface PanelSettings {
+  max_active_runtimes: number;
+  runtime_idle_timeout_seconds: number;
+}
+
+export function getPanelSettings(): Promise<PanelSettings> {
+  return getJSON<PanelSettings>("/system/settings");
+}
+
+export function updatePanelSettings(patch: Partial<PanelSettings>): Promise<PanelSettings> {
+  return mutateJSON<PanelSettings>("/system/settings", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export function listWorkspaces(): Promise<{ items: WorkspaceSummary[] }> {
   return getJSON<{ items: WorkspaceSummary[] }>("/workspaces");
 }
@@ -1353,4 +1379,72 @@ export function supersedeHandoff(id: string, handoffId: string): Promise<Handoff
     `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}/supersede`,
     { method: "POST" },
   );
+}
+
+// --- Context Improvements (agent-context plan §8) ------------------------
+//
+// A context improvement is a proposal, distilled from one or more prior
+// runs, to change a durable project artifact: a workflow definition, a
+// project-metadata value, or a knowledge record. It carries the rationale,
+// how many runs support it (support_count), the backing evidence/run ids,
+// and the review it hangs off. The panel presents them as an inbox and
+// accepts/rejects each proposal. Accept/reject are session-gated writes
+// (they go through mutateJSON so they carry the CSRF header); the
+// {proposalId} in the URL is the proposal_attempt number.
+
+export type ContextImprovementArtifactType = "workflow" | "project_metadata" | "knowledge";
+
+export interface ContextImprovement {
+  id: string;
+  artifact_type: ContextImprovementArtifactType;
+  target_id: string;
+  rationale: string;
+  support_count: number;
+  evidence_ids: string[];
+  source_run_ids: string[];
+  review_id: string;
+  // Which retry produced this proposal; doubles as the {proposalId} path
+  // segment on the accept/reject endpoints. Usually 1.
+  proposal_attempt: number;
+  // Free-form lifecycle status, e.g. "proposal_ready" (actionable),
+  // "accepted", "rejected", "conflicted".
+  status: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listContextImprovements(id: string): Promise<{ improvements: ContextImprovement[] }> {
+  return getJSON<{ improvements: ContextImprovement[] }>(
+    `/projects/${encodeURIComponent(id)}/context-improvements`,
+  );
+}
+
+// acceptContextImprovement / rejectContextImprovement resolve a single
+// proposal. They post through fetchWithCsrf (the same CSRF-bearing path
+// mutateJSON uses) but tolerate an empty/204 body, since a resolve action
+// need not echo a payload; the caller reloads the inbox afterwards. A
+// non-2xx surfaces as an ApiError carrying the server's code and message.
+async function resolveContextImprovement(
+  projectId: string,
+  reviewId: string,
+  proposalAttempt: number,
+  action: "accept" | "reject",
+): Promise<void> {
+  const res = await fetchWithCsrf(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(String(proposalAttempt))}/${action}`,
+    { method: "POST", headers: { Accept: "application/json" } },
+  );
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
+    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
+  }
+}
+
+export function acceptContextImprovement(projectId: string, reviewId: string, proposalAttempt: number): Promise<void> {
+  return resolveContextImprovement(projectId, reviewId, proposalAttempt, "accept");
+}
+
+export function rejectContextImprovement(projectId: string, reviewId: string, proposalAttempt: number): Promise<void> {
+  return resolveContextImprovement(projectId, reviewId, proposalAttempt, "reject");
 }

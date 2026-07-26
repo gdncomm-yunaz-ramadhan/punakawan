@@ -711,12 +711,18 @@ func (j *ArtifactReferenceFormat) UnmarshalJSON(value []byte) error {
 
 type ArtifactReferenceType string
 
+const ArtifactReferenceTypeKnowledge ArtifactReferenceType = "knowledge"
 const ArtifactReferenceTypePlan ArtifactReferenceType = "plan"
+const ArtifactReferenceTypeProjectMetadata ArtifactReferenceType = "project_metadata"
 const ArtifactReferenceTypeRetrievalRecipe ArtifactReferenceType = "retrieval_recipe"
+const ArtifactReferenceTypeWorkflow ArtifactReferenceType = "workflow"
 
 var enumValues_ArtifactReferenceType = []interface{}{
 	"plan",
 	"retrieval_recipe",
+	"workflow",
+	"project_metadata",
+	"knowledge",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -807,12 +813,18 @@ type ArtifactReviewArtifact struct {
 
 type ArtifactReviewArtifactType string
 
+const ArtifactReviewArtifactTypeKnowledge ArtifactReviewArtifactType = "knowledge"
 const ArtifactReviewArtifactTypePlan ArtifactReviewArtifactType = "plan"
+const ArtifactReviewArtifactTypeProjectMetadata ArtifactReviewArtifactType = "project_metadata"
 const ArtifactReviewArtifactTypeRetrievalRecipe ArtifactReviewArtifactType = "retrieval_recipe"
+const ArtifactReviewArtifactTypeWorkflow ArtifactReviewArtifactType = "workflow"
 
 var enumValues_ArtifactReviewArtifactType = []interface{}{
 	"plan",
 	"retrieval_recipe",
+	"workflow",
+	"project_metadata",
+	"knowledge",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -1409,12 +1421,18 @@ type ArtifactRevisionRequestBaseArtifact struct {
 
 type ArtifactRevisionRequestBaseArtifactType string
 
+const ArtifactRevisionRequestBaseArtifactTypeKnowledge ArtifactRevisionRequestBaseArtifactType = "knowledge"
 const ArtifactRevisionRequestBaseArtifactTypePlan ArtifactRevisionRequestBaseArtifactType = "plan"
+const ArtifactRevisionRequestBaseArtifactTypeProjectMetadata ArtifactRevisionRequestBaseArtifactType = "project_metadata"
 const ArtifactRevisionRequestBaseArtifactTypeRetrievalRecipe ArtifactRevisionRequestBaseArtifactType = "retrieval_recipe"
+const ArtifactRevisionRequestBaseArtifactTypeWorkflow ArtifactRevisionRequestBaseArtifactType = "workflow"
 
 var enumValues_ArtifactRevisionRequestBaseArtifactType = []interface{}{
 	"plan",
 	"retrieval_recipe",
+	"workflow",
+	"project_metadata",
+	"knowledge",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -7304,8 +7322,22 @@ type WorkflowRun struct {
 	// Checkpoints corresponds to the JSON schema field "checkpoints".
 	Checkpoints []WorkflowRunCheckpointsElem `json:"checkpoints,omitempty,omitzero" yaml:"checkpoints,omitempty" mapstructure:"checkpoints,omitempty"`
 
+	// Bounded, immutable snapshot of the context this run was prepared with
+	// (agent-context plan §4.1). Holds references and hashes, never a copy of the
+	// whole knowledge store. Fully populated by the context preparation service (plan
+	// §4.4); at invocation only the `missing` list and revision may be set.
+	ContextSnapshot *WorkflowRunContextSnapshot `json:"context_snapshot,omitempty,omitzero" yaml:"context_snapshot,omitempty" mapstructure:"context_snapshot,omitempty"`
+
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Immutable reference to the workflow definition this run was created from
+	// (agent-context plan §4.1). Absent for ad hoc runs, which record their path
+	// through capability events and the outcome instead of pretending a definition
+	// existed. Present for definition-aware runs so the run records the exact id,
+	// revision, and content hash that produced it — replacing the old convention of
+	// encoding the definition id inside `objective`.
+	DefinitionRef *WorkflowRunDefinitionRef `json:"definition_ref,omitempty,omitzero" yaml:"definition_ref,omitempty" mapstructure:"definition_ref,omitempty"`
 
 	// Snapshot of the effective role settings (enabled/style/mode/capabilities) for
 	// each of the four roles at run-creation time (plan §50, ROLE-012). A map keyed
@@ -7320,11 +7352,21 @@ type WorkflowRun struct {
 	// Set by the calling agent, not inferred.
 	Initiator *string `json:"initiator,omitempty,omitzero" yaml:"initiator,omitempty" mapstructure:"initiator,omitempty"`
 
+	// Resolved workflow inputs at invocation time (agent-context plan §4.1/§4.4):
+	// declared inputs with caller-supplied values or declared defaults applied.
+	// Values are arbitrary JSON.
+	Inputs WorkflowRunInputs `json:"inputs,omitempty,omitzero" yaml:"inputs,omitempty" mapstructure:"inputs,omitempty"`
+
 	// Human-readable goal of this run, set by the calling agent at creation or
 	// advance time. Used by the panel's session summary
 	// (punakawan-panel-implementation-plan.md §8.3); Punakawan never infers or edits
 	// this itself.
 	Objective *string `json:"objective,omitempty,omitzero" yaml:"objective,omitempty" mapstructure:"objective,omitempty"`
+
+	// The structured result of a context-aware run (agent-context plan §6.1). A
+	// context-aware run cannot enter `completed` without one. An observation here is
+	// a traceable input to a learning proposal, not yet canonical knowledge.
+	Outcome *WorkflowRunOutcome `json:"outcome,omitempty,omitzero" yaml:"outcome,omitempty" mapstructure:"outcome,omitempty"`
 
 	// The roles.yaml revision in effect when this run was created (plan §50,
 	// ROLE-012). Stamped once at creation so a historical run remains reproducible
@@ -7333,6 +7375,11 @@ type WorkflowRun struct {
 
 	// State corresponds to the JSON schema field "state".
 	State WorkflowRunState `json:"state" yaml:"state" mapstructure:"state"`
+
+	// Per-step execution state initialized from the definition's steps at invocation
+	// and advanced as steps run (agent-context plan §4.1/§5.3). Absent for ad hoc
+	// runs.
+	StepProgress []WorkflowRunStepProgressElem `json:"step_progress,omitempty,omitzero" yaml:"step_progress,omitempty" mapstructure:"step_progress,omitempty"`
 
 	// UpdatedAt corresponds to the JSON schema field "updated_at".
 	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at" mapstructure:"updated_at"`
@@ -7410,11 +7457,348 @@ func (j *WorkflowRunCheckpointsElem) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// Bounded, immutable snapshot of the context this run was prepared with
+// (agent-context plan §4.1). Holds references and hashes, never a copy of the
+// whole knowledge store. Fully populated by the context preparation service (plan
+// §4.4); at invocation only the `missing` list and revision may be set.
+type WorkflowRunContextSnapshot struct {
+	// sha256:<hex> digest covering the definition reference, selected metadata,
+	// selected knowledge references and hashes, role-config revision, and inputs.
+	Digest *string `json:"digest,omitempty,omitzero" yaml:"digest,omitempty" mapstructure:"digest,omitempty"`
+
+	// Knowledge corresponds to the JSON schema field "knowledge".
+	Knowledge []WorkflowRunContextSnapshotKnowledgeElem `json:"knowledge,omitempty,omitzero" yaml:"knowledge,omitempty" mapstructure:"knowledge,omitempty"`
+
+	// Metadata corresponds to the JSON schema field "metadata".
+	Metadata []WorkflowRunContextSnapshotMetadataElem `json:"metadata,omitempty,omitzero" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+
+	// Context the run needs but could not resolve. A non-empty list drives the run
+	// into awaiting-clarification (plan §4.1).
+	Missing []WorkflowRunContextSnapshotMissingElem `json:"missing,omitempty,omitzero" yaml:"missing,omitempty" mapstructure:"missing,omitempty"`
+
+	// PreparedAt corresponds to the JSON schema field "prepared_at".
+	PreparedAt *time.Time `json:"prepared_at,omitempty,omitzero" yaml:"prepared_at,omitempty" mapstructure:"prepared_at,omitempty"`
+
+	// ProjectMetadataRevision corresponds to the JSON schema field
+	// "project_metadata_revision".
+	ProjectMetadataRevision *int `json:"project_metadata_revision,omitempty,omitzero" yaml:"project_metadata_revision,omitempty" mapstructure:"project_metadata_revision,omitempty"`
+}
+
+type WorkflowRunContextSnapshotKnowledgeElem struct {
+	// ContentHash corresponds to the JSON schema field "content_hash".
+	ContentHash *string `json:"content_hash,omitempty,omitzero" yaml:"content_hash,omitempty" mapstructure:"content_hash,omitempty"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Reason corresponds to the JSON schema field "reason".
+	Reason string `json:"reason" yaml:"reason" mapstructure:"reason"`
+
+	// Validity corresponds to the JSON schema field "validity".
+	Validity *string `json:"validity,omitempty,omitzero" yaml:"validity,omitempty" mapstructure:"validity,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunContextSnapshotKnowledgeElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in WorkflowRunContextSnapshotKnowledgeElem: required")
+	}
+	if _, ok := raw["reason"]; raw != nil && !ok {
+		return fmt.Errorf("field reason in WorkflowRunContextSnapshotKnowledgeElem: required")
+	}
+	type Plain WorkflowRunContextSnapshotKnowledgeElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunContextSnapshotKnowledgeElem(plain)
+	return nil
+}
+
+type WorkflowRunContextSnapshotMetadataElem struct {
+	// Key corresponds to the JSON schema field "key".
+	Key string `json:"key" yaml:"key" mapstructure:"key"`
+
+	// Reason corresponds to the JSON schema field "reason".
+	Reason string `json:"reason" yaml:"reason" mapstructure:"reason"`
+
+	// Value corresponds to the JSON schema field "value".
+	Value interface{} `json:"value,omitempty,omitzero" yaml:"value,omitempty" mapstructure:"value,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunContextSnapshotMetadataElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["key"]; raw != nil && !ok {
+		return fmt.Errorf("field key in WorkflowRunContextSnapshotMetadataElem: required")
+	}
+	if _, ok := raw["reason"]; raw != nil && !ok {
+		return fmt.Errorf("field reason in WorkflowRunContextSnapshotMetadataElem: required")
+	}
+	type Plain WorkflowRunContextSnapshotMetadataElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunContextSnapshotMetadataElem(plain)
+	return nil
+}
+
+type WorkflowRunContextSnapshotMissingElem struct {
+	// Key corresponds to the JSON schema field "key".
+	Key *string `json:"key,omitempty,omitzero" yaml:"key,omitempty" mapstructure:"key,omitempty"`
+
+	// e.g. "metadata", "knowledge", "input".
+	Kind string `json:"kind" yaml:"kind" mapstructure:"kind"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunContextSnapshotMissingElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in WorkflowRunContextSnapshotMissingElem: required")
+	}
+	type Plain WorkflowRunContextSnapshotMissingElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunContextSnapshotMissingElem(plain)
+	return nil
+}
+
+// Immutable reference to the workflow definition this run was created from
+// (agent-context plan §4.1). Absent for ad hoc runs, which record their path
+// through capability events and the outcome instead of pretending a definition
+// existed. Present for definition-aware runs so the run records the exact id,
+// revision, and content hash that produced it — replacing the old convention of
+// encoding the definition id inside `objective`.
+type WorkflowRunDefinitionRef struct {
+	// sha256:<hex> fingerprint of the definition content at invocation time.
+	ContentHash string `json:"content_hash" yaml:"content_hash" mapstructure:"content_hash"`
+
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Revision corresponds to the JSON schema field "revision".
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunDefinitionRef) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["content_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field content_hash in WorkflowRunDefinitionRef: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in WorkflowRunDefinitionRef: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in WorkflowRunDefinitionRef: required")
+	}
+	type Plain WorkflowRunDefinitionRef
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunDefinitionRef(plain)
+	return nil
+}
+
 // Snapshot of the effective role settings (enabled/style/mode/capabilities) for
 // each of the four roles at run-creation time (plan §50, ROLE-012). A map keyed by
 // role name; values are permissive objects so the snapshot stays
 // forward-compatible with future role-config fields.
 type WorkflowRunEffectiveRoleSettings map[string]map[string]interface{}
+
+// Resolved workflow inputs at invocation time (agent-context plan §4.1/§4.4):
+// declared inputs with caller-supplied values or declared defaults applied. Values
+// are arbitrary JSON.
+type WorkflowRunInputs map[string]interface{}
+
+// The structured result of a context-aware run (agent-context plan §6.1). A
+// context-aware run cannot enter `completed` without one. An observation here is a
+// traceable input to a learning proposal, not yet canonical knowledge.
+type WorkflowRunOutcome struct {
+	// Deviations corresponds to the JSON schema field "deviations".
+	Deviations []WorkflowRunOutcomeDeviationsElem `json:"deviations,omitempty,omitzero" yaml:"deviations,omitempty" mapstructure:"deviations,omitempty"`
+
+	// EvidenceIds corresponds to the JSON schema field "evidence_ids".
+	EvidenceIds []string `json:"evidence_ids,omitempty,omitzero" yaml:"evidence_ids,omitempty" mapstructure:"evidence_ids,omitempty"`
+
+	// MissingContext corresponds to the JSON schema field "missing_context".
+	MissingContext []WorkflowRunOutcomeMissingContextElem `json:"missing_context,omitempty,omitzero" yaml:"missing_context,omitempty" mapstructure:"missing_context,omitempty"`
+
+	// Reusable lessons the agent identified, each classified for a later proposal
+	// (plan §6.2). Not canonical until reviewed and accepted.
+	Observations []WorkflowRunOutcomeObservationsElem `json:"observations,omitempty,omitzero" yaml:"observations,omitempty" mapstructure:"observations,omitempty"`
+
+	// OutputRefs corresponds to the JSON schema field "output_refs".
+	OutputRefs []string `json:"output_refs,omitempty,omitzero" yaml:"output_refs,omitempty" mapstructure:"output_refs,omitempty"`
+
+	// RecordedAt corresponds to the JSON schema field "recorded_at".
+	RecordedAt *time.Time `json:"recorded_at,omitempty,omitzero" yaml:"recorded_at,omitempty" mapstructure:"recorded_at,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status WorkflowRunOutcomeStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+type WorkflowRunOutcomeDeviationsElem struct {
+	// ActualCapability corresponds to the JSON schema field "actual_capability".
+	ActualCapability *string `json:"actual_capability,omitempty,omitzero" yaml:"actual_capability,omitempty" mapstructure:"actual_capability,omitempty"`
+
+	// Reason corresponds to the JSON schema field "reason".
+	Reason string `json:"reason" yaml:"reason" mapstructure:"reason"`
+
+	// StepId corresponds to the JSON schema field "step_id".
+	StepId string `json:"step_id" yaml:"step_id" mapstructure:"step_id"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeDeviationsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["reason"]; raw != nil && !ok {
+		return fmt.Errorf("field reason in WorkflowRunOutcomeDeviationsElem: required")
+	}
+	if _, ok := raw["step_id"]; raw != nil && !ok {
+		return fmt.Errorf("field step_id in WorkflowRunOutcomeDeviationsElem: required")
+	}
+	type Plain WorkflowRunOutcomeDeviationsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcomeDeviationsElem(plain)
+	return nil
+}
+
+type WorkflowRunOutcomeMissingContextElem struct {
+	// Key corresponds to the JSON schema field "key".
+	Key *string `json:"key,omitempty,omitzero" yaml:"key,omitempty" mapstructure:"key,omitempty"`
+
+	// Kind corresponds to the JSON schema field "kind".
+	Kind string `json:"kind" yaml:"kind" mapstructure:"kind"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeMissingContextElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in WorkflowRunOutcomeMissingContextElem: required")
+	}
+	type Plain WorkflowRunOutcomeMissingContextElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcomeMissingContextElem(plain)
+	return nil
+}
+
+type WorkflowRunOutcomeObservationsElem struct {
+	// EvidenceIds corresponds to the JSON schema field "evidence_ids".
+	EvidenceIds []string `json:"evidence_ids,omitempty,omitzero" yaml:"evidence_ids,omitempty" mapstructure:"evidence_ids,omitempty"`
+
+	// workflow | metadata | knowledge | contradiction | workflow-revision (plan
+	// §6.2).
+	Kind string `json:"kind" yaml:"kind" mapstructure:"kind"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary string `json:"summary" yaml:"summary" mapstructure:"summary"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeObservationsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in WorkflowRunOutcomeObservationsElem: required")
+	}
+	if _, ok := raw["summary"]; raw != nil && !ok {
+		return fmt.Errorf("field summary in WorkflowRunOutcomeObservationsElem: required")
+	}
+	type Plain WorkflowRunOutcomeObservationsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcomeObservationsElem(plain)
+	return nil
+}
+
+type WorkflowRunOutcomeStatus string
+
+const WorkflowRunOutcomeStatusFailed WorkflowRunOutcomeStatus = "failed"
+const WorkflowRunOutcomeStatusPartial WorkflowRunOutcomeStatus = "partial"
+const WorkflowRunOutcomeStatusSuccess WorkflowRunOutcomeStatus = "success"
+
+var enumValues_WorkflowRunOutcomeStatus = []interface{}{
+	"success",
+	"partial",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_WorkflowRunOutcomeStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_WorkflowRunOutcomeStatus, v)
+	}
+	*j = WorkflowRunOutcomeStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcome) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in WorkflowRunOutcome: required")
+	}
+	type Plain WorkflowRunOutcome
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcome(plain)
+	return nil
+}
 
 type WorkflowRunState string
 
@@ -7461,6 +7845,81 @@ func (j *WorkflowRunState) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_WorkflowRunState, v)
 	}
 	*j = WorkflowRunState(v)
+	return nil
+}
+
+type WorkflowRunStepProgressElem struct {
+	// Why this step deviated from the definition (e.g. a different capability was
+	// actually used). Recorded on completion in place of, or alongside, evidence
+	// (plan §5.3).
+	DeviationReason *string `json:"deviation_reason,omitempty,omitzero" yaml:"deviation_reason,omitempty" mapstructure:"deviation_reason,omitempty"`
+
+	// EvidenceIds corresponds to the JSON schema field "evidence_ids".
+	EvidenceIds []string `json:"evidence_ids,omitempty,omitzero" yaml:"evidence_ids,omitempty" mapstructure:"evidence_ids,omitempty"`
+
+	// State corresponds to the JSON schema field "state".
+	State WorkflowRunStepProgressElemState `json:"state" yaml:"state" mapstructure:"state"`
+
+	// StepId corresponds to the JSON schema field "step_id".
+	StepId string `json:"step_id" yaml:"step_id" mapstructure:"step_id"`
+}
+
+type WorkflowRunStepProgressElemState string
+
+const WorkflowRunStepProgressElemStateBlocked WorkflowRunStepProgressElemState = "blocked"
+const WorkflowRunStepProgressElemStateCompleted WorkflowRunStepProgressElemState = "completed"
+const WorkflowRunStepProgressElemStatePending WorkflowRunStepProgressElemState = "pending"
+const WorkflowRunStepProgressElemStateReady WorkflowRunStepProgressElemState = "ready"
+const WorkflowRunStepProgressElemStateRunning WorkflowRunStepProgressElemState = "running"
+const WorkflowRunStepProgressElemStateSkipped WorkflowRunStepProgressElemState = "skipped"
+
+var enumValues_WorkflowRunStepProgressElemState = []interface{}{
+	"pending",
+	"ready",
+	"running",
+	"completed",
+	"blocked",
+	"skipped",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunStepProgressElemState) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_WorkflowRunStepProgressElemState {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_WorkflowRunStepProgressElemState, v)
+	}
+	*j = WorkflowRunStepProgressElemState(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunStepProgressElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["state"]; raw != nil && !ok {
+		return fmt.Errorf("field state in WorkflowRunStepProgressElem: required")
+	}
+	if _, ok := raw["step_id"]; raw != nil && !ok {
+		return fmt.Errorf("field step_id in WorkflowRunStepProgressElem: required")
+	}
+	type Plain WorkflowRunStepProgressElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunStepProgressElem(plain)
 	return nil
 }
 

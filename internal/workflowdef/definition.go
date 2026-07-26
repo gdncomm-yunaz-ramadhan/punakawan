@@ -35,6 +35,13 @@ type Definition struct {
 	Enabled             bool           `yaml:"enabled" json:"enabled"`
 	RequiredMetadata    []string       `yaml:"required_metadata,omitempty" json:"required_metadata,omitempty"`
 	Inputs              []Input        `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+	// Selectors, when present, let this workflow be resolved implicitly by an
+	// exact capability/intent match instead of requiring the caller to name its
+	// id (plan §4.2). Resolution is deliberately non-fuzzy: a match must be
+	// exact, and more than one match is returned as ambiguous rather than
+	// guessed. A definition without selectors is still fully usable — it just
+	// must be invoked by explicit id.
+	Selectors           []Selector     `yaml:"selectors,omitempty" json:"selectors,omitempty"`
 	Steps               []Step         `yaml:"steps" json:"steps"`
 	AllowedCapabilities []string       `yaml:"allowed_capabilities,omitempty" json:"allowed_capabilities,omitempty"`
 	Approval            ApprovalPolicy `yaml:"approval,omitempty" json:"approval,omitempty"`
@@ -59,6 +66,14 @@ type RoleRestriction struct {
 	Required     bool            `yaml:"required,omitempty" json:"required,omitempty"`
 	Mode         *string         `yaml:"mode,omitempty" json:"mode,omitempty"`
 	Capabilities map[string]bool `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+}
+
+// Selector is one exact capability/intent match rule for implicit workflow
+// resolution (plan §4.2). Capability is required; Intent is optional and, when
+// set, must match exactly too. Selectors never do fuzzy or partial matching.
+type Selector struct {
+	Capability string `yaml:"capability" json:"capability"`
+	Intent     string `yaml:"intent,omitempty" json:"intent,omitempty"`
 }
 
 // Input is one declared workflow input parameter (§6.1 inputs[]).

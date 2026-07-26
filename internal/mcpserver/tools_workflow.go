@@ -119,6 +119,12 @@ func advanceWorkflowHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			if err := checkNoBlockingBagongFindings(store, a, in.RunId); err != nil {
 				return nil, protocol.WorkflowRun{}, err
 			}
+			// A context-aware run additionally requires a recorded outcome and
+			// (for definition-backed runs) completed steps before it may enter
+			// completed (agent-context plan §6.1).
+			if err := workflow.CanComplete(run); err != nil {
+				return nil, protocol.WorkflowRun{}, err
+			}
 		}
 
 		run, err = workflow.Advance(run, protocol.WorkflowRunState(in.NextState), in.Note, time.Now().UTC())
