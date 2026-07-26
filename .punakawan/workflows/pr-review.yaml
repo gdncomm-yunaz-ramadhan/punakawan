@@ -1,0 +1,27 @@
+version: punakawan.workflow/v1
+id: pr-review
+name: Pull Request Review
+description: >-
+  Review a pull request end to end: fetch the PR's diff/checks, then submit the
+  deduplicated review findings. Reactive — only run when a human explicitly
+  asked to review a specific PR.
+enabled: true
+revision: 1
+selectors:
+  - capability: github.pull_request
+    intent: review
+allowed_capabilities:
+  - review_pr
+  - fetch_unresolved_pr_comments
+  - submit_pr_review_findings
+steps:
+  - id: fetch
+    capability: review_pr
+    intent: fetch
+  - id: findings
+    capability: submit_pr_review_findings
+    intent: report
+    input_from:
+      - fetch
+output:
+  type: review-findings
