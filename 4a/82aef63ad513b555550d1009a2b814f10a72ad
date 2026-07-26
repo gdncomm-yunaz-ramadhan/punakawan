@@ -1,0 +1,58 @@
+web/panel/src/routes/system/SystemPage.svelte
+  d98638225f35480d 3-9,13,19-30,43-80,84-87,95-161,350-421
+internal/panel/api/settings_handler.go
+  d98638225f35480d 1-89
+internal/panel/runtime/setmaxactive_test.go
+  d98638225f35480d 1-50
+README.md
+  d98638225f35480d 192-214
+internal/panel/deps.go
+  d98638225f35480d 12,18,66-74
+internal/panel/runtime/manager.go
+  d98638225f35480d 41,243-286
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 187-212
+internal/panel/settings/settings.go
+  d98638225f35480d 1-92
+internal/panel/server/server.go
+  d98638225f35480d 180-181
+internal/panel/settings/settings_test.go
+  d98638225f35480d 1-43
+docs/architecture/ADR-0019-per-project-dolt-servers-are-bounded-by-an-lru-runtime-pool.md
+  d98638225f35480d 1-29
+docs/architecture/README.md
+  d98638225f35480d 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4a82aef63ad513b555550d1009a2b814f10a72ad",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 616,
+      "total_deletions": 5,
+      "accepted_lines": 616,
+      "overriden_lines": 0
+    }
+  }
+}
