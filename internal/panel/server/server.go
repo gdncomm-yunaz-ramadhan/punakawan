@@ -19,9 +19,9 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/session"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
-	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
+	"github.com/ygrip/punakawan/internal/workcontext"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -274,28 +274,30 @@ func (s *Server) Start() error {
 	// .punakawan/workflow/runs.jsonl receives the run, then released.
 	newInvoker := func(projectID, root string) workflowdef.Invoker {
 		return workflowdef.NewInvoker(caps, func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
-			// Validate and default declared inputs before touching the run
-			// store: a missing required input is a hard invocation error (the
-			// run cannot run), distinct from missing metadata below which is a
-			// recoverable awaiting-clarification.
-			resolvedInputs, err := workflowdef.ResolveInputs(def, inputs)
+			now := time.Now().UTC()
+			// Compose the bounded context through the shared workcontext
+			// service — the same path prepare_work_context uses — so the panel
+			// invoke route and the MCP tool cannot diverge (agent-context plan
+			// §5.2). No retrieval query is passed here, so no knowledge store is
+			// opened; this validates+defaults inputs, resolves required metadata
+			// (missing → awaiting-clarification), and builds the snapshot+digest.
+			prepared, err := workcontext.Prepare(workcontext.Request{
+				WorkspaceRoot: root,
+				Definitions:   []workflowdef.Definition{def},
+				WorkflowID:    def.ID,
+				Inputs:        inputs,
+				Now:           now,
+			}, nil, nil)
 			if err != nil {
 				return "", err
 			}
-			// Resolve the workflow's required metadata against the project's
-			// canonical metadata. Anything absent becomes a "missing" entry that
-			// drives the run into awaiting-clarification (agent-context plan
-			// §4.1/§4.4) rather than silently proceeding without it.
-			missing, err := missingRequiredMetadata(root, def.RequiredMetadata)
-			if err != nil {
-				return "", err
-			}
+			defRef := &protocol.WorkflowRunDefinitionRef{Id: def.ID, Revision: def.Revision, ContentHash: def.ContentHash()}
 			stepIDs := make([]string, 0, len(def.Steps))
 			for _, st := range def.Steps {
 				stepIDs = append(stepIDs, st.ID)
 			}
+			snapshot := prepared.Snapshot
 			createRun := func(a *app.App) (string, error) {
-				now := time.Now().UTC()
 				runID := fmt.Sprintf("pkw:run/%s/%s-%d", a.Workspace.ID, def.ID, now.UnixNano())
 				// A definition id is not one of the fixed WorkflowRun name enums,
 				// so the run is created under the generic "implementation-only"
@@ -305,9 +307,9 @@ func (s *Server) Start() error {
 				run := workflow.New(runID, a.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
 				objective := def.Name
 				run.Objective = &objective
-				run, err := workflow.BindDefinition(run, def.ID, def.Revision, def.ContentHash(), resolvedInputs, stepIDs, missing, now)
+				run, err := workflow.StampContext(run, defRef, prepared.ResolvedInputs, stepIDs, &snapshot, now)
 				if err != nil {
-					return "", fmt.Errorf("bind definition %q to run: %w", def.ID, err)
+					return "", fmt.Errorf("stamp context onto run for definition %q: %w", def.ID, err)
 				}
 				if err := a.Workflow.Append(run); err != nil {
 					return "", fmt.Errorf("create workflow run for definition %q: %w", def.ID, err)
@@ -622,28 +624,4 @@ func (w *timingResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
-}
-
-// missingRequiredMetadata resolves a workflow's required_metadata keys against
-// the project's canonical metadata (agent-context plan §4.4 step 3). Every key
-// with no corresponding metadata entry is returned as a workflow.Missing of
-// kind "metadata", which the caller records in the run's context_snapshot and
-// which drives the run into awaiting-clarification. A project with no
-// project.yaml resolves to zero metadata (project.Load synthesizes an empty
-// project), so every required key is reported missing rather than erroring.
-func missingRequiredMetadata(root string, required []string) ([]workflow.Missing, error) {
-	if len(required) == 0 {
-		return nil, nil
-	}
-	proj, err := project.Load(root)
-	if err != nil {
-		return nil, fmt.Errorf("load project metadata for required-metadata check: %w", err)
-	}
-	var missing []workflow.Missing
-	for _, key := range required {
-		if _, ok := proj.MetadataFor(key); !ok {
-			missing = append(missing, workflow.Missing{Kind: "metadata", Key: key})
-		}
-	}
-	return missing, nil
 }

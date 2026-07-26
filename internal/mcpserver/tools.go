@@ -69,6 +69,16 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, createWorkflowRunHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "prepare_work_context",
+		Description: "Before substantial project work, call this once to compose the bounded project context for a run (agent-context plan §4.4): it resolves the workflow (by explicit workflow_id or an exact capability/intent selector; ad hoc when neither matches), validates and defaults inputs, resolves required project metadata, selects optional metadata by priority, and — when a retrieval_query is given — retrieves scoped knowledge filtered by lifecycle validity so disputed/stale/superseded/draft records never appear as accepted guidance (inferred goes to a separate caution list). Returns the run_id, the immutable context digest, the selected metadata and knowledge (each with a selection reason and content hash), and any missing required context (which puts the run in awaiting-clarification). Deterministic: the same inputs and store revisions produce the same digest. Pass the returned run_id to run-scoped calls; resume/refresh by passing an existing run_id.",
+	}, prepareWorkContextHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "get_knowledge_records",
+		Description: "Batch-read complete typed knowledge records by id (agent-context plan §5.2), e.g. to expand the ids prepare_work_context or search_knowledge returned into full records in one call. Ids not found are reported in not_found rather than erroring the whole batch.",
+	}, getKnowledgeRecordsHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "get_workflow_state",
 		Description: "Read a workflow run's current state and checkpoint history (§18.1).",
 	}, getWorkflowStateHandler(a))
