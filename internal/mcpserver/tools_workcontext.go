@@ -195,14 +195,10 @@ func createOrResumeRun(a *app.App, in PrepareWorkContextInput, res workcontext.R
 	}
 
 	var defRef *protocol.WorkflowRunDefinitionRef
-	var stepIDs []string
 	if res.Definition != nil {
 		defRef = &protocol.WorkflowRunDefinitionRef{Id: res.Definition.ID, Revision: res.Definition.Revision, ContentHash: res.Definition.ContentHash()}
-		for _, st := range res.Definition.Steps {
-			stepIDs = append(stepIDs, st.ID)
-		}
 	}
-	run, err := workflow.StampContext(run, defRef, res.ResolvedInputs, stepIDs, &snapshot, now)
+	run, err := workflow.StampContext(run, defRef, res.ResolvedInputs, res.StepProgress, &snapshot, now)
 	if err != nil {
 		return protocol.WorkflowRun{}, fmt.Errorf("mcpserver: stamp run context: %w", err)
 	}

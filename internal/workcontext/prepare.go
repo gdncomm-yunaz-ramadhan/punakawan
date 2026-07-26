@@ -89,6 +89,11 @@ type Result struct {
 	Candidates     []workflowdef.Definition // populated only on ambiguous selector
 	ResolvedInputs map[string]any
 
+	// StepProgress is the initial per-step state for a definition-backed run:
+	// a step with no unmet input_from dependency starts "ready", one with
+	// dependencies starts "pending" (plan §5.3). Empty for ad hoc runs.
+	StepProgress []protocol.WorkflowRunStepProgressElem
+
 	MetadataRevision int
 	Metadata         []MetadataItem
 	Knowledge        []KnowledgeItem // accepted guidance (verified/observed, +assumed on request)
@@ -127,13 +132,14 @@ func Prepare(req Request, searchFn SearchFunc, recipes *recipe.Repository) (Resu
 		res.Definition = &def
 	}
 
-	// 2. Validate and default declared inputs.
+	// 2. Validate and default declared inputs; initialize step progress.
 	if res.Definition != nil {
 		resolved, err := workflowdef.ResolveInputs(*res.Definition, req.Inputs)
 		if err != nil {
 			return res, err
 		}
 		res.ResolvedInputs = resolved
+		res.StepProgress = initialStepProgress(*res.Definition)
 	} else {
 		res.ResolvedInputs = req.Inputs
 	}
@@ -252,6 +258,25 @@ func Prepare(req Request, searchFn SearchFunc, recipes *recipe.Repository) (Resu
 	res.Digest = digest(res, req.RoleConfigRevision)
 	res.Snapshot = buildSnapshot(res, req.Now)
 	return res, nil
+}
+
+// initialStepProgress derives each step's starting state from its input_from
+// dependencies: a step with no dependency is immediately "ready"; one that
+// depends on an earlier step starts "pending" until that step completes (plan
+// §5.3). Nothing is completed at initialization.
+func initialStepProgress(def workflowdef.Definition) []protocol.WorkflowRunStepProgressElem {
+	if len(def.Steps) == 0 {
+		return nil
+	}
+	out := make([]protocol.WorkflowRunStepProgressElem, 0, len(def.Steps))
+	for _, st := range def.Steps {
+		state := protocol.WorkflowRunStepProgressElemStateReady
+		if len(st.InputFrom) > 0 {
+			state = protocol.WorkflowRunStepProgressElemStatePending
+		}
+		out = append(out, protocol.WorkflowRunStepProgressElem{StepId: st.ID, State: state})
+	}
+	return out
 }
 
 func toKnowledgeItem(r search.Result) KnowledgeItem {

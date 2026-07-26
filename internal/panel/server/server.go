@@ -292,10 +292,7 @@ func (s *Server) Start() error {
 				return "", err
 			}
 			defRef := &protocol.WorkflowRunDefinitionRef{Id: def.ID, Revision: def.Revision, ContentHash: def.ContentHash()}
-			stepIDs := make([]string, 0, len(def.Steps))
-			for _, st := range def.Steps {
-				stepIDs = append(stepIDs, st.ID)
-			}
+			stepProgress := prepared.StepProgress
 			snapshot := prepared.Snapshot
 			createRun := func(a *app.App) (string, error) {
 				runID := fmt.Sprintf("pkw:run/%s/%s-%d", a.Workspace.ID, def.ID, now.UnixNano())
@@ -307,7 +304,7 @@ func (s *Server) Start() error {
 				run := workflow.New(runID, a.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
 				objective := def.Name
 				run.Objective = &objective
-				run, err := workflow.StampContext(run, defRef, prepared.ResolvedInputs, stepIDs, &snapshot, now)
+				run, err := workflow.StampContext(run, defRef, prepared.ResolvedInputs, stepProgress, &snapshot, now)
 				if err != nil {
 					return "", fmt.Errorf("stamp context onto run for definition %q: %w", def.ID, err)
 				}

@@ -85,8 +85,23 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "advance_workflow",
-		Description: "Transition a workflow run to a new state, appending a checkpoint (§18.1). Valid next_state values: created, context-building, awaiting-clarification, planning, awaiting-approval, executing, reviewing, blocked, completed, failed, cancelled. Only §9's transition graph is accepted from the current state (e.g. created cannot jump straight to completed); blocked/failed/cancelled are reachable from any non-terminal state. Call get_workflow_state first if the valid next states from the current one aren't obvious.",
+		Description: "Transition a workflow run to a new state, appending a checkpoint (§18.1). Valid next_state values: created, context-building, awaiting-clarification, planning, awaiting-approval, executing, reviewing, blocked, completed, failed, cancelled. Only §9's transition graph is accepted from the current state (e.g. created cannot jump straight to completed); blocked/failed/cancelled are reachable from any non-terminal state. A context-aware run (one created via prepare_work_context or a definition) cannot enter completed without a recorded outcome (record_work_outcome) and, if definition-backed, all steps completed. Call get_workflow_state first if the valid next states from the current one aren't obvious.",
 	}, advanceWorkflowHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "get_next_workflow_step",
+		Description: "For a definition-backed run, list the steps that are ready to execute now and the ones still blocked (with the reason: unmet dependency, or a capability the workflow does not allow / that is not registered). A disallowed capability surfaces as blocked here, before you execute it (agent-context plan §5.3). An ad hoc run has no steps and says so.",
+	}, getNextWorkflowStepHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "complete_workflow_step",
+		Description: "Mark one workflow step done, attaching evidence_ids and/or a deviation_reason (one is required), then unlock any dependent steps whose inputs are now satisfied (agent-context plan §5.3). Rejects completing a step whose capability the workflow does not allow. Records a run-scoped capability event for the run's trace.",
+	}, completeWorkflowStepHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "record_work_outcome",
+		Description: "Persist the structured result of a context-aware run before completing it (agent-context plan §6.1): status (success|partial|failed), a concise summary, evidence ids, output refs, any workflow deviations, missing/stale context encountered, and reusable observations classified for a later learning proposal (workflow|metadata|knowledge|contradiction|workflow-revision). An observation is a traceable input to a proposal, NOT canonical knowledge. A context-aware run cannot be advanced to completed until this is recorded.",
+	}, recordWorkOutcomeHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "ingest_jira_requirement",

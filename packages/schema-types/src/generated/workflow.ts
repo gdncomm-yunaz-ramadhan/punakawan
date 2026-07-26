@@ -97,9 +97,43 @@ export interface WorkflowRun {
    */
   step_progress?: {
     step_id: string;
-    state: "ready" | "running" | "done" | "blocked" | "skipped";
+    state: "pending" | "ready" | "running" | "completed" | "blocked" | "skipped";
     evidence_ids?: string[];
+    /**
+     * Why this step deviated from the definition (e.g. a different capability was actually used). Recorded on completion in place of, or alongside, evidence (plan §5.3).
+     */
+    deviation_reason?: string;
   }[];
+  /**
+   * The structured result of a context-aware run (agent-context plan §6.1). A context-aware run cannot enter `completed` without one. An observation here is a traceable input to a learning proposal, not yet canonical knowledge.
+   */
+  outcome?: {
+    status: "success" | "partial" | "failed";
+    summary?: string;
+    recorded_at?: string;
+    evidence_ids?: string[];
+    output_refs?: string[];
+    deviations?: {
+      step_id: string;
+      reason: string;
+      actual_capability?: string;
+    }[];
+    missing_context?: {
+      kind: string;
+      key?: string;
+    }[];
+    /**
+     * Reusable lessons the agent identified, each classified for a later proposal (plan §6.2). Not canonical until reviewed and accepted.
+     */
+    observations?: {
+      /**
+       * workflow | metadata | knowledge | contradiction | workflow-revision (plan §6.2).
+       */
+      kind: string;
+      summary: string;
+      evidence_ids?: string[];
+    }[];
+  };
   /**
    * The roles.yaml revision in effect when this run was created (plan §50, ROLE-012). Stamped once at creation so a historical run remains reproducible even after the project role configuration is later edited.
    */

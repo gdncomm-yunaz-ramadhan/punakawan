@@ -7345,6 +7345,11 @@ type WorkflowRun struct {
 	// this itself.
 	Objective *string `json:"objective,omitempty,omitzero" yaml:"objective,omitempty" mapstructure:"objective,omitempty"`
 
+	// The structured result of a context-aware run (agent-context plan §6.1). A
+	// context-aware run cannot enter `completed` without one. An observation here is
+	// a traceable input to a learning proposal, not yet canonical knowledge.
+	Outcome *WorkflowRunOutcome `json:"outcome,omitempty,omitzero" yaml:"outcome,omitempty" mapstructure:"outcome,omitempty"`
+
 	// The roles.yaml revision in effect when this run was created (plan §50,
 	// ROLE-012). Stamped once at creation so a historical run remains reproducible
 	// even after the project role configuration is later edited.
@@ -7606,6 +7611,177 @@ type WorkflowRunEffectiveRoleSettings map[string]map[string]interface{}
 // are arbitrary JSON.
 type WorkflowRunInputs map[string]interface{}
 
+// The structured result of a context-aware run (agent-context plan §6.1). A
+// context-aware run cannot enter `completed` without one. An observation here is a
+// traceable input to a learning proposal, not yet canonical knowledge.
+type WorkflowRunOutcome struct {
+	// Deviations corresponds to the JSON schema field "deviations".
+	Deviations []WorkflowRunOutcomeDeviationsElem `json:"deviations,omitempty,omitzero" yaml:"deviations,omitempty" mapstructure:"deviations,omitempty"`
+
+	// EvidenceIds corresponds to the JSON schema field "evidence_ids".
+	EvidenceIds []string `json:"evidence_ids,omitempty,omitzero" yaml:"evidence_ids,omitempty" mapstructure:"evidence_ids,omitempty"`
+
+	// MissingContext corresponds to the JSON schema field "missing_context".
+	MissingContext []WorkflowRunOutcomeMissingContextElem `json:"missing_context,omitempty,omitzero" yaml:"missing_context,omitempty" mapstructure:"missing_context,omitempty"`
+
+	// Reusable lessons the agent identified, each classified for a later proposal
+	// (plan §6.2). Not canonical until reviewed and accepted.
+	Observations []WorkflowRunOutcomeObservationsElem `json:"observations,omitempty,omitzero" yaml:"observations,omitempty" mapstructure:"observations,omitempty"`
+
+	// OutputRefs corresponds to the JSON schema field "output_refs".
+	OutputRefs []string `json:"output_refs,omitempty,omitzero" yaml:"output_refs,omitempty" mapstructure:"output_refs,omitempty"`
+
+	// RecordedAt corresponds to the JSON schema field "recorded_at".
+	RecordedAt *time.Time `json:"recorded_at,omitempty,omitzero" yaml:"recorded_at,omitempty" mapstructure:"recorded_at,omitempty"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status WorkflowRunOutcomeStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+type WorkflowRunOutcomeDeviationsElem struct {
+	// ActualCapability corresponds to the JSON schema field "actual_capability".
+	ActualCapability *string `json:"actual_capability,omitempty,omitzero" yaml:"actual_capability,omitempty" mapstructure:"actual_capability,omitempty"`
+
+	// Reason corresponds to the JSON schema field "reason".
+	Reason string `json:"reason" yaml:"reason" mapstructure:"reason"`
+
+	// StepId corresponds to the JSON schema field "step_id".
+	StepId string `json:"step_id" yaml:"step_id" mapstructure:"step_id"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeDeviationsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["reason"]; raw != nil && !ok {
+		return fmt.Errorf("field reason in WorkflowRunOutcomeDeviationsElem: required")
+	}
+	if _, ok := raw["step_id"]; raw != nil && !ok {
+		return fmt.Errorf("field step_id in WorkflowRunOutcomeDeviationsElem: required")
+	}
+	type Plain WorkflowRunOutcomeDeviationsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcomeDeviationsElem(plain)
+	return nil
+}
+
+type WorkflowRunOutcomeMissingContextElem struct {
+	// Key corresponds to the JSON schema field "key".
+	Key *string `json:"key,omitempty,omitzero" yaml:"key,omitempty" mapstructure:"key,omitempty"`
+
+	// Kind corresponds to the JSON schema field "kind".
+	Kind string `json:"kind" yaml:"kind" mapstructure:"kind"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeMissingContextElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in WorkflowRunOutcomeMissingContextElem: required")
+	}
+	type Plain WorkflowRunOutcomeMissingContextElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcomeMissingContextElem(plain)
+	return nil
+}
+
+type WorkflowRunOutcomeObservationsElem struct {
+	// EvidenceIds corresponds to the JSON schema field "evidence_ids".
+	EvidenceIds []string `json:"evidence_ids,omitempty,omitzero" yaml:"evidence_ids,omitempty" mapstructure:"evidence_ids,omitempty"`
+
+	// workflow | metadata | knowledge | contradiction | workflow-revision (plan
+	// §6.2).
+	Kind string `json:"kind" yaml:"kind" mapstructure:"kind"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary string `json:"summary" yaml:"summary" mapstructure:"summary"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeObservationsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in WorkflowRunOutcomeObservationsElem: required")
+	}
+	if _, ok := raw["summary"]; raw != nil && !ok {
+		return fmt.Errorf("field summary in WorkflowRunOutcomeObservationsElem: required")
+	}
+	type Plain WorkflowRunOutcomeObservationsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcomeObservationsElem(plain)
+	return nil
+}
+
+type WorkflowRunOutcomeStatus string
+
+const WorkflowRunOutcomeStatusFailed WorkflowRunOutcomeStatus = "failed"
+const WorkflowRunOutcomeStatusPartial WorkflowRunOutcomeStatus = "partial"
+const WorkflowRunOutcomeStatusSuccess WorkflowRunOutcomeStatus = "success"
+
+var enumValues_WorkflowRunOutcomeStatus = []interface{}{
+	"success",
+	"partial",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcomeStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_WorkflowRunOutcomeStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_WorkflowRunOutcomeStatus, v)
+	}
+	*j = WorkflowRunOutcomeStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunOutcome) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in WorkflowRunOutcome: required")
+	}
+	type Plain WorkflowRunOutcome
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunOutcome(plain)
+	return nil
+}
+
 type WorkflowRunState string
 
 const WorkflowRunStateAwaitingApproval WorkflowRunState = "awaiting-approval"
@@ -7655,6 +7831,11 @@ func (j *WorkflowRunState) UnmarshalJSON(value []byte) error {
 }
 
 type WorkflowRunStepProgressElem struct {
+	// Why this step deviated from the definition (e.g. a different capability was
+	// actually used). Recorded on completion in place of, or alongside, evidence
+	// (plan §5.3).
+	DeviationReason *string `json:"deviation_reason,omitempty,omitzero" yaml:"deviation_reason,omitempty" mapstructure:"deviation_reason,omitempty"`
+
 	// EvidenceIds corresponds to the JSON schema field "evidence_ids".
 	EvidenceIds []string `json:"evidence_ids,omitempty,omitzero" yaml:"evidence_ids,omitempty" mapstructure:"evidence_ids,omitempty"`
 
@@ -7668,15 +7849,17 @@ type WorkflowRunStepProgressElem struct {
 type WorkflowRunStepProgressElemState string
 
 const WorkflowRunStepProgressElemStateBlocked WorkflowRunStepProgressElemState = "blocked"
-const WorkflowRunStepProgressElemStateDone WorkflowRunStepProgressElemState = "done"
+const WorkflowRunStepProgressElemStateCompleted WorkflowRunStepProgressElemState = "completed"
+const WorkflowRunStepProgressElemStatePending WorkflowRunStepProgressElemState = "pending"
 const WorkflowRunStepProgressElemStateReady WorkflowRunStepProgressElemState = "ready"
 const WorkflowRunStepProgressElemStateRunning WorkflowRunStepProgressElemState = "running"
 const WorkflowRunStepProgressElemStateSkipped WorkflowRunStepProgressElemState = "skipped"
 
 var enumValues_WorkflowRunStepProgressElemState = []interface{}{
+	"pending",
 	"ready",
 	"running",
-	"done",
+	"completed",
 	"blocked",
 	"skipped",
 }

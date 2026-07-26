@@ -16,7 +16,8 @@ import (
 //   - defRef, when non-nil, records the immutable definition reference
 //     (id, revision, content hash);
 //   - inputs stores the resolved workflow inputs;
-//   - stepIDs initialize step_progress to "ready", in order;
+//   - stepProgress is the initial per-step state (already derived from the
+//     definition's input_from graph by the context service);
 //   - snapshot, when non-nil, is the bounded context snapshot to attach.
 //
 // When the snapshot reports missing context, the run is advanced to
@@ -27,7 +28,7 @@ func StampContext(
 	run protocol.WorkflowRun,
 	defRef *protocol.WorkflowRunDefinitionRef,
 	inputs map[string]any,
-	stepIDs []string,
+	stepProgress []protocol.WorkflowRunStepProgressElem,
 	snapshot *protocol.WorkflowRunContextSnapshot,
 	now time.Time,
 ) (protocol.WorkflowRun, error) {
@@ -38,15 +39,8 @@ func StampContext(
 		run.Inputs = protocol.WorkflowRunInputs(inputs)
 	}
 
-	if len(stepIDs) > 0 {
-		sp := make([]protocol.WorkflowRunStepProgressElem, 0, len(stepIDs))
-		for _, sid := range stepIDs {
-			sp = append(sp, protocol.WorkflowRunStepProgressElem{
-				StepId: sid,
-				State:  protocol.WorkflowRunStepProgressElemStateReady,
-			})
-		}
-		run.StepProgress = sp
+	if len(stepProgress) > 0 {
+		run.StepProgress = stepProgress
 	}
 
 	if snapshot != nil {
