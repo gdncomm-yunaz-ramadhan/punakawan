@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/capability"
 )
 
 // Serve starts Punakawan's MCP server over stdio and blocks until the
@@ -59,10 +60,28 @@ func newServer(a *app.App) (*mcp.Server, error) {
 	if err := registerPrompts(server); err != nil {
 		return nil, err
 	}
-	registerTools(server, a)
+	registerTools(server, a, capability.NewRegistry())
 	server.AddReceivingMiddleware(compactStructuredToolResults)
 
 	return server, nil
+}
+
+// CapabilityRegistry enumerates the capabilities the MCP server exposes by
+// running tool registration against a throwaway server purely to record the
+// names. This is the single source of truth the panel's workflow validation
+// consults (agent-context plan §4.3): because both the live server and this
+// enumeration go through the exact same registerTools statements, the set a
+// workflow definition is validated against can never drift from the set the
+// server actually registers. (The old hand-maintained mirror had already
+// drifted — 46 listed names versus ~70 registered tools.)
+//
+// Registration only stores tool metadata and handlers; it never runs a
+// handler or opens a transport, so this is a cheap one-time call at startup.
+func CapabilityRegistry(a *app.App) *capability.Registry {
+	reg := capability.NewRegistry()
+	server := mcp.NewServer(&mcp.Implementation{Name: "punakawan", Version: "0.1.0"}, nil)
+	registerTools(server, a, reg)
+	return reg
 }
 
 // compactStructuredToolResults removes the Go SDK's automatic full JSON copy

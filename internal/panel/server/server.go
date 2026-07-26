@@ -11,6 +11,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/artifact"
+	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
 	"github.com/ygrip/punakawan/internal/panel/events"
@@ -18,6 +19,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/session"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
+	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
 	"github.com/ygrip/punakawan/internal/workflow"
@@ -255,7 +257,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans", api.ListPlansHandler(projectStores))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(projectStores))
 
-	caps := workflowdef.NewCapabilitySet(workflowdef.KnownMCPCapabilities(), nil)
+	// The capability set a workflow definition is validated against is derived
+	// from the MCP server's actual tool registration (agent-context plan §4.3),
+	// not a hand-maintained mirror — so the two can no longer drift. Adapter
+	// operations are contributed to the registry when adapters load (a later
+	// phase); MCP tool names are the source that had actually drifted.
+	caps := workflowdef.NewCapabilitySet(mcpserver.CapabilityRegistry(s.app).Names(), nil)
 	// Invoke validates enabled + capabilities in workflowdef, then this
 	// RunCreator binds the accepted definition to the run engine by creating a
 	// WorkflowRun. A definition id is not one of the fixed WorkflowRun name
@@ -267,12 +274,41 @@ func (s *Server) Start() error {
 	// .punakawan/workflow/runs.jsonl receives the run, then released.
 	newInvoker := func(projectID, root string) workflowdef.Invoker {
 		return workflowdef.NewInvoker(caps, func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
+			// Validate and default declared inputs before touching the run
+			// store: a missing required input is a hard invocation error (the
+			// run cannot run), distinct from missing metadata below which is a
+			// recoverable awaiting-clarification.
+			resolvedInputs, err := workflowdef.ResolveInputs(def, inputs)
+			if err != nil {
+				return "", err
+			}
+			// Resolve the workflow's required metadata against the project's
+			// canonical metadata. Anything absent becomes a "missing" entry that
+			// drives the run into awaiting-clarification (agent-context plan
+			// §4.1/§4.4) rather than silently proceeding without it.
+			missing, err := missingRequiredMetadata(root, def.RequiredMetadata)
+			if err != nil {
+				return "", err
+			}
+			stepIDs := make([]string, 0, len(def.Steps))
+			for _, st := range def.Steps {
+				stepIDs = append(stepIDs, st.ID)
+			}
 			createRun := func(a *app.App) (string, error) {
 				now := time.Now().UTC()
 				runID := fmt.Sprintf("pkw:run/%s/%s-%d", a.Workspace.ID, def.ID, now.UnixNano())
+				// A definition id is not one of the fixed WorkflowRun name enums,
+				// so the run is created under the generic "implementation-only"
+				// carrier; the binding to the originating definition is now the
+				// immutable definition_ref (id/revision/content_hash), NOT a
+				// magic prefix parsed back out of Objective.
 				run := workflow.New(runID, a.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
-				objective := "workflow-definition:" + def.ID
+				objective := def.Name
 				run.Objective = &objective
+				run, err := workflow.BindDefinition(run, def.ID, def.Revision, def.ContentHash(), resolvedInputs, stepIDs, missing, now)
+				if err != nil {
+					return "", fmt.Errorf("bind definition %q to run: %w", def.ID, err)
+				}
 				if err := a.Workflow.Append(run); err != nil {
 					return "", fmt.Errorf("create workflow run for definition %q: %w", def.ID, err)
 				}
@@ -586,4 +622,28 @@ func (w *timingResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// missingRequiredMetadata resolves a workflow's required_metadata keys against
+// the project's canonical metadata (agent-context plan §4.4 step 3). Every key
+// with no corresponding metadata entry is returned as a workflow.Missing of
+// kind "metadata", which the caller records in the run's context_snapshot and
+// which drives the run into awaiting-clarification. A project with no
+// project.yaml resolves to zero metadata (project.Load synthesizes an empty
+// project), so every required key is reported missing rather than erroring.
+func missingRequiredMetadata(root string, required []string) ([]workflow.Missing, error) {
+	if len(required) == 0 {
+		return nil, nil
+	}
+	proj, err := project.Load(root)
+	if err != nil {
+		return nil, fmt.Errorf("load project metadata for required-metadata check: %w", err)
+	}
+	var missing []workflow.Missing
+	for _, key := range required {
+		if _, ok := proj.MetadataFor(key); !ok {
+			missing = append(missing, workflow.Missing{Kind: "metadata", Key: key})
+		}
+	}
+	return missing, nil
 }
