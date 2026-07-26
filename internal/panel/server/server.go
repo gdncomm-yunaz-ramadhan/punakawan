@@ -177,6 +177,8 @@ func (s *Server) Start() error {
 		Knowledge: s.app.OpenKnowledge,
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
+	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
+	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
 	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
 	// /workspaces is the pre-project-model name for the same registry entries

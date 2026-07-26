@@ -184,6 +184,32 @@ export function getSystem(): Promise<SystemInfo> {
   return getJSON<SystemInfo>("/system");
 }
 
+// --- Panel Settings (runtime pool) ---------------------------------------
+//
+// Panel-wide runtime settings. Each active project workspace runs its own
+// `dolt sql-server`; `max_active_runtimes` caps how many are live at once
+// (LRU eviction of idle non-primary projects) and
+// `runtime_idle_timeout_seconds` is how long an idle non-primary project
+// lingers before it is shut down. The PATCH is a session-gated mutation
+// (goes through mutateJSON so it carries the CSRF header); the server
+// rejects values < 1 with a 400 whose message surfaces as an ApiError.
+
+export interface PanelSettings {
+  max_active_runtimes: number;
+  runtime_idle_timeout_seconds: number;
+}
+
+export function getPanelSettings(): Promise<PanelSettings> {
+  return getJSON<PanelSettings>("/system/settings");
+}
+
+export function updatePanelSettings(patch: Partial<PanelSettings>): Promise<PanelSettings> {
+  return mutateJSON<PanelSettings>("/system/settings", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export function listWorkspaces(): Promise<{ items: WorkspaceSummary[] }> {
   return getJSON<{ items: WorkspaceSummary[] }>("/workspaces");
 }

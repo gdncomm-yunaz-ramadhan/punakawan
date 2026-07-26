@@ -189,6 +189,29 @@ metric tiles, status pills, charts, cards, buttons, and modals that all read fro
 the same tokens, stay responsive down to a single column on mobile, and render in
 both light and dark.
 
+### Runtime pool (Dolt server footprint)
+
+Each project's knowledge lives in its own Dolt database inside that project
+(`<project>/.punakawan/knowledge`), colocated with the repo so it stays portable
+and git-syncable per project ([ADR-0005](docs/architecture/ADR-0005-dolt-is-the-canonical-knowledge-store.md),
+[ADR-0008](docs/architecture/ADR-0008-git-tracked-yaml-stores-portable-human-reviewable-project-knowledge.md)).
+A `dolt sql-server` binds one data directory, so there is **one server per
+project** (deduplicated across processes via `.dolt/sql-server.info`), not one
+shared server. As you browse across projects the panel keeps a **bounded pool**
+of live project runtimes — each backing one Dolt server — and shuts the rest
+down:
+
+- **LRU cap**, default **4** live runtimes (the primary project is always kept).
+  Exceeding the cap shuts down the least-recently-used idle project's server.
+- **Idle shutdown** of an unused non-primary project after **12 minutes**.
+- Both are tunable from **System → Runtime pool** (`GET`/`PATCH
+  /api/v1/system/settings`, persisted at `.punakawan/panel/settings.json`);
+  lowering the cap frees memory immediately. See
+  [ADR-0019](docs/architecture/ADR-0019-per-project-dolt-servers-are-bounded-by-an-lru-runtime-pool.md).
+
+Killing a Dolt server by hand is always safe — the data is on disk and the
+server restarts on demand.
+
 ## Architecture in one line
 
 Go core (orchestration, persistence, approval gates, MCP surface) + TypeScript
