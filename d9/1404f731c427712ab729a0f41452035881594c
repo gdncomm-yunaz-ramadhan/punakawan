@@ -1,0 +1,42 @@
+.punakawan/workflows/implementation-with-tests.yaml
+  d98638225f35480d 1-51
+.punakawan/workflows/pr-review.yaml
+  d98638225f35480d 1-27
+.punakawan/workflows/repo-orientation.yaml
+  d98638225f35480d 1-26
+internal/mcpserver/dogfood_test.go
+  d98638225f35480d 1-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "d91404f731c427712ab729a0f41452035881594c",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 244,
+      "total_deletions": 0,
+      "accepted_lines": 245,
+      "overriden_lines": 0
+    }
+  }
+}
