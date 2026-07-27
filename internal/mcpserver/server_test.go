@@ -276,6 +276,7 @@ func TestSubmitGarengReviewPersists(t *testing.T) {
 		"review": map[string]any{
 			"verdict":           "clarification_required",
 			"blocking_findings": []string{"no rollback plan"},
+			"required_evidence": []string{"prod incident runbook shows no rollback path"},
 		},
 	}, &out)
 
