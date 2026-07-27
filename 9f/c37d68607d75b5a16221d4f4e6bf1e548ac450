@@ -1,0 +1,40 @@
+web/panel/src/lib/api/client.ts
+  d98638225f35480d 1304-1331,1336-1337
+web/panel/tests/ProjectDossiers.test.ts
+  d98638225f35480d 27-29,31-48,87-107
+web/panel/src/routes/projects/ProjectDossiers.svelte
+  d98638225f35480d 10,12,28,117-127,229-231,233-234,240-241,243-246,249-250,252,254,256,258,260,265,267-281,444-464
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "9fc37d68607d75b5a16221d4f4e6bf1e548ac450",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 141,
+      "total_deletions": 23,
+      "accepted_lines": 142,
+      "overriden_lines": 0
+    }
+  }
+}
