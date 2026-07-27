@@ -1,0 +1,50 @@
+prompts/shared/communication.md
+  d98638225f35480d 1-60
+prompts/petruk/prompt.md
+  d98638225f35480d 6-9,11-15,21-23,101-122
+prompts/gareng/prompt.md
+  d98638225f35480d 6-17,79,81-85,99-121
+prompts/bagong/prompt.md
+  d98638225f35480d 6-21,152,167-176,178-183,185,187
+internal/mcpserver/prompts.go
+  d98638225f35480d 28-37,39-44,50
+prompts/semar/prompt.md
+  d98638225f35480d 6-16,71,132-151
+prompts/prompts.go
+  d98638225f35480d 10
+internal/mcpserver/prompts_test.go
+  d98638225f35480d 1-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "f7a69ab04f74ddb6318fa244dd96378d14076d43",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 346,
+      "total_deletions": 109,
+      "accepted_lines": 345,
+      "overriden_lines": 0
+    }
+  }
+}
