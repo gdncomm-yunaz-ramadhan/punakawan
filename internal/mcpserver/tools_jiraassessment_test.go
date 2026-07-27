@@ -192,3 +192,22 @@ func TestRenderJiraAssessmentCommentHandlesNegativeTimeSaved(t *testing.T) {
 		t.Errorf("body = %q, want it to contain -3h (time saved can go negative when AI is slower)", body)
 	}
 }
+
+func TestRenderJiraAssessmentCommentAnchorsFindingToSource(t *testing.T) {
+	in := SubmitJiraAssessmentInput{
+		Summary: "s",
+		Findings: []JiraAssessmentFinding{
+			{Title: "No feature flag", Detail: "sharing is unconditional", Source: "internal/share/hub.go:42"},
+			{Title: "Missing test", Detail: "no coverage for the denied path"},
+		},
+	}
+	body := renderJiraAssessmentComment(in)
+	// A finding with a Source renders it inline, pointing straight at the code.
+	if !strings.Contains(body, "**No feature flag** (`internal/share/hub.go:42`) — sharing is unconditional") {
+		t.Errorf("body = %q, want the source rendered inline next to the finding", body)
+	}
+	// A finding without a Source still renders cleanly (no empty backticks).
+	if !strings.Contains(body, "**Missing test** — no coverage for the denied path") || strings.Contains(body, "``") {
+		t.Errorf("body = %q, want the source-less finding rendered without empty backticks", body)
+	}
+}

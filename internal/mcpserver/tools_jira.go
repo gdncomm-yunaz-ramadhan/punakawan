@@ -237,6 +237,99 @@ func jiraSetStoryPoints(ctx context.Context, req *mcp.CallToolRequest, gate *ada
 	return out, nil
 }
 
+// --- list_jira_subtasks ----------------------------------------------------
+
+// ListJiraSubtasksInput is list_jira_subtasks's input.
+type ListJiraSubtasksInput struct {
+	RunId        string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session. This is a read, so no approval is needed either way."`
+	IssueIdOrKey string `json:"issue_id_or_key" jsonschema:"the parent Jira issue key or id whose existing subtasks (children) to list, e.g. PAY-1842"`
+	RequestedBy  string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong"`
+}
+
+// JiraSubtask is one child issue returned by list_jira_subtasks.
+type JiraSubtask struct {
+	Key     string `json:"key"`
+	Summary string `json:"summary,omitempty"`
+	Status  string `json:"status,omitempty"`
+}
+
+// ListJiraSubtasksOutput is list_jira_subtasks's output. Parent* fields echo
+// the queried issue so a caller can confirm it resolved the intended ticket
+// before picking a subtask key to log work against.
+type ListJiraSubtasksOutput struct {
+	ParentKey     string        `json:"parent_key"`
+	ParentSummary string        `json:"parent_summary,omitempty"`
+	ParentStatus  string        `json:"parent_status,omitempty"`
+	Subtasks      []JiraSubtask `json:"subtasks"`
+	SubtaskCount  int           `json:"subtask_count"`
+}
+
+func listJiraSubtasksHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ListJiraSubtasksInput) (*mcp.CallToolResult, ListJiraSubtasksOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in ListJiraSubtasksInput) (*mcp.CallToolResult, ListJiraSubtasksOutput, error) {
+		gate, err := a.AdapterRegistry.Gate(ctx, "atlassian")
+		if err != nil {
+			return nil, ListJiraSubtasksOutput{}, fmt.Errorf("mcpserver: list_jira_subtasks: %w", err)
+		}
+		out, err := listJiraSubtasks(ctx, req, gate, in)
+		return nil, out, err
+	}
+}
+
+// listJiraSubtasks fetches the parent issue's children via the same
+// atlassian.getJiraIssue read ingest_jira_requirement uses, but requests only
+// the subtasks/summary/status fields (not *all) since routing worklog to the
+// right child needs nothing more. The adapter already normalizes
+// fields.subtasks into [{key,summary,status}] (see adapter-atlassian
+// normalizeJiraIssue); this tool is the missing MCP surface that exposes that
+// to the connected agent, which previously had no way to enumerate a parent's
+// existing subtasks and so mis-logged work on the parent.
+func listJiraSubtasks(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in ListJiraSubtasksInput) (ListJiraSubtasksOutput, error) {
+	var out ListJiraSubtasksOutput
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+	if strings.TrimSpace(in.IssueIdOrKey) == "" {
+		return out, fmt.Errorf("mcpserver: list_jira_subtasks: issue_id_or_key is required")
+	}
+
+	raw, err := invokeAdapterOperation(ctx, req, gate, resolveRunID(in.RunId), "atlassian.getJiraIssue", map[string]any{
+		"issueIdOrKey": in.IssueIdOrKey,
+		"fields":       []string{"subtasks", "summary", "status"},
+	}, requestedBy)
+	if err != nil {
+		return out, fmt.Errorf("mcpserver: list_jira_subtasks: fetch %q: %w", in.IssueIdOrKey, err)
+	}
+
+	var res struct {
+		Normalized struct {
+			Key      string `json:"key"`
+			Summary  string `json:"summary"`
+			Status   string `json:"status"`
+			Subtasks []struct {
+				Key     string `json:"key"`
+				Summary string `json:"summary"`
+				Status  string `json:"status"`
+			} `json:"subtasks"`
+		} `json:"normalized"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return out, fmt.Errorf("mcpserver: list_jira_subtasks: decode %q: %w", in.IssueIdOrKey, err)
+	}
+	if res.Normalized.Key == "" {
+		return out, fmt.Errorf("mcpserver: list_jira_subtasks: %q: adapter response had no normalized.key", in.IssueIdOrKey)
+	}
+
+	out.ParentKey = res.Normalized.Key
+	out.ParentSummary = res.Normalized.Summary
+	out.ParentStatus = res.Normalized.Status
+	for _, s := range res.Normalized.Subtasks {
+		out.Subtasks = append(out.Subtasks, JiraSubtask{Key: s.Key, Summary: s.Summary, Status: s.Status})
+	}
+	out.SubtaskCount = len(out.Subtasks)
+	return out, nil
+}
+
 // --- jira_assign_issue -----------------------------------------------------
 
 // JiraAssignIssueInput is jira_assign_issue's input.
@@ -292,5 +385,262 @@ func jiraAssignIssue(ctx context.Context, req *mcp.CallToolRequest, gate *adapte
 	out.Assigned = true
 	out.IssueIdOrKey = in.IssueIdOrKey
 	out.AccountId = in.AccountId
+	return out, nil
+}
+
+// --- list_jira_linked_issues -----------------------------------------------
+
+// ListJiraLinkedIssuesInput is list_jira_linked_issues's input.
+type ListJiraLinkedIssuesInput struct {
+	RunId        string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session. This is a read, so no approval is needed either way."`
+	IssueIdOrKey string `json:"issue_id_or_key" jsonschema:"the Jira issue key or id whose issue links (Blocks/Relates/etc.) to list, e.g. PAY-1842"`
+	RequestedBy  string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong"`
+}
+
+// JiraLinkedIssue is one linked issue returned by list_jira_linked_issues.
+// Direction/relationship come straight from Jira's issueLink (e.g. direction
+// "outward", relationship "blocks").
+type JiraLinkedIssue struct {
+	Direction    string `json:"direction,omitempty"`
+	Relationship string `json:"relationship,omitempty"`
+	Key          string `json:"key"`
+	Summary      string `json:"summary,omitempty"`
+	Status       string `json:"status,omitempty"`
+	IssueType    string `json:"issue_type,omitempty"`
+}
+
+// ListJiraLinkedIssuesOutput is list_jira_linked_issues's output.
+type ListJiraLinkedIssuesOutput struct {
+	IssueKey string            `json:"issue_key"`
+	Links    []JiraLinkedIssue `json:"links"`
+	Count    int               `json:"count"`
+}
+
+func listJiraLinkedIssuesHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ListJiraLinkedIssuesInput) (*mcp.CallToolResult, ListJiraLinkedIssuesOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in ListJiraLinkedIssuesInput) (*mcp.CallToolResult, ListJiraLinkedIssuesOutput, error) {
+		gate, err := a.AdapterRegistry.Gate(ctx, "atlassian")
+		if err != nil {
+			return nil, ListJiraLinkedIssuesOutput{}, fmt.Errorf("mcpserver: list_jira_linked_issues: %w", err)
+		}
+		out, err := listJiraLinkedIssues(ctx, req, gate, in)
+		return nil, out, err
+	}
+}
+
+// listJiraLinkedIssues reads the issue's links via getJiraIssue (fields
+// issuelinks/summary/status only), which the adapter already normalizes into
+// {direction, relationship, issue{key,summary,status,issueType}}.
+func listJiraLinkedIssues(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in ListJiraLinkedIssuesInput) (ListJiraLinkedIssuesOutput, error) {
+	var out ListJiraLinkedIssuesOutput
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+	if strings.TrimSpace(in.IssueIdOrKey) == "" {
+		return out, fmt.Errorf("mcpserver: list_jira_linked_issues: issue_id_or_key is required")
+	}
+
+	raw, err := invokeAdapterOperation(ctx, req, gate, resolveRunID(in.RunId), "atlassian.getJiraIssue", map[string]any{
+		"issueIdOrKey": in.IssueIdOrKey,
+		"fields":       []string{"issuelinks", "summary", "status"},
+	}, requestedBy)
+	if err != nil {
+		return out, fmt.Errorf("mcpserver: list_jira_linked_issues: fetch %q: %w", in.IssueIdOrKey, err)
+	}
+
+	var res struct {
+		Normalized struct {
+			Key   string `json:"key"`
+			Links []struct {
+				Direction    string `json:"direction"`
+				Relationship string `json:"relationship"`
+				Issue        struct {
+					Key       string `json:"key"`
+					Summary   string `json:"summary"`
+					Status    string `json:"status"`
+					IssueType string `json:"issueType"`
+				} `json:"issue"`
+			} `json:"links"`
+		} `json:"normalized"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return out, fmt.Errorf("mcpserver: list_jira_linked_issues: decode %q: %w", in.IssueIdOrKey, err)
+	}
+	if res.Normalized.Key == "" {
+		return out, fmt.Errorf("mcpserver: list_jira_linked_issues: %q: adapter response had no normalized.key", in.IssueIdOrKey)
+	}
+
+	out.IssueKey = res.Normalized.Key
+	for _, l := range res.Normalized.Links {
+		out.Links = append(out.Links, JiraLinkedIssue{
+			Direction:    l.Direction,
+			Relationship: l.Relationship,
+			Key:          l.Issue.Key,
+			Summary:      l.Issue.Summary,
+			Status:       l.Issue.Status,
+			IssueType:    l.Issue.IssueType,
+		})
+	}
+	out.Count = len(out.Links)
+	return out, nil
+}
+
+// --- list_jira_comments ----------------------------------------------------
+
+// ListJiraCommentsInput is list_jira_comments's input.
+type ListJiraCommentsInput struct {
+	RunId        string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session. This is a read, so no approval is needed either way."`
+	IssueIdOrKey string `json:"issue_id_or_key" jsonschema:"the Jira issue key or id whose comments to list"`
+	StartAt      int    `json:"start_at,omitempty" jsonschema:"0-based paging offset, default 0"`
+	MaxResults   int    `json:"max_results,omitempty" jsonschema:"max comments to return, default 20, capped at 100"`
+	RequestedBy  string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong"`
+}
+
+// JiraComment is one comment returned by list_jira_comments. Body is plain
+// text extracted from Jira's ADF, not the raw ADF document, to keep output
+// concise.
+type JiraComment struct {
+	Id      string `json:"id"`
+	Author  string `json:"author,omitempty"`
+	Body    string `json:"body,omitempty"`
+	Created string `json:"created,omitempty"`
+	Updated string `json:"updated,omitempty"`
+}
+
+// ListJiraCommentsOutput is list_jira_comments's output. Total is Jira's
+// server-side total when known, so a caller can tell whether more pages exist
+// beyond the returned slice.
+type ListJiraCommentsOutput struct {
+	IssueKey string        `json:"issue_key"`
+	Comments []JiraComment `json:"comments"`
+	StartAt  int           `json:"start_at"`
+	Returned int           `json:"returned"`
+	Total    *int          `json:"total,omitempty"`
+}
+
+func listJiraCommentsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ListJiraCommentsInput) (*mcp.CallToolResult, ListJiraCommentsOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in ListJiraCommentsInput) (*mcp.CallToolResult, ListJiraCommentsOutput, error) {
+		gate, err := a.AdapterRegistry.Gate(ctx, "atlassian")
+		if err != nil {
+			return nil, ListJiraCommentsOutput{}, fmt.Errorf("mcpserver: list_jira_comments: %w", err)
+		}
+		out, err := listJiraComments(ctx, req, gate, in)
+		return nil, out, err
+	}
+}
+
+func listJiraComments(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in ListJiraCommentsInput) (ListJiraCommentsOutput, error) {
+	var out ListJiraCommentsOutput
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+	if strings.TrimSpace(in.IssueIdOrKey) == "" {
+		return out, fmt.Errorf("mcpserver: list_jira_comments: issue_id_or_key is required")
+	}
+
+	params := map[string]any{"issueIdOrKey": in.IssueIdOrKey}
+	if in.StartAt > 0 {
+		params["startAt"] = in.StartAt
+	}
+	if in.MaxResults > 0 {
+		params["maxResults"] = in.MaxResults
+	}
+	raw, err := invokeAdapterOperation(ctx, req, gate, resolveRunID(in.RunId), "atlassian.getJiraComments", params, requestedBy)
+	if err != nil {
+		return out, fmt.Errorf("mcpserver: list_jira_comments: fetch %q: %w", in.IssueIdOrKey, err)
+	}
+
+	var res struct {
+		Comments []struct {
+			Id      string `json:"id"`
+			Author  string `json:"author"`
+			Body    string `json:"body"`
+			Created string `json:"created"`
+			Updated string `json:"updated"`
+		} `json:"comments"`
+		Page struct {
+			StartAt  int  `json:"startAt"`
+			Returned int  `json:"returned"`
+			Total    *int `json:"total"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return out, fmt.Errorf("mcpserver: list_jira_comments: decode %q: %w", in.IssueIdOrKey, err)
+	}
+
+	out.IssueKey = in.IssueIdOrKey
+	for _, c := range res.Comments {
+		out.Comments = append(out.Comments, JiraComment{
+			Id: c.Id, Author: c.Author, Body: c.Body, Created: c.Created, Updated: c.Updated,
+		})
+	}
+	out.StartAt = res.Page.StartAt
+	out.Returned = res.Page.Returned
+	out.Total = res.Page.Total
+	return out, nil
+}
+
+// --- add_jira_comment ------------------------------------------------------
+
+// AddJiraCommentInput is add_jira_comment's input.
+type AddJiraCommentInput struct {
+	RunId        string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session (no workflow-run/requirement/task/capsule ceremony)"`
+	IssueIdOrKey string `json:"issue_id_or_key" jsonschema:"the Jira issue key or id to comment on. To reply to an existing comment, post a new comment here referencing it - Jira issue comments are a flat list, not threaded."`
+	Body         string `json:"body" jsonschema:"comment body in Markdown (confirmed working; converted to ADF). Do NOT use old Jira wiki markup - h3./{{code}} render literally."`
+	RequestedBy  string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong"`
+}
+
+// AddJiraCommentOutput is add_jira_comment's output.
+type AddJiraCommentOutput struct {
+	Posted       bool   `json:"posted"`
+	IssueIdOrKey string `json:"issue_id_or_key"`
+	CommentId    string `json:"comment_id,omitempty"`
+}
+
+func addJiraCommentHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, AddJiraCommentInput) (*mcp.CallToolResult, AddJiraCommentOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in AddJiraCommentInput) (*mcp.CallToolResult, AddJiraCommentOutput, error) {
+		gate, err := a.AdapterRegistry.Gate(ctx, "atlassian")
+		if err != nil {
+			return nil, AddJiraCommentOutput{}, fmt.Errorf("mcpserver: add_jira_comment: %w", err)
+		}
+		out, err := addJiraComment(ctx, req, gate, in)
+		return nil, out, err
+	}
+}
+
+// addJiraComment posts a standalone comment. It is the plain-comment primitive:
+// request_jira_clarification (comment + transition) and update_jira_task_progress
+// (comment bundled with estimate/worklog/transition) also post comments, but
+// this is the one to reach for when a bare comment or reply is all that is
+// wanted, without their extra semantics.
+func addJiraComment(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in AddJiraCommentInput) (AddJiraCommentOutput, error) {
+	var out AddJiraCommentOutput
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+	if strings.TrimSpace(in.IssueIdOrKey) == "" {
+		return out, fmt.Errorf("mcpserver: add_jira_comment: issue_id_or_key is required")
+	}
+	if strings.TrimSpace(in.Body) == "" {
+		return out, fmt.Errorf("mcpserver: add_jira_comment: body is required")
+	}
+
+	raw, err := invokeAdapterOperation(ctx, req, gate, resolveRunID(in.RunId), "atlassian.addJiraComment", map[string]any{
+		"issueIdOrKey": in.IssueIdOrKey,
+		"commentBody":  in.Body,
+	}, requestedBy)
+	if err != nil {
+		return out, fmt.Errorf("mcpserver: add_jira_comment: %w", err)
+	}
+
+	var res struct {
+		CommentId string `json:"commentId"`
+	}
+	_ = json.Unmarshal(raw, &res) // commentId is best-effort; a missing id does not fail the post
+	out.Posted = true
+	out.IssueIdOrKey = in.IssueIdOrKey
+	out.CommentId = res.CommentId
 	return out, nil
 }

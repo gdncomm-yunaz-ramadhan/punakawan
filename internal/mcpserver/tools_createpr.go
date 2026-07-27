@@ -33,10 +33,10 @@ type CreatePrInput struct {
 	Title string `json:"title,omitempty"`
 	Draft bool   `json:"draft,omitempty"`
 
-	Summary      string `json:"summary" jsonschema:"required PR body section: what changed and why, in the caller's own words"`
-	Requirements string `json:"requirements" jsonschema:"required PR body section: which requirement(s) this satisfies"`
-	Changes      string `json:"changes" jsonschema:"required PR body section: what changed, file by file or area by area"`
-	Verification string `json:"verification" jsonschema:"required PR body section: what was run to verify this (build/tests/checks) and the result"`
+	Summary      string `json:"summary" jsonschema:"required PR body section: what changed and why, in the caller's own words. Concise and skimmable - lead with the most important change and its impact, state the why not just the what. No filler."`
+	Requirements string `json:"requirements" jsonschema:"required PR body section: which requirement(s) this satisfies; reference them by id/key, not restated prose"`
+	Changes      string `json:"changes" jsonschema:"required PR body section: what changed, per area as terse bullets - each referencing the concrete source touched (path/to/file, symbol, or endpoint) and whether it was added/changed/removed. Prefer bullets over paragraphs."`
+	Verification string `json:"verification" jsonschema:"required PR body section: the exact build/test/check commands run and their result (pass/fail, counts). Concrete, not 'tests pass'."`
 	// SecurityAndQualityChecks/KnownRisks/DeferredWork default to "None."
 	// when empty - a caller genuinely may have nothing to report there,
 	// and that is itself a valid, honest value, not an invented one.
