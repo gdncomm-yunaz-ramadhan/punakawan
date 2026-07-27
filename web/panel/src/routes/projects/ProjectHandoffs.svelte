@@ -9,6 +9,7 @@
     type HandoffValidation,
     type HandoffValidationStatus,
   } from "../../lib/api/client";
+  import { roleLabel } from "../../lib/roles";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
@@ -146,7 +147,7 @@
             {/if}
             {#if h.created_by}
               <dt>Source agent</dt>
-              <dd>{h.created_by.role} · {h.created_by.agent_client}</dd>
+              <dd>{roleLabel(h.created_by.role)} · {h.created_by.agent_client}</dd>
             {/if}
             {#if h.dossier}
               <dt>Dossier</dt>
