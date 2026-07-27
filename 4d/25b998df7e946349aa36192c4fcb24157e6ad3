@@ -1,0 +1,40 @@
+internal/mcpserver/tools_commit.go
+  d98638225f35480d 23
+internal/mcpserver/tools.go
+  d98638225f35480d 179,189,289,293-296
+internal/mcpserver/tools_createpr.go
+  d98638225f35480d 36-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4d25b998df7e946349aa36192c4fcb24157e6ad3",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 15,
+      "total_deletions": 10,
+      "accepted_lines": 16,
+      "overriden_lines": 0
+    }
+  }
+}
