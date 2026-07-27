@@ -8,6 +8,7 @@
     ApiError,
     type WorkflowDefinition,
   } from "../../lib/api/client";
+  import { roleLabel, stepRole, ROLE_STEP_VERB } from "../../lib/roles";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import Button from "../../lib/components/Button.svelte";
   import Icon from "../../lib/components/Icon.svelte";
@@ -265,6 +266,10 @@
                     <small>STEP {index + 1}</small>
                     <strong>{step.intent || step.id}</strong>
                     <code>{step.capability}</code>
+                    {#if stepRole(step.capability)}
+                      {@const owner = stepRole(step.capability)!}
+                      <span class="step-role">{ROLE_STEP_VERB[owner]} {roleLabel(owner)}</span>
+                    {/if}
                   </div>
                   <span class="port output"></span>
                 </div>
@@ -625,6 +630,16 @@
     font-size: 0.62rem;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .step-role {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: var(--color-accent, var(--color-text));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .port {
     position: absolute;

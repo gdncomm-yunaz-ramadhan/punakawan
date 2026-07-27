@@ -87,6 +87,27 @@ describe("ProjectWorkflows", () => {
     expect(screen.getByTestId("invoke-btn")).toBeTruthy();
   });
 
+  it("labels each workflow step with the role that owns its capability", async () => {
+    const roleWorkflow = {
+      ...baseWorkflow,
+      steps: [
+        { id: "ctx", capability: "build_task_context", intent: "implement" },
+        { id: "review", capability: "submit_bagong_review", intent: "review" },
+      ],
+    };
+    (fetch as unknown as FetchMock).mockImplementation(async () =>
+      jsonResponse({ items: [{ ...roleWorkflow, enabled: true }] }),
+    );
+
+    render(ProjectWorkflows, { props: { projectId: "p1" } });
+    await waitFor(() => expect(screen.getByText("Deploy")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("workflow-row-deploy"));
+
+    // build_task_context is execution work -> Petruk; submit_bagong_review -> Bagong.
+    await waitFor(() => expect(screen.getByText("Built by Petruk")).toBeTruthy());
+    expect(screen.getByText("Verified by Bagong")).toBeTruthy();
+  });
+
   it("shows a disabled-workflow message on a 409 invoke", async () => {
     (fetch as unknown as FetchMock).mockImplementation(async (_url: string, init?: RequestInit) => {
       const method = (init?.method ?? "GET").toUpperCase();
