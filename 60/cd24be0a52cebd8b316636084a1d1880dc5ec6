@@ -1,0 +1,44 @@
+web/panel/tests/roles.test.ts
+  d98638225f35480d 1-37
+web/panel/src/routes/projects/ProjectHandoffs.svelte
+  d98638225f35480d 12,150
+web/panel/src/routes/projects/ProjectSessions.svelte
+  d98638225f35480d 11,77,126,148
+web/panel/src/lib/roles.ts
+  d98638225f35480d 1-52
+web/panel/src/routes/overview/Overview.svelte
+  d98638225f35480d 5,111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "60cd24be0a52cebd8b316636084a1d1880dc5ec6",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 97,
+      "total_deletions": 5,
+      "accepted_lines": 98,
+      "overriden_lines": 0
+    }
+  }
+}
