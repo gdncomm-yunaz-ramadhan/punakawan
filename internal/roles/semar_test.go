@@ -12,6 +12,49 @@ func TestSubmitSemarSynthesisRequiresGoal(t *testing.T) {
 	}
 }
 
+// TestSubmitSemarSynthesisPreservesUnresolvedDisagreement guards the guardrail
+// that Semar synthesizes without hiding disagreement: a blocking open question,
+// its observed conflict, and role assumptions must survive the round-trip
+// intact rather than being smoothed into a single confident conclusion.
+func TestSubmitSemarSynthesisPreservesUnresolvedDisagreement(t *testing.T) {
+	store := newTestStore(t)
+
+	synthesis := protocol.KnowledgeRecordSemarSynthesis{
+		Goal:        strPtr("Ship idempotent refunds"),
+		Assumptions: []string{"Gareng assumes the gateway dedupes; Petruk assumes it does not"},
+		OpenQuestions: []protocol.KnowledgeRecordSemarSynthesisOpenQuestionsElem{
+			{
+				Question:         strPtr("Does the payment gateway dedupe retries?"),
+				ObservedConflict: strPtr("Gareng and Petruk disagree on gateway idempotency"),
+				Blocking:         boolPtr(true),
+			},
+		},
+	}
+
+	rec, err := SubmitSemarSynthesis(store, "pkw:synthesis/ws/run-9", "Semar synthesis", synthesis)
+	if err != nil {
+		t.Fatalf("SubmitSemarSynthesis: %v", err)
+	}
+	got, err := store.Get(rec.Id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	s := got.SemarSynthesis
+	if s == nil || len(s.OpenQuestions) != 1 {
+		t.Fatalf("SemarSynthesis = %+v, want one preserved open question", s)
+	}
+	oq := s.OpenQuestions[0]
+	if oq.Blocking == nil || !*oq.Blocking {
+		t.Error("blocking flag on the unresolved question was not preserved")
+	}
+	if oq.ObservedConflict == nil || *oq.ObservedConflict == "" {
+		t.Error("the observed conflict behind the disagreement was dropped")
+	}
+	if len(s.Assumptions) != 1 {
+		t.Errorf("Assumptions = %v, want the divergent assumptions preserved", s.Assumptions)
+	}
+}
+
 func TestSubmitSemarSynthesisPersists(t *testing.T) {
 	store := newTestStore(t)
 
