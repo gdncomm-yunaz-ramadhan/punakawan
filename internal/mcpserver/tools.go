@@ -247,7 +247,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "update_jira_task_progress",
-		Description: "Comment body format: Markdown, confirmed working (converted to ADF; do NOT use old Jira wiki markup like h3. or {{code}} - it renders literally). Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; do NOT use old Jira wiki markup like h3. or {{code}} - it renders literally). Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes. For a decomposed issue, log against the specific subtask, NOT the parent - use list_jira_subtasks first to get the right issue_id_or_key." + approvalGateNote,
 	}, updateJiraTaskProgressHandler(a))
 
 	// Native Jira convenience tools (punokawan-t6y): common ops that previously
@@ -273,6 +273,21 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "jira_assign_issue",
 		Description: "Assign a Jira issue to a user by accountId (resolve a name/email with jira_search_user first). run_id is optional for one-off use." + approvalGateNote,
 	}, jiraAssignIssueHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "list_jira_subtasks",
+		Description: "List a parent Jira issue's existing subtasks (children) as {key, summary, status}, plus the parent's own key/summary/status. Read-only: no approval needed. Call this before update_jira_task_progress on a decomposed issue to pick the correct subtask key to log work/estimate against, instead of logging on the parent. run_id is optional for one-off use.",
+	}, listJiraSubtasksHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "list_jira_linked_issues",
+		Description: "List a Jira issue's linked issues (Blocks/Relates/Duplicates/etc.) as {direction, relationship, key, summary, status, issue_type}. Read-only: no approval needed. run_id is optional for one-off use.",
+	}, listJiraLinkedIssuesHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "list_jira_comments",
+		Description: "List a Jira issue's comments (newest-ordered) as {id, author, body, created, updated}; body is plain text extracted from ADF, not raw ADF, to stay concise. Paged via start_at/max_results (default 20, max 100); Total tells you if more exist. Read-only: no approval needed. To post a comment or reply (comments are flat, not threaded), use update_jira_task_progress with only its comment field set. run_id is optional for one-off use.",
+	}, listJiraCommentsHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_jira_sync_queue",

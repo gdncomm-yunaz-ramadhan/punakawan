@@ -13,10 +13,14 @@ import (
 )
 
 // JiraAssessmentFinding is one observation about what already exists in the
-// code versus what the requirement needs it to become.
+// code versus what the requirement needs it to become. Source anchors the
+// finding to where it lives (a file:line, symbol, endpoint, or doc/Jira ref)
+// so a reader goes straight to it instead of re-hunting; Title states the
+// problem or idea in one line and Detail explains it.
 type JiraAssessmentFinding struct {
-	Title  string `json:"title"`
+	Title  string `json:"title" jsonschema:"one-line statement of the problem or idea"`
 	Detail string `json:"detail"`
+	Source string `json:"source,omitempty" jsonschema:"where this lives - e.g. path/to/file.go:42, a function/symbol name, an API endpoint, or a doc/Jira reference; keep it short and point directly at the source"`
 }
 
 // JiraAssessmentOpenQuestion is one point that needs a stakeholder decision
@@ -210,7 +214,11 @@ func renderJiraAssessmentComment(in SubmitJiraAssessmentInput) string {
 	if len(in.Findings) > 0 {
 		b.WriteString("\n## Findings\n\n")
 		for _, f := range in.Findings {
-			fmt.Fprintf(&b, "- **%s** — %s\n", f.Title, f.Detail)
+			if f.Source != "" {
+				fmt.Fprintf(&b, "- **%s** (`%s`) — %s\n", f.Title, f.Source, f.Detail)
+			} else {
+				fmt.Fprintf(&b, "- **%s** — %s\n", f.Title, f.Detail)
+			}
 		}
 	}
 
