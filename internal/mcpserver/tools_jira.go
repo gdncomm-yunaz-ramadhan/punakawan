@@ -580,3 +580,67 @@ func listJiraComments(ctx context.Context, req *mcp.CallToolRequest, gate *adapt
 	out.Total = res.Page.Total
 	return out, nil
 }
+
+// --- add_jira_comment ------------------------------------------------------
+
+// AddJiraCommentInput is add_jira_comment's input.
+type AddJiraCommentInput struct {
+	RunId        string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session (no workflow-run/requirement/task/capsule ceremony)"`
+	IssueIdOrKey string `json:"issue_id_or_key" jsonschema:"the Jira issue key or id to comment on. To reply to an existing comment, post a new comment here referencing it - Jira issue comments are a flat list, not threaded."`
+	Body         string `json:"body" jsonschema:"comment body in Markdown (confirmed working; converted to ADF). Do NOT use old Jira wiki markup - h3./{{code}} render literally."`
+	RequestedBy  string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong"`
+}
+
+// AddJiraCommentOutput is add_jira_comment's output.
+type AddJiraCommentOutput struct {
+	Posted       bool   `json:"posted"`
+	IssueIdOrKey string `json:"issue_id_or_key"`
+	CommentId    string `json:"comment_id,omitempty"`
+}
+
+func addJiraCommentHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, AddJiraCommentInput) (*mcp.CallToolResult, AddJiraCommentOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in AddJiraCommentInput) (*mcp.CallToolResult, AddJiraCommentOutput, error) {
+		gate, err := a.AdapterRegistry.Gate(ctx, "atlassian")
+		if err != nil {
+			return nil, AddJiraCommentOutput{}, fmt.Errorf("mcpserver: add_jira_comment: %w", err)
+		}
+		out, err := addJiraComment(ctx, req, gate, in)
+		return nil, out, err
+	}
+}
+
+// addJiraComment posts a standalone comment. It is the plain-comment primitive:
+// request_jira_clarification (comment + transition) and update_jira_task_progress
+// (comment bundled with estimate/worklog/transition) also post comments, but
+// this is the one to reach for when a bare comment or reply is all that is
+// wanted, without their extra semantics.
+func addJiraComment(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in AddJiraCommentInput) (AddJiraCommentOutput, error) {
+	var out AddJiraCommentOutput
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+	if strings.TrimSpace(in.IssueIdOrKey) == "" {
+		return out, fmt.Errorf("mcpserver: add_jira_comment: issue_id_or_key is required")
+	}
+	if strings.TrimSpace(in.Body) == "" {
+		return out, fmt.Errorf("mcpserver: add_jira_comment: body is required")
+	}
+
+	raw, err := invokeAdapterOperation(ctx, req, gate, resolveRunID(in.RunId), "atlassian.addJiraComment", map[string]any{
+		"issueIdOrKey": in.IssueIdOrKey,
+		"commentBody":  in.Body,
+	}, requestedBy)
+	if err != nil {
+		return out, fmt.Errorf("mcpserver: add_jira_comment: %w", err)
+	}
+
+	var res struct {
+		CommentId string `json:"commentId"`
+	}
+	_ = json.Unmarshal(raw, &res) // commentId is best-effort; a missing id does not fail the post
+	out.Posted = true
+	out.IssueIdOrKey = in.IssueIdOrKey
+	out.CommentId = res.CommentId
+	return out, nil
+}

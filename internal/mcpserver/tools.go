@@ -176,7 +176,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "commit_task",
-		Description: "Stage and commit a task's pending changes, refusing to do so unless a prior check_diff passed and the worktree is on a task branch (§15.4).",
+		Description: "Stage and commit a task's pending changes, refusing to do so unless a prior check_diff passed and the worktree is on a task branch (§15.4). Write the message in Conventional Commits form, concise and clear: imperative subject <=72 chars, a body only when the why is not obvious (reason + impact, not a diff restatement), referencing the concrete source touched and leading with what matters most.",
 	}, commitTaskHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -186,7 +186,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_pr",
-		Description: "Create a pull request for a pushed task branch (AEP-M4 §8.1). Templates the caller-supplied Summary/Requirements/Changes/Verification/etc. sections into the PR body verbatim - punakawan does not write any of that content itself. If PR creation is not currently possible (no remote, no push access, unsupported provider, no github adapter configured, ...) returns created=false with the specific reason instead of erroring, per §8.1's failure behavior." + approvalGateNote,
+		Description: "Create a pull request for a pushed task branch (AEP-M4 §8.1). Templates the caller-supplied Summary/Requirements/Changes/Verification/etc. sections into the PR body verbatim - punakawan does not write any of that content itself, so write them concise, clear, and easy to scan: lead with the most important change and its impact, use terse bullets, and reference the concrete source touched (path/to/file, symbol, endpoint) with added/changed/removed - no filler. If PR creation is not currently possible (no remote, no push access, unsupported provider, no github adapter configured, ...) returns created=false with the specific reason instead of erroring, per §8.1's failure behavior." + approvalGateNote,
 	}, createPrHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -286,8 +286,13 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_jira_comments",
-		Description: "List a Jira issue's comments (newest-ordered) as {id, author, body, created, updated}; body is plain text extracted from ADF, not raw ADF, to stay concise. Paged via start_at/max_results (default 20, max 100); Total tells you if more exist. Read-only: no approval needed. To post a comment or reply (comments are flat, not threaded), use update_jira_task_progress with only its comment field set. run_id is optional for one-off use.",
+		Description: "List a Jira issue's comments (newest-ordered) as {id, author, body, created, updated}; body is plain text extracted from ADF, not raw ADF, to stay concise. Paged via start_at/max_results (default 20, max 100); Total tells you if more exist. Read-only: no approval needed. To post a comment or reply (comments are flat, not threaded), use add_jira_comment. run_id is optional for one-off use.",
 	}, listJiraCommentsHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "add_jira_comment",
+		Description: "Post a standalone comment on a Jira issue, and how you reply too (comments are a flat list, not threaded, so a reply is a new comment referencing the earlier one). This is the bare-comment primitive; request_jira_clarification also posts a comment plus a transition, and update_jira_task_progress bundles a comment with estimate/worklog - reach for those only when you want their extra effects. Body is Markdown, converted to ADF; do NOT use old wiki markup. run_id is optional for one-off use." + approvalGateNote,
+	}, addJiraCommentHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_jira_sync_queue",

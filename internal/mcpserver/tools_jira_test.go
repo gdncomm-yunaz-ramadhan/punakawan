@@ -408,3 +408,44 @@ func TestListJiraCommentsRequiresIssueKey(t *testing.T) {
 		t.Fatal("expected an error when issue_id_or_key is empty")
 	}
 }
+
+// --- add_jira_comment ------------------------------------------------------
+
+func TestAddJiraCommentPostsAndReturnsId(t *testing.T) {
+	m := jiraNativeToolsManifest()
+	m.Operations["atlassian.addJiraComment"] = m.Operations["atlassian.createIssueLink"] // side_effect + approval:required
+	gate, fc := newJiraClarifyTestGateWithManifest(t, m)
+	approveOp(t, gate, "run-1", "atlassian.addJiraComment")
+	fc.responses = map[string]string{"atlassian.addJiraComment": `{"ok":true,"commentId":"9001"}`}
+
+	in := AddJiraCommentInput{RunId: "run-1", IssueIdOrKey: "PAY-1", Body: "LGTM", RequestedBy: "petruk"}
+	out, err := addJiraComment(context.Background(), nil, gate, in)
+	if err != nil {
+		t.Fatalf("addJiraComment: %v", err)
+	}
+	if !out.Posted || out.CommentId != "9001" {
+		t.Fatalf("out = %+v, want Posted=true CommentId=9001", out)
+	}
+	c := fc.calls[0]
+	if c["op"] != "atlassian.addJiraComment" || c["commentBody"] != "LGTM" {
+		t.Errorf("call = %+v, want addJiraComment commentBody=LGTM", c)
+	}
+}
+
+func TestAddJiraCommentFailsWithoutApproval(t *testing.T) {
+	m := jiraNativeToolsManifest()
+	m.Operations["atlassian.addJiraComment"] = m.Operations["atlassian.createIssueLink"]
+	gate, _ := newJiraClarifyTestGateWithManifest(t, m)
+	in := AddJiraCommentInput{RunId: "run-1", IssueIdOrKey: "PAY-1", Body: "LGTM", RequestedBy: "petruk"}
+	if _, err := addJiraComment(context.Background(), nil, gate, in); err == nil {
+		t.Fatal("expected an error when addJiraComment has not been approved")
+	}
+}
+
+func TestAddJiraCommentRequiresBody(t *testing.T) {
+	gate, _ := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	in := AddJiraCommentInput{IssueIdOrKey: "PAY-1", RequestedBy: "petruk"}
+	if _, err := addJiraComment(context.Background(), nil, gate, in); err == nil {
+		t.Fatal("expected an error when body is empty")
+	}
+}
