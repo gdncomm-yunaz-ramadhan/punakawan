@@ -1,0 +1,44 @@
+web/panel/src/routes/overview/Overview.svelte
+  d98638225f35480d 141-142
+web/panel/src/lib/components/cards/TableCard.svelte
+  d98638225f35480d 12,16-25,32
+web/panel/src/lib/components/cards/Card.svelte
+  d98638225f35480d 9-11,21,50-52,160-165
+web/panel/tests/MobileNavigation.test.ts
+  d98638225f35480d 25-26,29-33,35-38,40-43
+web/panel/src/lib/components/cards/BentoCard.svelte
+  d98638225f35480d 16,28,64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "abd0e4b6d9f287cbe99adc7a58e348f207831116",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 45,
+      "total_deletions": 8,
+      "accepted_lines": 46,
+      "overriden_lines": 0
+    }
+  }
+}
