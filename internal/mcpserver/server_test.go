@@ -141,6 +141,24 @@ func TestServerInstructionsCoverApprovalAndPipeline(t *testing.T) {
 	}
 }
 
+// TestServerInstructionsStateGroundedPrinciple guards the product principle and
+// the pointer to the shared communication rules, and asserts the instructions
+// do NOT re-list those rules (they live once in the role prompts).
+func TestServerInstructionsStateGroundedPrinciple(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+	instructions := cs.InitializeResult().Instructions
+
+	if !strings.Contains(instructions, "grounded truth over confident performance") {
+		t.Error("Instructions missing the product principle")
+	}
+	// Dedup guard: the numbered communication-rules list belongs in the role
+	// prompt's shared block, not restated here.
+	if strings.Contains(instructions, "## Communication rules") {
+		t.Error("Instructions should not restate the shared communication-rules block")
+	}
+}
+
 func TestSemarPromptServesEmbeddedTemplate(t *testing.T) {
 	a := newTestApp(t)
 	cs := connect(t, a)
