@@ -1,0 +1,42 @@
+internal/roleconfig/resolver_test.go
+  d98638225f35480d 122-166
+internal/roles/semar_test.go
+  d98638225f35480d 15-57
+internal/roles/gareng.go
+  d98638225f35480d 5,18-25,35-45
+internal/roles/gareng_test.go
+  d98638225f35480d 15-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2416e952a4858dd8f6ff9126d91a7d296484c27b",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 140,
+      "total_deletions": 0,
+      "accepted_lines": 141,
+      "overriden_lines": 0
+    }
+  }
+}
