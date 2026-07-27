@@ -7,5 +7,5 @@ package prompts
 
 import "embed"
 
-//go:embed semar/prompt.md gareng/prompt.md petruk/prompt.md bagong/prompt.md
+//go:embed shared/communication.md semar/prompt.md gareng/prompt.md petruk/prompt.md bagong/prompt.md
 var FS embed.FS
