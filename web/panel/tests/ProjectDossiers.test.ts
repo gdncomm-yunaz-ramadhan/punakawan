@@ -24,8 +24,28 @@ const listPayload = {
   ],
 };
 
+// The GET-one endpoint returns the nested {dossier, claims, evidence} shape
+// (internal/panel/api DossierGetHandler), with claims as structured objects
+// carrying producer and verification roles.
 const detailPayload = {
-  ...listPayload.items[0],
+  dossier: listPayload.items[0],
+  claims: [
+    {
+      id: "c1",
+      type: "implementation",
+      statement: "Login works",
+      producer: { role: "petruk" },
+      status: "verified",
+      verification: { role: "bagong", result: "verified" },
+    },
+    {
+      id: "c2",
+      type: "risk",
+      statement: "Tokens rotate",
+      producer: { role: "gareng" },
+      status: "claimed",
+    },
+  ],
   evidence: ["ev-1"],
 };
 
@@ -63,5 +83,26 @@ describe("ProjectDossiers", () => {
     await waitFor(() => expect(screen.getByTestId("dossier-detail")).toBeTruthy());
     expect(screen.getByTestId("finalize-dossier")).toBeTruthy();
     expect(screen.getByTestId("export-dossier")).toBeTruthy();
+  });
+
+  it("attributes each claim to its producer and shows the independent verification", async () => {
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url.includes("/dossiers/d1")) return jsonResponse(detailPayload);
+      return jsonResponse(listPayload);
+    });
+    render(ProjectDossiers, { props: { projectId: "p1" } });
+
+    await waitFor(() => expect(screen.getByTestId("dossier-row-d1")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("dossier-row-d1"));
+
+    const detail = within(await screen.findByTestId("dossier-detail"));
+    // Statements still render.
+    expect(detail.getByText("Login works")).toBeTruthy();
+    expect(detail.getByText("Tokens rotate")).toBeTruthy();
+    // Producer attribution is surfaced (was dropped before).
+    expect(detail.getByText("Produced by Petruk")).toBeTruthy();
+    expect(detail.getByText("Produced by Gareng")).toBeTruthy();
+    // A verified claim shows who independently verified it.
+    expect(detail.getByText("Verified by Bagong")).toBeTruthy();
   });
 });
