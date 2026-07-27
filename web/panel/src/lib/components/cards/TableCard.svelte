@@ -9,17 +9,27 @@
     size?: BentoSize;
     state?: CardState;
     emptyMessage?: string;
+    emptyDescription?: string;
     viewAllAction?: Snippet;
     children?: Snippet;
   }
-  let { title, description, size = "wide", state = "default", emptyMessage, viewAllAction, children }: Props = $props();
+  let {
+    title,
+    description,
+    size = "wide",
+    state = "default",
+    emptyMessage,
+    emptyDescription,
+    viewAllAction,
+    children,
+  }: Props = $props();
 </script>
 
 <!--
   Card shell intended to host a DataTable (UI-011/§13.7) with a title
   and an optional "view all" action, e.g. a link to the full table page.
 -->
-<BentoCard {size} {state} {emptyMessage}>
+<BentoCard {size} {state} {emptyMessage} {emptyDescription}>
   {#snippet header()}
     <div class="table-head">
       <div class="text">

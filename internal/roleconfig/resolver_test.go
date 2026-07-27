@@ -119,6 +119,51 @@ func TestAuthorizeModeRankOrdering(t *testing.T) {
 	}
 }
 
+// TestStyleDoesNotChangeAuthorization guards the guardrail that a role's tone
+// (Style) is presentation only: switching strict/balanced/creative must not
+// change what the role is permitted to do. Authorization depends on Enabled,
+// Mode, and the capability set — never on Style.
+func TestStyleDoesNotChangeAuthorization(t *testing.T) {
+	styles := []protocol.RoleConfigStyle{
+		protocol.RoleConfigStyleStrict,
+		protocol.RoleConfigStyleBalanced,
+		protocol.RoleConfigStyleCreative,
+	}
+	checks := []struct {
+		capability string
+		needed     protocol.RoleConfigMode
+	}{
+		{"modify_files", protocol.RoleConfigModeExecute},
+		{"modify_files", protocol.RoleConfigModePropose},
+		{"absent", protocol.RoleConfigModeExecute},
+		{"", protocol.RoleConfigModeAssist},
+	}
+
+	var baseline []bool
+	for i, style := range styles {
+		eff := EffectiveRoleConfig{
+			Enabled:      true,
+			Style:        style,
+			Mode:         protocol.RoleConfigModePropose,
+			Capabilities: map[string]bool{"modify_files": true},
+		}
+		var got []bool
+		for _, c := range checks {
+			got = append(got, Authorize(eff, c.capability, c.needed) == nil)
+		}
+		if i == 0 {
+			baseline = got
+			continue
+		}
+		for j := range got {
+			if got[j] != baseline[j] {
+				t.Errorf("style %q changed authorization for %+v: got %v, want %v (baseline strict)",
+					style, checks[j], got[j], baseline[j])
+			}
+		}
+	}
+}
+
 func TestPromptBlock(t *testing.T) {
 	eff := EffectiveRoleConfig{
 		Enabled: true,

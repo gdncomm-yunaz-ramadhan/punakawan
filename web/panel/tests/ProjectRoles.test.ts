@@ -84,6 +84,27 @@ describe("ProjectRoles", () => {
     expect(screen.getByLabelText("Bagong role")).toBeTruthy();
   });
 
+  it("shows each role's short principle and communication summary", async () => {
+    installBackend();
+    render(ProjectRoles, { props: { projectId: "p1" } });
+
+    await waitFor(() => expect(screen.getByLabelText("Semar role")).toBeTruthy());
+
+    const semar = within(screen.getByLabelText("Semar role"));
+    expect(semar.getByText("Ground the work.")).toBeTruthy();
+    expect(semar.getByText(/Calm and purpose-oriented/)).toBeTruthy();
+
+    const gareng = within(screen.getByLabelText("Gareng role"));
+    expect(gareng.getByText("Notice what others miss.")).toBeTruthy();
+
+    const petruk = within(screen.getByLabelText("Petruk role"));
+    expect(petruk.getByText("Make the idea useful.")).toBeTruthy();
+
+    const bagong = within(screen.getByLabelText("Bagong role"));
+    expect(bagong.getByText("Say what is true.")).toBeTruthy();
+    expect(bagong.getByText(/Separates what was proven from what was merely claimed/)).toBeTruthy();
+  });
+
   it("renders only the capability toggles a role owns", async () => {
     installBackend();
     render(ProjectRoles, { props: { projectId: "p1" } });

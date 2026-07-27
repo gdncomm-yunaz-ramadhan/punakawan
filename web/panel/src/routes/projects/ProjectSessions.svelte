@@ -8,6 +8,7 @@
     type TimelineEvent,
   } from "../../lib/api/client";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
+  import { roleLabel } from "../../lib/roles";
   import DataTable from "../../lib/components/data/DataTable.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
@@ -73,7 +74,7 @@
     { key: "id", label: "Session", primary: true },
     { key: "workflow", label: "Workflow", sortable: true },
     { key: "status", label: "Status", sortable: true },
-    { key: "active_role", label: "Role", render: (s) => s.active_role ?? "—" },
+    { key: "active_role", label: "Role", render: (s) => roleLabel(s.active_role) },
     { key: "updated_at", label: "Updated", sortable: true, render: (s) => new Date(s.updated_at).toLocaleString() },
   ];
 
@@ -122,7 +123,7 @@
           <p class="meta">
             {detail.workflow}
             {#if detail.initiator}· initiated by {detail.initiator}{/if}
-            {#if detail.active_role}· active role: {detail.active_role}{/if}
+            {#if detail.active_role}· active role: {roleLabel(detail.active_role)}{/if}
           </p>
           {#if detail.objective}<p class="objective">{detail.objective}</p>{/if}
 
@@ -144,7 +145,7 @@
                 <li class:failure={isFailure(e)}>
                   <span class="time">{new Date(e.timestamp).toLocaleTimeString()}</span>
                   <span class="op">{e.operation}</span>
-                  {#if e.role}<span class="role">{e.role}</span>{/if}
+                  {#if e.role}<span class="role">{roleLabel(e.role)}</span>{/if}
                   <span class="result result-{e.result}">{e.result}</span>
                 </li>
               {/each}

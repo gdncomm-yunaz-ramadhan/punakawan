@@ -1301,12 +1301,40 @@ export interface ChangeDossier {
   blocking?: boolean;
 }
 
+// DossierClaim mirrors protocol/dossierclaim.schema.json. A claim always has a
+// producer role; a verification (by a different role) records whether it was
+// verified or disputed — the independent-check attribution the dossier exists
+// to make visible.
+export interface DossierClaim {
+  id: string;
+  type: string;
+  statement: string;
+  producer: { role: string };
+  status: string;
+  evidence?: string[];
+  verification?: {
+    role: string;
+    result: "verified" | "disputed";
+    note?: string;
+    at?: string;
+  };
+}
+
+// DossierDetail is the GET-one dossier response: the dossier summary plus its
+// structured claims and evidence ids (internal/panel/api/dossiers_handler.go
+// DossierGetHandler).
+export interface DossierDetail {
+  dossier: ChangeDossier;
+  claims: DossierClaim[];
+  evidence: string[];
+}
+
 export function listDossiers(id: string): Promise<{ items: ChangeDossier[] }> {
   return getJSON<{ items: ChangeDossier[] }>(`/projects/${encodeURIComponent(id)}/dossiers`);
 }
 
-export function getDossier(id: string, dossierId: string): Promise<ChangeDossier> {
-  return getJSON<ChangeDossier>(`/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}`);
+export function getDossier(id: string, dossierId: string): Promise<DossierDetail> {
+  return getJSON<DossierDetail>(`/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}`);
 }
 
 export function finalizeDossier(id: string, dossierId: string): Promise<ChangeDossier> {

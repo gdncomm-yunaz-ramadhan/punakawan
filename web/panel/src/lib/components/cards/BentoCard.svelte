@@ -13,6 +13,7 @@
     columns?: number;
     state?: CardState;
     emptyMessage?: string;
+    emptyDescription?: string;
     warningMessage?: string;
     errorMessage?: string;
     header?: Snippet;
@@ -24,6 +25,7 @@
     columns,
     state = "default",
     emptyMessage,
+    emptyDescription,
     warningMessage,
     errorMessage,
     header,
@@ -59,7 +61,7 @@
   data-columns={columnSpan}
   data-rows={rowSpan}
 >
-  <Card {state} {emptyMessage} {warningMessage} {errorMessage} {header} {footer} {children} />
+  <Card {state} {emptyMessage} {emptyDescription} {warningMessage} {errorMessage} {header} {footer} {children} />
 </div>
 
 <style>

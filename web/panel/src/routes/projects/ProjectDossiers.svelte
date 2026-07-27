@@ -7,7 +7,9 @@
     exportDossierMarkdown,
     ApiError,
     type ChangeDossier,
+    type DossierDetail,
   } from "../../lib/api/client";
+  import { roleLabel } from "../../lib/roles";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
@@ -23,7 +25,7 @@
   let error: string | null = $state(null);
 
   let selectedId: string | null = $state(null);
-  let detail: ChangeDossier | null = $state(null);
+  let detail: DossierDetail | null = $state(null);
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
 
@@ -112,7 +114,17 @@
   async function refreshDetail() {
     if (!selectedId) return;
     detail = await getDossier(projectId, selectedId);
-    items = items.map((d) => (d.id === detail!.id ? detail! : d));
+    items = items.map((d) => (d.id === detail!.dossier.id ? detail!.dossier : d));
+  }
+
+  // Attribution line for one claim: who produced it and, if checked, who
+  // verified or disputed it (always an independent role — the store forbids
+  // self-verification).
+  function claimAttribution(role: string): string {
+    return `Produced by ${roleLabel(role)}`;
+  }
+  function verificationLabel(result: "verified" | "disputed", role: string): string {
+    return `${result === "verified" ? "Verified" : "Disputed"} by ${roleLabel(role)}`;
   }
 
   async function doFinalize() {
@@ -214,43 +226,59 @@
           <ErrorStateCard title="Failed to load dossier" message={detailError} />
         {:else if detail}
           <header class="detail-head">
-            <h3>{detail.title || detail.id}</h3>
-            <StatusBadge variant={statusVariant(detail.status)} label={detail.status} />
-            {#if isBlocking(detail)}<StatusBadge variant="danger" label="Blocking" />{/if}
+            <h3>{detail.dossier.title || detail.dossier.id}</h3>
+            <StatusBadge variant={statusVariant(detail.dossier.status)} label={detail.dossier.status} />
+            {#if isBlocking(detail.dossier)}<StatusBadge variant="danger" label="Blocking" />{/if}
           </header>
-          {#if detail.objective?.statement}
-            <p class="objective">{detail.objective.statement}</p>
+          {#if detail.dossier.objective?.statement}
+            <p class="objective">{detail.dossier.objective.statement}</p>
           {/if}
 
           <h4>Summary</h4>
           <dl class="meta">
             <dt>Requirements covered</dt>
-            <dd>{requirementsLabel(detail)}</dd>
-            {#if detail.contradictions}
+            <dd>{requirementsLabel(detail.dossier)}</dd>
+            {#if detail.dossier.contradictions}
               <dt>Contradictions</dt>
-              <dd>{detail.contradictions.resolved} resolved · {detail.contradictions.unresolved} unresolved</dd>
+              <dd>
+                {detail.dossier.contradictions.resolved} resolved · {detail.dossier.contradictions.unresolved}
+                unresolved
+              </dd>
             {/if}
             <dt>Plan conformance</dt>
-            <dd>{conformanceLabel(detail)}</dd>
-            {#if detail.impact?.repositories?.length}
+            <dd>{conformanceLabel(detail.dossier)}</dd>
+            {#if detail.dossier.impact?.repositories?.length}
               <dt>Affected repositories</dt>
-              <dd>{detail.impact.repositories.join(", ")}</dd>
+              <dd>{detail.dossier.impact.repositories.join(", ")}</dd>
             {/if}
-            {#if detail.impact?.excluded_repositories?.length}
+            {#if detail.dossier.impact?.excluded_repositories?.length}
               <dt>Excluded repositories</dt>
-              <dd>{detail.impact.excluded_repositories.join(", ")}</dd>
+              <dd>{detail.dossier.impact.excluded_repositories.join(", ")}</dd>
             {/if}
-            {#if detail.impact?.missing_coverage?.length}
+            {#if detail.dossier.impact?.missing_coverage?.length}
               <dt>Missing coverage</dt>
-              <dd>{detail.impact.missing_coverage.join(", ")}</dd>
+              <dd>{detail.dossier.impact.missing_coverage.join(", ")}</dd>
             {/if}
           </dl>
 
           {#if detail.claims?.length}
-            <h4>Verified claims <span class="count">{detail.claims.length}</span></h4>
+            <h4>Claims <span class="count">{detail.claims.length}</span></h4>
             <ul class="claims-list">
-              {#each detail.claims as claim (claim)}
-                <li>{claim}</li>
+              {#each detail.claims as claim (claim.id)}
+                <li class="claim">
+                  <p class="claim-statement">{claim.statement}</p>
+                  <div class="claim-attribution">
+                    <span class="attr-producer">{claimAttribution(claim.producer.role)}</span>
+                    {#if claim.verification}
+                      <StatusBadge
+                        variant={claim.verification.result === "verified" ? "success" : "danger"}
+                        label={verificationLabel(claim.verification.result, claim.verification.role)}
+                      />
+                    {:else}
+                      <span class="attr-status">{claim.status}</span>
+                    {/if}
+                  </div>
+                </li>
               {/each}
             </ul>
           {/if}
@@ -412,6 +440,27 @@
   }
   .claims-list li {
     overflow-wrap: anywhere;
+  }
+  .claim {
+    display: grid;
+    gap: 0.2rem;
+  }
+  .claim-statement {
+    margin: 0;
+  }
+  .claim-attribution {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .attr-producer {
+    text-transform: none;
+  }
+  .attr-status {
+    text-transform: capitalize;
   }
   .error {
     color: var(--color-danger);

@@ -37,6 +37,8 @@ func Serve(ctx context.Context, a *app.App) error {
 // the write-approval gate is meant to be satisfied.
 const serverInstructions = `Punakawan never reasons itself (ADR-0016): you, the connected agent, are the reasoning engine. Punakawan validates and persists whatever structured result you submit, and enforces write approvals - it does not call a model on its own.
 
+Guiding principle: grounded truth over confident performance. Keep the work grounded, honest, practical, cautious, and verifiable. When you act as a role (Semar, Gareng, Petruk, Bagong) the role prompt carries the shared communication rules - lead with the conclusion, reference evidence by id/file/symbol/artifact instead of copying it, include only what changes a decision or verification, distinguish fact from inference, and keep every result concise. They are stated once there; this instruction does not repeat them.
+
 Two independent mechanisms, don't conflate them:
 
 1. The workflow pipeline (create_workflow_run -> submit_task_graph -> claim_ready_task -> start_task_execution/build_task_context -> submit_*_review/submit_petruk_plan/submit_semar_synthesis -> finish_task_execution -> commit_task, tracked via get_workflow_state/advance_workflow) is for durable, multi-session/multi-person work: decomposing a large requirement, persisting context and plan/review findings so a later session or teammate doesn't start from zero. It is optional scaffolding, not a prerequisite for anything else - it does not gate approvals or adapter writes in any way.

@@ -25,15 +25,29 @@ var roleDescriptions = map[string]string{
 	"bagong": "Independently review completed work against raw evidence (§8.4).",
 }
 
-// registerPrompts adds the four role prompts (§28.4), each serving its
-// embedded template file verbatim as a single user-role message.
+// sharedPromptPath holds the guidance common to every role (identity,
+// communication rules, fact-versus-inference, disagreement handling). It is
+// stored once and prepended to each role prompt at serve time, so the shared
+// text lives in exactly one source file instead of being duplicated across the
+// four role templates.
+const sharedPromptPath = "shared/communication.md"
+
+// registerPrompts adds the four role prompts (§28.4). Each served prompt is the
+// shared communication guidance followed by that role's own template, composed
+// here so the shared half is not duplicated in source.
 func registerPrompts(server *mcp.Server) error {
+	sharedBytes, err := prompts.FS.ReadFile(sharedPromptPath)
+	if err != nil {
+		return fmt.Errorf("mcpserver: read embedded prompt %s: %w", sharedPromptPath, err)
+	}
+	shared := string(sharedBytes)
+
 	for name, path := range rolePrompts {
 		content, err := prompts.FS.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("mcpserver: read embedded prompt %s: %w", path, err)
 		}
-		text := string(content)
+		text := shared + "\n\n---\n\n" + string(content)
 
 		server.AddPrompt(&mcp.Prompt{
 			Name:        name,

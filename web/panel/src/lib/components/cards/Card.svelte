@@ -6,6 +6,9 @@
   interface Props {
     state?: CardState;
     emptyMessage?: string;
+    // Optional second line under emptyMessage, so an empty state can read as a
+    // short label + a supporting sentence instead of one run-on string.
+    emptyDescription?: string;
     warningMessage?: string;
     errorMessage?: string;
     header?: Snippet;
@@ -15,6 +18,7 @@
   let {
     state = "default",
     emptyMessage = "Nothing to show yet.",
+    emptyDescription,
     warningMessage = "This needs attention.",
     errorMessage = "Something went wrong.",
     header,
@@ -43,6 +47,9 @@
       </div>
     {:else if state === "empty"}
       <p class="empty-message" data-testid="card-empty">{emptyMessage}</p>
+      {#if emptyDescription}
+        <p class="empty-description" data-testid="card-empty-description">{emptyDescription}</p>
+      {/if}
     {:else if state === "warning"}
       <p class="banner banner-warning" role="status" data-testid="card-warning">{warningMessage}</p>
     {:else if state === "error"}
@@ -149,6 +156,12 @@
     color: var(--color-text-muted);
     font-size: 0.85rem;
     margin: 0;
+  }
+  .empty-description {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    margin: 0.2rem 0 0;
+    opacity: 0.85;
   }
 
   .banner {

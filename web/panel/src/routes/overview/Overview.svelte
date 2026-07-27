@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { getOverview, type Overview, type PanelSessionSummary } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
+  import { roleLabel } from "../../lib/roles";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
@@ -107,7 +108,7 @@
           {#each ov.active_sessions as s (s.id)}
             <li>
               <strong>{s.objective || s.id}</strong>
-              <span class="muted">{s.workflow} · {s.status}{s.active_role ? ` · ${s.active_role}` : ""}</span>
+              <span class="muted">{s.workflow} · {s.status}{s.active_role ? ` · ${roleLabel(s.active_role)}` : ""}</span>
             </li>
           {/each}
         </ul>
@@ -137,7 +138,8 @@
       title="Needs Attention"
       size="full"
       state={ov.needs_attention.length === 0 ? "empty" : "default"}
-      emptyMessage="Nothing needs attention — all workspaces are healthy."
+      emptyMessage="Nothing needs attention"
+      emptyDescription="All workspaces are healthy."
     >
       {#snippet children()}
         <ol class="attention">

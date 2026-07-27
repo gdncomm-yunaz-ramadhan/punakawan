@@ -12,6 +12,36 @@ func TestSubmitGarengReviewRequiresVerdict(t *testing.T) {
 	}
 }
 
+func TestSubmitGarengReviewBlockingFindingRequiresEvidence(t *testing.T) {
+	store := newTestStore(t)
+
+	// A blocking finding with no backing evidence is rejected: a blocker must
+	// carry evidence or a concrete failure scenario, else it is a mere risk.
+	unbacked := protocol.KnowledgeRecordGarengReview{
+		Verdict:          strPtr("changes_required"),
+		BlockingFindings: []string{"the migration is not reversible"},
+	}
+	if _, err := SubmitGarengReview(store, "pkw:gareng/ws/run-1", "review", unbacked); err == nil {
+		t.Fatal("expected error: a blocking finding without required_evidence must be rejected")
+	}
+
+	// The same finding with backing evidence is accepted.
+	backed := unbacked
+	backed.RequiredEvidence = []string{"migration rollback test showing data loss"}
+	if _, err := SubmitGarengReview(store, "pkw:gareng/ws/run-1", "review", backed); err != nil {
+		t.Fatalf("blocking finding with evidence should be accepted: %v", err)
+	}
+
+	// A review with no blocking findings needs no required_evidence.
+	nonBlocking := protocol.KnowledgeRecordGarengReview{
+		Verdict:             strPtr("ok"),
+		NonBlockingFindings: []string{"consider adding a metric"},
+	}
+	if _, err := SubmitGarengReview(store, "pkw:gareng/ws/run-2", "review", nonBlocking); err != nil {
+		t.Fatalf("non-blocking review should not require evidence: %v", err)
+	}
+}
+
 func TestSubmitGarengReviewPersists(t *testing.T) {
 	store := newTestStore(t)
 
