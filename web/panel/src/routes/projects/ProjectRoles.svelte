@@ -22,26 +22,38 @@
   type RoleName = "semar" | "gareng" | "petruk" | "bagong";
   const ROLE_ORDER: RoleName[] = ["semar", "gareng", "petruk", "bagong"];
 
-  // Display name + one-line responsibility for each role (plan §8-11).
-  const ROLE_META: Record<RoleName, { label: string; responsibility: string }> = {
+  // Display name, one-line responsibility, a collapsed communication summary,
+  // and the role's short principle (plan §8-11; wayang-nuance refinement).
+  const ROLE_META: Record<
+    RoleName,
+    { label: string; responsibility: string; communication: string; principle: string }
+  > = {
     semar: {
       label: "Semar",
       responsibility:
         "Coordinates: interprets intent, selects workflows, manages the change dossier, creates handoff capsules.",
+      communication: "Calm and purpose-oriented. Summarizes decisions without hiding disagreement.",
+      principle: "Ground the work.",
     },
     gareng: {
       label: "Gareng",
       responsibility:
         "Challenges: finds missing context, detects contradictions, analyzes cross-repository impact and risk.",
+      communication: "Careful and evidence-backed. Focuses on meaningful consequences.",
+      principle: "Notice what others miss.",
     },
     petruk: {
       label: "Petruk",
       responsibility:
         "Plans and builds: proposes solutions, decomposes tasks, implements accepted work across repositories.",
+      communication: "Practical and solution-oriented. Prefers the simplest sufficient approach.",
+      principle: "Make the idea useful.",
     },
     bagong: {
       label: "Bagong",
       responsibility: "Verifies: independently checks plan conformance, tests, coverage, and dossier claims.",
+      communication: "Direct and plain. Separates what was proven from what was merely claimed.",
+      principle: "Say what is true.",
     },
   };
 
@@ -291,6 +303,14 @@
 
           <p class="responsibility">{meta.responsibility}</p>
 
+          <details class="comm-summary">
+            <summary>
+              <span class="principle">{meta.principle}</span>
+              <span class="comm-hint">How this role communicates</span>
+            </summary>
+            <p>{meta.communication}</p>
+          </details>
+
           <div class="field">
             <span class="field-label" id={`style-label-${role}`}>Style</span>
             <div class="segmented" role="radiogroup" aria-labelledby={`style-label-${role}`}>
@@ -454,6 +474,33 @@
     margin: 0;
     color: var(--color-text-muted);
     font-size: 0.85rem;
+  }
+  .comm-summary {
+    font-size: 0.8rem;
+  }
+  .comm-summary > summary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    cursor: pointer;
+    list-style: none;
+  }
+  .comm-summary > summary::-webkit-details-marker {
+    display: none;
+  }
+  .comm-summary .principle {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  .comm-summary .comm-hint {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .comm-summary > p {
+    margin: 0.35rem 0 0;
+    color: var(--color-text-muted);
   }
   .field {
     display: grid;
