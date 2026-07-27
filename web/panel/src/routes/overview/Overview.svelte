@@ -138,7 +138,8 @@
       title="Needs Attention"
       size="full"
       state={ov.needs_attention.length === 0 ? "empty" : "default"}
-      emptyMessage="Nothing needs attention — all workspaces are healthy."
+      emptyMessage="Nothing needs attention"
+      emptyDescription="All workspaces are healthy."
     >
       {#snippet children()}
         <ol class="attention">

@@ -22,13 +22,24 @@ describe("MobileNavigation", () => {
     expect(window.location.pathname).toBe("/projects");
   });
 
-  it("cycles the theme when the theme control is tapped", async () => {
+  it("opens the theme popover and applies the chosen theme", async () => {
+    window.localStorage.clear();
     render(MobileNavigation);
 
-    const themeButton = screen.getByRole("button", { name: /Theme:/ });
-    await fireEvent.click(themeButton);
+    // The theme control is a single button that opens a popover (it no longer
+    // cycles in place, which collided with the "System" page link).
+    const themeButton = screen.getByRole("button", { name: "Theme" });
+    expect(themeButton.getAttribute("aria-expanded")).toBe("false");
 
-    // System -> Light on first tap; the control reflects the new choice.
-    expect(themeButton.getAttribute("title")).toBe("Theme: Light");
+    await fireEvent.click(themeButton);
+    expect(themeButton.getAttribute("aria-expanded")).toBe("true");
+
+    // Pick "Light" from the popover's segmented control.
+    await fireEvent.click(screen.getByRole("radio", { name: /Light/ }));
+
+    // The preference is applied + persisted, and the popover dismisses itself.
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(window.localStorage.getItem("punakawan.theme")).toBe("light");
+    expect(themeButton.getAttribute("aria-expanded")).toBe("false");
   });
 });
