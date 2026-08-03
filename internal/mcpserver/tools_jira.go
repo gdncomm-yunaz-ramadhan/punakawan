@@ -587,7 +587,7 @@ func listJiraComments(ctx context.Context, req *mcp.CallToolRequest, gate *adapt
 type AddJiraCommentInput struct {
 	RunId        string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session (no workflow-run/requirement/task/capsule ceremony)"`
 	IssueIdOrKey string `json:"issue_id_or_key" jsonschema:"the Jira issue key or id to comment on. To reply to an existing comment, post a new comment here referencing it - Jira issue comments are a flat list, not threaded."`
-	Body         string `json:"body" jsonschema:"comment body in Markdown (confirmed working; converted to ADF). Do NOT use old Jira wiki markup - h3./{{code}} render literally."`
+	Body         string `json:"body" jsonschema:"comment body in Markdown (confirmed working; converted to ADF). Do NOT use old Jira wiki markup - h3./{{code}} render literally. Style: clear, concise, plain language - short sentences, everyday words, no jargon, no filler, no hype, no theatrical or mystical phrasing. State what happened or what's needed and why it matters, nothing more."`
 	RequestedBy  string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong"`
 }
 

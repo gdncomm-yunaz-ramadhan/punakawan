@@ -27,6 +27,14 @@ func addTool[In, Out any](server *mcp.Server, reg *capability.Registry, tool *mc
 // call_adapter_operation's full explanation on each one.
 const approvalGateNote = " Writes elicit one human approval for the whole run (see call_adapter_operation); unsupported clients must show the user Approve/Deny and call respond_to_adapter_approval."
 
+// plainLanguageStyleNote is appended to every tool's free-text authored-
+// content field (Jira ticket summaries/descriptions/comments, git commit
+// messages) so agent-written output reads the same everywhere: plain and
+// immediately understandable, regardless of which tool produced it. The
+// wayang role names (Semar/Gareng/Petruk/Bagong) are an internal convenience
+// and never a tone to write in - see prompts/shared/communication.md.
+const plainLanguageStyleNote = " Style: clear, concise, plain language - short sentences, everyday words, no jargon, no filler, no hype, no theatrical or mystical phrasing. State what happened or what's needed and why it matters, nothing more."
+
 // registerTools adds the data-operation tools defined in §28.4, plus
 // create_workflow_run: §28.4 lists get_workflow_state/advance_workflow but
 // not a way to start a run in the first place, and the server cannot
@@ -186,7 +194,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "commit_task",
-		Description: "Stage and commit a task's pending changes, refusing to do so unless a prior check_diff passed and the worktree is on a task branch (§15.4). Write the message in Conventional Commits form, concise and clear: imperative subject <=72 chars, a body only when the why is not obvious (reason + impact, not a diff restatement), referencing the concrete source touched and leading with what matters most.",
+		Description: "Stage and commit a task's pending changes, refusing to do so unless a prior check_diff passed and the worktree is on a task branch (§15.4). Write the message in Conventional Commits form: imperative subject <=72 chars, a body only when the why is not obvious (reason + impact, not a diff restatement), referencing the concrete source touched and leading with what matters most." + plainLanguageStyleNote,
 	}, commitTaskHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -242,7 +250,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "request_jira_clarification",
-		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup). Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup). Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + plainLanguageStyleNote + approvalGateNote,
 	}, requestJiraClarificationHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -251,13 +259,18 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, checkJiraSkippableHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "create_jira_issue",
+		Description: "Create a new Jira issue (bug, task, or any other issue type the project supports) with a project key, issue type name, and summary; description and parent_key are optional. Returns the new issue's key, status, and URL. issue_type_name is a free-text name, not a fixed enum - it is per-site/per-project, e.g. 'Bug' or 'Task'; discover the real names via call_adapter_operation atlassian.getIssueTypeFieldMeta if unsure. For creating several subtasks under one parent with dedup against existing children, use sync_jira_subtasks instead. run_id is optional for one-off use." + plainLanguageStyleNote + approvalGateNote,
+	}, createJiraIssueHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "sync_jira_subtasks",
-		Description: "Create Jira subtasks under a parent issue for candidates that don't already exist, deduplicating by normalized summary." + approvalGateNote,
+		Description: "Create Jira subtasks under a parent issue for candidates that don't already exist, deduplicating by normalized summary." + plainLanguageStyleNote + approvalGateNote,
 	}, syncJiraSubtasksHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "update_jira_task_progress",
-		Description: "Comment body format: Markdown, confirmed working (converted to ADF; do NOT use old Jira wiki markup like h3. or {{code}} - it renders literally). Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes. For a decomposed issue, log against the specific subtask, NOT the parent - use list_jira_subtasks first to get the right issue_id_or_key." + approvalGateNote,
+		Description: "Comment body format: Markdown, confirmed working (converted to ADF; do NOT use old Jira wiki markup like h3. or {{code}} - it renders literally). Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes. For a decomposed issue, log against the specific subtask, NOT the parent - use list_jira_subtasks first to get the right issue_id_or_key." + plainLanguageStyleNote + approvalGateNote,
 	}, updateJiraTaskProgressHandler(a))
 
 	// Native Jira convenience tools (punokawan-t6y): common ops that previously
@@ -301,7 +314,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "add_jira_comment",
-		Description: "Post a standalone comment on a Jira issue, and how you reply too (comments are a flat list, not threaded, so a reply is a new comment referencing the earlier one). This is the bare-comment primitive; request_jira_clarification also posts a comment plus a transition, and update_jira_task_progress bundles a comment with estimate/worklog - reach for those only when you want their extra effects. Body is Markdown, converted to ADF; do NOT use old wiki markup. run_id is optional for one-off use." + approvalGateNote,
+		Description: "Post a standalone comment on a Jira issue, and how you reply too (comments are a flat list, not threaded, so a reply is a new comment referencing the earlier one). This is the bare-comment primitive; request_jira_clarification also posts a comment plus a transition, and update_jira_task_progress bundles a comment with estimate/worklog - reach for those only when you want their extra effects. Body is Markdown, converted to ADF; do NOT use old wiki markup. run_id is optional for one-off use." + plainLanguageStyleNote + approvalGateNote,
 	}, addJiraCommentHandler(a))
 
 	addTool(server, reg, &mcp.Tool{

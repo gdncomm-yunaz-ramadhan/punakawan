@@ -6,6 +6,7 @@ import {
   addJiraComment,
   addWorklog,
   createIssueLink,
+  createJiraIssue,
   createJiraSubtask,
   searchJiraUsers,
   deleteJiraAttachment,
@@ -167,6 +168,20 @@ export function createHandlers(options?: {
             throw new Error('atlassian.getIssueTypeFieldMeta requires "projectIdOrKey" and "issueTypeId"');
           }
           return getIssueTypeFieldMeta(getClient(), { projectIdOrKey, issueTypeId });
+        }
+        case 'atlassian.createJiraIssue': {
+          const { projectKey, issueTypeName, summary, description, parent, additionalFields } = rest as {
+            projectKey: string;
+            issueTypeName: string;
+            summary: string;
+            description?: string;
+            parent?: string;
+            additionalFields?: Record<string, unknown>;
+          };
+          if (!projectKey || !issueTypeName || !summary) {
+            throw new Error('atlassian.createJiraIssue requires "projectKey", "issueTypeName", and "summary"');
+          }
+          return createJiraIssue(getClient(), { projectKey, issueTypeName, summary, description, parent, additionalFields });
         }
         case 'atlassian.createJiraSubtask': {
           const { parentKey, projectKey, issueTypeName, candidates } = rest as {

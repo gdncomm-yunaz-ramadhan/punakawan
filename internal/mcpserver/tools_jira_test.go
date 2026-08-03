@@ -21,6 +21,7 @@ func jiraNativeToolsManifest() protocol.AdapterManifest {
 	m.Operations["atlassian.getJiraIssue"] = readOp
 	m.Operations["atlassian.createIssueLink"] = approvalRequiredOp
 	m.Operations["atlassian.editJiraIssueFields"] = approvalRequiredOp
+	m.Operations["atlassian.createJiraIssue"] = approvalRequiredOp
 	return m
 }
 

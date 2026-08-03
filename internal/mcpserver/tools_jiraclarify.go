@@ -19,7 +19,7 @@ type RequestJiraClarificationInput struct {
 	// packages/clarification-comments's CLI (node dist/cli.js
 	// <open-question.json>) over a semar_synthesis.open_questions entry.
 	// This tool posts and transitions; it does not compose wording.
-	CommentBody string `json:"comment_body"`
+	CommentBody string `json:"comment_body" jsonschema:"comment body in Markdown, converted to ADF. Style: clear, concise, plain language - short sentences, everyday words, no jargon, no filler, no hype, no theatrical or mystical phrasing. State what's needed and why, nothing more."`
 	RequestedBy string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong; who is requesting this operation"`
 }
 

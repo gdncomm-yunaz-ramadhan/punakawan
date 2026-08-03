@@ -20,7 +20,7 @@ import (
 type CommitTaskInput struct {
 	RepoId  string `json:"repo_id"`
 	TaskId  string `json:"task_id"`
-	Message string `json:"message" jsonschema:"commit message in Conventional Commits form: '<type>(<scope>): <imperative subject, <=72 chars>'. Add a body only when the why is not self-evident; explain the reason and the impact, not a line-by-line restatement of the diff. Reference the concrete source touched (path/to/file.go, a symbol, or an endpoint) and whether it was added/changed/removed, leading with what matters most. Concise - no filler, no hedging."`
+	Message string `json:"message" jsonschema:"commit message in Conventional Commits form: '<type>(<scope>): <imperative subject, <=72 chars>'. Add a body only when the why is not self-evident; explain the reason and the impact, not a line-by-line restatement of the diff. Reference the concrete source touched (path/to/file.go, a symbol, or an endpoint) and whether it was added/changed/removed, leading with what matters most. Style: clear, concise, plain language - short sentences, everyday words, no jargon, no filler, no hedging, no hype."`
 	// Deprecated: ignored. The server re-derives the diff verdict itself.
 	DiffAllowed bool `json:"diff_allowed,omitempty" jsonschema:"ignored: the server re-runs the diff check itself and does not trust this value"`
 	// Deprecated: ignored. The server re-derives the violations itself.

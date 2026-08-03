@@ -58,8 +58,8 @@ func checkJiraSkippableHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 // SyncJiraSubtasksCandidate is one candidate subtask to create if it does
 // not already exist under the parent issue.
 type SyncJiraSubtasksCandidate struct {
-	Summary          string         `json:"summary"`
-	Description      string         `json:"description,omitempty"`
+	Summary          string         `json:"summary" jsonschema:"short, plain-language subtask title - no jargon, no filler."`
+	Description      string         `json:"description,omitempty" jsonschema:"optional detail in plain language: what's needed and why, nothing more."`
 	AdditionalFields map[string]any `json:"additional_fields,omitempty"`
 }
 

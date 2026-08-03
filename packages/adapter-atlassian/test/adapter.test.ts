@@ -97,6 +97,7 @@ describe('manifest', () => {
       'atlassian.transitionJiraIssue',
       'atlassian.editJiraIssueFields',
       'atlassian.addWorklog',
+      'atlassian.createJiraIssue',
       'atlassian.createJiraSubtask',
       'atlassian.editJiraIssue',
       'atlassian.downloadJiraAttachment',
@@ -771,6 +772,28 @@ describe('execute via handlers', () => {
     )) as { payload: Record<string, unknown> };
 
     assert.deepEqual(result.payload, FIXTURE_ISSUE_TYPE_FIELD_META);
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.createJiraIssue through the full handler dispatch', async () => {
+    const { handlers, rest } = fakeHandlers();
+
+    const result = (await handlers.execute(
+      {
+        op: 'atlassian.createJiraIssue',
+        projectKey: 'PROJ',
+        issueTypeName: 'Bug',
+        summary: 'Login button does nothing on Safari',
+        description: 'Clicking Login on Safari does not submit the form.',
+      },
+      new AbortController().signal,
+    )) as { normalized: { summary: string; source: { provider: string } } };
+
+    assert.equal(result.normalized.summary, 'Login button does nothing on Safari');
+    assert.equal(result.normalized.source.provider, 'jira');
+    assert.deepEqual(rest.createdIssues[0]?.fields.project, { key: 'PROJ' });
+    assert.deepEqual(rest.createdIssues[0]?.fields.issuetype, { name: 'Bug' });
+
     await handlers.shutdown(undefined, new AbortController().signal);
   });
 
