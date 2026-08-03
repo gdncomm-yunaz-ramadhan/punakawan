@@ -1,0 +1,105 @@
+internal/knowledge/commit.go
+  e455c58c463269c6 1-53
+internal/mcpserver/tools_knowledgeprune_test.go
+  e455c58c463269c6 1-204
+internal/knowledge/commit_test.go
+  e455c58c463269c6 1-96
+internal/knowledge/crossproject.go
+  e455c58c463269c6 1-110
+internal/mcpserver/tools_metadata.go
+  e455c58c463269c6 1-189
+internal/mcpserver/tools_knowledgesearch.go
+  e455c58c463269c6 31-41,75-99
+internal/knowledge/export_test.go
+  e455c58c463269c6 1-174
+cmd/punakawan/knowledge_cmd.go
+  e455c58c463269c6 10,27-81,85-140
+docs/architecture/ADR-0020-a-single-shared-dolt-hub-server-replaces-per-project-servers.md
+  e455c58c463269c6 1-31
+internal/app/app.go
+  e455c58c463269c6 19,101-110,275,283-296
+internal/hub/hub.go
+  e455c58c463269c6 1-79
+internal/knowledge/hub.go
+  e455c58c463269c6 1-158
+internal/knowledge/hub_test.go
+  e455c58c463269c6 1-143
+internal/hub/hub_test.go
+  e455c58c463269c6 1-62
+internal/mcpserver/tools_workflowdef_save_test.go
+  e455c58c463269c6 1-12,14-46,48-72,74-94,96-115,117-244
+internal/knowledge/dolt.go
+  e455c58c463269c6 38-44,49-55,101-102
+internal/knowledge/export.go
+  e455c58c463269c6 1-107
+internal/mcpserver/tools_workcontext.go
+  e455c58c463269c6 262-268,284,286
+internal/mcpserver/tools_knowledgedelete_test.go
+  e455c58c463269c6 141-226
+internal/knowledge/migrate.go
+  e455c58c463269c6 1-115
+internal/knowledge/crossproject_test.go
+  e455c58c463269c6 1-202
+internal/mcpserver/tools_knowledgeprune.go
+  e455c58c463269c6 1-144
+internal/app/openknowledge_hub_test.go
+  e455c58c463269c6 1-108
+internal/mcpserver/tools_knowledgedelete.go
+  e455c58c463269c6 6,24-27,29-31,45-49,63-69,89-92,97,136-144,157-159
+internal/knowledge/migrate_test.go
+  e455c58c463269c6 1-200
+internal/mcpserver/tools_workflowdef_save.go
+  e455c58c463269c6 1-179
+internal/mcpserver/tools.go
+  e455c58c463269c6 42-45,77-80,88,329,348-351,354,359
+internal/mcpserver/tools_metadata_test.go
+  e455c58c463269c6 1-231
+internal/mcpserver/tools_projectfilter_test.go
+  e455c58c463269c6 1-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e2042e83bb074f7832e0ff7711ded52bd5d0deb6",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "e455c58c463269c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f3de3e7-4613-410f-b633-b2d3899dfb3f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 3489,
+      "total_deletions": 144,
+      "accepted_lines": 3356,
+      "overriden_lines": 5
+    }
+  }
+}
