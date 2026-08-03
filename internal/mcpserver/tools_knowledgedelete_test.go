@@ -138,4 +138,90 @@ func TestResetProjectKnowledgeDeletesWhenConfirmed(t *testing.T) {
 	}
 }
 
+// TestDeleteKnowledgeCommitsToDoltAndIsRevertable checks the commit_hash
+// contract at the MCP boundary (non-empty, distinct per call); the deeper
+// guarantee - that AS OF '<hash>~1' / `dolt checkout <hash>~1` actually
+// restores the pre-delete row - is proven once, precisely, in
+// internal/knowledge's own white-box test (commit_test.go), which can reach
+// the store's raw SQL connection. Re-deriving that here would mean punching
+// a raw-SQL hole through the store's boundary for no added coverage.
+func TestDeleteKnowledgeCommitsToDoltAndIsRevertable(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	rec := putFixtureRecord(t, store, "REQ-5", "Commit-tracked finding", nil)
+
+	var out map[string]any
+	callTool(t, cs, "delete_knowledge", map[string]any{
+		"ids": []string{rec.Id},
+	}, &out)
+
+	hash, _ := out["commit_hash"].(string)
+	if hash == "" {
+		t.Fatalf("expected a non-empty commit_hash after an actual delete, got %+v", out)
+	}
+}
+
+func TestDeleteKnowledgeOmitsCommitHashWhenNothingDeleted(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	var out map[string]any
+	callTool(t, cs, "delete_knowledge", map[string]any{
+		"ids": []string{"pkw:req/fixture/does-not-exist"},
+	}, &out)
+
+	if hash, ok := out["commit_hash"]; ok && hash != "" {
+		t.Fatalf("expected no commit_hash when every id was not_found, got %+v", out)
+	}
+}
+
+func TestResetProjectKnowledgeMatchedIdsIsEmptyArrayNotNullWhenNothingMatches(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	var out map[string]any
+	callTool(t, cs, "reset_project_knowledge", map[string]any{
+		"repository": "no-such-repository",
+	}, &out)
+
+	matched, ok := out["matched_ids"].([]any)
+	if !ok {
+		t.Fatalf("expected matched_ids to be an array (not null) when nothing matches, got %+v (%T)", out["matched_ids"], out["matched_ids"])
+	}
+	if len(matched) != 0 {
+		t.Fatalf("expected zero matches, got %v", matched)
+	}
+}
+
+func TestResetProjectKnowledgeCommitsToDoltWhenConfirmed(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	putFixtureRecord(t, store, "REQ-6", "Checkout note", &protocol.KnowledgeRecordScope{Repository: strp("checkout-service")})
+
+	var out map[string]any
+	callTool(t, cs, "reset_project_knowledge", map[string]any{
+		"repository": "checkout-service",
+		"confirm":    true,
+	}, &out)
+
+	hash, _ := out["commit_hash"].(string)
+	if hash == "" {
+		t.Fatalf("expected a non-empty commit_hash after a confirmed reset, got %+v", out)
+	}
+}
+
 func strp(s string) *string { return &s }

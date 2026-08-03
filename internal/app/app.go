@@ -16,6 +16,7 @@ import (
 	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
+	"github.com/ygrip/punakawan/internal/hub"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/policy"
@@ -96,6 +97,16 @@ func Load(startDir string) (*App, error) {
 			return nil, err
 		}
 		roots = append(roots, path)
+	}
+	// A hub-backed project's Dolt server runs against a directory outside
+	// its own workspace tree (ADR-0020), so the supervisor's sandbox must be
+	// told about it up front - OpenKnowledge itself only decides hub vs
+	// legacy lazily, on first call, by which point the Supervisor already
+	// exists.
+	if ref, ok, err := hub.Lookup(ws.Root); err != nil {
+		return nil, err
+	} else if ok {
+		roots = append(roots, ref.HubDir)
 	}
 	sup := tools.New(roots...)
 
@@ -261,12 +272,26 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	store, err := knowledge.Open(a.Supervisor, filepath.Join(a.Workspace.Root, ".punakawan", "knowledge"))
+	store, err := a.openKnowledgeStore()
 	if err != nil {
 		return nil, err
 	}
 	a.knowledgeStore = store
 	return store, nil
+}
+
+// openKnowledgeStore picks between the hub-backed and legacy per-project
+// Dolt connection (ADR-0020). A project only uses the hub once something has
+// explicitly written its pointer file (hub.Write, from the future migration
+// tool) - an already-existing project with no pointer is completely
+// unaffected and opens its own dedicated server exactly as before.
+func (a *App) openKnowledgeStore() (*knowledge.Store, error) {
+	if ref, ok, err := hub.Lookup(a.Workspace.Root); err != nil {
+		return nil, err
+	} else if ok {
+		return knowledge.OpenInHub(a.Supervisor, ref.HubDir, ref.ProjectID)
+	}
+	return knowledge.Open(a.Supervisor, filepath.Join(a.Workspace.Root, ".punakawan", "knowledge"))
 }
 
 // OpenTaskStore lazily opens the Beads-less fallback task store, memoizing the

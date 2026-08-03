@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -20,10 +21,14 @@ type DeleteKnowledgeInput struct {
 	Ids []string `json:"ids"`
 }
 
-// DeleteKnowledgeOutput is delete_knowledge's output.
+// DeleteKnowledgeOutput is delete_knowledge's output. CommitHash is the Dolt
+// commit created for this delete (empty when nothing was actually deleted,
+// e.g. every id was not_found) - the record to point at for AS OF queries or
+// a checkout-based revert of exactly this operation.
 type DeleteKnowledgeOutput struct {
-	Deleted  []string `json:"deleted"`
-	NotFound []string `json:"not_found,omitempty"`
+	Deleted    []string `json:"deleted"`
+	NotFound   []string `json:"not_found,omitempty"`
+	CommitHash string   `json:"commit_hash,omitempty"`
 }
 
 func deleteKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, DeleteKnowledgeInput) (*mcp.CallToolResult, DeleteKnowledgeOutput, error) {
@@ -37,7 +42,11 @@ func deleteKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			return nil, DeleteKnowledgeOutput{}, fmt.Errorf("mcpserver: open search index: %w", err)
 		}
 
-		out := DeleteKnowledgeOutput{}
+		// Deleted has no `omitempty` in its schema (the caller always wants
+		// to see it), so it must marshal as `[]`, not `null`, when nothing
+		// matched - a nil slice trips output-schema validation ("want array,
+		// got null").
+		out := DeleteKnowledgeOutput{Deleted: []string{}}
 		for _, id := range in.Ids {
 			if _, err := store.Get(id); err != nil {
 				out.NotFound = append(out.NotFound, id)
@@ -50,6 +59,13 @@ func deleteKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 				return nil, DeleteKnowledgeOutput{}, fmt.Errorf("mcpserver: remove %q from search index: %w", id, err)
 			}
 			out.Deleted = append(out.Deleted, id)
+		}
+		if len(out.Deleted) > 0 {
+			hash, err := store.CommitWorkingSet("punakawan: delete_knowledge " + strings.Join(out.Deleted, ", "))
+			if err != nil {
+				return nil, DeleteKnowledgeOutput{}, fmt.Errorf("mcpserver: commit delete_knowledge: %w", err)
+			}
+			out.CommitHash = hash
 		}
 		return nil, out, nil
 	}
@@ -70,11 +86,15 @@ type ResetProjectKnowledgeInput struct {
 	Confirm bool `json:"confirm,omitempty" jsonschema:"must be true to actually delete the matched records; false (default) returns a dry-run preview only"`
 }
 
-// ResetProjectKnowledgeOutput is reset_project_knowledge's output.
+// ResetProjectKnowledgeOutput is reset_project_knowledge's output. CommitHash
+// is the Dolt commit created for this delete (empty on a dry run or when
+// nothing matched) - the record to point at for AS OF queries or a
+// checkout-based revert of exactly this operation.
 type ResetProjectKnowledgeOutput struct {
 	MatchedIds []string `json:"matched_ids"`
 	Deleted    bool     `json:"deleted"`
 	Reason     string   `json:"reason,omitempty"`
+	CommitHash string   `json:"commit_hash,omitempty"`
 }
 
 func resetProjectKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ResetProjectKnowledgeInput) (*mcp.CallToolResult, ResetProjectKnowledgeOutput, error) {
@@ -113,7 +133,15 @@ func resetProjectKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToo
 				return nil, ResetProjectKnowledgeOutput{}, fmt.Errorf("mcpserver: remove %q from search index: %w", id, err)
 			}
 		}
-		return nil, ResetProjectKnowledgeOutput{MatchedIds: matched, Deleted: true}, nil
+
+		var commitHash string
+		if len(matched) > 0 {
+			commitHash, err = store.CommitWorkingSet(fmt.Sprintf("punakawan: reset_project_knowledge project=%q repository=%q module=%q (%d records)", in.Project, in.Repository, in.Module, len(matched)))
+			if err != nil {
+				return nil, ResetProjectKnowledgeOutput{}, fmt.Errorf("mcpserver: commit reset_project_knowledge: %w", err)
+			}
+		}
+		return nil, ResetProjectKnowledgeOutput{MatchedIds: matched, Deleted: true, CommitHash: commitHash}, nil
 	}
 }
 
@@ -126,7 +154,9 @@ func matchingScope(store *knowledge.Store, in ResetProjectKnowledgeInput) ([]str
 		return nil, fmt.Errorf("mcpserver: list knowledge records: %w", err)
 	}
 
-	var ids []string
+	// matched_ids has no `omitempty` in its schema, so a zero-match scope
+	// must still marshal as `[]`, not `null`.
+	ids := []string{}
 	for _, rec := range records {
 		if scopeMatches(rec.Record.Scope, in) {
 			ids = append(ids, rec.Record.Id)

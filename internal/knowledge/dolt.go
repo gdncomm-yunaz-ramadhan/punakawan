@@ -35,8 +35,24 @@ type Store struct {
 	// sql-server.info), which this process must never stop.
 	dataDir string
 
+	// project is the database name this Store is bound to by default - the
+	// legacy per-project dbName ("knowledge") for Open, or the hub projectID
+	// for OpenInHub. It is what OwnProject reports and what the *InProject
+	// read methods (ADR-0020's project filter) compare a caller-supplied
+	// project against to decide whether to qualify the query.
+	project string
+
 	eventsPath string
 	eventsMu   sync.Mutex
+}
+
+// OwnProject returns the database name this Store defaults to - the legacy
+// per-project dbName ("knowledge") or, for a hub-backed Store, its own hub
+// projectID. Callers use it to tell whether a caller-supplied project filter
+// (ADR-0020) names this Store's own project (the fail-safe default) or a
+// different one to reach cross-project.
+func (s *Store) OwnProject() string {
+	return s.project
 }
 
 // serverRegistry tracks the Dolt sql-servers this process started, keyed by
@@ -82,8 +98,8 @@ func registerStartedServer(key string, proc *tools.BackgroundProcess) {
 
 // newReusedStore builds a Store for a server reached via connectExistingServer
 // and joins the in-process refcount when this process started that server.
-func newReusedStore(key string, db *sql.DB, eventsPath string) *Store {
-	st := &Store{db: db, eventsPath: eventsPath}
+func newReusedStore(key, project string, db *sql.DB, eventsPath string) *Store {
+	st := &Store{db: db, project: project, eventsPath: eventsPath}
 	if joinInProcessServer(key) {
 		st.dataDir = key
 	}
@@ -122,7 +138,7 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 	// and records its port in sql-server.info, so reuse it instead of starting
 	// a second server that can only fail on the repository's write lock.
 	if db, err := connectExistingServer(dataDir, dbName, 750*time.Millisecond); err == nil {
-		store := newReusedStore(key, db, eventsPath)
+		store := newReusedStore(key, dbName, db, eventsPath)
 		if err := store.migrate(); err != nil {
 			_ = store.Close()
 			return nil, err
@@ -154,7 +170,7 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 		// startup. If the other process won the Dolt lock, its info file now
 		// points at the server we should share.
 		if existing, existingErr := connectExistingServer(dataDir, dbName, 2*time.Second); existingErr == nil {
-			store := newReusedStore(key, existing, eventsPath)
+			store := newReusedStore(key, dbName, existing, eventsPath)
 			if migrateErr := store.migrate(); migrateErr != nil {
 				_ = store.Close()
 				return nil, migrateErr
@@ -165,7 +181,7 @@ func Open(sup *tools.Supervisor, dataDir string) (*Store, error) {
 	}
 
 	registerStartedServer(key, server)
-	store := &Store{db: db, server: server, dataDir: key, eventsPath: eventsPath}
+	store := &Store{db: db, server: server, dataDir: key, project: dbName, eventsPath: eventsPath}
 	if err := store.migrate(); err != nil {
 		_ = store.Close()
 		return nil, err

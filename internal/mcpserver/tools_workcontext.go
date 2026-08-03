@@ -259,6 +259,13 @@ func loadWorkflowDefinitions(root string) ([]workflowdef.Definition, error) {
 // can fetch full detail in one call rather than N searches.
 type GetKnowledgeRecordsInput struct {
 	Ids []string `json:"ids" jsonschema:"knowledge record ids to fetch"`
+
+	// ProjectId is ADR-0020's hub project filter: which project's knowledge
+	// store to read ids from. Always pass your own calling project's id
+	// explicitly; omitting it also defaults to it, so cross-project access
+	// only happens when a caller deliberately names a different project. Only
+	// works when that project shares this one's hub.
+	ProjectId string `json:"project_id,omitempty" jsonschema:"which project's knowledge store to read from (ADR-0020) - defaults to the calling project; name another project's id to deliberately read from it"`
 }
 
 // GetKnowledgeRecordsOutput returns the found records and the ids that did not
@@ -274,9 +281,9 @@ func getKnowledgeRecordsHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if err != nil {
 			return nil, GetKnowledgeRecordsOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
-		var out GetKnowledgeRecordsOutput
+		out := GetKnowledgeRecordsOutput{Records: []protocol.KnowledgeRecord{}}
 		for _, id := range in.Ids {
-			rec, err := store.Get(id)
+			rec, err := store.GetInProject(in.ProjectId, id)
 			if errors.Is(err, knowledge.ErrNotFound) {
 				out.NotFound = append(out.NotFound, id)
 				continue

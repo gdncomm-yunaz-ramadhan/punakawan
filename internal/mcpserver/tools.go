@@ -39,6 +39,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, buildContextDossierHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "set_project_metadata",
+		Description: "Create or update one project metadata entry (mirrors the panel's metadata editor). Omit value to attempt best-effort auto-detection for known keys (currently: test.command) before falling back to an error the caller can turn into an explicit ask. Use this to close a prepare_work_context 'metadata' MissingItem gap without a human editing project.yaml by hand.",
+	}, setProjectMetadataHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "request_capsule",
 		Description: "Build and persist an immutable, digested ContextCapsule for one Gareng/Petruk/Bagong invocation (architecture-enhancement-plan.md §6). Rejects requirement_ids/knowledge_ids whose record type is another role's output (e.g. bagong cannot cite a petruk-plan record) and allowed_tools entries a role must not have (e.g. bagong cannot be granted write_file). Set retrieval_query to also run Semar's automatic knowledge-retrieval pipeline (§11/§6.4, AEP-M7): search_knowledge's full ranking against that query, filtered to what this role may receive and to token_budget, added alongside any explicit knowledge_ids with each item's match explanation recorded as its reason. Call this before submit_gareng_review/submit_petruk_plan/submit_bagong_review, which require the returned id as capsule_id.",
 	}, requestCapsuleHandler(a))
@@ -69,13 +74,18 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, createWorkflowRunHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "save_workflow_definition",
+		Description: "Create or update a reusable workflow definition (mirrors the panel's workflow editor) - use this to turn an explicitly user-dictated flow, or a pattern the calling agent judges worth capturing, straight into a versioned, selector-resolvable definition without waiting on propose_project_learning's panel-review gate. Validated against the same capability rules the panel enforces (unknown/command-like capabilities are rejected). Updating an existing id requires the current revision (optimistic locking, like project metadata); a brand-new id ignores whatever revision is passed. The prior version is always snapshotted, never overwritten - see the panel's workflow history for any revision. Set judgment (with a required rationale) when the agent's own judgment - not a direct user instruction - is why this pattern is being captured: this records a fingerprinted, deduplicated learning proposal alongside the save (support_count increments if the same step pattern is captured again), already marked accepted since the save already happened - it is an audit trail, not an additional gate.",
+	}, saveWorkflowDefinitionHandler(a, reg))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "prepare_work_context",
 		Description: "Before substantial project work, call this once to compose the bounded project context for a run (agent-context plan §4.4): it resolves the workflow (by explicit workflow_id or an exact capability/intent selector; ad hoc when neither matches), validates and defaults inputs, resolves required project metadata, selects optional metadata by priority, and — when a retrieval_query is given — retrieves scoped knowledge filtered by lifecycle validity so disputed/stale/superseded/draft records never appear as accepted guidance (inferred goes to a separate caution list). Returns the run_id, the immutable context digest, the selected metadata and knowledge (each with a selection reason and content hash), and any missing required context (which puts the run in awaiting-clarification). Deterministic: the same inputs and store revisions produce the same digest. Pass the returned run_id to run-scoped calls; resume/refresh by passing an existing run_id.",
 	}, prepareWorkContextHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "get_knowledge_records",
-		Description: "Batch-read complete typed knowledge records by id (agent-context plan §5.2), e.g. to expand the ids prepare_work_context or search_knowledge returned into full records in one call. Ids not found are reported in not_found rather than erroring the whole batch.",
+		Description: "Batch-read complete typed knowledge records by id (agent-context plan §5.2), e.g. to expand the ids prepare_work_context or search_knowledge returned into full records in one call. Ids not found are reported in not_found rather than erroring the whole batch. project_id (ADR-0020) selects which project's knowledge store to read from and defaults to the calling project; name another project's id only to deliberately cross-project read (requires it share this project's hub).",
 	}, getKnowledgeRecordsHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -316,7 +326,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "search_knowledge",
-		Description: "Search the durable knowledge store locally (§11): exact structured identifiers (CVE/GHSA/Sonar rule/Jira key/git hash/...) and aliases outrank BM25F keyword matches, which fall back to fuzzy matching only when keyword search finds nothing. project/repository/module/path only bias ranking (§11.10's scope bonus) - they never filter results out; use types/tags for that. Every result carries an explanation (§11.13) of why it matched. No embeddings, no external model calls: this is a local index over knowledge Punakawan already has, not new reasoning.",
+		Description: "Search the durable knowledge store locally (§11): exact structured identifiers (CVE/GHSA/Sonar rule/Jira key/git hash/...) and aliases outrank BM25F keyword matches, which fall back to fuzzy matching only when keyword search finds nothing. project/repository/module/path only bias ranking (§11.10's scope bonus) - they never filter results out; use types/tags for that. Every result carries an explanation (§11.13) of why it matched. No embeddings, no external model calls: this is a local index over knowledge Punakawan already has, not new reasoning. project_id (ADR-0020, distinct from the ranking-bonus project field above) selects which project's knowledge store to search and defaults to the calling project; naming another project's id deliberately searches it instead, via a lower-fidelity substring scan rather than the ranked BM25 index (which cannot span projects), and only works when that project shares this one's hub.",
 	}, searchKnowledgeHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -335,13 +345,18 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, resolveMissingContextRequestHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "find_prune_candidates",
+		Description: "List knowledge records with the signal needed to judge whether they're obsolete: validity_state, superseded_by, source age (source.retrieved_at), and relation_count (how many other records reference this one - the closest real proxy for 'still relied on', since no access/usage telemetry exists). No validity_state is required or assumed eligible for pruning - every state is included unless filtered, and the returned signals are advisory only. Filters/paginates like the underlying store (type/status/validity_state/repository/source/limit/cursor); min_age_days is applied within the fetched page, not globally - use next_cursor to keep scanning. Read-only: pass candidate ids to delete_knowledge to actually remove them.",
+	}, findPruneCandidatesHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "delete_knowledge",
-		Description: "Bulk-delete specific knowledge records by id, e.g. ones a search_knowledge call surfaced as stale, superseded, or wrong - so a future search does not keep returning dirty context. Deletes are permanent (no fold-latest, no undo); ids not found in the store are reported separately and are not an error.",
+		Description: "Bulk-delete specific knowledge records by id, e.g. ones find_prune_candidates or search_knowledge surfaced as stale, superseded, or wrong - so a future search does not keep returning dirty context. Any validity_state may be deleted; naming an id is itself the deliberate act. Not undoable through this tool, but not unrecoverable either: a successful delete is immediately committed to the project's Dolt knowledge store and commit_hash is returned - the deleted records remain fully readable via `SELECT ... FROM knowledge_records AS OF '<commit_hash>~1'` (no checkout needed), or fully restorable with `dolt checkout <commit_hash>~1 -- knowledge_records` in that store's directory. commit_hash is empty when every id was not_found (nothing was actually deleted).",
 	}, deleteKnowledgeHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "reset_project_knowledge",
-		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module (an empty scope would match everything). Defaults to a dry run: returns the matching record ids without deleting anything unless confirm=true.",
+		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module (an empty scope would match everything). Defaults to a dry run: returns the matching record ids without deleting anything unless confirm=true. A confirmed delete is immediately committed to the project's Dolt knowledge store and commit_hash is returned - see delete_knowledge's description for how to read or restore the pre-delete state from it.",
 	}, resetProjectKnowledgeHandler(a))
 
 	// Contradiction Ledger (Gareng, §16-22). Deterministic, no reasoning.
