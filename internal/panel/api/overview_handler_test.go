@@ -27,9 +27,16 @@ func (f fakeWorkspaceReader) Get(ctx context.Context, id string) (contract.Works
 
 type fakeSessionReader struct {
 	sessions []protocol.PanelSessionSummary
+	// capturedFilter, when non-nil, records the last filter List was called
+	// with - a pointer so it can be observed after the call even though List
+	// has a value receiver.
+	capturedFilter *contract.SessionFilter
 }
 
 func (f fakeSessionReader) List(ctx context.Context, workspaceID string, filter contract.SessionFilter) ([]protocol.PanelSessionSummary, error) {
+	if f.capturedFilter != nil {
+		*f.capturedFilter = filter
+	}
 	return f.sessions, nil
 }
 func (f fakeSessionReader) Get(ctx context.Context, workspaceID, sessionID string) (contract.SessionDetail, error) {
@@ -101,5 +108,30 @@ func TestOverviewHandlerOrdersNeedsAttentionByPriority(t *testing.T) {
 	}
 	if len(out.ActiveSessions) != 2 {
 		t.Fatalf("ActiveSessions = %+v, want 2 (run-stale and run-active)", out.ActiveSessions)
+	}
+}
+
+// TestOverviewHandlerSkipsSessionCounts guards punokawan-z7no: the overview
+// page never renders a session's evidence/warning/error counts (only
+// status/objective/workflow/active_role), so the handler must ask the
+// session reader to skip computing them - each one otherwise costs a
+// ledger+journal file scan per run in the whole workspace's history.
+func TestOverviewHandlerSkipsSessionCounts(t *testing.T) {
+	var captured contract.SessionFilter
+	readers := panel.Readers{
+		Workspace: fakeWorkspaceReader{},
+		Session:   fakeSessionReader{capturedFilter: &captured},
+		Approval:  fakeApprovalReader{},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
+	rec := httptest.NewRecorder()
+	OverviewHandler(readers, "ws-a")(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !captured.SkipCounts {
+		t.Fatal("OverviewHandler must call Session.List with SkipCounts: true")
 	}
 }

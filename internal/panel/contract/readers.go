@@ -86,6 +86,14 @@ type SessionFilter struct {
 	TaskID     string
 	Repository string
 	Limit      int
+	// SkipCounts omits each session's EvidenceCount/WarningCount/ErrorCount,
+	// which otherwise cost one evidence-ledger and one event-journal file
+	// scan per returned run. Set this when the caller does not render those
+	// fields (e.g. the Overview page, which needs every run's status for
+	// its active/stale/failed detection but never displays per-run counts) -
+	// paying for a per-run file scan that nothing shows on screen was the
+	// dominant cost of a slow overview load.
+	SkipCounts bool
 }
 
 // SessionDetail extends the compact PanelSessionSummary with its raw event

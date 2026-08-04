@@ -316,6 +316,46 @@ func TestSessionSourceListFiltersByStatus(t *testing.T) {
 	}
 }
 
+// TestSessionSourceListSkipCountsOmitsEvidenceCounts proves SkipCounts
+// actually skips the per-run ledger/journal scan, rather than happening to
+// return zero counts anyway: a real evidence record is written for the run,
+// so a non-SkipCounts call must see it, and a SkipCounts call must not
+// (Overview's whole reason for this flag - it never renders these counts,
+// so paying for the scan was pure waste, punokawan-z7no).
+func TestSessionSourceListSkipCountsOmitsEvidenceCounts(t *testing.T) {
+	a := newTestApp(t)
+	run := newTestRun(a, "run-test-1")
+	if err := a.Workflow.Append(run); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, run.Id)
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	if err := ledger.Append(protocol.EvidenceRecord{Id: "ev-1", RunId: run.Id, Type: protocol.EvidenceRecordTypeCommandOutput, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("ledger.Append: %v", err)
+	}
+
+	ss := &SessionSource{App: a}
+
+	withCounts, err := ss.List(context.Background(), a.Workspace.ID, contract.SessionFilter{})
+	if err != nil {
+		t.Fatalf("List (with counts): %v", err)
+	}
+	if len(withCounts) != 1 || withCounts[0].EvidenceCount == nil || *withCounts[0].EvidenceCount != 1 {
+		t.Fatalf("List (with counts) = %+v, want EvidenceCount=1", withCounts)
+	}
+
+	skipped, err := ss.List(context.Background(), a.Workspace.ID, contract.SessionFilter{SkipCounts: true})
+	if err != nil {
+		t.Fatalf("List (SkipCounts): %v", err)
+	}
+	if len(skipped) != 1 || skipped[0].EvidenceCount == nil || *skipped[0].EvidenceCount != 0 {
+		t.Fatalf("List (SkipCounts) = %+v, want EvidenceCount=0 (counts skipped, not computed)", skipped)
+	}
+}
+
 func TestTaskSourceListGetDependencies(t *testing.T) {
 	requireBd(t)
 	a := newTestApp(t)
@@ -846,6 +886,108 @@ func TestWorkspaceSourceGetIncludesGitHealth(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("Health = %+v, want a git:repo-a entry", detail.Health)
+	}
+}
+
+// TestWorkspaceSourceListSkipsGitHealth guards a fix for the overview
+// page's git-status cost scaling linearly with project count: List (used
+// by the multi-workspace overview aggregate) must not run gitHealth's
+// per-repository `git status` shell-out at all, since the overview never
+// displays per-repo git state (that only appears on the project detail
+// page, served by Get). Proven here by breaking repo-a's git status (its
+// directory is removed) and showing List's Availability is unaffected
+// while Get still surfaces the resulting git:repo-a failure.
+func TestWorkspaceSourceListSkipsGitHealth(t *testing.T) {
+	requireBd(t)
+	a := newTestApp(t)
+	if err := os.RemoveAll(filepath.Join(a.Workspace.Root, "repo-a")); err != nil {
+		t.Fatalf("RemoveAll repo-a: %v", err)
+	}
+	ws := &WorkspaceSource{App: a}
+
+	summaries, err := ws.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("List = %+v, want 1 entry", summaries)
+	}
+	if summaries[0].Availability != protocol.PanelSourceHealthAvailabilityAvailable {
+		t.Fatalf("List Availability = %s, want available (git health must not factor into List)", summaries[0].Availability)
+	}
+
+	detail, err := ws.Get(context.Background(), a.Workspace.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	foundBroken := false
+	for _, h := range detail.Health {
+		if h.Source == "git:repo-a" && h.Availability == protocol.PanelSourceHealthAvailabilityUnavailable {
+			foundBroken = true
+		}
+	}
+	if !foundBroken {
+		t.Fatalf("Get.Health = %+v, want a failing git:repo-a entry", detail.Health)
+	}
+}
+
+// TestGitHealthCoversEveryRepoInDeterministicOrder guards punokawan-jvww:
+// gitHealth now runs one `git status` per repository concurrently (a bounded
+// worker pool, mirroring List's), so this proves the parallel fan-out still
+// reassembles results in the workspace's declared repository order, not
+// whatever order the goroutines happened to finish in - repeated across
+// several calls, since a race would not necessarily show up on the first
+// one.
+func TestGitHealthCoversEveryRepoInDeterministicOrder(t *testing.T) {
+	dir := t.TempDir()
+	repoIDs := []string{"repo-a", "repo-b", "repo-c"}
+	for _, id := range repoIDs {
+		repoDir := filepath.Join(dir, id)
+		if err := os.MkdirAll(repoDir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", id, err)
+		}
+		runGit(t, repoDir, "init", "-q", "-b", "main")
+		runGit(t, repoDir, "config", "user.email", "test@example.com")
+		runGit(t, repoDir, "config", "user.name", "Test User")
+		if err := os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte("hi\n"), 0o644); err != nil {
+			t.Fatalf("write f.txt: %v", err)
+		}
+		runGit(t, repoDir, "add", "f.txt")
+		runGit(t, repoDir, "commit", "-q", "-m", "init")
+	}
+
+	punakawanDir := filepath.Join(dir, ".punakawan")
+	if err := os.MkdirAll(punakawanDir, 0o755); err != nil {
+		t.Fatalf("mkdir .punakawan: %v", err)
+	}
+	workspaceYAML := "version: punakawan.workspace/v1\nid: multi-repo\nname: MultiRepo\nrepositories:\n" +
+		"  - id: repo-a\n    path: ./repo-a\n" +
+		"  - id: repo-b\n    path: ./repo-b\n" +
+		"  - id: repo-c\n    path: ./repo-c\n"
+	if err := os.WriteFile(filepath.Join(punakawanDir, "workspace.yaml"), []byte(workspaceYAML), 0o644); err != nil {
+		t.Fatalf("write workspace.yaml: %v", err)
+	}
+
+	a, err := app.Load(dir)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+
+	for attempt := 0; attempt < 20; attempt++ {
+		health := gitHealth(context.Background(), a, time.Now().UTC())
+		if len(health) != len(repoIDs) {
+			t.Fatalf("attempt %d: gitHealth returned %d entries, want %d", attempt, len(health), len(repoIDs))
+		}
+		for i, id := range repoIDs {
+			want := "git:" + id
+			if health[i].Source != want {
+				t.Fatalf("attempt %d: health[%d].Source = %q, want %q (order must match Workspace.Repositories)", attempt, i, health[i].Source, want)
+			}
+			if health[i].Availability != protocol.PanelSourceHealthAvailabilityAvailable {
+				t.Fatalf("attempt %d: %s availability = %s, want available", attempt, want, health[i].Availability)
+			}
+		}
 	}
 }
 

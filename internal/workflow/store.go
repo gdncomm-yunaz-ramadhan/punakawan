@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +26,22 @@ import (
 type Store struct {
 	path string
 	mu   sync.Mutex
+
+	// cachedRuns/latestByID/readOffset make List/Current/Get incremental
+	// (punokawan-g3iv) instead of re-decoding runs.jsonl from scratch on
+	// every call: Append is the file's only writer and always adds complete
+	// new lines, never rewriting or truncating existing ones, so replaying
+	// only the bytes appended since the last read - and folding just the
+	// newly-decoded runs into the running latestByID table - stays correct
+	// while the file grows with the workspace's full history. Without this,
+	// Current()/Get() cost grew with total history size on every single
+	// panel request (each run's own Checkpoints slice also grows on every
+	// state transition, so a naive full re-decode gets slower on two axes
+	// at once).
+	cachedRuns   []protocol.WorkflowRun
+	latestByID   map[string]protocol.WorkflowRun
+	readOffset   int64
+	lastFileInfo os.FileInfo
 }
 
 // Open ensures .punakawan/workflow/ exists under workspaceRoot and returns
@@ -54,51 +71,96 @@ func (s *Store) Append(run protocol.WorkflowRun) error {
 	return nil
 }
 
-// List returns the full append-only history of run states.
-func (s *Store) List() ([]protocol.WorkflowRun, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+// refreshLocked brings cachedRuns/latestByID up to date with runs.jsonl,
+// decoding only the bytes appended since the last call. Callers must hold
+// s.mu.
+func (s *Store) refreshLocked() error {
 	f, err := os.Open(s.path)
 	if os.IsNotExist(err) {
-		return nil, nil
+		s.cachedRuns = nil
+		s.latestByID = nil
+		s.readOffset = 0
+		s.lastFileInfo = nil
+		return nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("workflow: open %s: %w", s.path, err)
+		return fmt.Errorf("workflow: open %s: %w", s.path, err)
 	}
 	defer f.Close()
 
-	var runs []protocol.WorkflowRun
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("workflow: stat %s: %w", s.path, err)
+	}
+	// A different file can end up at this path with the same or larger size
+	// than what was already read (deleted and recreated by something other
+	// than this Store's own Append, e.g. a stray cleanup) - os.SameFile
+	// compares file identity (inode), not just size, so this catches that
+	// case even when info.Size() alone would not.
+	if info.Size() < s.readOffset || (s.lastFileInfo != nil && !os.SameFile(s.lastFileInfo, info)) {
+		s.cachedRuns = nil
+		s.latestByID = nil
+		s.readOffset = 0
+	}
+	s.lastFileInfo = info
+	if info.Size() == s.readOffset {
+		return nil
+	}
+
+	if _, err := f.Seek(s.readOffset, io.SeekStart); err != nil {
+		return fmt.Errorf("workflow: seek %s: %w", s.path, err)
+	}
+	if s.latestByID == nil {
+		s.latestByID = make(map[string]protocol.WorkflowRun)
+	}
+
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
+		s.readOffset += int64(len(line)) + 1 // +1 for the newline json.Encoder wrote
 		if len(line) == 0 {
 			continue
 		}
 		var run protocol.WorkflowRun
 		if err := json.Unmarshal(line, &run); err != nil {
-			return nil, fmt.Errorf("workflow: decode run: %w", err)
+			return fmt.Errorf("workflow: decode run: %w", err)
 		}
-		runs = append(runs, run)
+		s.cachedRuns = append(s.cachedRuns, run)
+		s.latestByID[run.Id] = run
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("workflow: scan %s: %w", s.path, err)
+		return fmt.Errorf("workflow: scan %s: %w", s.path, err)
 	}
-	return runs, nil
+	return nil
+}
+
+// List returns the full append-only history of run states.
+func (s *Store) List() ([]protocol.WorkflowRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.refreshLocked(); err != nil {
+		return nil, err
+	}
+	out := make([]protocol.WorkflowRun, len(s.cachedRuns))
+	copy(out, s.cachedRuns)
+	return out, nil
 }
 
 // Current folds the append-only history to the latest state per run id.
 func (s *Store) Current() (map[string]protocol.WorkflowRun, error) {
-	all, err := s.List()
-	if err != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.refreshLocked(); err != nil {
 		return nil, err
 	}
-	latest := make(map[string]protocol.WorkflowRun, len(all))
-	for _, r := range all {
-		latest[r.Id] = r
+	out := make(map[string]protocol.WorkflowRun, len(s.latestByID))
+	for id, r := range s.latestByID {
+		out[id] = r
 	}
-	return latest, nil
+	return out, nil
 }
 
 // ErrNotFound is returned by Get when no run exists for the given id.

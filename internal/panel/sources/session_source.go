@@ -101,7 +101,11 @@ func (s *SessionSource) List(ctx context.Context, workspaceID string, filter con
 
 	out := []protocol.PanelSessionSummary{}
 	for _, run := range runs {
-		out = append(out, sessionsummary.Build(run, s.counts(ctx, run)))
+		counts := sessionsummary.Counts{}
+		if !filter.SkipCounts {
+			counts = s.counts(ctx, run)
+		}
+		out = append(out, sessionsummary.Build(run, counts))
 		if filter.Limit > 0 && len(out) >= filter.Limit {
 			break
 		}

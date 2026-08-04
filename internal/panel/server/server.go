@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
@@ -545,11 +546,25 @@ func deprecatedAlias(successor string, next http.HandlerFunc) http.HandlerFunc {
 // loggingMiddleware writes one structured log line per request, per
 // §27's observability expectations, without logging request bodies or
 // headers that might carry secrets.
+//
+// An SSE handler (events.SSEHandler) does not return until the client
+// disconnects, so ServeHTTP blocks for the connection's whole lifetime -
+// often minutes - rather than the time spent doing work. Logging that
+// under the same "panel request"/duration_ms shape as every other route
+// makes it read as a multi-minute stall, when nothing was actually slow.
+// Detecting the response's Content-Type (set by the handler before this
+// middleware ever logs) lets this stay handler-agnostic - it labels any
+// streaming response this way, not just today's one SSE route.
 func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		logger.Info("panel request", "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(start).Milliseconds())
+		duration := time.Since(start).Milliseconds()
+		if strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream") {
+			logger.Info("panel stream closed", "method", r.Method, "path", r.URL.Path, "connection_duration_ms", duration)
+			return
+		}
+		logger.Info("panel request", "method", r.Method, "path", r.URL.Path, "duration_ms", duration)
 	})
 }
 

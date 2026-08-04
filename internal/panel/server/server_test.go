@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -678,6 +679,59 @@ func TestServerEventsEndpointStreamsSystemReadyOnConnect(t *testing.T) {
 	}
 	if !strings.Contains(string(buf[:n]), "system.ready") {
 		t.Fatalf("first SSE frame = %q, want it to contain system.ready", buf[:n])
+	}
+}
+
+// TestLoggingMiddlewareLabelsStreamingResponsesSeparately guards
+// punokawan-0l1y: an SSE handler blocks until the client disconnects, so
+// logging it under the same duration_ms field as ordinary requests made a
+// multi-minute idle connection read as a multi-minute processing stall.
+func TestLoggingMiddlewareLabelsStreamingResponsesSeparately(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	sseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	rec := httptest.NewRecorder()
+	loggingMiddleware(logger, sseHandler).ServeHTTP(rec, req)
+
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("decode log line: %v (raw: %s)", err, buf.String())
+	}
+	if entry["msg"] != "panel stream closed" {
+		t.Fatalf("msg = %v, want %q", entry["msg"], "panel stream closed")
+	}
+	if _, ok := entry["connection_duration_ms"]; !ok {
+		t.Fatalf("log entry missing connection_duration_ms: %+v", entry)
+	}
+	if _, ok := entry["duration_ms"]; ok {
+		t.Fatalf("log entry must not carry duration_ms for a streaming response: %+v", entry)
+	}
+
+	buf.Reset()
+	plainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
+	rec = httptest.NewRecorder()
+	loggingMiddleware(logger, plainHandler).ServeHTTP(rec, req)
+
+	entry = nil
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("decode log line: %v (raw: %s)", err, buf.String())
+	}
+	if entry["msg"] != "panel request" {
+		t.Fatalf("msg = %v, want %q", entry["msg"], "panel request")
+	}
+	if _, ok := entry["duration_ms"]; !ok {
+		t.Fatalf("log entry missing duration_ms: %+v", entry)
+	}
+	if _, ok := entry["connection_duration_ms"]; ok {
+		t.Fatalf("ordinary request must not carry connection_duration_ms: %+v", entry)
 	}
 }
 
