@@ -3,9 +3,11 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -157,6 +159,114 @@ func TestServerInstructionsStateGroundedPrinciple(t *testing.T) {
 	if strings.Contains(instructions, "## Communication rules") {
 		t.Error("Instructions should not restate the shared communication-rules block")
 	}
+}
+
+// TestToolListSchemasHaveNoBareBooleanSubschemas guards against a regression
+// that made every tool invisible to Claude Code's ToolSearch even though the
+// server's wire response was byte-for-byte valid MCP: a Go `any`/`interface{}`
+// field with no jsonschema tag (e.g. SetProjectMetadataOutput.Value) makes
+// jsonschema-go emit a bare JSON boolean (true) for that property instead of
+// an object schema - spec-legal, but rejected by Claude Code's client
+// ("Invalid input (at tools.N.outputSchema.properties.value)"), which fails
+// the whole tools/list response, not just the one offending tool. This walks
+// every registered tool's full input/output schema tree (not just top-level
+// properties - the same defect can recur nested under items/properties/etc)
+// looking for a raw JSON boolean anywhere a schema is expected.
+func TestToolListSchemasHaveNoBareBooleanSubschemas(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	res, err := cs.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	if len(res.Tools) == 0 {
+		t.Fatal("ListTools returned no tools")
+	}
+
+	for _, tool := range res.Tools {
+		for _, schema := range []any{tool.InputSchema, tool.OutputSchema} {
+			if schema == nil {
+				continue
+			}
+			raw, err := json.Marshal(schema)
+			if err != nil {
+				t.Fatalf("%s: marshal schema: %v", tool.Name, err)
+			}
+			var decoded any
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatalf("%s: unmarshal schema: %v", tool.Name, err)
+			}
+			if hits := findBoolSchemaNodes(decoded, ""); len(hits) > 0 {
+				t.Errorf("%s: bare-boolean schema node(s) found: %v", tool.Name, hits)
+			}
+		}
+	}
+}
+
+// singleSchemaKeys are JSON Schema keywords whose value is exactly one
+// (sub)schema - Claude Code's client requires an object there, not a bare
+// boolean, even though a bare boolean is spec-legal shorthand for it.
+var singleSchemaKeys = map[string]bool{
+	"items": true, "additionalItems": true, "contains": true,
+	"unevaluatedItems": true, "additionalProperties": true,
+	"propertyNames": true, "unevaluatedProperties": true,
+	"not": true, "if": true, "then": true, "else": true,
+	"contentSchema": true,
+}
+
+// mapOfSchemaKeys are keywords whose value is a map from name to subschema.
+var mapOfSchemaKeys = map[string]bool{
+	"properties": true, "patternProperties": true,
+	"dependentSchemas": true, "$defs": true, "definitions": true,
+}
+
+// listOfSchemaKeys are keywords whose value is a list of subschemas.
+var listOfSchemaKeys = map[string]bool{
+	"allOf": true, "anyOf": true, "oneOf": true, "prefixItems": true,
+}
+
+// findBoolSchemaNodes recursively finds every raw JSON boolean found at a
+// schema-valued position in a decoded schema tree (properties, items,
+// additionalProperties, ...), returning each occurrence's path for a
+// legible failure message. Keys like "uniqueItems" or "deprecated" hold
+// real, harmless JSON booleans and are deliberately not schema positions,
+// so they are never flagged.
+func findBoolSchemaNodes(node any, path string) []string {
+	m, ok := node.(map[string]any)
+	if !ok {
+		return nil
+	}
+	var hits []string
+	for k, v := range m {
+		switch {
+		case singleSchemaKeys[k]:
+			hits = append(hits, checkSchema(v, path+"."+k)...)
+		case mapOfSchemaKeys[k]:
+			if sub, ok := v.(map[string]any); ok {
+				for name, child := range sub {
+					hits = append(hits, checkSchema(child, path+"."+k+"."+name)...)
+				}
+			}
+		case listOfSchemaKeys[k]:
+			if list, ok := v.([]any); ok {
+				for i, child := range list {
+					hits = append(hits, checkSchema(child, fmt.Sprintf("%s.%s[%d]", path, k, i))...)
+				}
+			}
+		}
+	}
+	return hits
+}
+
+// checkSchema reports v's own path if v is a bare boolean, and always
+// recurses to find further nested schema-valued positions when v is an
+// object schema.
+func checkSchema(v any, path string) []string {
+	if b, ok := v.(bool); ok {
+		return []string{path + "=" + strconv.FormatBool(b)}
+	}
+	return findBoolSchemaNodes(v, path)
 }
 
 func TestSemarPromptServesEmbeddedTemplate(t *testing.T) {

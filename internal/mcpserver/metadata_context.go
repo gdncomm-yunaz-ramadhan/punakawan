@@ -22,7 +22,7 @@ import (
 type MetadataContextEntry struct {
 	Key         string `json:"key"`
 	Description string `json:"description,omitempty"`
-	Value       any    `json:"value,omitempty"`
+	Value       any    `json:"value,omitempty" jsonschema:"the metadata value, of whatever type it was stored as"`
 	Rendered    string `json:"rendered"`
 }
 

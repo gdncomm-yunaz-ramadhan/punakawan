@@ -46,7 +46,7 @@ type PrepareWorkContextInput struct {
 
 type PrepareWorkContextMetadataItem struct {
 	Key    string `json:"key"`
-	Value  any    `json:"value,omitempty"`
+	Value  any    `json:"value,omitempty" jsonschema:"the metadata value, of whatever type it was stored as"`
 	Reason string `json:"reason"`
 }
 

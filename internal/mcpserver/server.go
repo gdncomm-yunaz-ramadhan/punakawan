@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
@@ -66,6 +67,7 @@ func newServer(a *app.App) (*mcp.Server, error) {
 	}
 	registerTools(server, a, capability.NewRegistry())
 	server.AddReceivingMiddleware(compactStructuredToolResults)
+	server.AddReceivingMiddleware(sanitizeToolListSchemas)
 
 	return server, nil
 }
@@ -86,6 +88,99 @@ func CapabilityRegistry(a *app.App) *capability.Registry {
 	server := mcp.NewServer(&mcp.Implementation{Name: "punakawan", Version: "0.1.0"}, nil)
 	registerTools(server, a, reg)
 	return reg
+}
+
+// sanitizeToolListSchemas rewrites every bare-boolean JSON-Schema subschema
+// (jsonschema-go's spec-legal shorthand for "matches anything", produced by
+// any Go `any`/`interface{}` field with no jsonschema tag - see protocol
+// types generated from *.schema.json, and any hand-written tool struct with
+// the same gap) into an equivalent object-shaped schema before a tools/list
+// response leaves the server. Claude Code's MCP client rejects a bare
+// boolean wherever an object is expected (observed as "Invalid input (at
+// tools.N.outputSchema.properties.value)"); because that single occurrence
+// fails validation for the whole tools/list array, it silently hides every
+// tool this server exposes, not just the offending one (punokawan bug: MCP
+// tools never appeared in ToolSearch despite a byte-for-byte correct wire
+// response). Fixing this here, once, is more durable than annotating every
+// `any` field across a generated file that regenerates and would drop
+// hand-added struct tags anyway.
+func sanitizeToolListSchemas(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		result, err := next(ctx, method, req)
+		if err != nil || method != "tools/list" {
+			return result, err
+		}
+		listResult, ok := result.(*mcp.ListToolsResult)
+		if !ok {
+			return result, nil
+		}
+		for _, tool := range listResult.Tools {
+			if s, ok := tool.InputSchema.(*jsonschema.Schema); ok {
+				sanitizeAnySchema(s)
+			}
+			if s, ok := tool.OutputSchema.(*jsonschema.Schema); ok {
+				sanitizeAnySchema(s)
+			}
+		}
+		return result, nil
+	}
+}
+
+// sanitizeAnySchema fixes s's children in place (s itself is always
+// object-typed here: it is a tool's root input/output schema, which the Go
+// SDK forces to type "object"). See sanitizeToolListSchemas for why.
+func sanitizeAnySchema(s *jsonschema.Schema) {
+	if s == nil {
+		return
+	}
+	visit := func(c *jsonschema.Schema) {
+		if c == nil {
+			return
+		}
+		if b, err := json.Marshal(c); err == nil && string(b) == "true" {
+			c.Description = "any JSON value"
+		}
+		sanitizeAnySchema(c)
+	}
+	visit(s.Items)
+	for _, c := range s.PrefixItems {
+		visit(c)
+	}
+	visit(s.AdditionalItems)
+	visit(s.Contains)
+	visit(s.UnevaluatedItems)
+	for _, c := range s.Properties {
+		visit(c)
+	}
+	for _, c := range s.PatternProperties {
+		visit(c)
+	}
+	visit(s.AdditionalProperties)
+	visit(s.PropertyNames)
+	visit(s.UnevaluatedProperties)
+	for _, c := range s.AllOf {
+		visit(c)
+	}
+	for _, c := range s.AnyOf {
+		visit(c)
+	}
+	for _, c := range s.OneOf {
+		visit(c)
+	}
+	visit(s.Not)
+	visit(s.If)
+	visit(s.Then)
+	visit(s.Else)
+	for _, c := range s.DependentSchemas {
+		visit(c)
+	}
+	visit(s.ContentSchema)
+	for _, c := range s.Defs {
+		visit(c)
+	}
+	for _, c := range s.Definitions {
+		visit(c)
+	}
 }
 
 // compactStructuredToolResults removes the Go SDK's automatic full JSON copy

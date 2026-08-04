@@ -28,7 +28,7 @@ type SetProjectMetadataInput struct {
 
 type SetProjectMetadataOutput struct {
 	Key          string `json:"key"`
-	Value        any    `json:"value"`
+	Value        any    `json:"value" jsonschema:"the stored value, of whatever type it was set to"`
 	Description  string `json:"description"`
 	Revision     int    `json:"revision"`
 	Action       string `json:"action"` // "created" | "updated"
