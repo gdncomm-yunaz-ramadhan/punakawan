@@ -1,0 +1,67 @@
+internal/panel/server/server.go
+  e455c58c463269c6 10,549-557,562-567
+internal/panel/contract/readers.go
+  e455c58c463269c6 89-96
+internal/workflow/store.go
+  e455c58c463269c6 12,29-44,74-77,80-84,87,91-115,121,127,129-130,133,135,138-148,153-156,159-161,163
+internal/panel/api/overview_handler_test.go
+  e455c58c463269c6 30-33,37-39,113-137
+internal/panel/sources/session_source.go
+  e455c58c463269c6 104-108
+internal/workflow/store_test.go
+  e455c58c463269c6 5-6,69-201
+internal/panel/sources/workspace_source.go
+  e455c58c463269c6 20,73,85,118,135,143,150,163,176,207-214,217-225,333-339,384-389,391-403,405,409-429
+internal/panel/server/server_test.go
+  e455c58c463269c6 9,685-737
+internal/panel/api/overview_handler.go
+  e455c58c463269c6 131-135
+internal/panel/sources/sources_test.go
+  e455c58c463269c6 319-358,892-993
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "aecd22c5d3e1482d7dcb835b61b932be88a001bb",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "e455c58c463269c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f3de3e7-4613-410f-b633-b2d3899dfb3f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 562,
+      "total_deletions": 76,
+      "accepted_lines": 553,
+      "overriden_lines": 0
+    }
+  }
+}
