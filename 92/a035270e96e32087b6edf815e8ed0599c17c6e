@@ -1,0 +1,55 @@
+internal/panel/snapshot/snapshot_test.go
+  e455c58c463269c6 216-327
+internal/panel/sources/cached_workspace.go
+  e455c58c463269c6 5,7-8,26-31,51-57,67-72,80-136
+internal/panel/sources/cached_workspace_test.go
+  e455c58c463269c6 5,13,158-251
+internal/panel/snapshot/snapshot.go
+  e455c58c463269c6 16-23,54-66,78-79,121-134,168-174,180-192,201-202,214-216,260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "92a035270e96e32087b6edf815e8ed0599c17c6e",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "e455c58c463269c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f3de3e7-4613-410f-b633-b2d3899dfb3f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 357,
+      "total_deletions": 18,
+      "accepted_lines": 354,
+      "overriden_lines": 0
+    }
+  }
+}
