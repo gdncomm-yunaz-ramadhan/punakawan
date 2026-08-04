@@ -368,7 +368,10 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 // schema_migrations.
 func (s *Store) migrationApplied(version string) (bool, error) {
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, version).Scan(&n); err != nil {
+	err := withConnRetry(func() error {
+		return s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, version).Scan(&n)
+	})
+	if err != nil {
 		return false, err
 	}
 	return n > 0, nil
@@ -389,9 +392,11 @@ ON DUPLICATE KEY UPDATE applied_at = VALUES(applied_at)`, version, time.Now().UT
 // engines that reject CREATE INDEX IF NOT EXISTS).
 func (s *Store) indexExists(table, idx string) (bool, error) {
 	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM information_schema.statistics WHERE table_name = ? AND index_name = ?`,
-		table, idx).Scan(&n)
+	err := withConnRetry(func() error {
+		return s.db.QueryRow(
+			`SELECT COUNT(*) FROM information_schema.statistics WHERE table_name = ? AND index_name = ?`,
+			table, idx).Scan(&n)
+	})
 	if err != nil {
 		return false, err
 	}
@@ -476,7 +481,10 @@ func (s *Store) Close() error {
 // reaping our own child.
 func (s *Store) otherClientsConnected() bool {
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID()`).Scan(&n); err != nil {
+	err := withConnRetry(func() error {
+		return s.db.QueryRow(`SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID()`).Scan(&n)
+	})
+	if err != nil {
 		return false
 	}
 	return n > 0

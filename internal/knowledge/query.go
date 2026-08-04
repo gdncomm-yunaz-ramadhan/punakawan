@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,7 +18,10 @@ import (
 // (punokawan-rit, Phase 4 §11).
 func (s *Store) Count(ctx context.Context) (int, error) {
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_records`).Scan(&n); err != nil {
+	err := withConnRetry(func() error {
+		return s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_records`).Scan(&n)
+	})
+	if err != nil {
 		return 0, fmt.Errorf("knowledge: count records: %w", err)
 	}
 	return n, nil
@@ -93,7 +97,11 @@ func (s *Store) ListRecords(ctx context.Context, q KnowledgeListQuery) (records 
 		query += fmt.Sprintf(" LIMIT %d", q.Limit+1)
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	var rows *sql.Rows
+	err = withConnRetry(func() (err error) {
+		rows, err = s.db.QueryContext(ctx, query, args...)
+		return err
+	})
 	if err != nil {
 		return nil, "", fmt.Errorf("knowledge: list records: %w", err)
 	}

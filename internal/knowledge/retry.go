@@ -1,7 +1,11 @@
 package knowledge
 
 import (
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -61,4 +65,49 @@ func withConflictRetry(write func() error) error {
 		time.Sleep(baseDelay * time.Duration(attempt))
 	}
 	return lastErr
+}
+
+// isTransientConnErr reports whether err means the pooled connection died
+// before or during this attempt - the host slept, the Dolt server
+// restarted, an idle connection timed out - rather than a real query or
+// data problem. database/sql already retries transparently when a bad
+// connection is detected before any bytes go out, but it will not retry a
+// query that was genuinely in flight when the connection died (the
+// observed failure: a query outstanding for hours across a host sleep, then
+// "client connection went away while a query was executing"), since it has
+// no way to know whether a non-idempotent statement already took effect on
+// the server before the connection dropped.
+//
+// The Store's single connection (SetMaxOpenConns(1), see waitForConnection)
+// makes this more likely to bite than a normal pool would: there is no
+// second warm connection to fall back to while the first is stale.
+func isTransientConnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, mysql.ErrInvalidConn) ||
+		errors.Is(err, sql.ErrConnDone) || errors.Is(err, io.EOF) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "connection was closed") ||
+		strings.Contains(msg, "invalid connection") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset")
+}
+
+// withConnRetry retries read once when it fails with a transient dead
+// connection (isTransientConnErr) - only ever used for reads, which are
+// naturally idempotent, so a blind retry is always safe. Unlike
+// withConflictRetry's multi-attempt backoff for a lock conflict that may
+// take a few tries to clear, a dead connection either recovers on the very
+// next attempt (database/sql opens a fresh one once the old is marked bad)
+// or the server is genuinely down and a second attempt fails identically -
+// either way, more than one retry buys nothing.
+func withConnRetry(read func() error) error {
+	err := read()
+	if err != nil && isTransientConnErr(err) {
+		err = read()
+	}
+	return err
 }

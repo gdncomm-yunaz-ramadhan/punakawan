@@ -96,7 +96,9 @@ func (s *Store) Supersede(id, supersededBy string) error {
 // Get returns a single knowledge record by id.
 func (s *Store) Get(id string) (protocol.KnowledgeRecord, error) {
 	var data []byte
-	err := s.db.QueryRow(`SELECT data FROM knowledge_records WHERE id = ?`, id).Scan(&data)
+	err := withConnRetry(func() error {
+		return s.db.QueryRow(`SELECT data FROM knowledge_records WHERE id = ?`, id).Scan(&data)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return protocol.KnowledgeRecord{}, ErrNotFound
 	}
@@ -112,7 +114,11 @@ func (s *Store) Get(id string) (protocol.KnowledgeRecord, error) {
 
 // ListByType returns every knowledge record of the given type.
 func (s *Store) ListByType(recordType protocol.KnowledgeRecordType) ([]protocol.KnowledgeRecord, error) {
-	rows, err := s.db.Query(`SELECT data FROM knowledge_records WHERE type = ? ORDER BY id`, string(recordType))
+	var rows *sql.Rows
+	err := withConnRetry(func() (err error) {
+		rows, err = s.db.Query(`SELECT data FROM knowledge_records WHERE type = ? ORDER BY id`, string(recordType))
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: list by type %s: %w", recordType, err)
 	}
@@ -140,7 +146,9 @@ func (s *Store) ListByType(recordType protocol.KnowledgeRecordType) ([]protocol.
 // pointing to or from it. It does not error if the id does not exist.
 func (s *Store) Delete(id string) error {
 	var recordType string
-	err := s.db.QueryRow(`SELECT type FROM knowledge_records WHERE id = ?`, id).Scan(&recordType)
+	err := withConnRetry(func() error {
+		return s.db.QueryRow(`SELECT type FROM knowledge_records WHERE id = ?`, id).Scan(&recordType)
+	})
 	existed := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("knowledge: delete %s: check existence: %w", id, err)
@@ -181,11 +189,15 @@ func (s *Store) Delete(id string) error {
 // finding which other records point at it requires the indexed
 // knowledge_relations table rather than a full scan.
 func (s *Store) Related(id string) ([]protocol.KnowledgeRecord, error) {
-	rows, err := s.db.Query(`
+	var rows *sql.Rows
+	err := withConnRetry(func() (err error) {
+		rows, err = s.db.Query(`
 SELECT r.data FROM knowledge_relations kr
 JOIN knowledge_records r ON r.id = kr.from_id
 WHERE kr.to_id = ?
 ORDER BY r.id`, id)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: related %s: %w", id, err)
 	}

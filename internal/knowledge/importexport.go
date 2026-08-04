@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,7 +37,11 @@ func (s *Store) Export(w io.Writer) error {
 // allRecords returns every knowledge record currently in the store, ordered
 // by id, shared by Export and ExportYAML so both formats stay in sync.
 func (s *Store) allRecords() ([]protocol.KnowledgeRecord, error) {
-	rows, err := s.db.Query(`SELECT data FROM knowledge_records ORDER BY id`)
+	var rows *sql.Rows
+	err := withConnRetry(func() (err error) {
+		rows, err = s.db.Query(`SELECT data FROM knowledge_records ORDER BY id`)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: export query: %w", err)
 	}
@@ -71,7 +76,11 @@ type RecordWithUpdatedAt struct {
 // AllWithUpdatedAt returns every knowledge record currently in the store,
 // ordered by id, alongside its Dolt-tracked updated_at.
 func (s *Store) AllWithUpdatedAt() ([]RecordWithUpdatedAt, error) {
-	rows, err := s.db.Query(`SELECT data, updated_at FROM knowledge_records ORDER BY id`)
+	var rows *sql.Rows
+	err := withConnRetry(func() (err error) {
+		rows, err = s.db.Query(`SELECT data, updated_at FROM knowledge_records ORDER BY id`)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: export query: %w", err)
 	}

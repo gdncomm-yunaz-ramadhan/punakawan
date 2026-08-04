@@ -39,7 +39,9 @@ func (s *Store) GetInProject(project, id string) (protocol.KnowledgeRecord, erro
 	table := s.qualifiedTable(project, "knowledge_records")
 
 	var data []byte
-	err := s.db.QueryRow(`SELECT data FROM `+table+` WHERE id = ?`, id).Scan(&data)
+	err := withConnRetry(func() error {
+		return s.db.QueryRow(`SELECT data FROM `+table+` WHERE id = ?`, id).Scan(&data)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return protocol.KnowledgeRecord{}, ErrNotFound
 	}
@@ -85,7 +87,11 @@ func (s *Store) SearchInProject(project, text string, types []string, limit int)
 	}
 	query += fmt.Sprintf(" ORDER BY updated_at DESC LIMIT %d", limit)
 
-	rows, err := s.db.Query(query, args...)
+	var rows *sql.Rows
+	err := withConnRetry(func() (err error) {
+		rows, err = s.db.Query(query, args...)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: search in project %q: %w", project, err)
 	}
