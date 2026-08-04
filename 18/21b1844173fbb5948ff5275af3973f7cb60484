@@ -1,0 +1,57 @@
+internal/mcpserver/tools_metadata.go
+  e455c58c463269c6 31
+internal/mcpserver/server.go
+  e455c58c463269c6 13,70,93-185
+internal/mcpserver/metadata_context.go
+  e455c58c463269c6 25
+internal/mcpserver/server_test.go
+  e455c58c463269c6 6,10,164-271
+internal/mcpserver/tools_workcontext.go
+  e455c58c463269c6 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "1821b1844173fbb5948ff5275af3973f7cb60484",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "e455c58c463269c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f3de3e7-4613-410f-b633-b2d3899dfb3f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 261,
+      "total_deletions": 56,
+      "accepted_lines": 208,
+      "overriden_lines": 0
+    }
+  }
+}
