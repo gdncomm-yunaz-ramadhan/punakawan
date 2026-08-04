@@ -2,7 +2,10 @@ package sources
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/panel/contract"
@@ -20,9 +23,12 @@ import (
 //
 // List reads registry entries (cheap) and, for each, serves the cached
 // ProjectSnapshot: warm entries return instantly and trigger a background
-// refresh only when stale (stale-while-revalidate); a cold entry (nothing
-// cached yet) is refreshed once synchronously so the first page still shows
-// data. Concurrent refreshes for the same project coalesce inside the cache.
+// refresh only when stale (stale-while-revalidate). A process-cold entry
+// (nothing in this process's in-memory cache) is first seeded from its
+// persisted snapshot on disk, if a previous process ever computed one, so
+// only a project that has genuinely never been computed pays a synchronous
+// refresh to show the first page. Concurrent refreshes for the same
+// project coalesce inside the cache.
 //
 // Get delegates to the inner reader for the full WorkspaceDetail (the Health
 // page wants live-ish per-source detail the snapshot does not carry) and
@@ -42,6 +48,13 @@ type CachedWorkspaceReader struct {
 // metadata; primaryID is the workspace this panel instance was loaded for
 // (used to stamp WorkspaceSummary.Primary). ttl overrides the cache
 // staleness threshold when > 0.
+//
+// Every snapshot is also persisted to <project root>/.punakawan/<snapshotFileName>
+// (see loadPersistedSnapshot/savePersistedSnapshot) so a `punakawan panel`
+// restart - which always starts with an empty in-memory cache - loads each
+// project's last-known counts from disk instead of recomputing them live:
+// the in-memory cache alone was only warm for the lifetime of one process,
+// so every restart paid the full Dolt/bd/git inspection again.
 func NewCachedWorkspaceReader(inner contract.WorkspaceReader, reg *registry.Store, primaryID string, ttl time.Duration) *CachedWorkspaceReader {
 	c := &CachedWorkspaceReader{inner: inner, registry: reg, primaryID: primaryID}
 	refresh := func(ctx context.Context, projectID string) (*snapshot.ProjectSnapshot, error) {
@@ -51,12 +64,76 @@ func NewCachedWorkspaceReader(inner contract.WorkspaceReader, reg *registry.Stor
 		}
 		return summaryToSnapshot(detail.WorkspaceSummary), nil
 	}
-	var opts []snapshot.Option
+	opts := []snapshot.Option{
+		snapshot.WithPersistence(
+			func(projectID string) (*snapshot.ProjectSnapshot, bool) { return loadPersistedSnapshot(reg, projectID) },
+			func(snap *snapshot.ProjectSnapshot) { savePersistedSnapshot(reg, snap) },
+		),
+	}
 	if ttl > 0 {
 		opts = append(opts, snapshot.WithTTL(ttl))
 	}
 	c.cache = snapshot.New(refresh, opts...)
 	return c
+}
+
+// snapshotFileName names the per-project persisted ProjectSnapshot file
+// within its ".punakawan" directory, alongside workspace.yaml and the
+// project's other generated (gitignored) state.
+const snapshotFileName = "panel-snapshot.json"
+
+// loadPersistedSnapshot reads projectID's last-saved snapshot from its own
+// project root, resolved via reg. ok is false whenever the project is
+// unknown to reg, has never been saved, or the file cannot be read/decoded
+// - persistence is strictly best-effort, so any of these just falls back
+// to the cache's normal cold-start behavior (a live recompute).
+func loadPersistedSnapshot(reg *registry.Store, projectID string) (*snapshot.ProjectSnapshot, bool) {
+	if reg == nil {
+		return nil, false
+	}
+	entry, err := reg.Get(projectID)
+	if err != nil {
+		return nil, false
+	}
+	data, err := os.ReadFile(filepath.Join(entry.Path, ".punakawan", snapshotFileName))
+	if err != nil {
+		return nil, false
+	}
+	var snap snapshot.ProjectSnapshot
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return nil, false
+	}
+	return &snap, true
+}
+
+// savePersistedSnapshot durably writes snap to its project's own root
+// (resolved via reg), so the next `punakawan panel` process can load it
+// back via loadPersistedSnapshot. Writes to a temp file first and renames
+// into place so a concurrent loader never observes a half-written file.
+// Persistence is best-effort: any failure here (an unregistered project, a
+// read-only project root, ...) is silently skipped rather than surfaced,
+// since it must never fail the refresh that produced snap.
+func savePersistedSnapshot(reg *registry.Store, snap *snapshot.ProjectSnapshot) {
+	if reg == nil || snap == nil {
+		return
+	}
+	entry, err := reg.Get(snap.ProjectID)
+	if err != nil {
+		return
+	}
+	dir := filepath.Join(entry.Path, ".punakawan")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return
+	}
+	tmp := filepath.Join(dir, snapshotFileName+".tmp")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, filepath.Join(dir, snapshotFileName))
 }
 
 // List returns one WorkspaceSummary per registered project, served from the
