@@ -1,0 +1,69 @@
+internal/mcpserver/tools_jira.go
+  e455c58c463269c6 391-526
+internal/mcpserver/tools_learning.go
+  e455c58c463269c6 95,182-189,191-199
+internal/mcpserver/tools_jiracreate_workflowcap_test.go
+  e455c58c463269c6 1-53,58-62,65,76-80,82-83
+internal/mcpserver/tools_learning_knowledgecreate_test.go
+  e455c58c463269c6 1-13,16-33,36-38,44-48,54-57,59-63,66,100-101
+internal/mcpserver/tools_jira_test.go
+  e455c58c463269c6 8-9,28-29,348-497,509-510,512-518
+packages/adapter-atlassian/src/manifest.ts
+  e455c58c463269c6 50-51
+packages/adapter-atlassian/src/adapter.ts
+  e455c58c463269c6 24-25,218-230
+packages/adapter-atlassian/test/fakeAtlassianRest.ts
+  e455c58c463269c6 46-54,250-265
+internal/mcpserver/tools.go
+  e455c58c463269c6 243,306-309
+packages/adapter-atlassian/src/operations.ts
+  e455c58c463269c6 513-602
+packages/adapter-atlassian/test/adapter.test.ts
+  e455c58c463269c6 31-32,46-47,123-124,442-490,751-778
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "12f5bbd717491c4c43e1083fccd47359a56086c6",
+  "prompts": {
+    "2f887451c47c71bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f972a-749f-78d1-8c13-809489c40f8c",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "d98638225f35480d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4b5be3e-2925-48fa-a06e-7a159267f843",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "e455c58c463269c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f3de3e7-4613-410f-b633-b2d3899dfb3f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 798,
+      "total_deletions": 26,
+      "accepted_lines": 744,
+      "overriden_lines": 30
+    }
+  }
+}
