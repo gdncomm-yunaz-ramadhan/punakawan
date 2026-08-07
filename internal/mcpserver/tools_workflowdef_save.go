@@ -70,6 +70,7 @@ func saveWorkflowDefinitionHandler(a *app.App, reg *capability.Registry) func(co
 		if def.Version == "" {
 			def.Version = workflowdef.SchemaVersion
 		}
+		canonicalizeWorkflowCapabilities(&def)
 
 		caps := workflowdef.NewCapabilitySet(reg.Names(), nil)
 		if err := workflowdef.Validate(def, caps); err != nil {
@@ -104,6 +105,28 @@ func saveWorkflowDefinitionHandler(a *app.App, reg *capability.Registry) func(co
 			out.SupportCount = supportCount
 		}
 		return nil, out, nil
+	}
+}
+
+// canonicalizeWorkflowCapabilities accepts the two Jira-create identifiers
+// agents most often infer from the adapter operation name and stores the
+// canonical native MCP capability. This keeps workflow definitions portable:
+// create_jira_issue is always registered, while raw adapter operations depend
+// on which adapters happened to load for the current project.
+func canonicalizeWorkflowCapabilities(def *workflowdef.Definition) {
+	canonical := func(name string) string {
+		switch name {
+		case "createJiraIssue", "atlassian.createJiraIssue":
+			return "create_jira_issue"
+		default:
+			return name
+		}
+	}
+	for i := range def.AllowedCapabilities {
+		def.AllowedCapabilities[i] = canonical(def.AllowedCapabilities[i])
+	}
+	for i := range def.Steps {
+		def.Steps[i].Capability = canonical(def.Steps[i].Capability)
 	}
 }
 

@@ -2,7 +2,10 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -22,6 +25,8 @@ func jiraNativeToolsManifest() protocol.AdapterManifest {
 	m.Operations["atlassian.createIssueLink"] = approvalRequiredOp
 	m.Operations["atlassian.editJiraIssueFields"] = approvalRequiredOp
 	m.Operations["atlassian.createJiraIssue"] = approvalRequiredOp
+	m.Operations["atlassian.listJiraBoards"] = readOp
+	m.Operations["atlassian.listJiraSprints"] = readOp
 	return m
 }
 
@@ -338,6 +343,177 @@ func TestListJiraSubtasksRejectsInvalidRequestedBy(t *testing.T) {
 	if _, err := listJiraSubtasks(context.Background(), nil, gate, in); err == nil {
 		t.Fatal("expected an error for an invalid requested_by")
 	}
+}
+
+// --- jira_find_sprint --------------------------------------------------------
+
+func TestJiraFindSprintByBoardId(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	fc.responses = map[string]string{
+		"atlassian.listJiraSprints": `{"sprints":[
+			{"id":1,"name":"Sprint 1","state":"closed","boardId":42},
+			{"id":2,"name":"Sprint 2","state":"active","boardId":42}
+		]}`,
+	}
+
+	in := JiraFindSprintInput{BoardId: 42, RequestedBy: "petruk"}
+	out, err := jiraFindSprint(context.Background(), nil, gate, in)
+	if err != nil {
+		t.Fatalf("jiraFindSprint: %v", err)
+	}
+	if len(out.BoardIds) != 1 || out.BoardIds[0] != 42 {
+		t.Fatalf("BoardIds = %+v, want [42]", out.BoardIds)
+	}
+	if out.Count != 2 || len(out.Sprints) != 2 {
+		t.Fatalf("Sprints = %+v, want 2", out.Sprints)
+	}
+	if out.Sprints[1].Id != 2 || out.Sprints[1].State != "active" || out.Sprints[1].BoardId != 42 {
+		t.Errorf("Sprints[1] = %+v, want id=2 state=active board_id=42", out.Sprints[1])
+	}
+	if len(fc.calls) != 1 {
+		t.Fatalf("calls = %+v, want exactly one listJiraSprints call (a read, no approval)", fc.calls)
+	}
+	c := fc.calls[0]
+	if c["op"] != "atlassian.listJiraSprints" || c["boardId"] != 42 {
+		t.Errorf("call = %+v, want listJiraSprints boardId=42", c)
+	}
+}
+
+func TestJiraFindSprintByProjectKeyResolvesBoards(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	fc.responses = map[string]string{
+		"atlassian.listJiraBoards":  `{"boards":[{"id":42,"name":"PAY board","type":"scrum"}]}`,
+		"atlassian.listJiraSprints": `{"sprints":[{"id":7,"name":"PAY Sprint 7","state":"active","boardId":42}]}`,
+	}
+	in := JiraFindSprintInput{ProjectKey: "PAY", RequestedBy: "petruk"}
+	out, err := jiraFindSprint(context.Background(), nil, gate, in)
+	if err != nil {
+		t.Fatalf("jiraFindSprint: %v", err)
+	}
+	if len(out.BoardIds) != 1 || out.BoardIds[0] != 42 {
+		t.Fatalf("BoardIds = %+v, want [42]", out.BoardIds)
+	}
+	if len(out.Sprints) != 1 || out.Sprints[0].Id != 7 {
+		t.Fatalf("Sprints = %+v, want one sprint id 7", out.Sprints)
+	}
+	if len(fc.calls) != 2 {
+		t.Fatalf("calls = %+v, want listJiraBoards then listJiraSprints", fc.calls)
+	}
+	if fc.calls[0]["op"] != "atlassian.listJiraBoards" || fc.calls[0]["projectKeyOrId"] != "PAY" {
+		t.Errorf("calls[0] = %+v, want listJiraBoards projectKeyOrId=PAY", fc.calls[0])
+	}
+	if fc.calls[1]["op"] != "atlassian.listJiraSprints" || fc.calls[1]["boardId"] != 42 {
+		t.Errorf("calls[1] = %+v, want listJiraSprints boardId=42", fc.calls[1])
+	}
+}
+
+func TestJiraFindSprintFiltersByStateAndQuery(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	fc.responses = map[string]string{
+		"atlassian.listJiraSprints": `{"sprints":[
+			{"id":1,"name":"Alpha Sprint","state":"active","boardId":42},
+			{"id":2,"name":"Beta Sprint","state":"active","boardId":42}
+		]}`,
+	}
+	in := JiraFindSprintInput{BoardId: 42, State: "Active", Query: "alpha", RequestedBy: "petruk"}
+	out, err := jiraFindSprint(context.Background(), nil, gate, in)
+	if err != nil {
+		t.Fatalf("jiraFindSprint: %v", err)
+	}
+	if len(out.Sprints) != 1 || out.Sprints[0].Name != "Alpha Sprint" {
+		t.Fatalf("Sprints = %+v, want only Alpha Sprint", out.Sprints)
+	}
+	if fc.calls[0]["state"] != "active" {
+		t.Errorf("call state = %v, want lowercased active", fc.calls[0]["state"])
+	}
+}
+
+func TestJiraFindSprintRequiresBoardOrProject(t *testing.T) {
+	gate, _ := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	in := JiraFindSprintInput{RequestedBy: "petruk"}
+	if _, err := jiraFindSprint(context.Background(), nil, gate, in); err == nil {
+		t.Fatal("expected an error when neither board_id nor project_key is set")
+	}
+}
+
+func TestJiraFindSprintRejectsInvalidState(t *testing.T) {
+	gate, _ := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	in := JiraFindSprintInput{BoardId: 42, State: "bogus", RequestedBy: "petruk"}
+	if _, err := jiraFindSprint(context.Background(), nil, gate, in); err == nil {
+		t.Fatal("expected an error for an invalid state filter")
+	}
+}
+
+func TestJiraFindSprintNeedsNoApproval(t *testing.T) {
+	gate, _ := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	in := JiraFindSprintInput{BoardId: 42, RequestedBy: "petruk"}
+	if _, err := jiraFindSprint(context.Background(), nil, gate, in); err != nil {
+		t.Fatalf("jiraFindSprint (read) should not require approval: %v", err)
+	}
+}
+
+func TestJiraFindSprintErrorsWhenProjectHasNoBoards(t *testing.T) {
+	gate, _ := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	// No response registered for listJiraBoards -> the fake caller's default
+	// `{"ok":true}` decodes to zero boards, which must surface as an error
+	// rather than silently returning no sprints.
+	in := JiraFindSprintInput{ProjectKey: "NOPE", RequestedBy: "petruk"}
+	if _, err := jiraFindSprint(context.Background(), nil, gate, in); err == nil {
+		t.Fatal("expected an error when project resolves to no scrum boards")
+	}
+}
+
+func TestJiraFindSprintRejectsInvalidRequestedBy(t *testing.T) {
+	gate, _ := newJiraClarifyTestGateWithManifest(t, jiraNativeToolsManifest())
+	in := JiraFindSprintInput{BoardId: 42, RequestedBy: "boss"}
+	if _, err := jiraFindSprint(context.Background(), nil, gate, in); err == nil {
+		t.Fatal("expected an error for an invalid requested_by")
+	}
+}
+
+// TestJiraFindSprintListedOverMCPTransport exercises the real MCP wire
+// protocol (server_test.go's connect/newTestApp helpers), not just the
+// fake-gate unit tests above: it confirms jira_find_sprint is actually
+// registered and reachable via tools/list, with the input schema fields this
+// tool depends on. A full connect+CallTool round trip against a real
+// atlassian adapter is not exercised here - unlike call_adapter_operation's
+// prototype-adapter end-to-end test, there is no fake atlassian subprocess to
+// spawn, and this machine's real global Punakawan config (not a test
+// fixture) is what MergeAdapters would otherwise resolve "atlassian" through,
+// which would make the test's outcome depend on host state rather than this
+// change. See the fake-gate tests above for jira_find_sprint's actual
+// behavior, matching how every sibling jira_* tool in this file is tested.
+func TestJiraFindSprintListedOverMCPTransport(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	res, err := cs.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tool := range res.Tools {
+		if tool.Name != "jira_find_sprint" {
+			continue
+		}
+		encoded, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("marshal jira_find_sprint input schema: %v", err)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(encoded, &schema); err != nil {
+			t.Fatalf("decode jira_find_sprint input schema: %v", err)
+		}
+		if _, ok := schema.Properties["board_id"]; !ok {
+			t.Errorf("jira_find_sprint input schema missing board_id property")
+		}
+		if _, ok := schema.Properties["project_key"]; !ok {
+			t.Errorf("jira_find_sprint input schema missing project_key property")
+		}
+		return
+	}
+	t.Fatal("jira_find_sprint is not registered in tools/list")
 }
 
 // --- list_jira_linked_issues -----------------------------------------------

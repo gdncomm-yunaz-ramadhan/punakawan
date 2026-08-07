@@ -388,6 +388,142 @@ func jiraAssignIssue(ctx context.Context, req *mcp.CallToolRequest, gate *adapte
 	return out, nil
 }
 
+// --- jira_find_sprint --------------------------------------------------------
+
+// JiraFindSprintInput is jira_find_sprint's input. At least one of BoardId or
+// ProjectKey is required: BoardId is used directly; ProjectKey is resolved to
+// its board(s) first via atlassian.listJiraBoards (scrum boards only - Jira's
+// sprint endpoint 400s for kanban boards, which never have sprints). This
+// replaces the raw JQL "board in (X) and sprint in openSprints()" workaround a
+// caller previously had to resort to (punokawan-wij9) just to find a sprint id
+// without already knowing it.
+type JiraFindSprintInput struct {
+	RunId       string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session. This is a read, so no approval is needed either way."`
+	BoardId     int    `json:"board_id,omitempty" jsonschema:"numeric Jira Agile board id to list sprints for; takes priority over project_key when both are set"`
+	ProjectKey  string `json:"project_key,omitempty" jsonschema:"Jira project key (e.g. PAY) to resolve to its scrum board(s) when board_id is not already known; ignored if board_id is set"`
+	State       string `json:"state,omitempty" jsonschema:"filter by sprint state: active, future, or closed; omit for all states"`
+	Query       string `json:"query,omitempty" jsonschema:"case-insensitive substring match against sprint name; omit to return every sprint matching board/project and state"`
+	MaxResults  int    `json:"max_results,omitempty" jsonschema:"max sprints to return per board, default 50"`
+	RequestedBy string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong"`
+}
+
+// JiraSprint is one sprint returned by jira_find_sprint.
+type JiraSprint struct {
+	Id        int    `json:"id"`
+	Name      string `json:"name,omitempty"`
+	State     string `json:"state,omitempty"`
+	BoardId   int    `json:"board_id,omitempty"`
+	StartDate string `json:"start_date,omitempty"`
+	EndDate   string `json:"end_date,omitempty"`
+	Goal      string `json:"goal,omitempty"`
+}
+
+// JiraFindSprintOutput is jira_find_sprint's output. BoardIds echoes which
+// board(s) were actually searched - either the single board_id given, or
+// every scrum board resolved from project_key - so a caller can tell which
+// board a returned sprint came from without re-deriving it.
+type JiraFindSprintOutput struct {
+	BoardIds []int        `json:"board_ids"`
+	Sprints  []JiraSprint `json:"sprints"`
+	Count    int          `json:"count"`
+}
+
+func jiraFindSprintHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, JiraFindSprintInput) (*mcp.CallToolResult, JiraFindSprintOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in JiraFindSprintInput) (*mcp.CallToolResult, JiraFindSprintOutput, error) {
+		gate, err := a.AdapterRegistry.Gate(ctx, "atlassian")
+		if err != nil {
+			return nil, JiraFindSprintOutput{}, fmt.Errorf("mcpserver: jira_find_sprint: %w", err)
+		}
+		out, err := jiraFindSprint(ctx, req, gate, in)
+		return nil, out, err
+	}
+}
+
+func jiraFindSprint(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, in JiraFindSprintInput) (JiraFindSprintOutput, error) {
+	var out JiraFindSprintOutput
+	requestedBy, err := validateRequestedBy(in.RequestedBy)
+	if err != nil {
+		return out, err
+	}
+	if in.BoardId <= 0 && strings.TrimSpace(in.ProjectKey) == "" {
+		return out, fmt.Errorf("mcpserver: jira_find_sprint: one of board_id or project_key is required")
+	}
+	state := strings.ToLower(strings.TrimSpace(in.State))
+	if state != "" && state != "active" && state != "future" && state != "closed" {
+		return out, fmt.Errorf("mcpserver: jira_find_sprint: state must be one of active, future, closed (got %q)", in.State)
+	}
+
+	var boardIDs []int
+	if in.BoardId > 0 {
+		boardIDs = []int{in.BoardId}
+	} else {
+		raw, err := invokeAdapterOperation(ctx, req, gate, resolveRunID(in.RunId), "atlassian.listJiraBoards",
+			map[string]any{"projectKeyOrId": in.ProjectKey, "type": "scrum"}, requestedBy)
+		if err != nil {
+			return out, fmt.Errorf("mcpserver: jira_find_sprint: resolve boards for project %q: %w", in.ProjectKey, err)
+		}
+		var boardsRes struct {
+			Boards []struct {
+				Id int `json:"id"`
+			} `json:"boards"`
+		}
+		if err := json.Unmarshal(raw, &boardsRes); err != nil {
+			return out, fmt.Errorf("mcpserver: jira_find_sprint: decode boards for project %q: %w", in.ProjectKey, err)
+		}
+		for _, b := range boardsRes.Boards {
+			boardIDs = append(boardIDs, b.Id)
+		}
+		if len(boardIDs) == 0 {
+			return out, fmt.Errorf("mcpserver: jira_find_sprint: no scrum boards found for project %q", in.ProjectKey)
+		}
+	}
+	out.BoardIds = boardIDs
+
+	queryLower := strings.ToLower(strings.TrimSpace(in.Query))
+	for _, boardID := range boardIDs {
+		params := map[string]any{"boardId": boardID}
+		if state != "" {
+			params["state"] = state
+		}
+		if in.MaxResults > 0 {
+			params["maxResults"] = in.MaxResults
+		}
+		raw, err := invokeAdapterOperation(ctx, req, gate, resolveRunID(in.RunId), "atlassian.listJiraSprints", params, requestedBy)
+		if err != nil {
+			return out, fmt.Errorf("mcpserver: jira_find_sprint: list sprints for board %d: %w", boardID, err)
+		}
+		var res struct {
+			Sprints []struct {
+				Id        int    `json:"id"`
+				Name      string `json:"name"`
+				State     string `json:"state"`
+				BoardId   int    `json:"boardId"`
+				StartDate string `json:"startDate"`
+				EndDate   string `json:"endDate"`
+				Goal      string `json:"goal"`
+			} `json:"sprints"`
+		}
+		if err := json.Unmarshal(raw, &res); err != nil {
+			return out, fmt.Errorf("mcpserver: jira_find_sprint: decode sprints for board %d: %w", boardID, err)
+		}
+		for _, s := range res.Sprints {
+			if queryLower != "" && !strings.Contains(strings.ToLower(s.Name), queryLower) {
+				continue
+			}
+			bid := s.BoardId
+			if bid == 0 {
+				bid = boardID
+			}
+			out.Sprints = append(out.Sprints, JiraSprint{
+				Id: s.Id, Name: s.Name, State: s.State, BoardId: bid,
+				StartDate: s.StartDate, EndDate: s.EndDate, Goal: s.Goal,
+			})
+		}
+	}
+	out.Count = len(out.Sprints)
+	return out, nil
+}
+
 // --- list_jira_linked_issues -----------------------------------------------
 
 // ListJiraLinkedIssuesInput is list_jira_linked_issues's input.

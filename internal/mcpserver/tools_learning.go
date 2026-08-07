@@ -92,7 +92,7 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 		reviews := &artifact.ReviewStore{WorkspaceRoot: a.Workspace.Root}
 		baseRef, err := adapter.Current(in.TargetId)
 		if err != nil {
-			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target %q not found: %w", in.TargetId, err)
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target %q not found: %w; %s", in.TargetId, err, createPathHint(in.ArtifactType))
 		}
 		baseContent, _, err := adapter.Version(in.TargetId, baseRef.Version)
 		if err != nil {
@@ -176,6 +176,24 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, ProposeProjectLearningOutput{}, err
 		}
 		return nil, ProposeProjectLearningOutput{ProposalId: lp.Id, ReviewId: reviewID, Fingerprint: fp, SupportCount: 1, Deduplicated: false, Status: lp.Status}, nil
+	}
+}
+
+// createPathHint tells a caller who passed a non-existent target_id where the
+// create-from-scratch path lives, since propose_project_learning only ever
+// proposes an improvement to an artifact that already exists - it is never the
+// tool that mints a brand-new one (that confusion was reported against the
+// knowledge pillar specifically: bd punokawan-h5by).
+func createPathHint(artifactType string) string {
+	switch artifactType {
+	case learning.TypeKnowledge:
+		return "propose_project_learning only improves an existing knowledge record - to create a new one from scratch use create_knowledge_record (or a dedicated dossier/role/recipe tool for structured records), then improve that record's id here"
+	case learning.TypeWorkflow:
+		return "propose_project_learning only improves an existing workflow definition - to create a new one use save_workflow_definition, then propose improvements against its id here"
+	case learning.TypeMetadata:
+		return "propose_project_learning only improves an existing metadata entry - to create one use set_project_metadata, then propose improvements against its key here"
+	default:
+		return "propose_project_learning only improves an artifact that already exists; create it with its dedicated tool first"
 	}
 }
 

@@ -47,5 +47,7 @@ export const manifest: AdapterManifest = {
     'atlassian.createJiraSubtask': { side_effect: true, approval: 'required' },
     'atlassian.searchJiraUsers': { side_effect: false },
     'atlassian.createIssueLink': { side_effect: true, approval: 'required' },
+    'atlassian.listJiraBoards': { side_effect: false },
+    'atlassian.listJiraSprints': { side_effect: false },
   },
 };

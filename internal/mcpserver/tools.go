@@ -47,6 +47,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, buildContextDossierHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "create_knowledge_record",
+		Description: "Create a durable project knowledge record directly, without first creating a workflow run, capsule, dossier, or existing target. Use this for ad-hoc decisions, facts, assumptions, risks, evidence, conventions, and other reusable context. Defaults to model-assisted/inferred provenance; set validity_state deliberately when the source supports a stronger or different claim. Structured role outputs and retrieval recipes must use their dedicated tools.",
+	}, createKnowledgeRecordHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "set_project_metadata",
 		Description: "Create or update one project metadata entry (mirrors the panel's metadata editor). Omit value to attempt best-effort auto-detection for known keys (currently: test.command) before falling back to an error the caller can turn into an explicit ask. Use this to close a prepare_work_context 'metadata' MissingItem gap without a human editing project.yaml by hand.",
 	}, setProjectMetadataHandler(a))
@@ -83,7 +88,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "save_workflow_definition",
-		Description: "Create or update a reusable workflow definition (mirrors the panel's workflow editor) - use this to turn an explicitly user-dictated flow, or a pattern the calling agent judges worth capturing, straight into a versioned, selector-resolvable definition without waiting on propose_project_learning's panel-review gate. Validated against the same capability rules the panel enforces (unknown/command-like capabilities are rejected). Updating an existing id requires the current revision (optimistic locking, like project metadata); a brand-new id ignores whatever revision is passed. The prior version is always snapshotted, never overwritten - see the panel's workflow history for any revision. Set judgment (with a required rationale) when the agent's own judgment - not a direct user instruction - is why this pattern is being captured: this records a fingerprinted, deduplicated learning proposal alongside the save (support_count increments if the same step pattern is captured again), already marked accepted since the save already happened - it is an audit trail, not an additional gate.",
+		Description: "Create or update a reusable workflow definition (mirrors the panel's workflow editor) - use this to turn an explicitly user-dictated flow, or a pattern the calling agent judges worth capturing, straight into a versioned, selector-resolvable definition without waiting on propose_project_learning's panel-review gate. Validated against the same capability rules the panel enforces (unknown/command-like capabilities are rejected); common Jira-create spellings createJiraIssue and atlassian.createJiraIssue are normalized to the canonical create_jira_issue tool. Updating an existing id requires the current revision (optimistic locking, like project metadata); a brand-new id ignores whatever revision is passed. The prior version is always snapshotted, never overwritten - see the panel's workflow history for any revision. Set judgment (with a required rationale) when the agent's own judgment - not a direct user instruction - is why this pattern is being captured: this records a fingerprinted, deduplicated learning proposal alongside the save (support_count increments if the same step pattern is captured again), already marked accepted since the save already happened - it is an audit trail, not an additional gate.",
 	}, saveWorkflowDefinitionHandler(a, reg))
 
 	addTool(server, reg, &mcp.Tool{
@@ -235,7 +240,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	// Jira as source of truth: adapter invocation (§5.1-§5.3).
 	addTool(server, reg, &mcp.Tool{
 		Name:        "call_adapter_operation",
-		Description: "Invoke a declared adapter operation. Atlassian reads include getJiraIssue, getJiraComments, getJiraRemoteLinks, getJiraEpic, listJiraAttachments, and searchJira. Writes include editJiraIssue, addJiraComment, download/upload/deleteJiraAttachment, estimates, worklogs, and transitions. Writes elicit one human approval for the whole run; unsupported clients must show the user Approve/Deny and then use respond_to_adapter_approval.",
+		Description: "Invoke a declared adapter operation. Atlassian reads include getJiraIssue, getJiraComments, getJiraRemoteLinks, getJiraEpic, listJiraAttachments, listJiraBoards, listJiraSprints, and searchJira. Writes include editJiraIssue, addJiraComment, download/upload/deleteJiraAttachment, estimates, worklogs, and transitions. Writes elicit one human approval for the whole run; unsupported clients must show the user Approve/Deny and then use respond_to_adapter_approval.",
 	}, callAdapterOperationHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -296,6 +301,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "jira_assign_issue",
 		Description: "Assign a Jira issue to a user by accountId (resolve a name/email with jira_search_user first). run_id is optional for one-off use." + approvalGateNote,
 	}, jiraAssignIssueHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "jira_find_sprint",
+		Description: "Find Jira Agile sprints scoped to a board_id or project_key (a project_key is resolved to that project's scrum board(s) first via atlassian.listJiraBoards), optionally filtered by state (active/future/closed) and a case-insensitive name substring - so a caller can resolve a sprint id without already knowing it, instead of falling back to a raw JQL 'board in (X) and sprint in openSprints()' workaround. Returns each match's id, name, state, and board_id. Read-only: no approval needed. run_id is optional for one-off use.",
+	}, jiraFindSprintHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_jira_subtasks",

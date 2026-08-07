@@ -28,6 +28,8 @@ import {
   uploadJiraAttachment,
   searchJiraUsers,
   createIssueLink,
+  listJiraBoards,
+  listJiraSprints,
 } from '../src/operations.js';
 import { manifest } from '../src/manifest.js';
 import { normalizeJiraIssue } from '../src/normalize.js';
@@ -41,6 +43,8 @@ import {
   FIXTURE_ISSUE_TYPE_FIELD_META,
   FIXTURE_COMMENTS,
   FIXTURE_REMOTE_LINKS,
+  FIXTURE_BOARDS,
+  FIXTURE_SPRINTS,
   adfText,
   createFakeAtlassianRest,
   type FakeAtlassianRest,
@@ -116,6 +120,8 @@ describe('manifest', () => {
       'atlassian.getJiraRemoteLinks',
       'atlassian.getJiraEpic',
       'atlassian.listJiraAttachments',
+      'atlassian.listJiraBoards',
+      'atlassian.listJiraSprints',
     ]) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
       assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
@@ -433,6 +439,55 @@ describe('createIssueLink', () => {
   });
 });
 
+describe('listJiraBoards', () => {
+  test('lists boards for a project', async () => {
+    const client = await fakeClient();
+    const { boards } = await listJiraBoards(client, { projectKeyOrId: 'PROJ', type: 'scrum' });
+
+    assert.equal(boards.length, 1);
+    assert.equal(boards[0]?.id, FIXTURE_BOARDS[0]?.id);
+    assert.equal(boards[0]?.name, FIXTURE_BOARDS[0]?.name);
+    assert.equal(boards[0]?.type, 'scrum');
+    await client.close();
+  });
+
+  test('returns no boards for a project with none', async () => {
+    const client = await fakeClient();
+    const { boards } = await listJiraBoards(client, { projectKeyOrId: 'NOPE' });
+    assert.equal(boards.length, 0);
+    await client.close();
+  });
+});
+
+describe('listJiraSprints', () => {
+  test('lists every sprint on a board', async () => {
+    const client = await fakeClient();
+    const { sprints } = await listJiraSprints(client, { boardId: FIXTURE_BOARDS[0]!.id });
+
+    assert.equal(sprints.length, FIXTURE_SPRINTS.length);
+    assert.equal(sprints[0]?.id, FIXTURE_SPRINTS[0]?.id);
+    assert.equal(sprints[0]?.name, FIXTURE_SPRINTS[0]?.name);
+    assert.equal(sprints[0]?.state, 'closed');
+    assert.equal(sprints[0]?.boardId, FIXTURE_BOARDS[0]?.id);
+    assert.equal(sprints[0]?.goal, 'Ship refunds');
+    await client.close();
+  });
+
+  test('filters by state', async () => {
+    const client = await fakeClient();
+    const { sprints } = await listJiraSprints(client, { boardId: FIXTURE_BOARDS[0]!.id, state: 'active' });
+    assert.equal(sprints.length, 1);
+    assert.equal(sprints[0]?.id, 2);
+    await client.close();
+  });
+
+  test('rejects a kanban-style board id the fake server does not support sprints for', async () => {
+    const client = await fakeClient();
+    await assert.rejects(() => listJiraSprints(client, { boardId: 999 }), /does not support sprints/);
+    await client.close();
+  });
+});
+
 describe('getTransitionsForJiraIssue', () => {
   test('returns available transitions with id, name, and toStatus', async () => {
     const client = await fakeClient();
@@ -690,6 +745,34 @@ describe('execute via handlers', () => {
       const result = await handlers.execute({ op, ...params }, new AbortController().signal);
       assert.ok(result && typeof result === 'object', `${op} should return an object`);
     }
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.listJiraBoards and atlassian.listJiraSprints through the full handler dispatch', async () => {
+    const { handlers } = fakeHandlers();
+
+    const boardsResult = (await handlers.execute(
+      { op: 'atlassian.listJiraBoards', projectKeyOrId: 'PROJ', type: 'scrum' },
+      new AbortController().signal,
+    )) as { boards: { id: number }[] };
+    assert.equal(boardsResult.boards.length, 1);
+
+    const sprintsResult = (await handlers.execute(
+      { op: 'atlassian.listJiraSprints', boardId: boardsResult.boards[0]?.id },
+      new AbortController().signal,
+    )) as { sprints: { id: number; boardId: number }[] };
+    assert.equal(sprintsResult.sprints.length, FIXTURE_SPRINTS.length);
+    assert.equal(sprintsResult.sprints[0]?.boardId, boardsResult.boards[0]?.id);
+
+    await handlers.shutdown(undefined, new AbortController().signal);
+  });
+
+  test('atlassian.listJiraSprints requires boardId', async () => {
+    const { handlers } = fakeHandlers();
+    await assert.rejects(
+      () => handlers.execute({ op: 'atlassian.listJiraSprints' }, new AbortController().signal),
+      /requires "boardId"/,
+    );
     await handlers.shutdown(undefined, new AbortController().signal);
   });
 

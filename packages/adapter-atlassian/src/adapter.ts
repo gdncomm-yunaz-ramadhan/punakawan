@@ -21,6 +21,8 @@ import {
   getJiraRemoteLinks,
   getTransitionsForJiraIssue,
   listJiraAttachments,
+  listJiraBoards,
+  listJiraSprints,
   searchConfluence,
   searchJira,
   transitionJiraIssue,
@@ -212,6 +214,19 @@ export function createHandlers(options?: {
             throw new Error('atlassian.createIssueLink requires "linkType", "inwardIssueKey", and "outwardIssueKey"');
           }
           return createIssueLink(getClient(), { linkType, inwardIssueKey, outwardIssueKey });
+        }
+        case 'atlassian.listJiraBoards': {
+          const { projectKeyOrId, type, maxResults } = rest as {
+            projectKeyOrId?: string;
+            type?: string;
+            maxResults?: number;
+          };
+          return listJiraBoards(getClient(), { projectKeyOrId, type, maxResults });
+        }
+        case 'atlassian.listJiraSprints': {
+          const { boardId, state, maxResults } = rest as { boardId: number; state?: string; maxResults?: number };
+          if (boardId === undefined || boardId === null) throw new Error('atlassian.listJiraSprints requires "boardId"');
+          return listJiraSprints(getClient(), { boardId, state, maxResults });
         }
         default:
           throw new Error(`Unsupported op: ${op}`);

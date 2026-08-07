@@ -510,6 +510,98 @@ export async function searchJiraUsers(client: AtlassianRestClient, params: Searc
   return { users };
 }
 
+export interface JiraBoard {
+  id: number;
+  name?: string;
+  type?: string;
+}
+
+export interface ListJiraBoardsParams {
+  /** Restrict to one project's boards; omit to list every board visible to this token. */
+  projectKeyOrId?: string;
+  /** Jira board type filter, e.g. "scrum" (only scrum boards support the sprint endpoint). */
+  type?: string;
+  maxResults?: number;
+}
+
+/**
+ * Lists Jira Agile boards, optionally scoped to a project. Board discovery is
+ * the first half of resolving a sprint by project_key alone (punokawan-wij9):
+ * a caller with only a project key has no other way to learn the numeric
+ * board id listSprintsForBoard requires. Read-only.
+ */
+export async function listJiraBoards(client: AtlassianRestClient, params: ListJiraBoardsParams) {
+  const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 50));
+  const raw = await client.jira<Record<string, unknown>>('/rest/agile/1.0/board', {
+    query: { projectKeyOrId: params.projectKeyOrId, type: params.type, maxResults },
+  });
+  const payload = asRecord(raw.data);
+  const values = Array.isArray(payload.values) ? payload.values : [];
+  const boards: JiraBoard[] = values.flatMap((entry) => {
+    const board = asRecord(entry);
+    const id = typeof board.id === 'number' ? board.id : Number(board.id);
+    if (!Number.isFinite(id)) return [];
+    return [{ id, name: asString(board.name), type: asString(board.type) }];
+  });
+  return {
+    boards,
+    page: { returned: boards.length, isLast: typeof payload.isLast === 'boolean' ? payload.isLast : undefined },
+  };
+}
+
+export interface JiraSprint {
+  id: number;
+  name?: string;
+  state?: string;
+  boardId?: number;
+  startDate?: string;
+  endDate?: string;
+  goal?: string;
+}
+
+export interface ListJiraSprintsParams {
+  boardId: number;
+  /** Jira accepts a comma-separated combination of active,future,closed; omit for all. */
+  state?: string;
+  maxResults?: number;
+}
+
+/**
+ * Lists sprints on one Agile board, optionally filtered by state. Direct
+ * replacement for the raw JQL "board in (X) and sprint in openSprints()"
+ * workaround (punokawan-wij9) a caller previously had to resort to just to
+ * find a sprint id. Read-only; 400s from Jira if boardId names a kanban
+ * board (kanban boards have no sprints).
+ */
+export async function listJiraSprints(client: AtlassianRestClient, params: ListJiraSprintsParams) {
+  const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 50));
+  const raw = await client.jira<Record<string, unknown>>(
+    `/rest/agile/1.0/board/${encodePath(String(params.boardId))}/sprint`,
+    { query: { state: params.state, maxResults } },
+  );
+  const payload = asRecord(raw.data);
+  const values = Array.isArray(payload.values) ? payload.values : [];
+  const sprints: JiraSprint[] = values.flatMap((entry) => {
+    const sprint = asRecord(entry);
+    const id = typeof sprint.id === 'number' ? sprint.id : Number(sprint.id);
+    if (!Number.isFinite(id)) return [];
+    const boardId = typeof sprint.originBoardId === 'number' ? sprint.originBoardId : params.boardId;
+    return [{
+      id,
+      name: asString(sprint.name),
+      state: asString(sprint.state),
+      boardId,
+      startDate: asString(sprint.startDate),
+      endDate: asString(sprint.endDate),
+      goal: asString(sprint.goal),
+    }];
+  });
+  return {
+    sprints,
+    page: { returned: sprints.length, isLast: typeof payload.isLast === 'boolean' ? payload.isLast : undefined },
+  };
+}
+
 export interface CreateIssueLinkParams {
   /** Issue link type NAME (e.g. "Blocks", "Relates"). */
   linkType: string;
