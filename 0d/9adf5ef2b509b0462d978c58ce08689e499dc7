@@ -1,0 +1,66 @@
+internal/delivery/reduce.go
+  708d680d348b9cc2 128-332
+internal/delivery/graph_test.go
+  708d680d348b9cc2 1-207
+internal/storage/migrations/0004_delivery_events_generic_entity.sql
+  708d680d348b9cc2 1-28
+internal/delivery/requirements_test.go
+  708d680d348b9cc2 1-105
+protocol/parenttask.schema.json
+  708d680d348b9cc2 1-20
+internal/delivery/normalize.go
+  708d680d348b9cc2 1-91
+protocol/deliveryevent.schema.json
+  708d680d348b9cc2 5,12,19-22
+protocol/requirementsource.schema.json
+  708d680d348b9cc2 1-22
+protocol/dependencyedge.schema.json
+  708d680d348b9cc2 1-23
+internal/delivery/requirements.go
+  708d680d348b9cc2 1-105
+internal/delivery/parenttasks.go
+  708d680d348b9cc2 1-111
+internal/delivery/graph.go
+  708d680d348b9cc2 1-226
+pkg/protocol/doc.go
+  708d680d348b9cc2 6
+internal/delivery/errors.go
+  708d680d348b9cc2 27-41
+internal/delivery/routing.go
+  708d680d348b9cc2 1-54
+internal/delivery/routing_test.go
+  708d680d348b9cc2 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "0d9adf5ef2b509b0462d978c58ce08689e499dc7",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1281,
+      "total_deletions": 11,
+      "accepted_lines": 1274,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
