@@ -4418,6 +4418,135 @@ func (j *Event) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// One immutable invocation record (punokawan-14yn.7): a test, diff, API check,
+// command, screenshot, or review produced exactly this content-addressed blob.
+// Bytes are addressed by sha256 (never overwritten, never trusted from a caller -
+// always server-computed); this record's own id is a ULID and is what gets
+// referenced elsewhere, never a mutable path. See
+// affiliate-platform-delivery-feedback-2026-08-07.md.
+type EvidenceArtifact struct {
+	// ByteSize corresponds to the JSON schema field "byte_size".
+	ByteSize int `json:"byte_size" yaml:"byte_size" mapstructure:"byte_size"`
+
+	// ContentHash corresponds to the JSON schema field "content_hash".
+	ContentHash string `json:"content_hash" yaml:"content_hash" mapstructure:"content_hash"`
+
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Kind corresponds to the JSON schema field "kind".
+	Kind EvidenceArtifactKind `json:"kind" yaml:"kind" mapstructure:"kind"`
+
+	// LaneId corresponds to the JSON schema field "lane_id".
+	LaneId *string `json:"lane_id,omitempty,omitzero" yaml:"lane_id,omitempty" mapstructure:"lane_id,omitempty"`
+
+	// MediaType corresponds to the JSON schema field "media_type".
+	MediaType string `json:"media_type" yaml:"media_type" mapstructure:"media_type"`
+
+	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
+	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
+
+	// ParentTaskId corresponds to the JSON schema field "parent_task_id".
+	ParentTaskId *string `json:"parent_task_id,omitempty,omitzero" yaml:"parent_task_id,omitempty" mapstructure:"parent_task_id,omitempty"`
+
+	// What invoked this (e.g. "go test", "petruk-plan"), for provenance.
+	Producer *string `json:"producer,omitempty,omitzero" yaml:"producer,omitempty" mapstructure:"producer,omitempty"`
+
+	// ProjectId corresponds to the JSON schema field "project_id".
+	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
+
+	// Retention horizon; absent means retained indefinitely.
+	RetainUntil *time.Time `json:"retain_until,omitempty,omitzero" yaml:"retain_until,omitempty" mapstructure:"retain_until,omitempty"`
+}
+
+type EvidenceArtifactKind string
+
+const EvidenceArtifactKindApiCheck EvidenceArtifactKind = "api-check"
+const EvidenceArtifactKindCommand EvidenceArtifactKind = "command"
+const EvidenceArtifactKindDiff EvidenceArtifactKind = "diff"
+const EvidenceArtifactKindQuality EvidenceArtifactKind = "quality"
+const EvidenceArtifactKindReview EvidenceArtifactKind = "review"
+const EvidenceArtifactKindScreenshot EvidenceArtifactKind = "screenshot"
+const EvidenceArtifactKindTest EvidenceArtifactKind = "test"
+
+var enumValues_EvidenceArtifactKind = []interface{}{
+	"test",
+	"diff",
+	"api-check",
+	"command",
+	"screenshot",
+	"review",
+	"quality",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *EvidenceArtifactKind) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_EvidenceArtifactKind {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_EvidenceArtifactKind, v)
+	}
+	*j = EvidenceArtifactKind(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *EvidenceArtifact) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["byte_size"]; raw != nil && !ok {
+		return fmt.Errorf("field byte_size in EvidenceArtifact: required")
+	}
+	if _, ok := raw["content_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field content_hash in EvidenceArtifact: required")
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in EvidenceArtifact: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in EvidenceArtifact: required")
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in EvidenceArtifact: required")
+	}
+	if _, ok := raw["media_type"]; raw != nil && !ok {
+		return fmt.Errorf("field media_type in EvidenceArtifact: required")
+	}
+	if _, ok := raw["orchestration_id"]; raw != nil && !ok {
+		return fmt.Errorf("field orchestration_id in EvidenceArtifact: required")
+	}
+	if _, ok := raw["project_id"]; raw != nil && !ok {
+		return fmt.Errorf("field project_id in EvidenceArtifact: required")
+	}
+	type Plain EvidenceArtifact
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.ByteSize {
+		return fmt.Errorf("field %s: must be >= %v", "byte_size", 0)
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.ContentHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "ContentHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	*j = EvidenceArtifact(plain)
+	return nil
+}
+
 // A single piece of evidence linked to a task run and its supporting artifact. See
 // punakawan-go-typescript-detailed-plan.md §17.
 type EvidenceRecord struct {
@@ -8680,6 +8809,94 @@ func (j *TaskContract) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s length: must be >= %d", "acceptance_criteria", 1)
 	}
 	*j = TaskContract(plain)
+	return nil
+}
+
+// A bounded, causal-first projection of one test invocation's output
+// (punokawan-14yn.7), concise enough for a continuous agent loop while the full
+// stdout/stderr remains available, unmodified, as the referenced EvidenceArtifact.
+// Never returned instead of the full log - only alongside it.
+type TestReportSummary struct {
+	// EvidenceArtifact id of the full, untruncated combined log.
+	ArtifactId string `json:"artifact_id" yaml:"artifact_id" mapstructure:"artifact_id"`
+
+	// Command corresponds to the JSON schema field "command".
+	Command string `json:"command" yaml:"command" mapstructure:"command"`
+
+	// DurationMs corresponds to the JSON schema field "duration_ms".
+	DurationMs int `json:"duration_ms" yaml:"duration_ms" mapstructure:"duration_ms"`
+
+	// ExitCode corresponds to the JSON schema field "exit_code".
+	ExitCode int `json:"exit_code" yaml:"exit_code" mapstructure:"exit_code"`
+
+	// Failed corresponds to the JSON schema field "failed".
+	Failed *int `json:"failed,omitempty,omitzero" yaml:"failed,omitempty" mapstructure:"failed,omitempty"`
+
+	// The deepest "Caused by:" line, or the first recognized failure signature,
+	// extracted from the combined output.
+	FirstCausalFailure *string `json:"first_causal_failure,omitempty,omitzero" yaml:"first_causal_failure,omitempty" mapstructure:"first_causal_failure,omitempty"`
+
+	// Passed corresponds to the JSON schema field "passed".
+	Passed *int `json:"passed,omitempty,omitzero" yaml:"passed,omitempty" mapstructure:"passed,omitempty"`
+
+	// Skipped corresponds to the JSON schema field "skipped".
+	Skipped *int `json:"skipped,omitempty,omitzero" yaml:"skipped,omitempty" mapstructure:"skipped,omitempty"`
+
+	// Bounded, retry-noise-deduplicated tail of combined stdout+stderr.
+	Tail string `json:"tail" yaml:"tail" mapstructure:"tail"`
+
+	// TotalTests corresponds to the JSON schema field "total_tests".
+	TotalTests *int `json:"total_tests,omitempty,omitzero" yaml:"total_tests,omitempty" mapstructure:"total_tests,omitempty"`
+
+	// Truncated corresponds to the JSON schema field "truncated".
+	Truncated bool `json:"truncated" yaml:"truncated" mapstructure:"truncated"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *TestReportSummary) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["artifact_id"]; raw != nil && !ok {
+		return fmt.Errorf("field artifact_id in TestReportSummary: required")
+	}
+	if _, ok := raw["command"]; raw != nil && !ok {
+		return fmt.Errorf("field command in TestReportSummary: required")
+	}
+	if _, ok := raw["duration_ms"]; raw != nil && !ok {
+		return fmt.Errorf("field duration_ms in TestReportSummary: required")
+	}
+	if _, ok := raw["exit_code"]; raw != nil && !ok {
+		return fmt.Errorf("field exit_code in TestReportSummary: required")
+	}
+	if _, ok := raw["tail"]; raw != nil && !ok {
+		return fmt.Errorf("field tail in TestReportSummary: required")
+	}
+	if _, ok := raw["truncated"]; raw != nil && !ok {
+		return fmt.Errorf("field truncated in TestReportSummary: required")
+	}
+	type Plain TestReportSummary
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.DurationMs {
+		return fmt.Errorf("field %s: must be >= %v", "duration_ms", 0)
+	}
+	if plain.Failed != nil && 0 > *plain.Failed {
+		return fmt.Errorf("field %s: must be >= %v", "failed", 0)
+	}
+	if plain.Passed != nil && 0 > *plain.Passed {
+		return fmt.Errorf("field %s: must be >= %v", "passed", 0)
+	}
+	if plain.Skipped != nil && 0 > *plain.Skipped {
+		return fmt.Errorf("field %s: must be >= %v", "skipped", 0)
+	}
+	if plain.TotalTests != nil && 0 > *plain.TotalTests {
+		return fmt.Errorf("field %s: must be >= %v", "total_tests", 0)
+	}
+	*j = TestReportSummary(plain)
 	return nil
 }
 
