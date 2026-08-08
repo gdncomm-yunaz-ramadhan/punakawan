@@ -27,7 +27,7 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 	}
 
 	for i, ev := range events {
-		if ev.LaneId != nil {
+		if ev.EntityId != nil {
 			continue // lane-scoped event, not part of orchestration state
 		}
 		o.UpdatedAt = ev.OccurredAt
@@ -82,7 +82,7 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent) (*protocol.DeliveryLane, error) {
 	var laneEvents []protocol.DeliveryEvent
 	for _, ev := range events {
-		if ev.LaneId != nil && *ev.LaneId == laneID {
+		if ev.EntityId != nil && *ev.EntityId == laneID {
 			laneEvents = append(laneEvents, ev)
 		}
 	}
@@ -123,6 +123,211 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 		}
 	}
 	return l, nil
+}
+
+// reduceRequirementSource derives one RequirementSource's current state
+// from the requirement.captured events scoped to sourceID. Later events
+// overwrite content fields (a re-capture with changed content); the
+// first event fixes id/provider/parent_source_id, which do not change
+// across re-captures.
+func reduceRequirementSource(orchestrationID, sourceID string, events []protocol.DeliveryEvent) (*protocol.RequirementSource, error) {
+	var own []protocol.DeliveryEvent
+	for _, ev := range events {
+		if ev.EntityId != nil && *ev.EntityId == sourceID {
+			own = append(own, ev)
+		}
+	}
+	if len(own) == 0 {
+		return nil, ErrNotFound
+	}
+	if own[0].Type != protocol.DeliveryEventTypeRequirementCaptured {
+		return nil, fmt.Errorf("delivery: requirement source %s event log does not start with requirement.captured", sourceID)
+	}
+
+	s := &protocol.RequirementSource{Id: sourceID, OrchestrationId: orchestrationID, CapturedAt: own[0].OccurredAt}
+	for _, ev := range own {
+		if ev.Type != protocol.DeliveryEventTypeRequirementCaptured {
+			return nil, fmt.Errorf("delivery: unknown requirement source event type %q", ev.Type)
+		}
+		s.Revision++
+		s.Provider = protocol.RequirementSourceProvider(stringField(ev.Payload, "provider"))
+		s.CanonicalKey = stringField(ev.Payload, "canonical_key")
+		s.ContentHash = stringField(ev.Payload, "content_hash")
+		s.Title = stringField(ev.Payload, "title")
+		if v := stringField(ev.Payload, "external_id"); v != "" {
+			s.ExternalId = &v
+		}
+		if v := stringField(ev.Payload, "summary"); v != "" {
+			s.Summary = &v
+		}
+		if v := stringField(ev.Payload, "parent_source_id"); v != "" {
+			s.ParentSourceId = &v
+		}
+	}
+	return s, nil
+}
+
+// allRequirementSources reduces every requirement.captured entity in
+// events into its current RequirementSource state, keyed by source id.
+func allRequirementSources(orchestrationID string, events []protocol.DeliveryEvent) (map[string]*protocol.RequirementSource, error) {
+	ids := map[string]bool{}
+	for _, ev := range events {
+		if ev.Type == protocol.DeliveryEventTypeRequirementCaptured && ev.EntityId != nil {
+			ids[*ev.EntityId] = true
+		}
+	}
+	out := make(map[string]*protocol.RequirementSource, len(ids))
+	for id := range ids {
+		s, err := reduceRequirementSource(orchestrationID, id, events)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = s
+	}
+	return out, nil
+}
+
+// findByCanonicalKey returns the requirement source already captured
+// under canonicalKey, or nil if none exists yet.
+func findByCanonicalKey(orchestrationID, canonicalKey string, events []protocol.DeliveryEvent) (*protocol.RequirementSource, error) {
+	all, err := allRequirementSources(orchestrationID, events)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range all {
+		if s.CanonicalKey == canonicalKey {
+			return s, nil
+		}
+	}
+	return nil, nil
+}
+
+// reduceParentTask derives one ParentTask's current state from the
+// task.created/task.routed events scoped to taskID.
+func reduceParentTask(orchestrationID, taskID string, events []protocol.DeliveryEvent) (*protocol.ParentTask, error) {
+	var own []protocol.DeliveryEvent
+	for _, ev := range events {
+		if ev.EntityId != nil && *ev.EntityId == taskID &&
+			(ev.Type == protocol.DeliveryEventTypeTaskCreated || ev.Type == protocol.DeliveryEventTypeTaskRouted) {
+			own = append(own, ev)
+		}
+	}
+	if len(own) == 0 {
+		return nil, ErrNotFound
+	}
+	if own[0].Type != protocol.DeliveryEventTypeTaskCreated {
+		return nil, fmt.Errorf("delivery: task %s event log does not start with task.created", taskID)
+	}
+
+	t := &protocol.ParentTask{Id: taskID, OrchestrationId: orchestrationID, Status: protocol.ParentTaskStatusUnrouted}
+	for _, ev := range own {
+		t.UpdatedAt = ev.OccurredAt
+		t.Revision++
+		switch ev.Type {
+		case protocol.DeliveryEventTypeTaskCreated:
+			t.CreatedAt = ev.OccurredAt
+			t.Title = stringField(ev.Payload, "title")
+			if raw, ok := ev.Payload["source_ids"].([]interface{}); ok {
+				for _, v := range raw {
+					if s, ok := v.(string); ok {
+						t.SourceIds = append(t.SourceIds, s)
+					}
+				}
+			}
+		case protocol.DeliveryEventTypeTaskRouted:
+			projectID := stringField(ev.Payload, "project_id")
+			t.ProjectId = &projectID
+			t.Status = protocol.ParentTaskStatusRouted
+		}
+	}
+	return t, nil
+}
+
+func allParentTasks(orchestrationID string, events []protocol.DeliveryEvent) (map[string]*protocol.ParentTask, error) {
+	ids := map[string]bool{}
+	for _, ev := range events {
+		if ev.Type == protocol.DeliveryEventTypeTaskCreated && ev.EntityId != nil {
+			ids[*ev.EntityId] = true
+		}
+	}
+	out := make(map[string]*protocol.ParentTask, len(ids))
+	for id := range ids {
+		t, err := reduceParentTask(orchestrationID, id, events)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = t
+	}
+	return out, nil
+}
+
+// reduceDependencyEdge derives one DependencyEdge's current state from
+// the edge.added/edge.removed events scoped to edgeID.
+func reduceDependencyEdge(orchestrationID, edgeID string, events []protocol.DeliveryEvent) (*protocol.DependencyEdge, error) {
+	var own []protocol.DeliveryEvent
+	for _, ev := range events {
+		if ev.EntityId != nil && *ev.EntityId == edgeID &&
+			(ev.Type == protocol.DeliveryEventTypeEdgeAdded || ev.Type == protocol.DeliveryEventTypeEdgeRemoved) {
+			own = append(own, ev)
+		}
+	}
+	if len(own) == 0 {
+		return nil, ErrNotFound
+	}
+	if own[0].Type != protocol.DeliveryEventTypeEdgeAdded {
+		return nil, fmt.Errorf("delivery: edge %s event log does not start with edge.added", edgeID)
+	}
+
+	e := &protocol.DependencyEdge{
+		Id: edgeID, OrchestrationId: orchestrationID, CreatedAt: own[0].OccurredAt,
+		FromTaskId: stringField(own[0].Payload, "from_task_id"),
+		ToTaskId:   stringField(own[0].Payload, "to_task_id"),
+		Type:       protocol.DependencyEdgeType(stringField(own[0].Payload, "type")),
+		Origin:     protocol.DependencyEdgeOrigin(stringField(own[0].Payload, "origin")),
+		Confidence: numberField(own[0].Payload, "confidence"),
+		Status:     protocol.DependencyEdgeStatusActive,
+	}
+	if v := stringField(own[0].Payload, "evidence"); v != "" {
+		e.Evidence = &v
+	}
+	for _, ev := range own {
+		e.Revision++
+		if ev.Type == protocol.DeliveryEventTypeEdgeRemoved {
+			e.Status = protocol.DependencyEdgeStatusRemoved
+			if v := stringField(ev.Payload, "removal_evidence"); v != "" {
+				e.RemovalEvidence = &v
+			}
+		}
+	}
+	return e, nil
+}
+
+func allDependencyEdges(orchestrationID string, events []protocol.DeliveryEvent) (map[string]*protocol.DependencyEdge, error) {
+	ids := map[string]bool{}
+	for _, ev := range events {
+		if ev.Type == protocol.DeliveryEventTypeEdgeAdded && ev.EntityId != nil {
+			ids[*ev.EntityId] = true
+		}
+	}
+	out := make(map[string]*protocol.DependencyEdge, len(ids))
+	for id := range ids {
+		e, err := reduceDependencyEdge(orchestrationID, id, events)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = e
+	}
+	return out, nil
+}
+
+func stringField(payload protocol.DeliveryEventPayload, key string) string {
+	v, _ := payload[key].(string)
+	return v
+}
+
+func numberField(payload protocol.DeliveryEventPayload, key string) float64 {
+	v, _ := payload[key].(float64)
+	return v
 }
 
 func decodeUnresolvedInputs(v interface{}) ([]protocol.DeliveryOrchestrationUnresolvedInputsElem, error) {

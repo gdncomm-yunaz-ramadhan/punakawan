@@ -132,7 +132,7 @@ func (s *Store) CancelOrchestration(ctx context.Context, idempotencyKey, id stri
 		if current.Revision != expectedRevision {
 			return ErrRevisionConflict
 		}
-		if current.Status == protocol.DeliveryOrchestrationStatusCancelled || current.Status == protocol.DeliveryOrchestrationStatusCompleted {
+		if isTerminal(current.Status) {
 			return ErrInvalidState
 		}
 		return insertEvent(ctx, tx, eventRow{
@@ -180,7 +180,7 @@ func (s *Store) appendOrchestrationEvent(ctx context.Context, idempotencyKey, or
 		if current.Revision != expectedRevision {
 			return ErrRevisionConflict
 		}
-		if current.Status == protocol.DeliveryOrchestrationStatusCancelled || current.Status == protocol.DeliveryOrchestrationStatusCompleted {
+		if isTerminal(current.Status) {
 			return ErrInvalidState
 		}
 		return insertEvent(ctx, tx, eventRow{
@@ -208,7 +208,7 @@ func (s *Store) CreateLane(ctx context.Context, idempotencyKey, id, orchestratio
 		if err != nil {
 			return err
 		}
-		if orch.Status == protocol.DeliveryOrchestrationStatusCancelled || orch.Status == protocol.DeliveryOrchestrationStatusCompleted {
+		if isTerminal(orch.Status) {
 			return ErrInvalidState
 		}
 
@@ -229,7 +229,7 @@ func (s *Store) CreateLane(ctx context.Context, idempotencyKey, id, orchestratio
 		}
 		laneID := id
 		return insertEvent(ctx, tx, eventRow{
-			ID: newID(), OrchestrationID: orchestrationID, LaneID: &laneID, IdempotencyKey: idempotencyKey,
+			ID: newID(), OrchestrationID: orchestrationID, EntityID: &laneID, IdempotencyKey: idempotencyKey,
 			Type: string(protocol.DeliveryEventTypeLaneCreated), Payload: string(payload),
 			Sequence: len(events), OccurredAt: time.Now().UTC(),
 		})
@@ -274,7 +274,7 @@ func (s *Store) UpdateLaneStatus(ctx context.Context, idempotencyKey, orchestrat
 			return err
 		}
 		return insertEvent(ctx, tx, eventRow{
-			ID: newID(), OrchestrationID: orchestrationID, LaneID: &laneID, IdempotencyKey: idempotencyKey,
+			ID: newID(), OrchestrationID: orchestrationID, EntityID: &laneID, IdempotencyKey: idempotencyKey,
 			Type: string(protocol.DeliveryEventTypeLaneStatusChanged), Payload: string(payload),
 			Sequence: len(events), OccurredAt: time.Now().UTC(),
 		})

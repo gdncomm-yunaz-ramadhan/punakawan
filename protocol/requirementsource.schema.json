@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/requirementsource.schema.json",
+  "title": "RequirementSource",
+  "description": "An immutable, canonicalized snapshot of one requirement input (Jira, Confluence, GitHub, a document URL, or free text) captured into a DeliveryOrchestration (punokawan-14yn.2). canonical_key is an exact, provider-specific identifier (never a fuzzy/similar-wording match), so a pinned requirement can never be silently replaced by a similar retrieved result. Grouped into a ParentTask once routing/decomposition decides which task it belongs to. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "type": "object",
+  "required": ["id", "orchestration_id", "provider", "canonical_key", "content_hash", "title", "captured_at", "revision"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "orchestration_id": { "type": "string" },
+    "provider": { "type": "string", "enum": ["jira", "confluence", "github", "url", "freetext"] },
+    "external_id": { "type": "string", "description": "The provider's own identifier (issue key, page id, issue/PR number); absent for freetext." },
+    "canonical_key": { "type": "string", "description": "Exact dedup/pin key, e.g. \"jira:PAY-1842\" or \"url:https://example.com/doc\". Never derived from fuzzy text similarity." },
+    "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "parent_source_id": { "type": "string", "description": "Set when this source is a Jira/GitHub subtask resolved to its source parent; the referenced RequirementSource must already exist in the same orchestration." },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." }
+  }
+}

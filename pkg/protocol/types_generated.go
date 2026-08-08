@@ -2943,18 +2943,20 @@ func (j *Contradiction) UnmarshalJSON(value []byte) error {
 }
 
 // One append-only, idempotent state-transition event for a DeliveryOrchestration
-// or one of its DeliveryLanes (punokawan-14yn.1). Orchestration and lane state is
+// or one of its scoped sub-entities (lane, requirement source, parent task,
+// dependency edge - punokawan-14yn.1/.2). Orchestration and sub-entity state is
 // derived by replaying these in sequence order; the same idempotency_key is
 // applied at most once. See affiliate-platform-delivery-feedback-2026-08-07.md.
 type DeliveryEvent struct {
+	// Set for events scoped to one lane, requirement source, parent task, or
+	// dependency edge; absent for orchestration-scoped events.
+	EntityId *string `json:"entity_id,omitempty,omitzero" yaml:"entity_id,omitempty" mapstructure:"entity_id,omitempty"`
+
 	// Filesystem-safe ULID (Crockford base32, 26 chars).
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
 	// IdempotencyKey corresponds to the JSON schema field "idempotency_key".
 	IdempotencyKey string `json:"idempotency_key" yaml:"idempotency_key" mapstructure:"idempotency_key"`
-
-	// Set for lane-scoped events; absent for orchestration-scoped events.
-	LaneId *string `json:"lane_id,omitempty,omitzero" yaml:"lane_id,omitempty" mapstructure:"lane_id,omitempty"`
 
 	// OccurredAt corresponds to the JSON schema field "occurred_at".
 	OccurredAt time.Time `json:"occurred_at" yaml:"occurred_at" mapstructure:"occurred_at"`
@@ -2976,6 +2978,8 @@ type DeliveryEventPayload map[string]interface{}
 
 type DeliveryEventType string
 
+const DeliveryEventTypeEdgeAdded DeliveryEventType = "edge.added"
+const DeliveryEventTypeEdgeRemoved DeliveryEventType = "edge.removed"
 const DeliveryEventTypeInputRegistered DeliveryEventType = "input.registered"
 const DeliveryEventTypeInputResolved DeliveryEventType = "input.resolved"
 const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
@@ -2983,6 +2987,9 @@ const DeliveryEventTypeLaneStatusChanged DeliveryEventType = "lane.status_change
 const DeliveryEventTypeOrchestrationCancelled DeliveryEventType = "orchestration.cancelled"
 const DeliveryEventTypeOrchestrationCompleted DeliveryEventType = "orchestration.completed"
 const DeliveryEventTypeOrchestrationCreated DeliveryEventType = "orchestration.created"
+const DeliveryEventTypeRequirementCaptured DeliveryEventType = "requirement.captured"
+const DeliveryEventTypeTaskCreated DeliveryEventType = "task.created"
+const DeliveryEventTypeTaskRouted DeliveryEventType = "task.routed"
 
 var enumValues_DeliveryEventType = []interface{}{
 	"orchestration.created",
@@ -2992,6 +2999,11 @@ var enumValues_DeliveryEventType = []interface{}{
 	"input.resolved",
 	"lane.created",
 	"lane.status_changed",
+	"requirement.captured",
+	"task.created",
+	"task.routed",
+	"edge.added",
+	"edge.removed",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -3374,6 +3386,204 @@ func (j *DeliveryProject) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
 	}
 	*j = DeliveryProject(plain)
+	return nil
+}
+
+// One typed edge in an orchestration's task dependency graph (punokawan-14yn.2),
+// from_task_id -> to_task_id meaning from_task_id depends on to_task_id. Only
+// "requires" and "produces-input-for" block execution; "serializes-with" and
+// "informational" are non-blocking. Explicit source/user origins outrank
+// repository-fact, which outranks model-inference. See
+// affiliate-platform-delivery-feedback-2026-08-07.md.
+type DependencyEdge struct {
+	// Confidence corresponds to the JSON schema field "confidence".
+	Confidence float64 `json:"confidence" yaml:"confidence" mapstructure:"confidence"`
+
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Why this edge exists: an explicit source link, a repository fact, or a
+	// model-inference rationale.
+	Evidence *string `json:"evidence,omitempty,omitzero" yaml:"evidence,omitempty" mapstructure:"evidence,omitempty"`
+
+	// FromTaskId corresponds to the JSON schema field "from_task_id".
+	FromTaskId string `json:"from_task_id" yaml:"from_task_id" mapstructure:"from_task_id"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
+	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
+
+	// Origin corresponds to the JSON schema field "origin".
+	Origin DependencyEdgeOrigin `json:"origin" yaml:"origin" mapstructure:"origin"`
+
+	// Required to remove an edge from a task that has already been routed; not
+	// required before routing.
+	RemovalEvidence *string `json:"removal_evidence,omitempty,omitzero" yaml:"removal_evidence,omitempty" mapstructure:"removal_evidence,omitempty"`
+
+	// Optimistic-concurrency counter; incremented on every applied event.
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status DependencyEdgeStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// ToTaskId corresponds to the JSON schema field "to_task_id".
+	ToTaskId string `json:"to_task_id" yaml:"to_task_id" mapstructure:"to_task_id"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type DependencyEdgeType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+type DependencyEdgeOrigin string
+
+const DependencyEdgeOriginExplicitSource DependencyEdgeOrigin = "explicit-source"
+const DependencyEdgeOriginModelInference DependencyEdgeOrigin = "model-inference"
+const DependencyEdgeOriginRepositoryFact DependencyEdgeOrigin = "repository-fact"
+const DependencyEdgeOriginUser DependencyEdgeOrigin = "user"
+
+var enumValues_DependencyEdgeOrigin = []interface{}{
+	"explicit-source",
+	"user",
+	"repository-fact",
+	"model-inference",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DependencyEdgeOrigin) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DependencyEdgeOrigin {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DependencyEdgeOrigin, v)
+	}
+	*j = DependencyEdgeOrigin(v)
+	return nil
+}
+
+type DependencyEdgeStatus string
+
+const DependencyEdgeStatusActive DependencyEdgeStatus = "active"
+const DependencyEdgeStatusRemoved DependencyEdgeStatus = "removed"
+
+var enumValues_DependencyEdgeStatus = []interface{}{
+	"active",
+	"removed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DependencyEdgeStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DependencyEdgeStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DependencyEdgeStatus, v)
+	}
+	*j = DependencyEdgeStatus(v)
+	return nil
+}
+
+type DependencyEdgeType string
+
+const DependencyEdgeTypeInformational DependencyEdgeType = "informational"
+const DependencyEdgeTypeProducesInputFor DependencyEdgeType = "produces-input-for"
+const DependencyEdgeTypeRequires DependencyEdgeType = "requires"
+const DependencyEdgeTypeSerializesWith DependencyEdgeType = "serializes-with"
+
+var enumValues_DependencyEdgeType = []interface{}{
+	"requires",
+	"produces-input-for",
+	"serializes-with",
+	"informational",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DependencyEdgeType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DependencyEdgeType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DependencyEdgeType, v)
+	}
+	*j = DependencyEdgeType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DependencyEdge) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["confidence"]; raw != nil && !ok {
+		return fmt.Errorf("field confidence in DependencyEdge: required")
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in DependencyEdge: required")
+	}
+	if _, ok := raw["from_task_id"]; raw != nil && !ok {
+		return fmt.Errorf("field from_task_id in DependencyEdge: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in DependencyEdge: required")
+	}
+	if _, ok := raw["orchestration_id"]; raw != nil && !ok {
+		return fmt.Errorf("field orchestration_id in DependencyEdge: required")
+	}
+	if _, ok := raw["origin"]; raw != nil && !ok {
+		return fmt.Errorf("field origin in DependencyEdge: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in DependencyEdge: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in DependencyEdge: required")
+	}
+	if _, ok := raw["to_task_id"]; raw != nil && !ok {
+		return fmt.Errorf("field to_task_id in DependencyEdge: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in DependencyEdge: required")
+	}
+	type Plain DependencyEdge
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 1 < plain.Confidence {
+		return fmt.Errorf("field %s: must be <= %v", "confidence", 1)
+	}
+	if 0 > plain.Confidence {
+		return fmt.Errorf("field %s: must be >= %v", "confidence", 0)
+	}
+	if 0 > plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	*j = DependencyEdge(plain)
 	return nil
 }
 
@@ -7182,6 +7392,241 @@ func (j *PanelWorkspaceRegistryEntry) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	*j = PanelWorkspaceRegistryEntry(plain)
+	return nil
+}
+
+// One node in an orchestration's task dependency graph (punokawan-14yn.2): a group
+// of one or more RequirementSources routed, or awaiting routing, to a single
+// project. A DeliveryLane (punokawan-14yn.1) is created once a ParentTask is
+// routed and its DAG position allows execution to begin - lane/worker execution
+// status is not duplicated here. See
+// affiliate-platform-delivery-feedback-2026-08-07.md.
+type ParentTask struct {
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
+	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
+
+	// Set once routing resolves this task to a project; absent while unrouted.
+	ProjectId *string `json:"project_id,omitempty,omitzero" yaml:"project_id,omitempty" mapstructure:"project_id,omitempty"`
+
+	// Optimistic-concurrency counter; incremented on every applied event.
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// RequirementSource ids grouped into this task.
+	SourceIds []string `json:"source_ids" yaml:"source_ids" mapstructure:"source_ids"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status ParentTaskStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Title corresponds to the JSON schema field "title".
+	Title string `json:"title" yaml:"title" mapstructure:"title"`
+
+	// UpdatedAt corresponds to the JSON schema field "updated_at".
+	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at" mapstructure:"updated_at"`
+}
+
+type ParentTaskStatus string
+
+const ParentTaskStatusCancelled ParentTaskStatus = "cancelled"
+const ParentTaskStatusRouted ParentTaskStatus = "routed"
+const ParentTaskStatusUnrouted ParentTaskStatus = "unrouted"
+
+var enumValues_ParentTaskStatus = []interface{}{
+	"unrouted",
+	"routed",
+	"cancelled",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ParentTaskStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ParentTaskStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ParentTaskStatus, v)
+	}
+	*j = ParentTaskStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ParentTask) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in ParentTask: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ParentTask: required")
+	}
+	if _, ok := raw["orchestration_id"]; raw != nil && !ok {
+		return fmt.Errorf("field orchestration_id in ParentTask: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in ParentTask: required")
+	}
+	if _, ok := raw["source_ids"]; raw != nil && !ok {
+		return fmt.Errorf("field source_ids in ParentTask: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in ParentTask: required")
+	}
+	if _, ok := raw["title"]; raw != nil && !ok {
+		return fmt.Errorf("field title in ParentTask: required")
+	}
+	if _, ok := raw["updated_at"]; raw != nil && !ok {
+		return fmt.Errorf("field updated_at in ParentTask: required")
+	}
+	type Plain ParentTask
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	*j = ParentTask(plain)
+	return nil
+}
+
+// An immutable, canonicalized snapshot of one requirement input (Jira, Confluence,
+// GitHub, a document URL, or free text) captured into a DeliveryOrchestration
+// (punokawan-14yn.2). canonical_key is an exact, provider-specific identifier
+// (never a fuzzy/similar-wording match), so a pinned requirement can never be
+// silently replaced by a similar retrieved result. Grouped into a ParentTask once
+// routing/decomposition decides which task it belongs to. See
+// affiliate-platform-delivery-feedback-2026-08-07.md.
+type RequirementSource struct {
+	// Exact dedup/pin key, e.g. "jira:PAY-1842" or "url:https://example.com/doc".
+	// Never derived from fuzzy text similarity.
+	CanonicalKey string `json:"canonical_key" yaml:"canonical_key" mapstructure:"canonical_key"`
+
+	// CapturedAt corresponds to the JSON schema field "captured_at".
+	CapturedAt time.Time `json:"captured_at" yaml:"captured_at" mapstructure:"captured_at"`
+
+	// ContentHash corresponds to the JSON schema field "content_hash".
+	ContentHash string `json:"content_hash" yaml:"content_hash" mapstructure:"content_hash"`
+
+	// The provider's own identifier (issue key, page id, issue/PR number); absent for
+	// freetext.
+	ExternalId *string `json:"external_id,omitempty,omitzero" yaml:"external_id,omitempty" mapstructure:"external_id,omitempty"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
+	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
+
+	// Set when this source is a Jira/GitHub subtask resolved to its source parent;
+	// the referenced RequirementSource must already exist in the same orchestration.
+	ParentSourceId *string `json:"parent_source_id,omitempty,omitzero" yaml:"parent_source_id,omitempty" mapstructure:"parent_source_id,omitempty"`
+
+	// Provider corresponds to the JSON schema field "provider".
+	Provider RequirementSourceProvider `json:"provider" yaml:"provider" mapstructure:"provider"`
+
+	// Optimistic-concurrency counter; incremented on every applied event.
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+
+	// Title corresponds to the JSON schema field "title".
+	Title string `json:"title" yaml:"title" mapstructure:"title"`
+}
+
+type RequirementSourceProvider string
+
+const RequirementSourceProviderConfluence RequirementSourceProvider = "confluence"
+const RequirementSourceProviderFreetext RequirementSourceProvider = "freetext"
+const RequirementSourceProviderGithub RequirementSourceProvider = "github"
+const RequirementSourceProviderJira RequirementSourceProvider = "jira"
+const RequirementSourceProviderUrl RequirementSourceProvider = "url"
+
+var enumValues_RequirementSourceProvider = []interface{}{
+	"jira",
+	"confluence",
+	"github",
+	"url",
+	"freetext",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *RequirementSourceProvider) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_RequirementSourceProvider {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_RequirementSourceProvider, v)
+	}
+	*j = RequirementSourceProvider(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *RequirementSource) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["canonical_key"]; raw != nil && !ok {
+		return fmt.Errorf("field canonical_key in RequirementSource: required")
+	}
+	if _, ok := raw["captured_at"]; raw != nil && !ok {
+		return fmt.Errorf("field captured_at in RequirementSource: required")
+	}
+	if _, ok := raw["content_hash"]; raw != nil && !ok {
+		return fmt.Errorf("field content_hash in RequirementSource: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in RequirementSource: required")
+	}
+	if _, ok := raw["orchestration_id"]; raw != nil && !ok {
+		return fmt.Errorf("field orchestration_id in RequirementSource: required")
+	}
+	if _, ok := raw["provider"]; raw != nil && !ok {
+		return fmt.Errorf("field provider in RequirementSource: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in RequirementSource: required")
+	}
+	if _, ok := raw["title"]; raw != nil && !ok {
+		return fmt.Errorf("field title in RequirementSource: required")
+	}
+	type Plain RequirementSource
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.ContentHash)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "ContentHash", `^sha256:[0-9a-f]{64}$`)
+	}
+	if 0 > plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	*j = RequirementSource(plain)
 	return nil
 }
 

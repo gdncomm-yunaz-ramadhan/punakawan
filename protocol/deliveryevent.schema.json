@@ -2,21 +2,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "/schema/protocol/deliveryevent.schema.json",
   "title": "DeliveryEvent",
-  "description": "One append-only, idempotent state-transition event for a DeliveryOrchestration or one of its DeliveryLanes (punokawan-14yn.1). Orchestration and lane state is derived by replaying these in sequence order; the same idempotency_key is applied at most once. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "description": "One append-only, idempotent state-transition event for a DeliveryOrchestration or one of its scoped sub-entities (lane, requirement source, parent task, dependency edge - punokawan-14yn.1/.2). Orchestration and sub-entity state is derived by replaying these in sequence order; the same idempotency_key is applied at most once. See affiliate-platform-delivery-feedback-2026-08-07.md.",
   "type": "object",
   "required": ["id", "orchestration_id", "idempotency_key", "type", "payload", "sequence", "occurred_at"],
   "additionalProperties": false,
   "properties": {
     "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
     "orchestration_id": { "type": "string" },
-    "lane_id": { "type": "string", "description": "Set for lane-scoped events; absent for orchestration-scoped events." },
+    "entity_id": { "type": "string", "description": "Set for events scoped to one lane, requirement source, parent task, or dependency edge; absent for orchestration-scoped events." },
     "idempotency_key": { "type": "string" },
     "type": {
       "type": "string",
       "enum": [
         "orchestration.created", "orchestration.cancelled", "orchestration.completed",
         "input.registered", "input.resolved",
-        "lane.created", "lane.status_changed"
+        "lane.created", "lane.status_changed",
+        "requirement.captured",
+        "task.created", "task.routed",
+        "edge.added", "edge.removed"
       ]
     },
     "payload": { "type": "object" },

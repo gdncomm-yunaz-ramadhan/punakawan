@@ -14,7 +14,7 @@ import (
 type eventRow struct {
 	ID              string
 	OrchestrationID string
-	LaneID          *string
+	EntityID        *string
 	IdempotencyKey  string
 	Type            string
 	Payload         string
@@ -31,8 +31,8 @@ type querier interface {
 
 func insertEvent(ctx context.Context, tx *sql.Tx, e eventRow) error {
 	_, err := tx.ExecContext(ctx,
-		`INSERT INTO delivery_events (id, orchestration_id, lane_id, idempotency_key, type, payload, sequence, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.OrchestrationID, e.LaneID, e.IdempotencyKey, e.Type, e.Payload, e.Sequence, e.OccurredAt.Format(timeLayout),
+		`INSERT INTO delivery_events (id, orchestration_id, entity_id, idempotency_key, type, payload, sequence, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.OrchestrationID, e.EntityID, e.IdempotencyKey, e.Type, e.Payload, e.Sequence, e.OccurredAt.Format(timeLayout),
 	)
 	if err != nil {
 		return fmt.Errorf("delivery: insert event %s: %w", e.Type, err)
@@ -50,7 +50,7 @@ func loadEventsTx(ctx context.Context, tx *sql.Tx, orchestrationID string) ([]pr
 
 func queryEvents(ctx context.Context, q querier, orchestrationID string) ([]protocol.DeliveryEvent, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT id, orchestration_id, lane_id, idempotency_key, type, payload, sequence, occurred_at FROM delivery_events WHERE orchestration_id = ? ORDER BY sequence`,
+		`SELECT id, orchestration_id, entity_id, idempotency_key, type, payload, sequence, occurred_at FROM delivery_events WHERE orchestration_id = ? ORDER BY sequence`,
 		orchestrationID,
 	)
 	if err != nil {
@@ -70,7 +70,7 @@ func queryEvents(ctx context.Context, q querier, orchestrationID string) ([]prot
 			return nil, fmt.Errorf("delivery: scan event for %s: %w", orchestrationID, err)
 		}
 		if laneID.Valid {
-			ev.LaneId = &laneID.String
+			ev.EntityId = &laneID.String
 		}
 		var decoded map[string]interface{}
 		if err := json.Unmarshal([]byte(payload), &decoded); err != nil {

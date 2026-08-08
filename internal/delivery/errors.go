@@ -24,4 +24,19 @@ var (
 	// ErrProjectInactive is returned when a lane is requested against a
 	// disabled project.
 	ErrProjectInactive = errors.New("delivery: project is not active")
+
+	// ErrCycle is returned when adding a dependency edge would create a
+	// cycle in the orchestration's task graph.
+	ErrCycle = errors.New("delivery: edge would create a cycle")
+
+	// ErrEvidenceRequired is returned when removing a dependency edge
+	// from a task that has already been routed without supplying
+	// removal evidence.
+	ErrEvidenceRequired = errors.New("delivery: removal evidence is required once the task is routed")
+
+	// ErrUnsafeCrossProjectEdge is returned when a dependency edge
+	// between two tasks already routed to different projects is
+	// inferred (repository-fact or model-inference origin) rather than
+	// explicitly declared (explicit-source or user origin).
+	ErrUnsafeCrossProjectEdge = errors.New("delivery: cross-project edge requires an explicit-source or user origin")
 )
