@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/deliveryevent.schema.json",
+  "title": "DeliveryEvent",
+  "description": "One append-only, idempotent state-transition event for a DeliveryOrchestration or one of its DeliveryLanes (punokawan-14yn.1). Orchestration and lane state is derived by replaying these in sequence order; the same idempotency_key is applied at most once. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "type": "object",
+  "required": ["id", "orchestration_id", "idempotency_key", "type", "payload", "sequence", "occurred_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "orchestration_id": { "type": "string" },
+    "lane_id": { "type": "string", "description": "Set for lane-scoped events; absent for orchestration-scoped events." },
+    "idempotency_key": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "orchestration.created", "orchestration.cancelled", "orchestration.completed",
+        "input.registered", "input.resolved",
+        "lane.created", "lane.status_changed"
+      ]
+    },
+    "payload": { "type": "object" },
+    "sequence": { "type": "integer", "minimum": 0, "description": "Monotonic per orchestration_id; determines deterministic replay order." },
+    "occurred_at": { "type": "string", "format": "date-time" }
+  }
+}

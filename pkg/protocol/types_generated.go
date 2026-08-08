@@ -2942,6 +2942,441 @@ func (j *Contradiction) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// One append-only, idempotent state-transition event for a DeliveryOrchestration
+// or one of its DeliveryLanes (punokawan-14yn.1). Orchestration and lane state is
+// derived by replaying these in sequence order; the same idempotency_key is
+// applied at most once. See affiliate-platform-delivery-feedback-2026-08-07.md.
+type DeliveryEvent struct {
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// IdempotencyKey corresponds to the JSON schema field "idempotency_key".
+	IdempotencyKey string `json:"idempotency_key" yaml:"idempotency_key" mapstructure:"idempotency_key"`
+
+	// Set for lane-scoped events; absent for orchestration-scoped events.
+	LaneId *string `json:"lane_id,omitempty,omitzero" yaml:"lane_id,omitempty" mapstructure:"lane_id,omitempty"`
+
+	// OccurredAt corresponds to the JSON schema field "occurred_at".
+	OccurredAt time.Time `json:"occurred_at" yaml:"occurred_at" mapstructure:"occurred_at"`
+
+	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
+	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
+
+	// Payload corresponds to the JSON schema field "payload".
+	Payload DeliveryEventPayload `json:"payload" yaml:"payload" mapstructure:"payload"`
+
+	// Monotonic per orchestration_id; determines deterministic replay order.
+	Sequence int `json:"sequence" yaml:"sequence" mapstructure:"sequence"`
+
+	// Type corresponds to the JSON schema field "type".
+	Type DeliveryEventType `json:"type" yaml:"type" mapstructure:"type"`
+}
+
+type DeliveryEventPayload map[string]interface{}
+
+type DeliveryEventType string
+
+const DeliveryEventTypeInputRegistered DeliveryEventType = "input.registered"
+const DeliveryEventTypeInputResolved DeliveryEventType = "input.resolved"
+const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
+const DeliveryEventTypeLaneStatusChanged DeliveryEventType = "lane.status_changed"
+const DeliveryEventTypeOrchestrationCancelled DeliveryEventType = "orchestration.cancelled"
+const DeliveryEventTypeOrchestrationCompleted DeliveryEventType = "orchestration.completed"
+const DeliveryEventTypeOrchestrationCreated DeliveryEventType = "orchestration.created"
+
+var enumValues_DeliveryEventType = []interface{}{
+	"orchestration.created",
+	"orchestration.cancelled",
+	"orchestration.completed",
+	"input.registered",
+	"input.resolved",
+	"lane.created",
+	"lane.status_changed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryEventType) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DeliveryEventType {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DeliveryEventType, v)
+	}
+	*j = DeliveryEventType(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryEvent) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in DeliveryEvent: required")
+	}
+	if _, ok := raw["idempotency_key"]; raw != nil && !ok {
+		return fmt.Errorf("field idempotency_key in DeliveryEvent: required")
+	}
+	if _, ok := raw["occurred_at"]; raw != nil && !ok {
+		return fmt.Errorf("field occurred_at in DeliveryEvent: required")
+	}
+	if _, ok := raw["orchestration_id"]; raw != nil && !ok {
+		return fmt.Errorf("field orchestration_id in DeliveryEvent: required")
+	}
+	if _, ok := raw["payload"]; raw != nil && !ok {
+		return fmt.Errorf("field payload in DeliveryEvent: required")
+	}
+	if _, ok := raw["sequence"]; raw != nil && !ok {
+		return fmt.Errorf("field sequence in DeliveryEvent: required")
+	}
+	if _, ok := raw["type"]; raw != nil && !ok {
+		return fmt.Errorf("field type in DeliveryEvent: required")
+	}
+	type Plain DeliveryEvent
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Sequence {
+		return fmt.Errorf("field %s: must be >= %v", "sequence", 0)
+	}
+	*j = DeliveryEvent(plain)
+	return nil
+}
+
+// One project's independent delivery lane within a DeliveryOrchestration
+// (punokawan-14yn.1). A lane always carries its own project_id so cross-project
+// reads and writes fail closed. Worktree lifecycle, worker scheduling, and role
+// execution are later tasks (punokawan-14yn.3/5); this task only defines and
+// persists lane identity and status. See
+// affiliate-platform-delivery-feedback-2026-08-07.md.
+type DeliveryLane struct {
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
+	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
+
+	// Id of the parent task this lane delivers, assigned once punokawan-14yn.2's
+	// dependency graph resolves it. Empty until then.
+	ParentTaskId *string `json:"parent_task_id,omitempty,omitzero" yaml:"parent_task_id,omitempty" mapstructure:"parent_task_id,omitempty"`
+
+	// ProjectId corresponds to the JSON schema field "project_id".
+	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
+
+	// Optimistic-concurrency counter; incremented on every applied event.
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status DeliveryLaneStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// UpdatedAt corresponds to the JSON schema field "updated_at".
+	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at" mapstructure:"updated_at"`
+}
+
+type DeliveryLaneStatus string
+
+const DeliveryLaneStatusActive DeliveryLaneStatus = "active"
+const DeliveryLaneStatusCancelled DeliveryLaneStatus = "cancelled"
+const DeliveryLaneStatusCompleted DeliveryLaneStatus = "completed"
+const DeliveryLaneStatusFailed DeliveryLaneStatus = "failed"
+const DeliveryLaneStatusPending DeliveryLaneStatus = "pending"
+
+var enumValues_DeliveryLaneStatus = []interface{}{
+	"pending",
+	"active",
+	"cancelled",
+	"completed",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryLaneStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DeliveryLaneStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DeliveryLaneStatus, v)
+	}
+	*j = DeliveryLaneStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryLane) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in DeliveryLane: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in DeliveryLane: required")
+	}
+	if _, ok := raw["orchestration_id"]; raw != nil && !ok {
+		return fmt.Errorf("field orchestration_id in DeliveryLane: required")
+	}
+	if _, ok := raw["project_id"]; raw != nil && !ok {
+		return fmt.Errorf("field project_id in DeliveryLane: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in DeliveryLane: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in DeliveryLane: required")
+	}
+	if _, ok := raw["updated_at"]; raw != nil && !ok {
+		return fmt.Errorf("field updated_at in DeliveryLane: required")
+	}
+	type Plain DeliveryLane
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	*j = DeliveryLane(plain)
+	return nil
+}
+
+// One continuous multi-project delivery run (punokawan-14yn.1). Owns zero or more
+// DeliveryLanes and a list of not-yet-routed requirement inputs. State is derived
+// by replaying its DeliveryEvent log, never written directly. See
+// affiliate-platform-delivery-feedback-2026-08-07.md.
+type DeliveryOrchestration struct {
+	// CreatedAt corresponds to the JSON schema field "created_at".
+	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Optimistic-concurrency counter; incremented on every applied event.
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status DeliveryOrchestrationStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Requirement sources (Jira/Confluence/GitHub/URL/free-text) not yet routed to a
+	// project. Routing and normalization is punokawan-14yn.2's concern; this task
+	// only persists the raw reference.
+	UnresolvedInputs []DeliveryOrchestrationUnresolvedInputsElem `json:"unresolved_inputs" yaml:"unresolved_inputs" mapstructure:"unresolved_inputs"`
+
+	// UpdatedAt corresponds to the JSON schema field "updated_at".
+	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at" mapstructure:"updated_at"`
+}
+
+type DeliveryOrchestrationStatus string
+
+const DeliveryOrchestrationStatusActive DeliveryOrchestrationStatus = "active"
+const DeliveryOrchestrationStatusCancelled DeliveryOrchestrationStatus = "cancelled"
+const DeliveryOrchestrationStatusCompleted DeliveryOrchestrationStatus = "completed"
+const DeliveryOrchestrationStatusPending DeliveryOrchestrationStatus = "pending"
+
+var enumValues_DeliveryOrchestrationStatus = []interface{}{
+	"pending",
+	"active",
+	"cancelled",
+	"completed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryOrchestrationStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DeliveryOrchestrationStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DeliveryOrchestrationStatus, v)
+	}
+	*j = DeliveryOrchestrationStatus(v)
+	return nil
+}
+
+type DeliveryOrchestrationUnresolvedInputsElem struct {
+	// Note corresponds to the JSON schema field "note".
+	Note *string `json:"note,omitempty,omitzero" yaml:"note,omitempty" mapstructure:"note,omitempty"`
+
+	// Reference corresponds to the JSON schema field "reference".
+	Reference string `json:"reference" yaml:"reference" mapstructure:"reference"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryOrchestrationUnresolvedInputsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["reference"]; raw != nil && !ok {
+		return fmt.Errorf("field reference in DeliveryOrchestrationUnresolvedInputsElem: required")
+	}
+	type Plain DeliveryOrchestrationUnresolvedInputsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = DeliveryOrchestrationUnresolvedInputsElem(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryOrchestration) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["created_at"]; raw != nil && !ok {
+		return fmt.Errorf("field created_at in DeliveryOrchestration: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in DeliveryOrchestration: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in DeliveryOrchestration: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in DeliveryOrchestration: required")
+	}
+	if _, ok := raw["unresolved_inputs"]; raw != nil && !ok {
+		return fmt.Errorf("field unresolved_inputs in DeliveryOrchestration: required")
+	}
+	if _, ok := raw["updated_at"]; raw != nil && !ok {
+		return fmt.Errorf("field updated_at in DeliveryOrchestration: required")
+	}
+	type Plain DeliveryOrchestration
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	*j = DeliveryOrchestration(plain)
+	return nil
+}
+
+// A registered project binding in the canonical multi-project delivery control
+// plane (punokawan-14yn.1). One row per project the orchestrator is allowed to
+// route work to; unknown project ids are never inferred from ambient
+// working-directory scope. See affiliate-platform-delivery-feedback-2026-08-07.md.
+type DeliveryProject struct {
+	// DefaultBranch corresponds to the JSON schema field "default_branch".
+	DefaultBranch *string `json:"default_branch,omitempty,omitzero" yaml:"default_branch,omitempty" mapstructure:"default_branch,omitempty"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// RegisteredAt corresponds to the JSON schema field "registered_at".
+	RegisteredAt time.Time `json:"registered_at" yaml:"registered_at" mapstructure:"registered_at"`
+
+	// RepositoryUrl corresponds to the JSON schema field "repository_url".
+	RepositoryUrl string `json:"repository_url" yaml:"repository_url" mapstructure:"repository_url"`
+
+	// Optimistic-concurrency counter; incremented on every update.
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// Short, filesystem-safe, human-chosen project identifier used in worktree and
+	// lane paths.
+	Slug string `json:"slug" yaml:"slug" mapstructure:"slug"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status DeliveryProjectStatus `json:"status" yaml:"status" mapstructure:"status"`
+}
+
+type DeliveryProjectStatus string
+
+const DeliveryProjectStatusActive DeliveryProjectStatus = "active"
+const DeliveryProjectStatusDisabled DeliveryProjectStatus = "disabled"
+
+var enumValues_DeliveryProjectStatus = []interface{}{
+	"active",
+	"disabled",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryProjectStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DeliveryProjectStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DeliveryProjectStatus, v)
+	}
+	*j = DeliveryProjectStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryProject) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in DeliveryProject: required")
+	}
+	if _, ok := raw["registered_at"]; raw != nil && !ok {
+		return fmt.Errorf("field registered_at in DeliveryProject: required")
+	}
+	if _, ok := raw["repository_url"]; raw != nil && !ok {
+		return fmt.Errorf("field repository_url in DeliveryProject: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in DeliveryProject: required")
+	}
+	if _, ok := raw["slug"]; raw != nil && !ok {
+		return fmt.Errorf("field slug in DeliveryProject: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in DeliveryProject: required")
+	}
+	type Plain DeliveryProject
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Revision {
+		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
+	}
+	*j = DeliveryProject(plain)
+	return nil
+}
+
 // One claim within a Change Dossier, per
 // punakawan-role-config-distinguished-improvements-plan.md §34. A claim has a
 // producer role and a status in the evidence ladder; a role can never verify its

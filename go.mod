@@ -10,6 +10,7 @@ require (
 	github.com/google/jsonschema-go v0.3.0
 	github.com/modelcontextprotocol/go-sdk v1.2.0
 	github.com/oasdiff/oasdiff v1.23.0
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/tidwall/gjson v1.18.0
 	golang.org/x/sys v0.47.0

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/deliverylane.schema.json",
+  "title": "DeliveryLane",
+  "description": "One project's independent delivery lane within a DeliveryOrchestration (punokawan-14yn.1). A lane always carries its own project_id so cross-project reads and writes fail closed. Worktree lifecycle, worker scheduling, and role execution are later tasks (punokawan-14yn.3/5); this task only defines and persists lane identity and status. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "type": "object",
+  "required": ["id", "orchestration_id", "project_id", "status", "created_at", "updated_at", "revision"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "orchestration_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "parent_task_id": { "type": "string", "description": "Id of the parent task this lane delivers, assigned once punokawan-14yn.2's dependency graph resolves it. Empty until then." },
+    "status": { "type": "string", "enum": ["pending", "active", "cancelled", "completed", "failed"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." }
+  }
+}
