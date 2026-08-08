@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ygrip/punakawan/internal/procreg"
 	"github.com/ygrip/punakawan/internal/storage"
 )
 
@@ -43,10 +44,12 @@ func DefaultPaths() (Paths, error) {
 // the process tree allowed to call storage.Open against DBPath - every
 // CLI, MCP, and Panel client must reach data through Client instead.
 type Daemon struct {
-	paths     Paths
-	lock      *Lock
-	db        *storage.DB
-	transport *Transport
+	paths      Paths
+	lock       *Lock
+	db         *storage.DB
+	transport  *Transport
+	processes  *procreg.Registry
+	reconciled procreg.Result
 }
 
 // Run acquires the singleton lock, opens storage, binds the loopback
@@ -78,7 +81,15 @@ func Run(ctx context.Context, host, port string, paths Paths) (*Daemon, error) {
 		return nil, err
 	}
 
-	d := &Daemon{paths: paths, lock: lock, db: db}
+	processes := procreg.New(db)
+	reconciled, err := processes.Reconcile(ctx)
+	if err != nil {
+		db.Close()
+		lock.Release()
+		return nil, fmt.Errorf("daemon: reconcile owned processes: %w", err)
+	}
+
+	d := &Daemon{paths: paths, lock: lock, db: db, processes: processes, reconciled: reconciled}
 	transport, err := NewTransport(host, port, token, d.readyCheck)
 	if err != nil {
 		db.Close()
@@ -111,6 +122,16 @@ func (d *Daemon) Addr() string { return d.transport.Addr() }
 // part of Client's contract - out-of-process callers only ever see the
 // HTTP transport.
 func (d *Daemon) DB() *storage.DB { return d.db }
+
+// Processes is the durable process-ownership registry (punokawan-14yn.18)
+// that future worker/agent process launches (.3/.5) register with
+// before exposing their work as running.
+func (d *Daemon) Processes() *procreg.Registry { return d.processes }
+
+// Reconciled reports what Run's startup reconciliation did with any
+// process-ownership records left behind by a previous daemon instance
+// that did not shut down cleanly.
+func (d *Daemon) Reconciled() procreg.Result { return d.reconciled }
 
 // Serve blocks accepting connections until Shutdown is called.
 func (d *Daemon) Serve() error {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/daemon"
+	"github.com/ygrip/punakawan/internal/procreg"
 )
 
 func main() {
@@ -57,6 +58,7 @@ func runDaemon() error {
 		return err
 	}
 	fmt.Fprintln(os.Stdout, "punakawand: listening on", d.Addr())
+	reportReconciliation(d.Reconciled())
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- d.Serve() }()
@@ -72,6 +74,19 @@ func runDaemon() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return d.Shutdown(shutdownCtx)
+}
+
+// reportReconciliation surfaces what startup reconciliation found. A
+// non-empty Preserved list is an operator-visible anomaly per AC4: a
+// pid this daemon previously owned now belongs to a different process
+// and was deliberately left untouched rather than killed.
+func reportReconciliation(r procreg.Result) {
+	if len(r.Killed) > 0 {
+		fmt.Fprintln(os.Stdout, "punakawand: reconciled", len(r.Killed), "orphaned process(es) from a previous instance")
+	}
+	if len(r.Preserved) > 0 {
+		fmt.Fprintln(os.Stderr, "punakawand: WARNING - pid identity mismatch for", len(r.Preserved), "record(s):", r.Preserved, "- these processes were left running, not killed")
+	}
 }
 
 func statusDaemon() error {
