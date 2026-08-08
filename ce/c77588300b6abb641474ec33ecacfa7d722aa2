@@ -1,0 +1,50 @@
+pkg/protocol/doc.go
+  708d680d348b9cc2 6
+internal/delivery/testreport.go
+  708d680d348b9cc2 1-249
+protocol/testreportsummary.schema.json
+  708d680d348b9cc2 1-22
+internal/delivery/artifacts.go
+  708d680d348b9cc2 1-287
+internal/delivery/artifacts_test.go
+  708d680d348b9cc2 1-152
+protocol/evidenceartifact.schema.json
+  708d680d348b9cc2 1-23
+internal/storage/migrations/0006_evidence_artifacts.sql
+  708d680d348b9cc2 1-30
+internal/delivery/testreport_test.go
+  708d680d348b9cc2 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "cec77588300b6abb641474ec33ecacfa7d722aa2",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 945,
+      "total_deletions": 46,
+      "accepted_lines": 900,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
