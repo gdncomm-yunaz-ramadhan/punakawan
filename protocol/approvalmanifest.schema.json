@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/approvalmanifest.schema.json",
+  "title": "ApprovalManifest",
+  "description": "One immutable approval request/decision for a single project within a DeliveryOrchestration (punokawan-14yn.4): the parent tasks it covers, the planned base ref/branches/writes, and the preflight checks it was computed against. Approving one manifest never authorizes a newly discovered project or a write category beyond what this manifest declares - a changed scope requires a new manifest, not an edit to this one. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "type": "object",
+  "required": ["id", "orchestration_id", "project_id", "parent_task_ids", "planned_base_ref", "checks", "status", "created_at", "revision"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "orchestration_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "parent_task_ids": { "type": "array", "items": { "type": "string" }, "description": "Every ParentTask this manifest covers; all must already be routed to project_id." },
+    "planned_base_ref": { "type": "string" },
+    "planned_branches": { "type": "array", "items": { "type": "string" } },
+    "expects_jira_writes": { "type": "boolean", "default": false },
+    "expects_commits": { "type": "boolean", "default": false },
+    "expects_pushes": { "type": "boolean", "default": false },
+    "expects_prs": { "type": "boolean", "default": false },
+    "checks": {
+      "type": "array",
+      "description": "Snapshot of the PreflightCheck results (preflightcheck.schema.json) this manifest was computed against, duplicated inline rather than by $ref - this repo does not use cross-file $ref (see knowledge.schema.json's selector comment) and a manifest's checks are a point-in-time copy, not a live reference anyway.",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "classification"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "fail", "skipped"] },
+          "classification": { "type": "string", "enum": ["required", "optional", "delegated-to-ci"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+    "approved_by": { "type": "string", "description": "Never one of the agent role identifiers (semar/gareng/petruk/bagong) - an agent may not approve its own manifest." },
+    "decided_at": { "type": "string", "format": "date-time" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." }
+  }
+}

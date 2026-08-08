@@ -19,7 +19,8 @@
         "lane.created", "lane.status_changed",
         "requirement.captured",
         "task.created", "task.routed",
-        "edge.added", "edge.removed"
+        "edge.added", "edge.removed",
+        "manifest.created", "manifest.approved", "manifest.rejected"
       ]
     },
     "payload": { "type": "object" },
