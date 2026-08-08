@@ -1,0 +1,60 @@
+internal/tools/killpid.go
+  708d680d348b9cc2 1-52
+internal/procident/procident_linux.go
+  708d680d348b9cc2 1-57
+internal/daemon/daemon.go
+  708d680d348b9cc2 9,47-52,84-92,126-135
+internal/procreg/procreg.go
+  708d680d348b9cc2 1-193
+cmd/punakawand/main.go
+  708d680d348b9cc2 17,61,79-91
+internal/procident/procident.go
+  708d680d348b9cc2 1-17
+internal/procident/procident_windows.go
+  708d680d348b9cc2 1-23
+internal/tools/killpid_test.go
+  708d680d348b9cc2 1-43
+internal/procident/procident_other.go
+  708d680d348b9cc2 1-12
+internal/procident/procident_darwin.go
+  708d680d348b9cc2 1-19
+internal/procident/procident_test.go
+  708d680d348b9cc2 1-66
+internal/storage/migrations/0007_owned_processes.sql
+  708d680d348b9cc2 1-19
+internal/procreg/procreg_test.go
+  708d680d348b9cc2 1-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "0c4370e0e5a3c3b4232712d83a7172bbcb2d8e7a",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 731,
+      "total_deletions": 27,
+      "accepted_lines": 711,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
