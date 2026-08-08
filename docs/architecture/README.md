@@ -23,5 +23,7 @@ This directory contains the Architecture Decision Records (ADRs) formalizing the
 | [ADR-0017](./ADR-0017-direct-atlassian-rest-replaces-rovo-mcp.md) | Direct Atlassian REST replaces Rovo MCP. |
 | [ADR-0018](./ADR-0018-punakawan-managed-dolt-is-the-beads-less-fallback-task-graph.md) | Punakawan-managed Dolt is the Beads-less fallback task graph (qualifies ADR-0006). |
 | [ADR-0019](./ADR-0019-per-project-dolt-servers-are-bounded-by-an-lru-runtime-pool.md) | Per-project Dolt servers are bounded by an LRU runtime pool (relates to ADR-0005/0008/0018). |
+| [ADR-0020](./ADR-0020-a-single-shared-dolt-hub-server-replaces-per-project-servers.md) | A single shared Dolt hub server replaces per-project servers (supersedes ADR-0019). |
+| [ADR-0021](./ADR-0021-an-embedded-sqlite-kernel-replaces-the-dolt-hub-as-active-storage.md) | An embedded SQLite kernel replaces the Dolt hub as active storage (supersedes ADR-0020). |
 
 See `punakawan-go-typescript-detailed-plan.md` §25 for the original decision list (ADR-0001 through ADR-0015) and §28 for the role-invocation design (ADR-0016).
