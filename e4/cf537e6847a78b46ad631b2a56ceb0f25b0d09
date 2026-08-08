@@ -1,0 +1,64 @@
+internal/daemon/lock_test.go
+  708d680d348b9cc2 1-133
+internal/daemon/token_unix.go
+  708d680d348b9cc2 1-21
+internal/daemon/daemon.go
+  708d680d348b9cc2 1-134
+internal/daemon/token_windows.go
+  708d680d348b9cc2 1-12
+internal/daemon/lock.go
+  708d680d348b9cc2 1-118
+internal/daemon/lock_unix.go
+  708d680d348b9cc2 1-22
+internal/loopback/loopback.go
+  708d680d348b9cc2 1-77
+internal/loopback/loopback_test.go
+  708d680d348b9cc2 1-45
+internal/daemon/transport.go
+  708d680d348b9cc2 1-132
+internal/daemon/token_test.go
+  708d680d348b9cc2 1-52
+internal/daemon/token.go
+  708d680d348b9cc2 1-48
+internal/daemon/lock_windows.go
+  708d680d348b9cc2 1-21
+internal/daemon/transport_test.go
+  708d680d348b9cc2 1-110
+internal/daemon/daemon_test.go
+  708d680d348b9cc2 1-110
+internal/panel/server/security.go
+  708d680d348b9cc2 10-11,14-16,18-21,49,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e4cf537e6847a78b46ad631b2a56ceb0f25b0d09",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1047,
+      "total_deletions": 60,
+      "accepted_lines": 1046,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
