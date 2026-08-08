@@ -13,6 +13,12 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
+// ErrRequiredCheckFailed is returned by ApproveManifest when the
+// manifest's checks snapshot recorded a failed required check: fail
+// early, before implementation, rather than let a human wave through
+// an approval a preflight already knows will break.
+var ErrRequiredCheckFailed = errors.New("delivery: manifest has a failed required check")
+
 // ManifestPlan is the fixed, immutable-once-created scope of an
 // ApprovalManifest. Nothing after CreateApprovalManifest can widen it -
 // a changed scope requires a new manifest.
@@ -96,8 +102,21 @@ func (s *Store) GetApprovalManifest(ctx context.Context, orchestrationID, manife
 // ApproveManifest and RejectManifest both reject an agent role
 // (semar/gareng/petruk/bagong) approving its own manifest, reusing
 // internal/approvals' existing guard rather than duplicating the role
-// name list.
+// name list. ApproveManifest additionally fails closed
+// (ErrRequiredCheckFailed) if the manifest's checks snapshot recorded
+// any required-classification check as failed - optional and
+// delegated-to-ci checks never block approval, matching this task's
+// "fail early" goal without over-blocking local work.
 func (s *Store) ApproveManifest(ctx context.Context, idempotencyKey, orchestrationID, manifestID, approvedBy string) (*protocol.ApprovalManifest, error) {
+	manifest, err := s.GetApprovalManifest(ctx, orchestrationID, manifestID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range manifest.Checks {
+		if c.Classification == protocol.ApprovalManifestChecksElemClassificationRequired && c.Status == protocol.ApprovalManifestChecksElemStatusFail {
+			return nil, ErrRequiredCheckFailed
+		}
+	}
 	return s.decideManifest(ctx, idempotencyKey, orchestrationID, manifestID, approvedBy, protocol.DeliveryEventTypeManifestApproved)
 }
 

@@ -57,6 +57,33 @@ func TestApprovalManifestLifecycle(t *testing.T) {
 	}
 }
 
+func TestApproveManifestBlockedByFailedRequiredCheckNotByOptional(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	orch := createTestOrchestration(t, s)
+	proj := registerProject(t, s, "manifest-gate-project")
+	task := createTestTask(t, s, orch.Id, "task")
+	if _, err := s.RouteParentTask(ctx, "route", orch.Id, task.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask: %v", err)
+	}
+
+	failDetail := "git not found on PATH"
+	manifest, err := s.CreateApprovalManifest(ctx, "manifest-gate", NewID(), orch.Id, proj.Id, []string{task.Id}, ManifestPlan{
+		PlannedBaseRef: "main",
+		Checks: []protocol.PreflightCheck{
+			{Name: "executable:git", Status: protocol.PreflightCheckStatusFail, Classification: protocol.PreflightCheckClassificationRequired, Detail: &failDetail},
+			{Name: "external-service:optional-thing", Status: protocol.PreflightCheckStatusSkipped, Classification: protocol.PreflightCheckClassificationOptional},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateApprovalManifest: %v", err)
+	}
+
+	if _, err := s.ApproveManifest(ctx, "approve-blocked", orch.Id, manifest.Id, "a-human-reviewer"); !errors.Is(err, ErrRequiredCheckFailed) {
+		t.Fatalf("expected ErrRequiredCheckFailed when a required check failed, got %v", err)
+	}
+}
+
 func TestApprovalManifestRejectsTaskFromDifferentProject(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
