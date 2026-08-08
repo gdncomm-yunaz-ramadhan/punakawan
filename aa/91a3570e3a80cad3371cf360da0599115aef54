@@ -1,0 +1,77 @@
+internal/storage/migrate.go
+  708d680d348b9cc2 1-153
+internal/storage/path_linux.go
+  708d680d348b9cc2 1-25
+internal/storage/storage_test.go
+  708d680d348b9cc2 1-298
+internal/storage/path.go
+  708d680d348b9cc2 1-51
+docs/architecture/ADR-0021-an-embedded-sqlite-kernel-replaces-the-dolt-hub-as-active-storage.md
+  708d680d348b9cc2 1-31
+internal/storage/path_other.go
+  708d680d348b9cc2 1-11
+internal/storage/migrations/0001_init.sql
+  708d680d348b9cc2 1-8
+internal/storage/path_windows.go
+  708d680d348b9cc2 1-23
+internal/storage/bench_test.go
+  708d680d348b9cc2 1-105
+docs/architecture/README.md
+  708d680d348b9cc2 26-27
+internal/storage/tx.go
+  708d680d348b9cc2 1-50
+internal/storage/capability.go
+  708d680d348b9cc2 1-27
+internal/storage/storage.go
+  708d680d348b9cc2 1-85
+internal/storage/path_darwin.go
+  708d680d348b9cc2 1-23
+internal/storage/backup.go
+  708d680d348b9cc2 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "aa91a3570e3a80cad3371cf360da0599115aef54",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 961,
+      "total_deletions": 25,
+      "accepted_lines": 936,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    },
+    "cd28f749384e24ee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbda-0c92-7390-8bba-08ea6975b809",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    }
+  }
+}
