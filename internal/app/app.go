@@ -23,6 +23,7 @@ import (
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/taskstore"
 	"github.com/ygrip/punakawan/internal/tools"
@@ -56,6 +57,9 @@ type App struct {
 
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
+
+	storageMu sync.Mutex
+	storageDB *storage.DB
 
 	taskStoreMu sync.Mutex
 	taskStore   *taskstore.Store
@@ -294,11 +298,39 @@ func (a *App) openKnowledgeStore() (*knowledge.Store, error) {
 	return knowledge.Open(a.Supervisor, filepath.Join(a.Workspace.Root, ".punakawan", "knowledge"))
 }
 
-// OpenTaskStore lazily opens the Beads-less fallback task store, memoizing the
-// result. It shares the knowledge store's Dolt connection (the task tables
-// live in the same per-project Punakawan database), so it implicitly opens
-// knowledge first. Used only for projects with no .beads directory; a
-// Beads-backed project reads/writes tasks through bd instead.
+// OpenStorage lazily opens the shared SQLite storage kernel (punokawan-14yn.14),
+// memoizing the result. Unlike the per-project Dolt connections OpenKnowledge
+// opens, this is one database shared by every local project checkout on this
+// machine; callers scope their own rows by project id.
+func (a *App) OpenStorage(ctx context.Context) (*storage.DB, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.storageMu.Lock()
+	defer a.storageMu.Unlock()
+
+	if a.storageDB != nil {
+		return a.storageDB, nil
+	}
+	path, err := storage.DBPath()
+	if err != nil {
+		return nil, err
+	}
+	if err := storage.CheckLocation(path); err != nil {
+		return nil, err
+	}
+	db, err := storage.Open(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	a.storageDB = db
+	return db, nil
+}
+
+// OpenTaskStore lazily opens the Beads-less fallback task store, memoizing
+// the result, scoped to this workspace's id within the shared storage
+// kernel. Used only for projects with no .beads directory; a Beads-backed
+// project reads/writes tasks through bd instead.
 func (a *App) OpenTaskStore() (*taskstore.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -309,16 +341,12 @@ func (a *App) OpenTaskStore() (*taskstore.Store, error) {
 	if a.taskStore != nil {
 		return a.taskStore, nil
 	}
-	k, err := a.OpenKnowledge()
+	db, err := a.OpenStorage(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	store := taskstore.New(k.DB())
-	if err := store.Migrate(); err != nil {
-		return nil, err
-	}
-	a.taskStore = store
-	return store, nil
+	a.taskStore = taskstore.New(db, a.Workspace.ID)
+	return a.taskStore, nil
 }
 
 // JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
@@ -404,6 +432,14 @@ func (a *App) Close() error {
 	}
 	a.searchIndexMu.Unlock()
 
+	a.storageMu.Lock()
+	var storageErr error
+	if a.storageDB != nil {
+		storageErr = a.storageDB.Close()
+		a.storageDB = nil
+	}
+	a.storageMu.Unlock()
+
 	a.knowledgeMu.Lock()
 	defer a.knowledgeMu.Unlock()
 
@@ -411,7 +447,10 @@ func (a *App) Close() error {
 		if adapterErr != nil {
 			return adapterErr
 		}
-		return searchErr
+		if searchErr != nil {
+			return searchErr
+		}
+		return storageErr
 	}
 	knowledgeErr := a.knowledgeStore.Close()
 	a.knowledgeStore = nil
@@ -420,6 +459,9 @@ func (a *App) Close() error {
 	}
 	if searchErr != nil {
 		return searchErr
+	}
+	if storageErr != nil {
+		return storageErr
 	}
 	return knowledgeErr
 }
