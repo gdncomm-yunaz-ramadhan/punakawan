@@ -42,7 +42,6 @@ type Readers struct {
 	Contradiction contract.ContradictionReader
 	Impact        contract.ImpactReader
 	Dossier       contract.DossierReader
-	Handoff       contract.HandoffReader
 
 	// Runtime is the bounded *app.App pool (Phase 3). The server owns its
 	// lifecycle: it runs a periodic CloseIdle sweep and Closes all non-primary
@@ -103,14 +102,13 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		// already performs (plan §8's "one snapshot, reused everywhere").
 		Project: projectSource,
 		Roles:   projectSource,
-		// The same shared ProjectSource also serves the four project-scoped
-		// subsystems (Contradiction Ledger, Impact Graph, Change Dossiers,
-		// Handoff Capsules); they all reuse its id->root resolution and
-		// per-project .punakawan tree.
+		// The same shared ProjectSource also serves the three project-scoped
+		// subsystems (Contradiction Ledger, Impact Graph, Change Dossiers);
+		// they all reuse its id->root resolution and per-project .punakawan
+		// tree.
 		Contradiction: projectSource,
 		Impact:        projectSource,
 		Dossier:       projectSource,
-		Handoff:       projectSource,
 		Runtime:       runtimeMgr,
 	}
 }

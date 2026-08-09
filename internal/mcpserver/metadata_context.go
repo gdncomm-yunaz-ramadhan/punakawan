@@ -84,28 +84,6 @@ func toDossierMetadata(entries []MetadataContextEntry) []protocol.KnowledgeRecor
 	return out
 }
 
-// toCapsuleMetadata is toDossierMetadata's sibling for the ContextCapsule
-// codegen type; the two element structs are identical in shape but distinct
-// Go types, so each needs its own converter.
-func toCapsuleMetadata(entries []MetadataContextEntry) []protocol.ContextCapsuleProjectMetadataElem {
-	if len(entries) == 0 {
-		return nil
-	}
-	out := make([]protocol.ContextCapsuleProjectMetadataElem, len(entries))
-	for i, e := range entries {
-		out[i] = protocol.ContextCapsuleProjectMetadataElem{
-			Key:      e.Key,
-			Value:    e.Value,
-			Rendered: e.Rendered,
-		}
-		if e.Description != "" {
-			d := e.Description
-			out[i].Description = &d
-		}
-	}
-	return out
-}
-
 // renderMetadataEntry renders a single metadata entry in §4.4's block format:
 // the key on its own line, the description (when present) indented beneath it,
 // and a "Value: <value>" line last. It is the per-entry unit of the example in

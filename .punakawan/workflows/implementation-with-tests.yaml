@@ -18,7 +18,7 @@ allowed_capabilities:
   - write_file
   - run_tests
   - check_diff
-  - submit_bagong_review
+  - submit_lane_bagong_review
 approval:
   required_for:
     - write_file
@@ -42,7 +42,7 @@ steps:
     input_from:
       - implement
   - id: review
-    capability: submit_bagong_review
+    capability: submit_lane_bagong_review
     intent: review
     input_from:
       - test

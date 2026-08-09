@@ -13,7 +13,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/approvals"
-	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/hub"
@@ -39,7 +38,6 @@ type App struct {
 	Policy          *policy.Policy
 	Supervisor      *tools.Supervisor
 	Approvals       *approvals.Store
-	Capsules        *capsule.Store
 	Inspector       *gitops.Inspector
 	Worktrees       *gitops.WorktreeManager
 	Workflow        *workflow.Store
@@ -119,11 +117,6 @@ func Load(startDir string) (*App, error) {
 		return nil, err
 	}
 
-	capsules, err := capsule.OpenStore(ws.Root)
-	if err != nil {
-		return nil, err
-	}
-
 	wf, err := workflow.Open(ws.Root)
 	if err != nil {
 		return nil, err
@@ -170,7 +163,6 @@ func Load(startDir string) (*App, error) {
 		Policy:          pol,
 		Supervisor:      sup,
 		Approvals:       store,
-		Capsules:        capsules,
 		Inspector:       gitops.NewInspector(sup),
 		Worktrees:       gitops.NewWorktreeManager(sup, store, pol),
 		Workflow:        wf,

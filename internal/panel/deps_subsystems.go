@@ -2,27 +2,21 @@ package panel
 
 import (
 	"context"
-	"errors"
 
-	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/contradiction"
 	"github.com/ygrip/punakawan/internal/dossier"
-	"github.com/ygrip/punakawan/internal/handoff"
-	"github.com/ygrip/punakawan/internal/handoffprobe"
 	"github.com/ygrip/punakawan/internal/impact"
-	"github.com/ygrip/punakawan/internal/panel/contract"
-	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// This file extends ProjectSource (see deps.go) with the four project-scoped
+// This file extends ProjectSource (see deps.go) with the three project-scoped
 // subsystems that share its id->root resolution and per-project .punakawan
-// tree: the Contradiction Ledger, the Impact Graph, Change Dossiers, and
-// Handoff Capsules. Each subsystem's store (internal/contradiction,
-// internal/impact, internal/dossier, internal/handoff) is stateless and keyed
-// by a workspace root, so every method resolves the root through resolveRoot
-// and then calls the store func directly - exactly like the metadata and
-// role-config surfaces already on ProjectSource.
+// tree: the Contradiction Ledger, the Impact Graph, and Change Dossiers. Each
+// subsystem's store (internal/contradiction, internal/impact,
+// internal/dossier) is stateless and keyed by a workspace root, so every
+// method resolves the root through resolveRoot and then calls the store func
+// directly - exactly like the metadata and role-config surfaces already on
+// ProjectSource.
 
 // --- ContradictionReader ---------------------------------------------------
 
@@ -240,173 +234,3 @@ func (s *ProjectSource) ExportDossierJSON(ctx context.Context, projectID, id str
 	return dossier.ExportJSON(root, id)
 }
 
-// --- HandoffReader ---------------------------------------------------------
-
-// ListHandoffs returns every capsule in the project.
-func (s *ProjectSource) ListHandoffs(ctx context.Context, projectID string) ([]protocol.HandoffCapsule, error) {
-	root, err := s.resolveRoot(projectID)
-	if err != nil {
-		return nil, err
-	}
-	ids, err := handoff.List(root)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]protocol.HandoffCapsule, 0, len(ids))
-	for _, id := range ids {
-		h, err := handoff.Get(root, id)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, h)
-	}
-	return out, nil
-}
-
-// GetHandoff returns one capsule (a synthesized empty one for an unknown id,
-// matching handoff.Get's "absent capsule is a normal state" contract).
-func (s *ProjectSource) GetHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error) {
-	root, err := s.resolveRoot(projectID)
-	if err != nil {
-		return protocol.HandoffCapsule{}, err
-	}
-	return handoff.Get(root, id)
-}
-
-// CreateHandoff persists a new capsule.
-func (s *ProjectSource) CreateHandoff(ctx context.Context, projectID string, h protocol.HandoffCapsule) (protocol.HandoffCapsule, error) {
-	root, err := s.resolveRoot(projectID)
-	if err != nil {
-		return protocol.HandoffCapsule{}, err
-	}
-	return handoff.Create(root, h)
-}
-
-// ValidateHandoff classifies whether the capsule can be resumed, wiring the
-// validation deps from the project's own stores (see buildValidationDeps).
-func (s *ProjectSource) ValidateHandoff(ctx context.Context, projectID, id string) (handoff.ValidationResult, error) {
-	root, err := s.resolveRoot(projectID)
-	if err != nil {
-		return handoff.ValidationResult{}, err
-	}
-	return handoff.Validate(root, id, s.buildValidationDeps(root))
-}
-
-// ResumeHandoff returns the smallest necessary resume context, refusing a
-// superseded capsule with contract.ErrHandoffSuperseded so the handler answers
-// 409 rather than handing back a stale context.
-func (s *ProjectSource) ResumeHandoff(ctx context.Context, projectID, id string) (map[string]any, error) {
-	root, err := s.resolveRoot(projectID)
-	if err != nil {
-		return nil, err
-	}
-	res, err := handoff.Validate(root, id, s.buildValidationDeps(root))
-	if err != nil {
-		return nil, err
-	}
-	if res.Status == handoff.StatusSuperseded {
-		return nil, contract.ErrHandoffSuperseded
-	}
-	return handoff.ResumeContext(root, id)
-}
-
-// SupersedeHandoff marks the capsule superseded and returns the updated capsule.
-func (s *ProjectSource) SupersedeHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error) {
-	root, err := s.resolveRoot(projectID)
-	if err != nil {
-		return protocol.HandoffCapsule{}, err
-	}
-	if err := handoff.Supersede(root, id); err != nil {
-		return protocol.HandoffCapsule{}, err
-	}
-	return handoff.Get(root, id)
-}
-
-// buildValidationDeps wires handoff.ValidationDeps from the project's stateless
-// stores. Only the deps that are cheap and honest to check from this workspace
-// are wired; the rest are left nil, which handoff.Validate treats as "cannot
-// check -> passing" (never a fabricated failing result), per §42:
-//
-//   - PlanVersionExists    -> the project's plan store (artifact.PlanStore).
-//   - RoleConfigRevision   -> roleconfig.Load(root).Revision.
-//   - ContradictionsChanged-> the contradiction store: a listed open
-//     contradiction that has since left an open status (detected/triaged/
-//     needs_clarification) counts as materially changed.
-//   - DossierSuperseded     -> the dossier store's current status.
-//
-// The remaining deps are left nil with a TODO rather than faked:
-//   - TaskIsCurrent: bd has no cheap "is this still the current task" check
-//     reachable from a workspace root here. TODO(handoff): wire once the task
-//     snapshot service is threaded through ProjectSource.
-//   - EvidenceExists: evidence artifacts are session-scoped and not resolvable
-//     from a project root alone. TODO(handoff): wire to the evidence ledger.
-//   - RepositoryStateMatches: comparing recorded vs. live git state needs a git
-//     probe not available here. TODO(handoff): wire to a git status source.
-func (s *ProjectSource) buildValidationDeps(root string) handoff.ValidationDeps {
-	plans := &artifact.PlanStore{WorkspaceRoot: root}
-	return handoff.ValidationDeps{
-		PlanVersionExists: func(planID string, version int) (bool, error) {
-			_, _, err := plans.Version(planID, version)
-			if err == nil {
-				return true, nil
-			}
-			if errors.Is(err, artifact.ErrVersionNotFound) || errors.Is(err, artifact.ErrPlanNotFound) {
-				return false, nil
-			}
-			return false, err
-		},
-		RoleConfigRevision: func() (int, error) {
-			cfg, err := roleconfig.Load(root)
-			if err != nil {
-				return 0, err
-			}
-			return cfg.Revision, nil
-		},
-		ContradictionsChanged: func(ids []string) ([]string, error) {
-			changed := make([]string, 0, len(ids))
-			for _, id := range ids {
-				c, err := contradiction.Get(root, id)
-				if err != nil {
-					if errors.Is(err, contradiction.ErrNotFound) {
-						// A contradiction that vanished from the ledger has
-						// materially changed relative to the capsule.
-						changed = append(changed, id)
-						continue
-					}
-					return nil, err
-				}
-				if !isOpenContradiction(c.Status) {
-					changed = append(changed, id)
-				}
-			}
-			return changed, nil
-		},
-		DossierSuperseded: func(id string) (bool, error) {
-			loaded, err := dossier.Get(root, id)
-			if err != nil {
-				return false, err
-			}
-			return loaded.Dossier.Status == protocol.ChangeDossierStatusSuperseded, nil
-		},
-		// Git tree-state, evidence-ledger, and task-currency probes come from
-		// internal/handoffprobe (see that package for each probe's contract).
-		RepositoryStateMatches: handoffprobe.RepositoryStateMatches(root),
-		EvidenceExists:         handoffprobe.EvidenceExists(root),
-		TaskIsCurrent:          handoffprobe.TaskIsCurrent(root),
-	}
-}
-
-// isOpenContradiction reports whether a status is one of the three "still open"
-// states of the §18 resolution chain. A capsule's listed open contradiction
-// that has left this set (resolved, accepted_divergence, superseded,
-// resolution_proposed) has materially changed since the handoff.
-func isOpenContradiction(status protocol.ContradictionStatus) bool {
-	switch status {
-	case protocol.ContradictionStatusDetected,
-		protocol.ContradictionStatusTriaged,
-		protocol.ContradictionStatusNeedsClarification:
-		return true
-	default:
-		return false
-	}
-}

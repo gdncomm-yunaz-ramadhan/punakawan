@@ -20,7 +20,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/artifact"
-	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/timing"
@@ -604,46 +603,6 @@ func TestServerSessionsEndpointUnknownSessionReturns404(t *testing.T) {
 	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/no-such-run")
 	if status != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", status)
-	}
-}
-
-func TestServerCapsulesEndpoint(t *testing.T) {
-	s, a := startTestServer(t)
-
-	c := protocol.ContextCapsule{
-		Id:               "cap-1",
-		TaskId:           "bd-task-1",
-		CreatedAt:        time.Now().UTC(),
-		Role:             protocol.ContextCapsuleRolePetruk,
-		Objective:        "implement the feature",
-		AllowedTools:     []string{},
-		ForbiddenActions: []string{},
-	}
-	digest, err := capsule.Digest(c)
-	if err != nil {
-		t.Fatalf("capsule.Digest: %v", err)
-	}
-	c.Digest = digest
-	if err := a.Capsules.Put(c); err != nil {
-		t.Fatalf("Capsules.Put: %v", err)
-	}
-
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/capsules?task_id=bd-task-1")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want 1", items)
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/capsules?task_id=no-such-task")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ = body["items"].([]any)
-	if len(items) != 0 {
-		t.Fatalf("items = %+v, want 0 for an unrelated task id", items)
 	}
 }
 

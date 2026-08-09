@@ -192,7 +192,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}", deprecatedAlias("/api/v1/projects/{projectId}", api.WorkspaceHandler(s.readers.Workspace)))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions", api.SessionsHandler(s.readers.Session))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}", api.SessionHandler(s.readers.Session))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/capsules", api.CapsulesHandler(s.app.Capsules))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks", api.TasksHandler(s.readers.Task))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks/{taskId}", api.TaskHandler(s.readers.Task))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/task-graph", api.TaskGraphHandler(s.readers.Task))
@@ -243,16 +242,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/finalize", session.RequireSession(s.sessions, api.DossierFinalizeHandler(s.readers.Dossier)))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}/export.md", api.DossierExportMarkdownHandler(s.readers.Dossier))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}/export.json", api.DossierExportJSONHandler(s.readers.Dossier))
-
-	// Handoff Capsules (plan section 43). GET reads are unwrapped; create,
-	// validate, resume, and supersede require a mutation session (validate and
-	// resume are POST: they run a validation pass and resume gates on its verdict).
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/handoffs", api.HandoffsListHandler(s.readers.Handoff))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs", session.RequireSession(s.sessions, api.HandoffCreateHandler(s.readers.Handoff)))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/handoffs/{id}", api.HandoffGetHandler(s.readers.Handoff))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/validate", session.RequireSession(s.sessions, api.HandoffValidateHandler(s.readers.Handoff)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/resume", session.RequireSession(s.sessions, api.HandoffResumeHandler(s.readers.Handoff)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/supersede", session.RequireSession(s.sessions, api.HandoffSupersedeHandler(s.readers.Handoff)))
 
 	// Project-scoped plans (Phase 7), workflow definitions (Phase 6), and
 	// cached health (Phase 8). All resolve a {projectId} to its workspace

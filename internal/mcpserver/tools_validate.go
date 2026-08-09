@@ -35,17 +35,6 @@ func validateWorkflowName(raw string) (protocol.WorkflowRunWorkflowName, error) 
 	return v, nil
 }
 
-// validateCapsuleRole checks raw against protocol's context-capsule role enum
-// up front (punokawan-4ae), reusing the generated enum validator.
-func validateCapsuleRole(raw string) (protocol.ContextCapsuleRole, error) {
-	data, _ := json.Marshal(raw)
-	var v protocol.ContextCapsuleRole
-	if err := v.UnmarshalJSON(data); err != nil {
-		return "", fmt.Errorf("mcpserver: invalid role %q: must be one of gareng, petruk, bagong", raw)
-	}
-	return v, nil
-}
-
 // recordPartialFailure decides how a sub-write failure in a multi-write tool
 // (update_jira_task_progress, request_jira_clarification, submit_jira_assessment)
 // is surfaced, per punokawan-4tw. If no earlier write in the same call

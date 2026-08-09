@@ -23,9 +23,9 @@ const DefaultInterval = 1 * time.Second
 const DefaultAvailabilityInterval = 15 * time.Second
 
 // DefaultSubsystemInterval is how often the medium tier (tier 3) polls the
-// four project-scoped subsystems (Contradiction Ledger, Impact Graph,
-// Change Dossiers, Handoff Capsules), per the role-config distinguished
-// improvements plan §46. Their reads are per-project file loads over the
+// three project-scoped subsystems (Contradiction Ledger, Impact Graph,
+// Change Dossiers), per the role-config distinguished improvements plan §46.
+// Their reads are per-project file loads over the
 // .punakawan tree - cheaper than the deep Workspace.List probe but heavier
 // than the in-memory session/approval checks, and their state changes on
 // human/agent cadence (contradictions detected, dossiers finalized), not
@@ -44,8 +44,8 @@ const DefaultSubsystemInterval = 2 * time.Second
 //   - Tier 1 (Interval, default 1s): session + approval change detection.
 //   - Tier 2 (AvailabilityInterval, default 15s): workspace availability
 //     change detection, which triggers the deep per-workspace probes.
-//   - Tier 3 (SubsystemInterval, default 2s): contradiction/impact/dossier/
-//     handoff change detection over the per-project .punakawan tree (§46).
+//   - Tier 3 (SubsystemInterval, default 2s): contradiction/impact/dossier
+//     change detection over the per-project .punakawan tree (§46).
 type Reconciler struct {
 	Hub         *Hub
 	Readers     panel.Readers
@@ -65,7 +65,6 @@ type Reconciler struct {
 	// Tier-3 (subsystem) prev-state maps, one per project-scoped subsystem.
 	prevContradictions map[string]protocol.ContradictionStatus
 	prevDossiers       map[string]protocol.ChangeDossierStatus
-	prevHandoffs       map[string]bool // id -> superseded
 	// prevImpactCount is the last observed impact node count. -1 means the
 	// impact graph has not been polled yet (priming), so the first sighting
 	// records the count without emitting a spurious snapshot_updated.
@@ -125,7 +124,6 @@ func (r *Reconciler) initState() {
 	r.prevWorkspaces = map[string]protocol.PanelSourceHealthAvailability{}
 	r.prevContradictions = map[string]protocol.ContradictionStatus{}
 	r.prevDossiers = map[string]protocol.ChangeDossierStatus{}
-	r.prevHandoffs = map[string]bool{}
 	r.prevImpactCount = -1
 }
 
@@ -201,12 +199,11 @@ func (r *Reconciler) reconcileAvailability(ctx context.Context) {
 	}
 }
 
-// reconcileSubsystems is tier 3: change detection for the four
+// reconcileSubsystems is tier 3: change detection for the three
 // project-scoped subsystems (Contradiction Ledger, Impact Graph, Change
-// Dossiers, Handoff Capsules), per the role-config distinguished
-// improvements plan §46. Project id == workspace id (a project shares its
-// id with the workspace it is rooted in), so r.WorkspaceID is the project
-// id passed to each reader.
+// Dossiers), per the role-config distinguished improvements plan §46.
+// Project id == workspace id (a project shares its id with the workspace it
+// is rooted in), so r.WorkspaceID is the project id passed to each reader.
 //
 // Every reader call is guarded with `if ..., err := ...; err == nil` so a
 // project without one of these stores (or a workspace whose .punakawan tree
@@ -217,10 +214,7 @@ func (r *Reconciler) reconcileAvailability(ctx context.Context) {
 // intentionally collapsed into a single impact.snapshot_updated here: the
 // poll model only sees whole snapshots, not per-node/edge deltas, so the
 // cheapest honest signal is "the node count changed since last poll" (the
-// ImpactReader exposes ImpactNodes but no standalone edge list). Likewise
-// handoff.validated has no polled state to diff (validation is an on-demand
-// action, not a stored field), so it is defined in the enum but never
-// emitted from this tier.
+// ImpactReader exposes ImpactNodes but no standalone edge list).
 func (r *Reconciler) reconcileSubsystems(ctx context.Context) {
 	now := time.Now().UTC()
 	ws := r.WorkspaceID
@@ -233,9 +227,6 @@ func (r *Reconciler) reconcileSubsystems(ctx context.Context) {
 	}
 	if r.prevDossiers == nil {
 		r.prevDossiers = map[string]protocol.ChangeDossierStatus{}
-	}
-	if r.prevHandoffs == nil {
-		r.prevHandoffs = map[string]bool{}
 		r.prevImpactCount = -1
 	}
 
@@ -291,31 +282,6 @@ func (r *Reconciler) reconcileSubsystems(ctx context.Context) {
 			for id := range r.prevDossiers {
 				if !seen[id] {
 					delete(r.prevDossiers, id)
-				}
-			}
-		}
-	}
-
-	// Handoffs: created on first sighting; superseded when the superseded
-	// flag flips true.
-	if r.Readers.Handoff != nil {
-		if list, err := r.Readers.Handoff.ListHandoffs(ctx, ws); err == nil {
-			seen := make(map[string]bool, len(list))
-			for _, h := range list {
-				seen[h.Id] = true
-				superseded := h.Superseded != nil && *h.Superseded
-				prev, existed := r.prevHandoffs[h.Id]
-				switch {
-				case !existed:
-					r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeHandoffCreated, OccurredAt: now, WorkspaceId: strPtr(ws), EntityId: strPtr(h.Id)})
-				case !prev && superseded:
-					r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeHandoffSuperseded, OccurredAt: now, WorkspaceId: strPtr(ws), EntityId: strPtr(h.Id)})
-				}
-				r.prevHandoffs[h.Id] = superseded
-			}
-			for id := range r.prevHandoffs {
-				if !seen[id] {
-					delete(r.prevHandoffs, id)
 				}
 			}
 		}

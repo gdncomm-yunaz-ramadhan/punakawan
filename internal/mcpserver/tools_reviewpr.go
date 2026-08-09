@@ -88,10 +88,10 @@ type PrComment struct {
 
 // ReviewPrOutput is review_pr's output: the fetched PR context bundle.
 // review_pr does not itself review anything (ADR-0016: punakawan never
-// reasons) - the calling agent builds Gareng/Petruk review capsules
-// (request_capsule), collects independent findings, has Bagong verify them
-// against this output's Files/Checks, and finally calls
-// submit_pr_review_findings with Semar's deduplicated result.
+// reasons) - the calling agent has Gareng/Petruk review, collects
+// independent findings, has Bagong verify them against this output's
+// Files/Checks, and finally calls submit_pr_review_findings with Semar's
+// deduplicated result.
 type ReviewPrOutput struct {
 	PullRequest PrSummary   `json:"pull_request"`
 	Files       []PrFile    `json:"files"`

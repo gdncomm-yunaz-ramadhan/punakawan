@@ -42,10 +42,10 @@ type CreateKnowledgeRecordOutput struct {
 
 var dedicatedKnowledgeTypes = map[protocol.KnowledgeRecordType]string{
 	protocol.KnowledgeRecordTypeContextDossier:  "build_context_dossier",
-	protocol.KnowledgeRecordTypeGarengReview:    "submit_gareng_review",
-	protocol.KnowledgeRecordTypePetrukPlan:      "submit_petruk_plan",
+	protocol.KnowledgeRecordTypeGarengReview:    "submit_lane_gareng_review",
+	protocol.KnowledgeRecordTypePetrukPlan:      "submit_lane_petruk_plan",
 	protocol.KnowledgeRecordTypeSemarSynthesis:  "submit_semar_synthesis",
-	protocol.KnowledgeRecordTypeBagongReview:    "submit_bagong_review",
+	protocol.KnowledgeRecordTypeBagongReview:    "submit_lane_bagong_review",
 	protocol.KnowledgeRecordTypeFinalPlan:       "submit_semar_synthesis",
 	protocol.KnowledgeRecordTypeRetrievalRecipe: "the retrieval-recipe teaching and acceptance workflow",
 }

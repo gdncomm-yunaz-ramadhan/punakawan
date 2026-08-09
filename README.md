@@ -134,7 +134,7 @@ sequenceDiagram
   J-->>P: planning fields only
   P-->>A: compact issue (no raw envelope)
   A->>P: semar/gareng prompts -> submit_jira_assessment
-  A->>P: petruk prompt -> submit_petruk_plan
+  A->>P: petruk prompt -> submit_lane_petruk_plan
   A->>P: submit_task_graph (durable Beads work items)
   A->>P: sync_jira_subtasks (deduped) [WRITE]
   P-->>A: approval required (run-scoped)

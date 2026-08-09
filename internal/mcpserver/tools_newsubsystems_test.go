@@ -8,7 +8,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/dossier"
-	"github.com/ygrip/punakawan/internal/handoff"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -176,61 +175,6 @@ func TestFinalizeDossierBlockedThenClean(t *testing.T) {
 	callTool(t, cs, "finalize_dossier", map[string]any{"dossier_id": "d1"}, &final)
 	if final.Dossier.Status != protocol.ChangeDossierStatusCompleted {
 		t.Fatalf("finalized status = %q, want completed", final.Dossier.Status)
-	}
-}
-
-// TestHandoffValidateAndResume checks a fresh capsule is resumable and returns
-// the smallest verified context, and that a superseded capsule is rejected.
-func TestHandoffValidateAndResume(t *testing.T) {
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	var created HandoffCapsuleOutput
-	callTool(t, cs, "create_handoff_capsule", map[string]any{
-		"id":            "h1",
-		"run_id":        "run-1",
-		"objective":     map[string]any{"statement": "ship refunds"},
-		"current_phase": "implementation",
-	}, &created)
-	if created.Capsule.Id != "h1" {
-		t.Fatalf("capsule id = %q, want h1", created.Capsule.Id)
-	}
-
-	var validated ValidateHandoffCapsuleOutput
-	callTool(t, cs, "validate_handoff_capsule", map[string]any{"id": "h1"}, &validated)
-	if validated.Status != string(handoff.StatusResumable) {
-		t.Fatalf("validate status = %q, want resumable", validated.Status)
-	}
-
-	var resumed ResumeFromHandoffOutput
-	callTool(t, cs, "resume_from_handoff", map[string]any{"id": "h1"}, &resumed)
-	if resumed.Status != string(handoff.StatusResumable) {
-		t.Fatalf("resume status = %q, want resumable", resumed.Status)
-	}
-	if resumed.Context["objective"] != "ship refunds" {
-		t.Fatalf("resume context objective = %v, want 'ship refunds'", resumed.Context["objective"])
-	}
-
-	// Supersede the capsule directly, then it must not resume silently (§43).
-	if err := handoff.Supersede(a.Workspace.Root, "h1"); err != nil {
-		t.Fatalf("Supersede: %v", err)
-	}
-
-	var revalidated ValidateHandoffCapsuleOutput
-	callTool(t, cs, "validate_handoff_capsule", map[string]any{"id": "h1"}, &revalidated)
-	if revalidated.Status != string(handoff.StatusSuperseded) {
-		t.Fatalf("revalidate status = %q, want superseded", revalidated.Status)
-	}
-
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "resume_from_handoff",
-		Arguments: map[string]any{"id": "h1"},
-	})
-	if err != nil {
-		t.Fatalf("CallTool resume (superseded): %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("resume from a superseded capsule should be an error")
 	}
 }
 

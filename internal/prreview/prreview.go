@@ -1,10 +1,10 @@
 // Package prreview persists review_pr's final output - a run of Semar-
 // deduplicated protocol.ReviewFindings for one PR - as append-only JSONL,
 // per punakawan-architecture-enhancement-plan.md §8.2's "return final
-// review" workflow step. Unlike internal/capsule or internal/approvals,
-// there is no fold-latest-per-id concept here: reviewing the same PR twice
-// (e.g. after pushing new changes) is two independent, equally valid
-// records, not a correction of the first.
+// review" workflow step. Unlike internal/approvals, there is no
+// fold-latest-per-id concept here: reviewing the same PR twice (e.g. after
+// pushing new changes) is two independent, equally valid records, not a
+// correction of the first.
 package prreview
 
 import (

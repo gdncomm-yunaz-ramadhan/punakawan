@@ -23,7 +23,7 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 		"submit_contradiction",
 		"analyze_impact",
 		"create_change_dossier",
-		"create_handoff_capsule",
+		"start_delivery",
 		"jira_assign_issue",
 		"list_pending_approvals",
 	} {

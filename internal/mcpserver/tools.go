@@ -57,29 +57,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, setProjectMetadataHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
-		Name:        "request_capsule",
-		Description: "Build and persist an immutable, digested ContextCapsule for one Gareng/Petruk/Bagong invocation (architecture-enhancement-plan.md §6). Rejects requirement_ids/knowledge_ids whose record type is another role's output (e.g. bagong cannot cite a petruk-plan record) and allowed_tools entries a role must not have (e.g. bagong cannot be granted write_file). Set retrieval_query to also run Semar's automatic knowledge-retrieval pipeline (§11/§6.4, AEP-M7): search_knowledge's full ranking against that query, filtered to what this role may receive and to token_budget, added alongside any explicit knowledge_ids with each item's match explanation recorded as its reason. Call this before submit_gareng_review/submit_petruk_plan/submit_bagong_review, which require the returned id as capsule_id.",
-	}, requestCapsuleHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_gareng_review",
-		Description: "Validate and persist a Gareng feasibility/risk review (§8.2) as durable knowledge. Requires capsule_id from a prior request_capsule call for role gareng.",
-	}, submitGarengReviewHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_petruk_plan",
-		Description: "Validate and persist a Petruk implementation-planning output (§8.3) as durable knowledge. Requires capsule_id from a prior request_capsule call for role petruk.",
-	}, submitPetrukPlanHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_semar_synthesis",
 		Description: "Validate and persist Semar's consolidated clarification (§8.1/§9.2) or final plan (§9.3) as durable knowledge. Exactly one of synthesis or final_plan must be set.",
 	}, submitSemarSynthesisHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_bagong_review",
-		Description: "Validate and persist a Bagong independent final review (§8.4) as durable knowledge. Requires capsule_id from a prior request_capsule call for role bagong. Enforces the mandatory senior-maintainer review rubric as a hard constraint (see the bagong prompt): the submission is REJECTED unless requirement_coverage (verification performed) and uncertainties (questions/assumptions and remaining unverified risks) are both populated, findings are non-blank, and a no-findings review states so explicitly in honest_summary.",
-	}, submitBagongReviewHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_workflow_run",
@@ -214,7 +194,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "review_pr",
-		Description: "Fetch a PR's metadata, diff files, CI checks, and (optionally) comments (§8.2). REACTIVE - explicit_trigger must be true only when a human explicitly asked to review this specific PR; never call this for a PR being discovered, CI failing, or any other automatic signal. Punakawan does not review anything itself (ADR-0016): use this output to build Gareng/Petruk review capsules via request_capsule, have Bagong verify findings, then call submit_pr_review_findings with Semar's deduplicated result.",
+		Description: "Fetch a PR's metadata, diff files, CI checks, and (optionally) comments (§8.2). REACTIVE - explicit_trigger must be true only when a human explicitly asked to review this specific PR; never call this for a PR being discovered, CI failing, or any other automatic signal. Punakawan does not review anything itself (ADR-0016): have Gareng/Petruk review and Bagong verify findings, then call submit_pr_review_findings with Semar's deduplicated result.",
 	}, reviewPrHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -354,7 +334,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_missing_context_request",
-		Description: "Request context a capsule did not include (§6.4). Subagents may request additional context but must not search broadly themselves - this only records the request; it is Semar's (the calling agent's) own next call to search_knowledge, request_capsule, or resolve_missing_context_request that decides what happens to it.",
+		Description: "Request context a prior submission did not include (§6.4). Subagents may request additional context but must not search broadly themselves - this only records the request; it is Semar's (the calling agent's) own next call to search_knowledge or resolve_missing_context_request that decides what happens to it.",
 	}, submitMissingContextRequestHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -364,7 +344,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "resolve_missing_context_request",
-		Description: "Record Semar's decision on a missing-context request (§6.4): added_to_revision (requires revised_capsule_id from a prior request_capsule call), rejected, or asked_user. Punakawan does not choose between these - it only persists whichever the calling agent picked.",
+		Description: "Record Semar's decision on a missing-context request (§6.4): added_to_revision (requires a revised_capsule_id identifying the revised context), rejected, or asked_user. Punakawan does not choose between these - it only persists whichever the calling agent picked.",
 	}, resolveMissingContextRequestHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -459,27 +439,6 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "export_dossier",
 		Description: "Render a dossier as human-readable markdown (format=md, default) or deterministic JSON (format=json), including the §38 summary indicators. Read-only.",
 	}, exportDossierHandler(a))
-
-	// Handoff Capsule (§40-43): compact, resumable snapshots of in-progress work.
-	addTool(server, reg, &mcp.Tool{
-		Name:        "create_handoff_capsule",
-		Description: "Create a Handoff Capsule (§40) - a compact, resumable snapshot of in-progress work that references plan/task/dossier/contradictions/evidence by id rather than copying them, so work can continue across sessions, clients, and people without the transcript. Stamps the current role-config revision for resume-time validation. Gated to role Semar's handoff_capsule capability.",
-	}, createHandoffCapsuleHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "get_handoff_capsule",
-		Description: "Read a handoff capsule by id (§41). A capsule that was never written is returned as an empty capsule carrying just the id. Read-only.",
-	}, getHandoffCapsuleHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "validate_handoff_capsule",
-		Description: "Classify whether a capsule can be resumed (§42): resumable, refresh_required (inputs moved but still resumable after reloading the listed items), blocked (a referenced dependency is gone), invalid (repository state diverged), or superseded (must not resume silently). Read-only.",
-	}, validateHandoffCapsuleHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "resume_from_handoff",
-		Description: "Validate a capsule and, if resumable or refresh_required, return only the smallest necessary verified context (§43) - objective, current phase/task and next action, accepted plan ref, open contradictions, unresolved risks - plus any required refresh steps. Errors when superseded, blocked, or invalid, explaining why.",
-	}, resumeFromHandoffHandler(a))
 
 	// Delivery scheduling: pull-based lease lifecycle over a multi-project
 	// orchestration's dependency graph. A connected agent lists what it

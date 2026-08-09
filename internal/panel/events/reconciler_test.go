@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/dossier"
-	"github.com/ygrip/punakawan/internal/handoff"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/contract"
@@ -137,30 +136,6 @@ func (f *fakeDossierReader) ExportDossierJSON(ctx context.Context, projectID, id
 	return nil, errors.New("not implemented")
 }
 
-// fakeHandoffReader serves a mutable slice of handoffs.
-type fakeHandoffReader struct {
-	records []protocol.HandoffCapsule
-}
-
-func (f *fakeHandoffReader) ListHandoffs(ctx context.Context, projectID string) ([]protocol.HandoffCapsule, error) {
-	return f.records, nil
-}
-func (f *fakeHandoffReader) GetHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error) {
-	return protocol.HandoffCapsule{}, errors.New("not implemented")
-}
-func (f *fakeHandoffReader) CreateHandoff(ctx context.Context, projectID string, h protocol.HandoffCapsule) (protocol.HandoffCapsule, error) {
-	return protocol.HandoffCapsule{}, errors.New("not implemented")
-}
-func (f *fakeHandoffReader) ValidateHandoff(ctx context.Context, projectID, id string) (handoff.ValidationResult, error) {
-	return handoff.ValidationResult{}, errors.New("not implemented")
-}
-func (f *fakeHandoffReader) ResumeHandoff(ctx context.Context, projectID, id string) (map[string]any, error) {
-	return nil, errors.New("not implemented")
-}
-func (f *fakeHandoffReader) SupersedeHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error) {
-	return protocol.HandoffCapsule{}, errors.New("not implemented")
-}
-
 // fakeImpactReader serves a mutable slice of impact nodes.
 type fakeImpactReader struct {
 	nodes []protocol.ImpactNode
@@ -178,8 +153,6 @@ func (f *fakeImpactReader) QueryImpact(ctx context.Context, projectID, subjectID
 func (f *fakeImpactReader) RefreshImpact(ctx context.Context, projectID string) error {
 	return errors.New("not implemented")
 }
-
-func boolPtr(b bool) *bool { return &b }
 
 func drain(t *testing.T, ch <-chan protocol.PanelEvent, n int) []protocol.PanelEvent {
 	t.Helper()
@@ -350,9 +323,9 @@ func TestReconcilerWorkspaceListRunsOnSlowCadence(t *testing.T) {
 }
 
 // subsystemReconciler builds a Reconciler whose base (session/approval/
-// workspace) readers are empty and whose four project-scoped subsystem
+// workspace) readers are empty and whose three project-scoped subsystem
 // readers are the supplied fakes, with all prev-state maps initialised.
-func subsystemReconciler(hub *Hub, c *fakeContradictionReader, d *fakeDossierReader, h *fakeHandoffReader, im *fakeImpactReader) *Reconciler {
+func subsystemReconciler(hub *Hub, c *fakeContradictionReader, d *fakeDossierReader, im *fakeImpactReader) *Reconciler {
 	r := &Reconciler{
 		Hub: hub,
 		Readers: panel.Readers{
@@ -361,7 +334,6 @@ func subsystemReconciler(hub *Hub, c *fakeContradictionReader, d *fakeDossierRea
 			Approval:      &fakeApprovalReader{},
 			Contradiction: c,
 			Dossier:       d,
-			Handoff:       h,
 			Impact:        im,
 		},
 		WorkspaceID: "proj-a",
@@ -378,7 +350,7 @@ func TestReconcilerEmitsContradictionDetectedThenResolved(t *testing.T) {
 	c := &fakeContradictionReader{records: []protocol.Contradiction{
 		{Id: "con-1", Status: protocol.ContradictionStatusDetected},
 	}}
-	r := subsystemReconciler(hub, c, &fakeDossierReader{}, &fakeHandoffReader{}, &fakeImpactReader{})
+	r := subsystemReconciler(hub, c, &fakeDossierReader{}, &fakeImpactReader{})
 
 	r.reconcileOnce(context.Background())
 	events := drain(t, ch, 1)
@@ -414,7 +386,7 @@ func TestReconcilerEmitsDossierCreatedThenFinalized(t *testing.T) {
 	d := &fakeDossierReader{records: []protocol.ChangeDossier{
 		{Id: "dos-1", Status: protocol.ChangeDossierStatusDraft},
 	}}
-	r := subsystemReconciler(hub, &fakeContradictionReader{}, d, &fakeHandoffReader{}, &fakeImpactReader{})
+	r := subsystemReconciler(hub, &fakeContradictionReader{}, d, &fakeImpactReader{})
 
 	r.reconcileOnce(context.Background())
 	events := drain(t, ch, 1)
@@ -439,37 +411,13 @@ func TestReconcilerEmitsDossierCreatedThenFinalized(t *testing.T) {
 	}
 }
 
-func TestReconcilerEmitsHandoffCreatedThenSuperseded(t *testing.T) {
-	hub := NewHub()
-	ch, unsubscribe := hub.Subscribe()
-	defer unsubscribe()
-
-	h := &fakeHandoffReader{records: []protocol.HandoffCapsule{
-		{Id: "hand-1", Superseded: boolPtr(false)},
-	}}
-	r := subsystemReconciler(hub, &fakeContradictionReader{}, &fakeDossierReader{}, h, &fakeImpactReader{})
-
-	r.reconcileOnce(context.Background())
-	events := drain(t, ch, 1)
-	if events[0].Type != protocol.PanelEventTypeHandoffCreated {
-		t.Fatalf("Type = %q, want handoff.created", events[0].Type)
-	}
-
-	h.records[0].Superseded = boolPtr(true)
-	r.reconcileOnce(context.Background())
-	events = drain(t, ch, 1)
-	if events[0].Type != protocol.PanelEventTypeHandoffSuperseded {
-		t.Fatalf("Type = %q, want handoff.superseded", events[0].Type)
-	}
-}
-
 func TestReconcilerEmitsImpactSnapshotUpdatedOnCountChange(t *testing.T) {
 	hub := NewHub()
 	ch, unsubscribe := hub.Subscribe()
 	defer unsubscribe()
 
 	im := &fakeImpactReader{nodes: []protocol.ImpactNode{{Id: "n1"}}}
-	r := subsystemReconciler(hub, &fakeContradictionReader{}, &fakeDossierReader{}, &fakeHandoffReader{}, im)
+	r := subsystemReconciler(hub, &fakeContradictionReader{}, &fakeDossierReader{}, im)
 
 	// First poll only primes the count - no event.
 	r.reconcileOnce(context.Background())

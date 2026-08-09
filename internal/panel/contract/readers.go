@@ -15,7 +15,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/dossier"
-	"github.com/ygrip/punakawan/internal/handoff"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/project"
@@ -23,12 +22,6 @@ import (
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
-
-// ErrHandoffSuperseded is returned by HandoffReader.ResumeHandoff when the
-// capsule (or its dossier) has been superseded: a superseded capsule must not
-// resume silently (handoff §43), so resume is refused rather than returning a
-// stale context. Handlers detect it with errors.Is and answer 409.
-var ErrHandoffSuperseded = errors.New("handoff: capsule is superseded and cannot resume")
 
 // ErrWorkspaceUnavailable is returned by the non-workspace sources
 // (session, task, knowledge, evidence, approval) when asked for a
@@ -406,19 +399,4 @@ type DossierReader interface {
 	FinalizeDossier(ctx context.Context, projectID, id string) error
 	ExportDossierMarkdown(ctx context.Context, projectID, id string) (string, error)
 	ExportDossierJSON(ctx context.Context, projectID, id string) ([]byte, error)
-}
-
-// HandoffReader reads, mutates, and validates a project's Handoff Capsules, per
-// the plan Part V §40-43. ListHandoffs/GetHandoff never mutate. ValidateHandoff
-// builds the internal/handoff.ValidationDeps from the project's own stores and
-// returns the resulting ValidationResult. ResumeHandoff refuses a superseded
-// capsule with ErrHandoffSuperseded (handlers 409); otherwise it returns the
-// smallest necessary resume context.
-type HandoffReader interface {
-	ListHandoffs(ctx context.Context, projectID string) ([]protocol.HandoffCapsule, error)
-	GetHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
-	CreateHandoff(ctx context.Context, projectID string, h protocol.HandoffCapsule) (protocol.HandoffCapsule, error)
-	ValidateHandoff(ctx context.Context, projectID, id string) (handoff.ValidationResult, error)
-	ResumeHandoff(ctx context.Context, projectID, id string) (map[string]any, error)
-	SupersedeHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
 }
