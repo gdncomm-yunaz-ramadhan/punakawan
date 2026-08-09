@@ -1,0 +1,54 @@
+protocol/deliverylane.schema.json
+  708d680d348b9cc2 26-30
+internal/mcpserver/tools_delivery.go
+  708d680d348b9cc2 12,309-345,347-373,375-419,421-447,449-458
+internal/mcpserver/tools_delivery_test.go
+  708d680d348b9cc2 424-517,519-537
+internal/delivery/reduce.go
+  708d680d348b9cc2 172-186
+internal/delivery/rolestage.go
+  708d680d348b9cc2 1-121
+internal/delivery/errors.go
+  708d680d348b9cc2 67-75
+internal/delivery/scheduler.go
+  708d680d348b9cc2 323-328,330-338,343-345,347,350,369-372
+protocol/deliveryevent.schema.json
+  708d680d348b9cc2 5,22
+internal/delivery/rolestage_test.go
+  708d680d348b9cc2 1-189
+internal/mcpserver/tools.go
+  708d680d348b9cc2 534-553
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "9900ec65adf0d4bbce2057e386bc9cb4e048a6f3",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 708,
+      "total_deletions": 64,
+      "accepted_lines": 646,
+      "overriden_lines": 5
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
