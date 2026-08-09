@@ -1,0 +1,62 @@
+internal/mcpserver/tools_invokeworkflowdefinition.go
+  708d680d348b9cc2 1-167
+internal/delivery/rolestage.go
+  708d680d348b9cc2 52-55,57-58,60,62,64-65,68-135,137,171-186
+internal/mcpserver/tools.go
+  708d680d348b9cc2 629-632
+internal/mcpserver/tools_invokeworkflowdefinition_test.go
+  708d680d348b9cc2 1-165
+internal/delivery/workflowdefinition.go
+  708d680d348b9cc2 1-67
+internal/delivery/scheduler.go
+  708d680d348b9cc2 330,334-339,355,375-387
+internal/delivery/reduce.go
+  708d680d348b9cc2 46-48
+internal/delivery/deliveryview.go
+  708d680d348b9cc2 269-277,295
+internal/delivery/store_test.go
+  708d680d348b9cc2 15-19,29-34
+internal/mcpserver/tools_delivery.go
+  708d680d348b9cc2 13,23-54,60-62,64
+protocol/deliveryorchestration.schema.json
+  708d680d348b9cc2 27-28
+internal/delivery/store.go
+  708d680d348b9cc2 27-33,36-46,100-103,105-125,129-131,133
+internal/delivery/rolestage_test.go
+  708d680d348b9cc2 6,19-48,50-54,224-330
+internal/mcpserver/tools_startdelivery.go
+  708d680d348b9cc2 29-34,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4971a253f725bcadc393f84d44c32a1c09606f3d",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 839,
+      "total_deletions": 86,
+      "accepted_lines": 783,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
