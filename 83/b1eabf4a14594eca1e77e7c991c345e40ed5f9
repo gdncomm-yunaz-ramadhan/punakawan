@@ -1,0 +1,40 @@
+internal/mcpserver/tools_delivery_test.go
+  708d680d348b9cc2 538-608
+internal/mcpserver/tools_delivery.go
+  708d680d348b9cc2 36-39,54,57,60-68
+internal/delivery/priority.go
+  708d680d348b9cc2 80-89,99-100,112-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "83b1eabf4a14594eca1e77e7c991c345e40ed5f9",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 116,
+      "total_deletions": 24,
+      "accepted_lines": 116,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
