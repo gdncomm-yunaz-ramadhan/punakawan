@@ -173,6 +173,31 @@ func TestUnknownAndMismatchedIdentifiersFailClosed(t *testing.T) {
 	if _, err := s.GetLane(ctx, orch.Id, "does-not-exist"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetLane unknown = %v, want ErrNotFound", err)
 	}
+
+	active := registerProject(t, s, "active-proj-for-mismatch")
+	if _, err := s.CreateLane(ctx, "lane-unknown-task", NewID(), orch.Id, active.Id, "does-not-exist"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CreateLane with unknown parent task = %v, want ErrNotFound", err)
+	}
+
+	otherProject := registerProject(t, s, "other-proj-for-mismatch")
+	source, err := s.CaptureRequirement(ctx, "cap-mismatch", orch.Id, SourceInput{Provider: "jira", ExternalID: "MISMATCH-1", Title: "seed requirement"})
+	if err != nil {
+		t.Fatalf("CaptureRequirement: %v", err)
+	}
+	task, err := s.CreateParentTask(ctx, "task-mismatch", NewID(), orch.Id, "mismatch task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask: %v", err)
+	}
+	if _, err := s.RouteParentTask(ctx, "route-mismatch", orch.Id, task.Id, active.Id); err != nil {
+		t.Fatalf("RouteParentTask: %v", err)
+	}
+	if _, err := s.CreateLane(ctx, "lane-project-mismatch", NewID(), orch.Id, otherProject.Id, task.Id); !errors.Is(err, ErrScopeMismatch) {
+		t.Fatalf("CreateLane for a task already routed to a different project = %v, want ErrScopeMismatch", err)
+	}
+	// The same project the task was actually routed to must still work.
+	if _, err := s.CreateLane(ctx, "lane-project-match", NewID(), orch.Id, active.Id, task.Id); err != nil {
+		t.Fatalf("CreateLane for the task's own routed project: %v", err)
+	}
 }
 
 func TestEventReplayDeterministicAndDuplicateIdempotencyKeyHarmless(t *testing.T) {

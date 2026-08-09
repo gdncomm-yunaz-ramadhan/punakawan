@@ -196,8 +196,15 @@ func (s *Store) appendOrchestrationEvent(ctx context.Context, idempotencyKey, or
 }
 
 // CreateLane appends lane.created after verifying the orchestration is
-// open and the project exists and is active. A lane's project scope is
-// fixed at creation and checked on every later call against it.
+// open and the project exists and is active. If parentTaskID is
+// non-empty (a lane may legitimately be created before a task is
+// assigned to it, per DeliveryLane's own parent_task_id field), the
+// task must actually exist in this orchestration and, if it is
+// already routed, must be routed to this same projectID
+// (ErrScopeMismatch otherwise) - a lane's project scope must always
+// agree with its own task's routing, never silently diverge from it.
+// A lane's project scope is fixed at creation and checked on every
+// later call against it.
 func (s *Store) CreateLane(ctx context.Context, idempotencyKey, id, orchestrationID, projectID, parentTaskID string) (*protocol.DeliveryLane, error) {
 	err := s.db.Write(ctx, idempotencyKey, "create lane "+id, func(tx *sql.Tx) error {
 		events, err := loadEventsTx(ctx, tx, orchestrationID)
@@ -210,6 +217,16 @@ func (s *Store) CreateLane(ctx context.Context, idempotencyKey, id, orchestratio
 		}
 		if isTerminal(orch.Status) {
 			return ErrInvalidState
+		}
+
+		if parentTaskID != "" {
+			task, err := reduceParentTask(orchestrationID, parentTaskID, events)
+			if err != nil {
+				return err
+			}
+			if task.ProjectId != nil && *task.ProjectId != projectID {
+				return ErrScopeMismatch
+			}
 		}
 
 		var status string
