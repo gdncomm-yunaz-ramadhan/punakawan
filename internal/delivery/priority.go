@@ -77,24 +77,16 @@ func criticalPathLengths(edges []*protocol.DependencyEdge) map[string]int {
 	return out
 }
 
-// ChooseLane picks the single best lane to lease next out of every
-// currently-runnable lane in lanes, given the orchestration's active
-// dependency edges. Returns nil if no lane is runnable. Ordering is
-// deterministic: longest critical path first, then highest unlock
-// count, then oldest lane first (by CreatedAt, tie-broken by id) so two
-// calls against identical input always agree and no lane is starved by
-// an endless stream of equally-ranked newer arrivals.
-func ChooseLane(lanes []*protocol.DeliveryLane, edges []*protocol.DependencyEdge) *protocol.DeliveryLane {
-	var runnable []*protocol.DeliveryLane
-	for _, l := range lanes {
-		if l.Status == protocol.DeliveryLaneStatusRunnable {
-			runnable = append(runnable, l)
-		}
-	}
-	if len(runnable) == 0 {
-		return nil
-	}
-
+// RankLanes sorts lanes in place, best candidate first, given the
+// orchestration's active dependency edges: longest critical path
+// first, then highest unlock count, then oldest lane first (by
+// CreatedAt, tie-broken by id) so two calls against identical input
+// always agree and no lane is starved by an endless stream of
+// equally-ranked newer arrivals. Lanes of any status may be passed in;
+// only their relative order changes, so a caller that already
+// filtered to runnable lanes gets a priority-ordered list back, not
+// just the top pick.
+func RankLanes(lanes []*protocol.DeliveryLane, edges []*protocol.DependencyEdge) {
 	pathLengths := criticalPathLengths(edges)
 	unlocks := unlockCounts(edges)
 	taskOf := func(l *protocol.DeliveryLane) string {
@@ -104,8 +96,8 @@ func ChooseLane(lanes []*protocol.DeliveryLane, edges []*protocol.DependencyEdge
 		return *l.ParentTaskId
 	}
 
-	sort.SliceStable(runnable, func(i, j int) bool {
-		a, b := runnable[i], runnable[j]
+	sort.SliceStable(lanes, func(i, j int) bool {
+		a, b := lanes[i], lanes[j]
 		if pl := pathLengths[taskOf(a)] - pathLengths[taskOf(b)]; pl != 0 {
 			return pl > 0
 		}
@@ -117,5 +109,22 @@ func ChooseLane(lanes []*protocol.DeliveryLane, edges []*protocol.DependencyEdge
 		}
 		return a.Id < b.Id
 	})
+}
+
+// ChooseLane picks the single best lane to lease next out of every
+// currently-runnable lane in lanes, given the orchestration's active
+// dependency edges, using the same ranking RankLanes applies. Returns
+// nil if no lane is runnable.
+func ChooseLane(lanes []*protocol.DeliveryLane, edges []*protocol.DependencyEdge) *protocol.DeliveryLane {
+	var runnable []*protocol.DeliveryLane
+	for _, l := range lanes {
+		if l.Status == protocol.DeliveryLaneStatusRunnable {
+			runnable = append(runnable, l)
+		}
+	}
+	if len(runnable) == 0 {
+		return nil
+	}
+	RankLanes(runnable, edges)
 	return runnable[0]
 }

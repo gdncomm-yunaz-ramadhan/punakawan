@@ -33,8 +33,10 @@ type ListRunnableLanesInput struct {
 }
 
 // ListRunnableLanesOutput is list_runnable_lanes' output: every lane
-// currently on the frontier (no unresolved predecessor), sorted by
-// creation time.
+// currently on the frontier (no unresolved predecessor), ranked best
+// candidate first - longest critical path, then highest unlock count,
+// then oldest lane first - so a caller that always claims the first
+// entry never starves older or higher-value work.
 type ListRunnableLanesOutput struct {
 	Lanes []protocol.DeliveryLane `json:"lanes"`
 }
@@ -49,11 +51,21 @@ func listRunnableLanesHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		if err != nil {
 			return nil, ListRunnableLanesOutput{}, fmt.Errorf("mcpserver: sync frontier: %w", err)
 		}
-		out := ListRunnableLanesOutput{Lanes: []protocol.DeliveryLane{}}
+		var runnable []*protocol.DeliveryLane
 		for _, l := range lanes {
 			if l.Status == protocol.DeliveryLaneStatusRunnable {
-				out.Lanes = append(out.Lanes, *l)
+				runnable = append(runnable, l)
 			}
+		}
+		_, edges, err := store.ListGraph(ctx, in.OrchestrationId)
+		if err != nil {
+			return nil, ListRunnableLanesOutput{}, fmt.Errorf("mcpserver: list graph: %w", err)
+		}
+		delivery.RankLanes(runnable, edges)
+
+		out := ListRunnableLanesOutput{Lanes: []protocol.DeliveryLane{}}
+		for _, l := range runnable {
+			out.Lanes = append(out.Lanes, *l)
 		}
 		return nil, out, nil
 	}

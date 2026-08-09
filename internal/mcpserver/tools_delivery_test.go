@@ -535,3 +535,74 @@ func TestSubmitLaneRoleStagesEndToEnd(t *testing.T) {
 		t.Fatalf("expected review status after completing all four stages, got %s", completeOut.Lane.Status)
 	}
 }
+
+// TestListRunnableLanesRanksByPriority seeds two independently
+// runnable lanes in the same orchestration - an older, standalone task
+// and a newer task that a third, unrelated task depends on - and
+// checks list_runnable_lanes puts the higher-unlock-value lane first
+// over the real MCP wire, not just in whatever order the store
+// happened to return them.
+func TestListRunnableLanesRanksByPriority(t *testing.T) {
+	a := newTestApp(t)
+	ctx := context.Background()
+	db, err := a.OpenStorage(ctx)
+	if err != nil {
+		t.Fatalf("OpenStorage: %v", err)
+	}
+	store := delivery.NewStore(db)
+
+	orch, err := store.CreateOrchestration(ctx, "orch-"+delivery.NewID(), delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	proj, err := store.RegisterProject(ctx, "proj-"+delivery.NewID(), delivery.NewID(), "rank-test", "https://example.test/rank-test.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	source, err := store.CaptureRequirement(ctx, "cap-"+delivery.NewID(), orch.Id, delivery.SourceInput{Provider: "jira", ExternalID: "RANK-1", Title: "seed requirement"})
+	if err != nil {
+		t.Fatalf("CaptureRequirement: %v", err)
+	}
+
+	standalone, err := store.CreateParentTask(ctx, "task-"+delivery.NewID(), delivery.NewID(), orch.Id, "standalone task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask(standalone): %v", err)
+	}
+	if _, err := store.RouteParentTask(ctx, "route-"+delivery.NewID(), orch.Id, standalone.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask(standalone): %v", err)
+	}
+	standaloneLane, err := store.CreateLane(ctx, "lane-"+delivery.NewID(), delivery.NewID(), orch.Id, proj.Id, standalone.Id)
+	if err != nil {
+		t.Fatalf("CreateLane(standalone): %v", err)
+	}
+
+	unlocker, err := store.CreateParentTask(ctx, "task-"+delivery.NewID(), delivery.NewID(), orch.Id, "unlocker task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask(unlocker): %v", err)
+	}
+	dependent, err := store.CreateParentTask(ctx, "task-"+delivery.NewID(), delivery.NewID(), orch.Id, "dependent task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask(dependent): %v", err)
+	}
+	if _, err := store.AddDependencyEdge(ctx, "edge-"+delivery.NewID(), delivery.NewID(), orch.Id, dependent.Id, unlocker.Id, protocol.DependencyEdgeTypeRequires, protocol.DependencyEdgeOriginUser, 1.0, ""); err != nil {
+		t.Fatalf("AddDependencyEdge: %v", err)
+	}
+	if _, err := store.RouteParentTask(ctx, "route-"+delivery.NewID(), orch.Id, unlocker.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask(unlocker): %v", err)
+	}
+	unlockerLane, err := store.CreateLane(ctx, "lane-"+delivery.NewID(), delivery.NewID(), orch.Id, proj.Id, unlocker.Id)
+	if err != nil {
+		t.Fatalf("CreateLane(unlocker): %v", err)
+	}
+
+	cs := connect(t, a)
+	var out ListRunnableLanesOutput
+	callTool(t, cs, "list_runnable_lanes", map[string]any{"orchestration_id": orch.Id}, &out)
+
+	if len(out.Lanes) != 2 {
+		t.Fatalf("expected exactly the two runnable lanes, got %+v", out.Lanes)
+	}
+	if out.Lanes[0].Id != unlockerLane.Id {
+		t.Fatalf("expected the unlocker lane %s ranked first, got %s (standalone was %s)", unlockerLane.Id, out.Lanes[0].Id, standaloneLane.Id)
+	}
+}
