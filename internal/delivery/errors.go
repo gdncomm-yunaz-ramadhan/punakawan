@@ -64,6 +64,15 @@ var (
 	// lease that has not actually passed its expiry deadline.
 	ErrLeaseNotExpired = errors.New("delivery: lease has not expired")
 
+	// ErrRoleStageOutOfOrder is returned when a role stage is submitted
+	// before the stage that must precede it (semar before gareng before
+	// petruk before bagong).
+	ErrRoleStageOutOfOrder = errors.New("delivery: role stage submitted out of order")
+
+	// ErrRoleStagesIncomplete is returned when CompleteLease is called
+	// before Bagong's review has been recorded for the current attempt.
+	ErrRoleStagesIncomplete = errors.New("delivery: bagong review has not been recorded yet")
+
 	// ErrGitUnavailable is returned when git cannot be found on PATH.
 	ErrGitUnavailable = errors.New("delivery: git is not available on PATH")
 

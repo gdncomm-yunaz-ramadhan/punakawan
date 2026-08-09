@@ -64,4 +64,20 @@ export interface DeliveryLane {
    * The remote name (e.g. "origin") the base branch was fetched from.
    */
   base_remote?: string;
+  /**
+   * Id of the knowledge record holding Semar's synthesis for this lane's current attempt. Cleared, along with every later stage below, whenever it is resubmitted.
+   */
+  semar_record_id?: string;
+  /**
+   * Id of the knowledge record holding Gareng's feasibility review for this lane's current attempt. Cleared, along with petruk_record_id and bagong_record_id, whenever it is resubmitted.
+   */
+  gareng_record_id?: string;
+  /**
+   * Id of the knowledge record holding Petruk's plan for this lane's current attempt. Cleared, along with bagong_record_id, whenever it is resubmitted.
+   */
+  petruk_record_id?: string;
+  /**
+   * Id of the knowledge record holding Bagong's independent review for this lane's current attempt. A held lease cannot be completed until this is set.
+   */
+  bagong_record_id?: string;
 }

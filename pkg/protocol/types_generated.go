@@ -3198,9 +3198,8 @@ func (j *Contradiction) UnmarshalJSON(value []byte) error {
 
 // One append-only, idempotent state-transition event for a DeliveryOrchestration
 // or one of its scoped sub-entities (lane, requirement source, parent task,
-// dependency edge - punokawan-14yn.1/.2). Orchestration and sub-entity state is
-// derived by replaying these in sequence order; the same idempotency_key is
-// applied at most once. See affiliate-platform-delivery-feedback-2026-08-07.md.
+// dependency edge). Orchestration and sub-entity state is derived by replaying
+// these in sequence order; the same idempotency_key is applied at most once.
 type DeliveryEvent struct {
 	// Set for events scoped to one lane, requirement source, parent task, or
 	// dependency edge; absent for orchestration-scoped events.
@@ -3236,8 +3235,12 @@ const DeliveryEventTypeEdgeAdded DeliveryEventType = "edge.added"
 const DeliveryEventTypeEdgeRemoved DeliveryEventType = "edge.removed"
 const DeliveryEventTypeInputRegistered DeliveryEventType = "input.registered"
 const DeliveryEventTypeInputResolved DeliveryEventType = "input.resolved"
+const DeliveryEventTypeLaneBagongSubmitted DeliveryEventType = "lane.bagong_submitted"
 const DeliveryEventTypeLaneBlocked DeliveryEventType = "lane.blocked"
 const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
+const DeliveryEventTypeLaneGarengSubmitted DeliveryEventType = "lane.gareng_submitted"
+const DeliveryEventTypeLanePetrukSubmitted DeliveryEventType = "lane.petruk_submitted"
+const DeliveryEventTypeLaneSemarSubmitted DeliveryEventType = "lane.semar_submitted"
 const DeliveryEventTypeLaneStatusChanged DeliveryEventType = "lane.status_changed"
 const DeliveryEventTypeLaneUnblocked DeliveryEventType = "lane.unblocked"
 const DeliveryEventTypeLaneWorktreeCreated DeliveryEventType = "lane.worktree_created"
@@ -3270,6 +3273,10 @@ var enumValues_DeliveryEventType = []interface{}{
 	"lane.unblocked",
 	"lane.worktree_created",
 	"lane.worktree_removed",
+	"lane.semar_submitted",
+	"lane.gareng_submitted",
+	"lane.petruk_submitted",
+	"lane.bagong_submitted",
 	"lease.granted",
 	"lease.heartbeat",
 	"lease.completed",
@@ -3353,6 +3360,10 @@ type DeliveryLane struct {
 	// Number of leases granted so far for this lane; incremented on retry.
 	Attempt *int `json:"attempt,omitempty,omitzero" yaml:"attempt,omitempty" mapstructure:"attempt,omitempty"`
 
+	// Id of the knowledge record holding Bagong's independent review for this lane's
+	// current attempt. A held lease cannot be completed until this is set.
+	BagongRecordId *string `json:"bagong_record_id,omitempty,omitzero" yaml:"bagong_record_id,omitempty" mapstructure:"bagong_record_id,omitempty"`
+
 	// The remote name (e.g. "origin") the base branch was fetched from.
 	BaseRemote *string `json:"base_remote,omitempty,omitzero" yaml:"base_remote,omitempty" mapstructure:"base_remote,omitempty"`
 
@@ -3370,6 +3381,11 @@ type DeliveryLane struct {
 
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
+
+	// Id of the knowledge record holding Gareng's feasibility review for this lane's
+	// current attempt. Cleared, along with petruk_record_id and bagong_record_id,
+	// whenever it is resubmitted.
+	GarengRecordId *string `json:"gareng_record_id,omitempty,omitzero" yaml:"gareng_record_id,omitempty" mapstructure:"gareng_record_id,omitempty"`
 
 	// Filesystem-safe ULID (Crockford base32, 26 chars).
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
@@ -3392,11 +3408,20 @@ type DeliveryLane struct {
 	// resolves it. Empty until then.
 	ParentTaskId *string `json:"parent_task_id,omitempty,omitzero" yaml:"parent_task_id,omitempty" mapstructure:"parent_task_id,omitempty"`
 
+	// Id of the knowledge record holding Petruk's plan for this lane's current
+	// attempt. Cleared, along with bagong_record_id, whenever it is resubmitted.
+	PetrukRecordId *string `json:"petruk_record_id,omitempty,omitzero" yaml:"petruk_record_id,omitempty" mapstructure:"petruk_record_id,omitempty"`
+
 	// ProjectId corresponds to the JSON schema field "project_id".
 	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
 
 	// Optimistic-concurrency counter; incremented on every applied event.
 	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+
+	// Id of the knowledge record holding Semar's synthesis for this lane's current
+	// attempt. Cleared, along with every later stage below, whenever it is
+	// resubmitted.
+	SemarRecordId *string `json:"semar_record_id,omitempty,omitzero" yaml:"semar_record_id,omitempty" mapstructure:"semar_record_id,omitempty"`
 
 	// The scheduling state machine. waiting: predecessors unresolved. blocked: an
 	// unresolved hard blocker was reported with evidence. runnable: no unresolved

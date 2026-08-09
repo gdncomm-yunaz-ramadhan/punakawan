@@ -5,7 +5,7 @@
  */
 
 /**
- * One append-only, idempotent state-transition event for a DeliveryOrchestration or one of its scoped sub-entities (lane, requirement source, parent task, dependency edge - punokawan-14yn.1/.2). Orchestration and sub-entity state is derived by replaying these in sequence order; the same idempotency_key is applied at most once. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * One append-only, idempotent state-transition event for a DeliveryOrchestration or one of its scoped sub-entities (lane, requirement source, parent task, dependency edge). Orchestration and sub-entity state is derived by replaying these in sequence order; the same idempotency_key is applied at most once.
  */
 export interface DeliveryEvent {
   /**
@@ -30,6 +30,10 @@ export interface DeliveryEvent {
     | "lane.unblocked"
     | "lane.worktree_created"
     | "lane.worktree_removed"
+    | "lane.semar_submitted"
+    | "lane.gareng_submitted"
+    | "lane.petruk_submitted"
+    | "lane.bagong_submitted"
     | "lease.granted"
     | "lease.heartbeat"
     | "lease.completed"

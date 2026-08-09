@@ -421,3 +421,117 @@ func TestBuildLaneContextEndToEnd(t *testing.T) {
 		t.Fatal("expected a non-empty digest")
 	}
 }
+
+// TestSubmitLaneRoleStagesEndToEnd drives the full four-stage loop over
+// the real MCP wire protocol: claim a lane, submit each role stage in
+// order, verify a blocking Gareng review actually blocks Petruk until
+// resubmitted clean, then complete the lease once Bagong's stage is
+// recorded.
+func TestSubmitLaneRoleStagesEndToEnd(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	orchID, laneID := seedRunnableLane(t, a)
+	cs := connect(t, a)
+
+	var listOut ListRunnableLanesOutput
+	callTool(t, cs, "list_runnable_lanes", map[string]any{"orchestration_id": orchID}, &listOut)
+	var claimOut LaneOutput
+	callTool(t, cs, "claim_lane", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"expected_revision": listOut.Lanes[0].Revision,
+		"worker_id":         "agent-1",
+	}, &claimOut)
+	leaseToken := *claimOut.Lane.LeaseToken
+
+	var semarOut SubmitLaneStageOutput
+	callTool(t, cs, "submit_lane_semar_synthesis", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": claimOut.Lane.Revision,
+		"title":             "semar synthesis",
+		"synthesis":         map[string]any{"goal": "deliver the seed requirement"},
+	}, &semarOut)
+	if semarOut.Lane.SemarRecordId == nil || *semarOut.Lane.SemarRecordId != semarOut.RecordId {
+		t.Fatalf("expected semar_record_id = %s, got %+v", semarOut.RecordId, semarOut.Lane.SemarRecordId)
+	}
+
+	var garengBlockedOut SubmitLaneStageOutput
+	callTool(t, cs, "submit_lane_gareng_review", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": semarOut.Lane.Revision,
+		"title":             "gareng review (blocked)",
+		"review": map[string]any{
+			"verdict":           "clarification_required",
+			"blocking_findings": []string{"unclear expected null handling"},
+			"required_evidence": []string{"ask requester what happens on an empty payload"},
+		},
+	}, &garengBlockedOut)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit_lane_petruk_plan", Arguments: map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": garengBlockedOut.Lane.Revision,
+		"title":             "petruk plan (should be blocked)",
+		"plan":              map[string]any{"recommended_solution": "implement it"},
+	}})
+	if err != nil {
+		t.Fatalf("CallTool(submit_lane_petruk_plan): %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected submit_lane_petruk_plan to fail while gareng's review has unresolved blocking findings")
+	}
+
+	var garengClearOut SubmitLaneStageOutput
+	callTool(t, cs, "submit_lane_gareng_review", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": garengBlockedOut.Lane.Revision,
+		"title":             "gareng review (clear)",
+		"review":            map[string]any{"verdict": "feasible"},
+	}, &garengClearOut)
+
+	var petrukOut SubmitLaneStageOutput
+	callTool(t, cs, "submit_lane_petruk_plan", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": garengClearOut.Lane.Revision,
+		"title":             "petruk plan",
+		"plan":              map[string]any{"recommended_solution": "implement it"},
+	}, &petrukOut)
+
+	var bagongOut SubmitLaneStageOutput
+	callTool(t, cs, "submit_lane_bagong_review", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": petrukOut.Lane.Revision,
+		"title":             "bagong review",
+		"review": map[string]any{
+			"verdict":              "approved",
+			"honest_summary":       "no blocking issues; clean implementation, verified against the plan",
+			"requirement_coverage": []string{"verified against the seed requirement"},
+			"uncertainties":        []string{"none outstanding"},
+		},
+	}, &bagongOut)
+	if bagongOut.Lane.BagongRecordId == nil {
+		t.Fatalf("expected bagong_record_id set, got %+v", bagongOut.Lane)
+	}
+
+	var completeOut LaneOutput
+	callTool(t, cs, "complete_lease", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": bagongOut.Lane.Revision,
+	}, &completeOut)
+	if completeOut.Lane.Status != protocol.DeliveryLaneStatusReview {
+		t.Fatalf("expected review status after completing all four stages, got %s", completeOut.Lane.Status)
+	}
+}

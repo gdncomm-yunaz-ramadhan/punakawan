@@ -320,19 +320,34 @@ func (s *Store) Heartbeat(ctx context.Context, idempotencyKey, orchestrationID, 
 
 // CompleteLease reports the leaseholder's work done, moving the lane to
 // review; a later reviewer decides whether it moves to accepted or
-// failed from there.
+// failed from there. A lane that never engages the role-stage flow at
+// all (no Semar stage ever recorded) completes exactly as before - the
+// stage gate only applies once a lane has actually opted in by
+// recording its first stage, at which point it must reach Bagong's
+// stage before it can be reported done (ErrRoleStagesIncomplete
+// otherwise).
 func (s *Store) CompleteLease(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int) (*protocol.DeliveryLane, error) {
-	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseCompleted)
+	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseCompleted, func(lane *protocol.DeliveryLane) error {
+		if lane.SemarRecordId == nil {
+			return nil
+		}
+		if lane.BagongRecordId == nil || *lane.BagongRecordId == "" {
+			return ErrRoleStagesIncomplete
+		}
+		return nil
+	})
 }
 
 // RejectLease reports the leaseholder declining the work (e.g. a
 // precondition it discovered no longer holds); the lane returns to
-// runnable so another worker (or a retry) can pick it up.
+// runnable so another worker (or a retry) can pick it up. Unlike
+// CompleteLease, this never requires any role stage to have run - a
+// worker may bail at any point.
 func (s *Store) RejectLease(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int) (*protocol.DeliveryLane, error) {
-	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseRejected)
+	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseRejected, nil)
 }
 
-func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int, eventType protocol.DeliveryEventType) (*protocol.DeliveryLane, error) {
+func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int, eventType protocol.DeliveryEventType, precondition func(*protocol.DeliveryLane) error) (*protocol.DeliveryLane, error) {
 	err := s.db.Write(ctx, idempotencyKey, string(eventType)+" "+laneID, func(tx *sql.Tx) error {
 		events, err := loadEventsTx(ctx, tx, orchestrationID)
 		if err != nil {
@@ -350,6 +365,11 @@ func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orches
 		}
 		if lane.LeaseToken == nil || *lane.LeaseToken != leaseToken {
 			return ErrLeaseTokenMismatch
+		}
+		if precondition != nil {
+			if err := precondition(lane); err != nil {
+				return err
+			}
 		}
 		return insertEvent(ctx, tx, eventRow{
 			ID: newID(), OrchestrationID: orchestrationID, EntityID: &laneID, IdempotencyKey: idempotencyKey,

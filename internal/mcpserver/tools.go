@@ -531,4 +531,24 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "build_lane_context",
 		Description: "Assemble a lane's bounded context: its pinned requirement sources, project delivery profile, and exact base commit, plus a digest identifying this exact combination. Fails closed if any pinned reference no longer resolves.",
 	}, buildLaneContextHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "submit_lane_semar_synthesis",
+		Description: "Record Semar's synthesis for a held lane's current attempt. Must be the first role stage recorded; recording it clears any later stage already recorded, since those were built against a now-superseded synthesis.",
+	}, submitLaneSemarHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "submit_lane_gareng_review",
+		Description: "Record Gareng's feasibility review for a held lane's current attempt. Requires Semar's synthesis to already be recorded. Recording it clears any petruk/bagong stage already recorded for this attempt.",
+	}, submitLaneGarengHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "submit_lane_petruk_plan",
+		Description: "Record Petruk's plan for a held lane's current attempt. Requires Gareng's review to already be recorded, and fails if that review still has unresolved blocking findings. Recording it clears any bagong stage already recorded for this attempt.",
+	}, submitLanePetrukHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "submit_lane_bagong_review",
+		Description: "Record Bagong's independent review for a held lane's current attempt. Requires Petruk's plan to already be recorded. Once recorded, the lease can be completed via complete_lease.",
+	}, submitLaneBagongHandler(a))
 }

@@ -169,6 +169,21 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 			// existing commits instead of starting a fresh, disconnected
 			// branch each time.
 			l.WorktreePath = nil
+		case protocol.DeliveryEventTypeLaneSemarSubmitted:
+			recordID := stringField(ev.Payload, "record_id")
+			l.SemarRecordId = &recordID
+			l.GarengRecordId, l.PetrukRecordId, l.BagongRecordId = nil, nil, nil
+		case protocol.DeliveryEventTypeLaneGarengSubmitted:
+			recordID := stringField(ev.Payload, "record_id")
+			l.GarengRecordId = &recordID
+			l.PetrukRecordId, l.BagongRecordId = nil, nil
+		case protocol.DeliveryEventTypeLanePetrukSubmitted:
+			recordID := stringField(ev.Payload, "record_id")
+			l.PetrukRecordId = &recordID
+			l.BagongRecordId = nil
+		case protocol.DeliveryEventTypeLaneBagongSubmitted:
+			recordID := stringField(ev.Payload, "record_id")
+			l.BagongRecordId = &recordID
 		default:
 			return nil, fmt.Errorf("delivery: unknown lane event type %q", ev.Type)
 		}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/roles"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -301,6 +302,156 @@ func buildLaneContextHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		}
 		for _, src := range lc.Sources {
 			out.Sources = append(out.Sources, *src)
+		}
+		return nil, out, nil
+	}
+}
+
+// SubmitLaneStageOutput is the common output for every submit_lane_*
+// role-stage tool: the record it validated and persisted, and the
+// lane's state right after that stage was recorded.
+type SubmitLaneStageOutput struct {
+	Lane     protocol.DeliveryLane `json:"lane"`
+	RecordId string                `json:"record_id"`
+}
+
+func recordLaneStage(ctx context.Context, a *app.App, orchestrationID, laneID, leaseToken string, stage delivery.RoleStage, recordID string, expectedRevision int) (SubmitLaneStageOutput, error) {
+	store, err := openDeliveryStore(ctx, a)
+	if err != nil {
+		return SubmitLaneStageOutput{}, err
+	}
+	lane, err := store.RecordRoleStage(ctx, delivery.NewID(), orchestrationID, laneID, leaseToken, stage, recordID, expectedRevision)
+	if err != nil {
+		return SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: record role stage: %w", err)
+	}
+	return SubmitLaneStageOutput{Lane: *lane, RecordId: recordID}, nil
+}
+
+// SubmitLaneSemarInput is submit_lane_semar_synthesis's input.
+type SubmitLaneSemarInput struct {
+	OrchestrationId  string                                 `json:"orchestration_id"`
+	LaneId           string                                 `json:"lane_id"`
+	LeaseToken       string                                 `json:"lease_token" jsonschema:"must match the lane's current lease"`
+	ExpectedRevision int                                    `json:"expected_revision"`
+	Title            string                                 `json:"title" jsonschema:"human-readable title for this record"`
+	Synthesis        protocol.KnowledgeRecordSemarSynthesis `json:"synthesis"`
+}
+
+func submitLaneSemarHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLaneSemarInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLaneSemarInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+		kstore, err := a.OpenKnowledge()
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
+		}
+		rec, err := roles.SubmitSemarSynthesis(kstore, recordID(a, "semar", delivery.NewID()), in.Title, in.Synthesis)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStageSemar, rec.Id, in.ExpectedRevision)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		return nil, out, nil
+	}
+}
+
+// SubmitLaneGarengInput is submit_lane_gareng_review's input.
+type SubmitLaneGarengInput struct {
+	OrchestrationId  string                               `json:"orchestration_id"`
+	LaneId           string                               `json:"lane_id"`
+	LeaseToken       string                               `json:"lease_token" jsonschema:"must match the lane's current lease"`
+	ExpectedRevision int                                  `json:"expected_revision"`
+	Title            string                               `json:"title" jsonschema:"human-readable title for this record"`
+	Review           protocol.KnowledgeRecordGarengReview `json:"review"`
+}
+
+func submitLaneGarengHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLaneGarengInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLaneGarengInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+		kstore, err := a.OpenKnowledge()
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
+		}
+		rec, err := roles.SubmitGarengReview(kstore, recordID(a, "gareng", delivery.NewID()), in.Title, in.Review)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStageGareng, rec.Id, in.ExpectedRevision)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		return nil, out, nil
+	}
+}
+
+// SubmitLanePetrukInput is submit_lane_petruk_plan's input.
+type SubmitLanePetrukInput struct {
+	OrchestrationId  string                             `json:"orchestration_id"`
+	LaneId           string                             `json:"lane_id"`
+	LeaseToken       string                             `json:"lease_token" jsonschema:"must match the lane's current lease"`
+	ExpectedRevision int                                `json:"expected_revision"`
+	Title            string                             `json:"title" jsonschema:"human-readable title for this record"`
+	Plan             protocol.KnowledgeRecordPetrukPlan `json:"plan"`
+}
+
+func submitLanePetrukHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLanePetrukInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLanePetrukInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		lane, err := store.GetLane(ctx, in.OrchestrationId, in.LaneId)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		kstore, err := a.OpenKnowledge()
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
+		}
+		if lane.GarengRecordId != nil && *lane.GarengRecordId != "" {
+			garengRec, err := kstore.Get(*lane.GarengRecordId)
+			if err != nil {
+				return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: resolve this lane's gareng review: %w", err)
+			}
+			if garengRec.GarengReview != nil && len(garengRec.GarengReview.BlockingFindings) > 0 {
+				return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: gareng's review has unresolved blocking findings (%v); resubmit gareng's review once resolved before petruk can proceed", garengRec.GarengReview.BlockingFindings)
+			}
+		}
+
+		rec, err := roles.SubmitPetrukPlan(kstore, recordID(a, "petruk", delivery.NewID()), in.Title, in.Plan)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStagePetruk, rec.Id, in.ExpectedRevision)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		return nil, out, nil
+	}
+}
+
+// SubmitLaneBagongInput is submit_lane_bagong_review's input.
+type SubmitLaneBagongInput struct {
+	OrchestrationId  string                               `json:"orchestration_id"`
+	LaneId           string                               `json:"lane_id"`
+	LeaseToken       string                               `json:"lease_token" jsonschema:"must match the lane's current lease"`
+	ExpectedRevision int                                  `json:"expected_revision"`
+	Title            string                               `json:"title" jsonschema:"human-readable title for this record"`
+	Review           protocol.KnowledgeRecordBagongReview `json:"review"`
+}
+
+func submitLaneBagongHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLaneBagongInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLaneBagongInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+		kstore, err := a.OpenKnowledge()
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
+		}
+		rec, err := roles.SubmitBagongReview(kstore, recordID(a, "bagong", delivery.NewID()), in.Title, in.Review)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStageBagong, rec.Id, in.ExpectedRevision)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
 		}
 		return nil, out, nil
 	}
