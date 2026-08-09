@@ -480,4 +480,35 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "resume_from_handoff",
 		Description: "Validate a capsule and, if resumable or refresh_required, return only the smallest necessary verified context (§43) - objective, current phase/task and next action, accepted plan ref, open contradictions, unresolved risks - plus any required refresh steps. Errors when superseded, blocked, or invalid, explaining why.",
 	}, resumeFromHandoffHandler(a))
+
+	// Delivery scheduling: pull-based lease lifecycle over a multi-project
+	// orchestration's dependency graph. A connected agent lists what it
+	// could work on, claims one lane, keeps the lease alive with periodic
+	// heartbeats while it does the actual work (role stages happen here,
+	// in the calling agent, not in this server), then completes or
+	// rejects it.
+	addTool(server, reg, &mcp.Tool{
+		Name:        "list_runnable_lanes",
+		Description: "List every lane in an orchestration that has no unresolved predecessor and is not already leased. Read-only, but also refreshes which lanes are blocked versus runnable from the current dependency graph before listing.",
+	}, listRunnableLanesHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "claim_lane",
+		Description: "Claim a runnable lane, granting the calling worker an exclusive, time-limited lease. Fails if the lane is not currently runnable, if its revision has moved since it was listed (someone else changed it), or if its project already has another lane leased or running.",
+	}, claimLaneHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "heartbeat_lease",
+		Description: "Renew a held lease before it expires, proving the worker is still alive. Fails if lease_token does not match the lane's current lease (it was reclaimed after expiring, or never matched to begin with).",
+	}, heartbeatLeaseHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "complete_lease",
+		Description: "Report a held lease's work as done, moving the lane to review for the next stage to decide accepted or failed.",
+	}, completeLeaseHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "reject_lease",
+		Description: "Decline a held lease (e.g. a precondition no longer holds), returning the lane to runnable so it can be retried.",
+	}, rejectLeaseHandler(a))
 }

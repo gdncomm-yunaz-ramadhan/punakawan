@@ -19,8 +19,14 @@ import (
 // newTestApp builds a real *app.App rooted at a throwaway workspace with
 // one git repository, mirroring cmd/punakawan/main_test.go's
 // newSmokeWorkspace.
+//
+// PUNAKAWAN_DATA_DIR is set to an isolated temp directory so any call
+// through a.OpenStorage never touches this machine's real, shared
+// database - without this override, every test using it would open the
+// same on-disk database this developer's real Punakawan install uses.
 func newTestApp(t *testing.T) *app.App {
 	t.Helper()
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo-a")

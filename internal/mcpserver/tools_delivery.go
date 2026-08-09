@@ -1,0 +1,149 @@
+package mcpserver
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/pkg/protocol"
+)
+
+// defaultLeaseSeconds is used when a caller omits lease_seconds - long
+// enough that a normal heartbeat cadence never races expiry, short
+// enough that a crashed worker's lane returns to runnable within a
+// reasonable time.
+const defaultLeaseSeconds = 300
+
+func openDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error) {
+	db, err := a.OpenStorage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("mcpserver: open storage kernel: %w", err)
+	}
+	return delivery.NewStore(db), nil
+}
+
+// ListRunnableLanesInput is list_runnable_lanes' input.
+type ListRunnableLanesInput struct {
+	OrchestrationId string `json:"orchestration_id"`
+}
+
+// ListRunnableLanesOutput is list_runnable_lanes' output: every lane
+// currently on the frontier (no unresolved predecessor), sorted by
+// creation time.
+type ListRunnableLanesOutput struct {
+	Lanes []protocol.DeliveryLane `json:"lanes"`
+}
+
+func listRunnableLanesHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ListRunnableLanesInput) (*mcp.CallToolResult, ListRunnableLanesOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in ListRunnableLanesInput) (*mcp.CallToolResult, ListRunnableLanesOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, ListRunnableLanesOutput{}, err
+		}
+		lanes, err := store.SyncFrontier(ctx, delivery.NewID(), in.OrchestrationId)
+		if err != nil {
+			return nil, ListRunnableLanesOutput{}, fmt.Errorf("mcpserver: sync frontier: %w", err)
+		}
+		out := ListRunnableLanesOutput{Lanes: []protocol.DeliveryLane{}}
+		for _, l := range lanes {
+			if l.Status == protocol.DeliveryLaneStatusRunnable {
+				out.Lanes = append(out.Lanes, *l)
+			}
+		}
+		return nil, out, nil
+	}
+}
+
+// ClaimLaneInput is claim_lane's input.
+type ClaimLaneInput struct {
+	OrchestrationId  string `json:"orchestration_id"`
+	LaneId           string `json:"lane_id"`
+	ExpectedRevision int    `json:"expected_revision" jsonschema:"the lane's revision from list_runnable_lanes, so a lane someone else already claimed is never leased twice"`
+	WorkerId         string `json:"worker_id" jsonschema:"identifies the claiming session/agent, for observability"`
+	LeaseSeconds     int    `json:"lease_seconds,omitempty" jsonschema:"how long before the lease expires without a heartbeat; defaults to 300"`
+}
+
+// LaneOutput wraps one DeliveryLane, used by every tool in this file
+// that returns a single lane's post-transition state.
+type LaneOutput struct {
+	Lane protocol.DeliveryLane `json:"lane"`
+}
+
+func claimLaneHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ClaimLaneInput) (*mcp.CallToolResult, LaneOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in ClaimLaneInput) (*mcp.CallToolResult, LaneOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, LaneOutput{}, err
+		}
+		leaseSeconds := in.LeaseSeconds
+		if leaseSeconds <= 0 {
+			leaseSeconds = defaultLeaseSeconds
+		}
+		lane, err := store.GrantLease(ctx, delivery.NewID(), in.OrchestrationId, in.LaneId, in.ExpectedRevision, in.WorkerId, time.Duration(leaseSeconds)*time.Second)
+		if err != nil {
+			return nil, LaneOutput{}, fmt.Errorf("mcpserver: claim lane: %w", err)
+		}
+		return nil, LaneOutput{Lane: *lane}, nil
+	}
+}
+
+// LeaseActionInput is the shared input for heartbeat_lease, complete_lease,
+// and reject_lease - every call that must present the lease token it was
+// handed by claim_lane.
+type LeaseActionInput struct {
+	OrchestrationId  string `json:"orchestration_id"`
+	LaneId           string `json:"lane_id"`
+	LeaseToken       string `json:"lease_token" jsonschema:"the token returned by claim_lane; a stale or mismatched token is rejected"`
+	ExpectedRevision int    `json:"expected_revision"`
+	LeaseSeconds     int    `json:"lease_seconds,omitempty" jsonschema:"heartbeat_lease only: how long to extend the lease; defaults to 300"`
+}
+
+func heartbeatLeaseHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, LeaseActionInput) (*mcp.CallToolResult, LaneOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in LeaseActionInput) (*mcp.CallToolResult, LaneOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, LaneOutput{}, err
+		}
+		leaseSeconds := in.LeaseSeconds
+		if leaseSeconds <= 0 {
+			leaseSeconds = defaultLeaseSeconds
+		}
+		lane, err := store.Heartbeat(ctx, delivery.NewID(), in.OrchestrationId, in.LaneId, in.LeaseToken, in.ExpectedRevision, time.Duration(leaseSeconds)*time.Second)
+		if err != nil {
+			return nil, LaneOutput{}, fmt.Errorf("mcpserver: heartbeat lease: %w", err)
+		}
+		return nil, LaneOutput{Lane: *lane}, nil
+	}
+}
+
+func completeLeaseHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, LeaseActionInput) (*mcp.CallToolResult, LaneOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in LeaseActionInput) (*mcp.CallToolResult, LaneOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, LaneOutput{}, err
+		}
+		lane, err := store.CompleteLease(ctx, delivery.NewID(), in.OrchestrationId, in.LaneId, in.LeaseToken, in.ExpectedRevision)
+		if err != nil {
+			return nil, LaneOutput{}, fmt.Errorf("mcpserver: complete lease: %w", err)
+		}
+		return nil, LaneOutput{Lane: *lane}, nil
+	}
+}
+
+func rejectLeaseHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, LeaseActionInput) (*mcp.CallToolResult, LaneOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in LeaseActionInput) (*mcp.CallToolResult, LaneOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, LaneOutput{}, err
+		}
+		lane, err := store.RejectLease(ctx, delivery.NewID(), in.OrchestrationId, in.LaneId, in.LeaseToken, in.ExpectedRevision)
+		if err != nil {
+			return nil, LaneOutput{}, fmt.Errorf("mcpserver: reject lease: %w", err)
+		}
+		return nil, LaneOutput{Lane: *lane}, nil
+	}
+}

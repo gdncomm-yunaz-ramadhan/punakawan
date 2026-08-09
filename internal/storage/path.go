@@ -8,16 +8,25 @@ import (
 
 const dbFileName = "punakawan.db"
 
+// dataDirOverrideEnv lets a test point the storage kernel at an isolated
+// directory instead of this machine's real, shared data directory. Set
+// via t.Setenv, never meant for production use - there is exactly one
+// real data directory per machine by design.
+const dataDirOverrideEnv = "PUNAKAWAN_DATA_DIR"
+
 // DataDir resolves the platform-standard, per-OS-user config directory
 // for Punakawan's storage kernel (XDG_CONFIG_HOME/punakawan on Linux,
 // ~/Library/Application Support/punakawan on macOS, %AppData%\punakawan
 // on Windows), creating it if absent.
 func DataDir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("storage: resolve platform config dir: %w", err)
+	dir := os.Getenv(dataDirOverrideEnv)
+	if dir == "" {
+		base, err := os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("storage: resolve platform config dir: %w", err)
+		}
+		dir = filepath.Join(base, "punakawan")
 	}
-	dir := filepath.Join(base, "punakawan")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("storage: create data dir %s: %w", dir, err)
 	}
