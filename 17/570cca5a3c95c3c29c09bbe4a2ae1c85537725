@@ -1,0 +1,44 @@
+internal/mcpserver/tools_delivery.go
+  708d680d348b9cc2 94-114,220-264
+internal/mcpserver/tools_delivery_test.go
+  708d680d348b9cc2 5-8,248-395
+internal/mcpserver/tools.go
+  708d680d348b9cc2 501-504,524-528
+internal/delivery/worktree.go
+  708d680d348b9cc2 472-498
+internal/delivery/worktree_test.go
+  708d680d348b9cc2 11,323-375
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "17570cca5a3c95c3c29c09bbe4a2ae1c85537725",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 309,
+      "total_deletions": 0,
+      "accepted_lines": 309,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
