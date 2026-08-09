@@ -5,7 +5,7 @@
  */
 
 /**
- * One project's independent delivery lane within a DeliveryOrchestration (punokawan-14yn.1), and the schedulable unit punokawan-14yn.3's worker scheduler leases and advances through waiting/blocked/runnable/leased/running/review/failed/accepted. A lane always carries its own project_id so cross-project reads and writes fail closed. Worktree lifecycle and role execution are later tasks (punokawan-14yn.5/6). See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * One project's independent delivery lane within a DeliveryOrchestration, and the schedulable unit the worker scheduler leases and advances through waiting/blocked/runnable/leased/running/review/failed/accepted. A lane always carries its own project_id so cross-project reads and writes fail closed.
  */
 export interface DeliveryLane {
   /**
@@ -15,11 +15,11 @@ export interface DeliveryLane {
   orchestration_id: string;
   project_id: string;
   /**
-   * Id of the parent task this lane delivers, assigned once punokawan-14yn.2's dependency graph resolves it. Empty until then.
+   * Id of the parent task this lane delivers, assigned once the dependency graph resolves it. Empty until then.
    */
   parent_task_id?: string;
   /**
-   * punokawan-14yn.3's scheduling state machine. waiting: predecessors unresolved. blocked: an unresolved hard blocker was reported with evidence. runnable: on the frontier, no worker leased yet. leased: a worker holds an unexpired lease but has not reported starting. running: the leased worker is actively executing. review: work reported complete, awaiting Bagong/human review (punokawan-14yn.8). failed: rejected, expired past retry budget, or reported failed. accepted: terminal success.
+   * The scheduling state machine. waiting: predecessors unresolved. blocked: an unresolved hard blocker was reported with evidence. runnable: no unresolved predecessor, no worker leased yet. leased: a worker holds an unexpired lease but has not reported starting. running: the leased worker is actively executing. review: work reported complete, awaiting review. failed: rejected, expired past retry budget, or reported failed. accepted: terminal success.
    */
   status: "waiting" | "blocked" | "runnable" | "leased" | "running" | "review" | "failed" | "accepted";
   /**
@@ -48,4 +48,20 @@ export interface DeliveryLane {
    * Optimistic-concurrency counter; incremented on every applied event.
    */
   revision: number;
+  /**
+   * The lane's own git branch name, set once its worktree is first created; persists even after the worktree directory is later removed, so a later resume checks out the same branch instead of creating a new one.
+   */
+  branch?: string;
+  /**
+   * Absolute path to the lane's current linked worktree directory; present only while the worktree exists on disk, cleared (but branch/base_sha/base_remote kept) when removed.
+   */
+  worktree_path?: string;
+  /**
+   * The exact commit the branch was forked from.
+   */
+  base_sha?: string;
+  /**
+   * The remote name (e.g. "origin") the base branch was fetched from.
+   */
+  base_remote?: string;
 }

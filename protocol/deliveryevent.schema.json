@@ -18,6 +18,7 @@
         "input.registered", "input.resolved",
         "lane.created", "lane.status_changed",
         "lane.blocked", "lane.unblocked",
+        "lane.worktree_created", "lane.worktree_removed",
         "lease.granted", "lease.heartbeat", "lease.completed", "lease.rejected", "lease.timed_out", "lease.cancelled",
         "requirement.captured",
         "task.created", "task.routed",

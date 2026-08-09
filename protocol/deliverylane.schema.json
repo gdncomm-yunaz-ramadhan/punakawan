@@ -19,6 +19,10 @@
     "blocked_by": { "type": "array", "items": { "type": "string" }, "description": "Exact blocker ids (unresolved predecessor task ids, or a reported discovered blocker) while status is waiting or blocked." },
     "created_at": { "type": "string", "format": "date-time" },
     "updated_at": { "type": "string", "format": "date-time" },
-    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." }
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." },
+    "branch": { "type": "string", "description": "The lane's own git branch name, set once its worktree is first created; persists even after the worktree directory is later removed, so a later resume checks out the same branch instead of creating a new one." },
+    "worktree_path": { "type": "string", "description": "Absolute path to the lane's current linked worktree directory; present only while the worktree exists on disk, cleared (but branch/base_sha/base_remote kept) when removed." },
+    "base_sha": { "type": "string", "description": "The exact commit the branch was forked from." },
+    "base_remote": { "type": "string", "description": "The remote name (e.g. \"origin\") the base branch was fetched from." }
   }
 }

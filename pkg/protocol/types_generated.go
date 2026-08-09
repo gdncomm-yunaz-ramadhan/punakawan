@@ -3240,6 +3240,8 @@ const DeliveryEventTypeLaneBlocked DeliveryEventType = "lane.blocked"
 const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
 const DeliveryEventTypeLaneStatusChanged DeliveryEventType = "lane.status_changed"
 const DeliveryEventTypeLaneUnblocked DeliveryEventType = "lane.unblocked"
+const DeliveryEventTypeLaneWorktreeCreated DeliveryEventType = "lane.worktree_created"
+const DeliveryEventTypeLaneWorktreeRemoved DeliveryEventType = "lane.worktree_removed"
 const DeliveryEventTypeLeaseCancelled DeliveryEventType = "lease.cancelled"
 const DeliveryEventTypeLeaseCompleted DeliveryEventType = "lease.completed"
 const DeliveryEventTypeLeaseGranted DeliveryEventType = "lease.granted"
@@ -3266,6 +3268,8 @@ var enumValues_DeliveryEventType = []interface{}{
 	"lane.status_changed",
 	"lane.blocked",
 	"lane.unblocked",
+	"lane.worktree_created",
+	"lane.worktree_removed",
 	"lease.granted",
 	"lease.heartbeat",
 	"lease.completed",
@@ -3349,9 +3353,20 @@ type DeliveryLane struct {
 	// Number of leases granted so far for this lane; incremented on retry.
 	Attempt *int `json:"attempt,omitempty,omitzero" yaml:"attempt,omitempty" mapstructure:"attempt,omitempty"`
 
+	// The remote name (e.g. "origin") the base branch was fetched from.
+	BaseRemote *string `json:"base_remote,omitempty,omitzero" yaml:"base_remote,omitempty" mapstructure:"base_remote,omitempty"`
+
+	// The exact commit the branch was forked from.
+	BaseSha *string `json:"base_sha,omitempty,omitzero" yaml:"base_sha,omitempty" mapstructure:"base_sha,omitempty"`
+
 	// Exact blocker ids (unresolved predecessor task ids, or a reported discovered
 	// blocker) while status is waiting or blocked.
 	BlockedBy []string `json:"blocked_by,omitempty,omitzero" yaml:"blocked_by,omitempty" mapstructure:"blocked_by,omitempty"`
+
+	// The lane's own git branch name, set once its worktree is first created;
+	// persists even after the worktree directory is later removed, so a later resume
+	// checks out the same branch instead of creating a new one.
+	Branch *string `json:"branch,omitempty,omitzero" yaml:"branch,omitempty" mapstructure:"branch,omitempty"`
 
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
@@ -3393,6 +3408,11 @@ type DeliveryLane struct {
 
 	// UpdatedAt corresponds to the JSON schema field "updated_at".
 	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at" mapstructure:"updated_at"`
+
+	// Absolute path to the lane's current linked worktree directory; present only
+	// while the worktree exists on disk, cleared (but branch/base_sha/base_remote
+	// kept) when removed.
+	WorktreePath *string `json:"worktree_path,omitempty,omitzero" yaml:"worktree_path,omitempty" mapstructure:"worktree_path,omitempty"`
 }
 
 type DeliveryLaneStatus string

@@ -57,4 +57,24 @@ var (
 	// ErrLeaseNotExpired is returned when a caller attempts to reclaim a
 	// lease that has not actually passed its expiry deadline.
 	ErrLeaseNotExpired = errors.New("delivery: lease has not expired")
+
+	// ErrGitUnavailable is returned when git cannot be found on PATH.
+	ErrGitUnavailable = errors.New("delivery: git is not available on PATH")
+
+	// ErrWorktreeCollision is returned when a lane's deterministic branch
+	// name already exists as a local branch in the project's checkout,
+	// but it is not this lane's own recorded branch (the lane has not
+	// created a worktree yet). An unrelated stale branch of that name is
+	// never reused, deleted, or forced past.
+	ErrWorktreeCollision = errors.New("delivery: branch name already exists and is not this lane's own")
+
+	// ErrWorktreeDirty is returned when RemoveWorktree is asked to remove
+	// a worktree that still has uncommitted changes.
+	ErrWorktreeDirty = errors.New("delivery: worktree has uncommitted changes")
+
+	// ErrWorktreeMismatch is returned when a lane's recorded
+	// worktree_path no longer looks like a valid linked worktree checked
+	// out on the lane's own branch - resume validation failed, so
+	// nothing is recreated or deleted automatically.
+	ErrWorktreeMismatch = errors.New("delivery: lane's recorded worktree no longer matches its recorded branch")
 )

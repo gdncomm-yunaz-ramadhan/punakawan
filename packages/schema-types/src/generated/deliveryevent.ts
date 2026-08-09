@@ -28,6 +28,8 @@ export interface DeliveryEvent {
     | "lane.status_changed"
     | "lane.blocked"
     | "lane.unblocked"
+    | "lane.worktree_created"
+    | "lane.worktree_removed"
     | "lease.granted"
     | "lease.heartbeat"
     | "lease.completed"

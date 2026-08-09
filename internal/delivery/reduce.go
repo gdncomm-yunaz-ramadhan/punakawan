@@ -153,6 +153,22 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 		case protocol.DeliveryEventTypeLeaseCancelled:
 			l.Status = protocol.DeliveryLaneStatusFailed
 			l.LeaseWorkerId, l.LeaseToken, l.LeaseExpiresAt = nil, nil, nil
+		case protocol.DeliveryEventTypeLaneWorktreeCreated:
+			worktreePath := stringField(ev.Payload, "worktree_path")
+			branch := stringField(ev.Payload, "branch")
+			baseSha := stringField(ev.Payload, "base_sha")
+			baseRemote := stringField(ev.Payload, "base_remote")
+			l.WorktreePath = &worktreePath
+			l.Branch = &branch
+			l.BaseSha = &baseSha
+			l.BaseRemote = &baseRemote
+		case protocol.DeliveryEventTypeLaneWorktreeRemoved:
+			// Branch/BaseSha/BaseRemote deliberately survive removal: a
+			// lane's work commonly spans more than one create/remove
+			// round, and checking the same branch back out preserves its
+			// existing commits instead of starting a fresh, disconnected
+			// branch each time.
+			l.WorktreePath = nil
 		default:
 			return nil, fmt.Errorf("delivery: unknown lane event type %q", ev.Type)
 		}

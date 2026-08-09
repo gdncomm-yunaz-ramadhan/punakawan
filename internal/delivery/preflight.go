@@ -27,6 +27,16 @@ func RunPreflight(ctx context.Context, profile *protocol.ProjectDeliveryProfile,
 		checks = append(checks, c)
 	}
 
+	// git is required for every project's execution lifecycle regardless
+	// of what the profile happens to list in RequiredExecutables, so it
+	// is checked unconditionally here rather than depending on the
+	// profile author having remembered to add it.
+	if _, err := exec.LookPath("git"); err != nil {
+		add("executable:git", protocol.PreflightCheckClassificationRequired, protocol.PreflightCheckStatusFail, err.Error())
+	} else {
+		add("executable:git", protocol.PreflightCheckClassificationRequired, protocol.PreflightCheckStatusPass, "")
+	}
+
 	for _, name := range profile.RequiredExecutables {
 		if _, err := exec.LookPath(name); err != nil {
 			add("executable:"+name, protocol.PreflightCheckClassificationRequired, protocol.PreflightCheckStatusFail, err.Error())
