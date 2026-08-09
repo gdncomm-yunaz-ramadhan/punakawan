@@ -147,3 +147,52 @@ func rejectLeaseHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, 
 		return nil, LaneOutput{Lane: *lane}, nil
 	}
 }
+
+// ReportDiscoveredDependencyInput is report_discovered_dependency's
+// input: a worker reports mid-execution that from_task_id turns out to
+// require to_task_id, something the planner did not know about
+// upfront.
+type ReportDiscoveredDependencyInput struct {
+	OrchestrationId string  `json:"orchestration_id"`
+	FromTaskId      string  `json:"from_task_id" jsonschema:"the task that turned out to depend on to_task_id"`
+	ToTaskId        string  `json:"to_task_id" jsonschema:"the task from_task_id actually depends on"`
+	Evidence        string  `json:"evidence" jsonschema:"why this dependency was discovered; required, never accepted on confidence alone"`
+	Confidence      float64 `json:"confidence,omitempty" jsonschema:"defaults to 1.0 when omitted or non-positive"`
+}
+
+// ReportDiscoveredDependencyOutput returns the recorded edge plus
+// every lane in the orchestration after the frontier resync - only the
+// lane(s) actually affected by the new edge move to blocked; every
+// unrelated lane's status is left exactly as it was.
+type ReportDiscoveredDependencyOutput struct {
+	Edge  protocol.DependencyEdge `json:"edge"`
+	Lanes []protocol.DeliveryLane `json:"lanes"`
+}
+
+func reportDiscoveredDependencyHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ReportDiscoveredDependencyInput) (*mcp.CallToolResult, ReportDiscoveredDependencyOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in ReportDiscoveredDependencyInput) (*mcp.CallToolResult, ReportDiscoveredDependencyOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, ReportDiscoveredDependencyOutput{}, err
+		}
+		confidence := in.Confidence
+		if confidence <= 0 {
+			confidence = 1.0
+		}
+		edge, err := store.AddDependencyEdge(ctx, delivery.NewID(), delivery.NewID(), in.OrchestrationId, in.FromTaskId, in.ToTaskId,
+			protocol.DependencyEdgeTypeRequires, protocol.DependencyEdgeOriginModelInference, confidence, in.Evidence)
+		if err != nil {
+			return nil, ReportDiscoveredDependencyOutput{}, fmt.Errorf("mcpserver: report discovered dependency: %w", err)
+		}
+
+		lanes, err := store.SyncFrontier(ctx, delivery.NewID(), in.OrchestrationId)
+		if err != nil {
+			return nil, ReportDiscoveredDependencyOutput{}, fmt.Errorf("mcpserver: sync frontier: %w", err)
+		}
+		out := ReportDiscoveredDependencyOutput{Edge: *edge, Lanes: []protocol.DeliveryLane{}}
+		for _, l := range lanes {
+			out.Lanes = append(out.Lanes, *l)
+		}
+		return nil, out, nil
+	}
+}

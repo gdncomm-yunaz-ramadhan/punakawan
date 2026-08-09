@@ -26,13 +26,17 @@ import (
 
 // SyncFrontier recomputes which lanes are runnable versus blocked from
 // the orchestration's current task graph: a lane whose parent task has
-// no unresolved blocking predecessor moves to runnable;
-// one with unresolved predecessors moves to blocked, recording the
-// exact blocker task ids. Only lanes still in waiting or blocked move -
-// a lane already leased, running, in review, failed, or accepted is
-// never touched by a frontier recompute. Emits nothing when no lane's
-// state actually needs to change, so calling this repeatedly (e.g. from
-// a poll loop, or after every lease completion) is cheap and idempotent
+// no unresolved blocking predecessor moves to runnable; one with
+// unresolved predecessors moves to blocked, recording the exact
+// blocker task ids. This can move a lane in either direction, including
+// a runnable lane discovered to now have an unresolved predecessor
+// (e.g. a dependency reported mid-execution) - so a lane not yet leased
+// is never left runnable on a stale view of the graph. A lane already
+// leased, running, in review, failed, or accepted is never touched: work
+// already claimed or finished never gets retroactively paused or
+// unwound by a later graph change. Emits nothing when no lane's state
+// actually needs to change, so calling this repeatedly (e.g. from a
+// poll loop, or after every lease completion) is cheap and idempotent
 // in effect even though idempotencyKey is fresh each call.
 func (s *Store) SyncFrontier(ctx context.Context, idempotencyKey, orchestrationID string) ([]*protocol.DeliveryLane, error) {
 	err := s.db.Write(ctx, idempotencyKey, "sync frontier "+orchestrationID, func(tx *sql.Tx) error {
@@ -85,7 +89,9 @@ func (s *Store) SyncFrontier(ctx context.Context, idempotencyKey, orchestrationI
 
 		sequence := len(events)
 		for taskID, lane := range laneByTask {
-			if lane.Status != protocol.DeliveryLaneStatusWaiting && lane.Status != protocol.DeliveryLaneStatusBlocked {
+			if lane.Status != protocol.DeliveryLaneStatusWaiting &&
+				lane.Status != protocol.DeliveryLaneStatusBlocked &&
+				lane.Status != protocol.DeliveryLaneStatusRunnable {
 				continue
 			}
 			if frontierSet[taskID] && lane.Status != protocol.DeliveryLaneStatusRunnable {

@@ -146,3 +146,98 @@ func TestClaimLaneRejectsStaleRevision(t *testing.T) {
 		t.Fatal("expected a second claim against the same stale (already-leased) revision to fail")
 	}
 }
+
+// TestReportDiscoveredDependencyBlocksOnlyAffectedLane seeds two
+// independent, initially-runnable lanes in the same project, then
+// reports (over the real MCP wire protocol) that one task turned out
+// to depend on the other, and verifies only the dependent lane moves
+// to blocked while the unrelated one stays runnable.
+func TestReportDiscoveredDependencyBlocksOnlyAffectedLane(t *testing.T) {
+	a := newTestApp(t)
+	ctx := context.Background()
+	db, err := a.OpenStorage(ctx)
+	if err != nil {
+		t.Fatalf("OpenStorage: %v", err)
+	}
+	store := delivery.NewStore(db)
+
+	orch, err := store.CreateOrchestration(ctx, "orch-"+delivery.NewID(), delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	proj, err := store.RegisterProject(ctx, "proj-"+delivery.NewID(), delivery.NewID(), "discovered-dep-test", "https://example.test/discovered-dep-test.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	source, err := store.CaptureRequirement(ctx, "cap-"+delivery.NewID(), orch.Id, delivery.SourceInput{Provider: "jira", ExternalID: "TEST-2", Title: "seed requirement"})
+	if err != nil {
+		t.Fatalf("CaptureRequirement: %v", err)
+	}
+
+	dependent, err := store.CreateParentTask(ctx, "task-"+delivery.NewID(), delivery.NewID(), orch.Id, "dependent task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask(dependent): %v", err)
+	}
+	if _, err := store.RouteParentTask(ctx, "route-"+delivery.NewID(), orch.Id, dependent.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask(dependent): %v", err)
+	}
+	dependentLane, err := store.CreateLane(ctx, "lane-"+delivery.NewID(), delivery.NewID(), orch.Id, proj.Id, dependent.Id)
+	if err != nil {
+		t.Fatalf("CreateLane(dependent): %v", err)
+	}
+
+	blocker, err := store.CreateParentTask(ctx, "task-"+delivery.NewID(), delivery.NewID(), orch.Id, "blocker task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask(blocker): %v", err)
+	}
+	if _, err := store.RouteParentTask(ctx, "route-"+delivery.NewID(), orch.Id, blocker.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask(blocker): %v", err)
+	}
+	blockerLane, err := store.CreateLane(ctx, "lane-"+delivery.NewID(), delivery.NewID(), orch.Id, proj.Id, blocker.Id)
+	if err != nil {
+		t.Fatalf("CreateLane(blocker): %v", err)
+	}
+
+	unrelated, err := store.CreateParentTask(ctx, "task-"+delivery.NewID(), delivery.NewID(), orch.Id, "unrelated task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask(unrelated): %v", err)
+	}
+	if _, err := store.RouteParentTask(ctx, "route-"+delivery.NewID(), orch.Id, unrelated.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask(unrelated): %v", err)
+	}
+	unrelatedLane, err := store.CreateLane(ctx, "lane-"+delivery.NewID(), delivery.NewID(), orch.Id, proj.Id, unrelated.Id)
+	if err != nil {
+		t.Fatalf("CreateLane(unrelated): %v", err)
+	}
+
+	if _, err := store.SyncFrontier(ctx, "sync-"+delivery.NewID(), orch.Id); err != nil {
+		t.Fatalf("SyncFrontier: %v", err)
+	}
+
+	cs := connect(t, a)
+	var out ReportDiscoveredDependencyOutput
+	callTool(t, cs, "report_discovered_dependency", map[string]any{
+		"orchestration_id": orch.Id,
+		"from_task_id":     dependent.Id,
+		"to_task_id":       blocker.Id,
+		"evidence":         "worker found dependent task actually needs blocker task's output",
+	}, &out)
+
+	if out.Edge.FromTaskId != dependent.Id || out.Edge.ToTaskId != blocker.Id {
+		t.Fatalf("unexpected edge recorded: %+v", out.Edge)
+	}
+
+	byID := map[string]protocol.DeliveryLane{}
+	for _, l := range out.Lanes {
+		byID[l.Id] = l
+	}
+	if lane, ok := byID[dependentLane.Id]; !ok || lane.Status != protocol.DeliveryLaneStatusBlocked {
+		t.Fatalf("expected dependent lane %s blocked, got %+v (present=%v)", dependentLane.Id, lane, ok)
+	}
+	if lane, ok := byID[blockerLane.Id]; !ok || lane.Status != protocol.DeliveryLaneStatusRunnable {
+		t.Fatalf("expected blocker lane %s to stay runnable, got %+v (present=%v)", blockerLane.Id, lane, ok)
+	}
+	if lane, ok := byID[unrelatedLane.Id]; !ok || lane.Status != protocol.DeliveryLaneStatusRunnable {
+		t.Fatalf("expected unrelated lane %s to stay runnable, got %+v (present=%v)", unrelatedLane.Id, lane, ok)
+	}
+}

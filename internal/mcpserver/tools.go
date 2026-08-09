@@ -511,4 +511,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "reject_lease",
 		Description: "Decline a held lease (e.g. a precondition no longer holds), returning the lane to runnable so it can be retried.",
 	}, rejectLeaseHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "report_discovered_dependency",
+		Description: "Report a dependency discovered mid-execution rather than known upfront: records it as a new edge and re-syncs the frontier, pausing only the lanes actually affected while unrelated work continues.",
+	}, reportDiscoveredDependencyHandler(a))
 }
