@@ -526,4 +526,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "run_in_lane",
 		Description: "Run one command scoped strictly to a held lease's own worktree - the only execution surface this delivery domain exposes, so a worker can never read, write, or execute anything outside its own lane. Requires the lane's current lease token.",
 	}, runInLaneHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "build_lane_context",
+		Description: "Assemble a lane's bounded context: its pinned requirement sources, project delivery profile, and exact base commit, plus a digest identifying this exact combination. Fails closed if any pinned reference no longer resolves.",
+	}, buildLaneContextHandler(a))
 }

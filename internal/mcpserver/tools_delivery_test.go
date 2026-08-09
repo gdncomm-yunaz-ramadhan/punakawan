@@ -393,3 +393,31 @@ func TestCreateWorktreeAndRunInLaneEndToEnd(t *testing.T) {
 		t.Fatal("expected run_in_lane with a wrong lease token to fail")
 	}
 }
+
+// TestBuildLaneContextEndToEnd checks that build_lane_context returns
+// the lane's pinned source, its project's delivery profile, and a
+// non-empty digest over the real MCP wire protocol.
+func TestBuildLaneContextEndToEnd(t *testing.T) {
+	a := newTestApp(t)
+	orchID, laneID := seedRunnableLaneWithGitProject(t, a)
+	cs := connect(t, a)
+
+	var out BuildLaneContextOutput
+	callTool(t, cs, "build_lane_context", map[string]any{
+		"orchestration_id": orchID,
+		"lane_id":          laneID,
+	}, &out)
+
+	if out.Lane.Id != laneID {
+		t.Fatalf("expected lane %s, got %s", laneID, out.Lane.Id)
+	}
+	if len(out.Sources) != 1 {
+		t.Fatalf("expected exactly one pinned source, got %+v", out.Sources)
+	}
+	if out.Profile.ProjectId == "" {
+		t.Fatalf("expected a profile in the context, got %+v", out.Profile)
+	}
+	if out.Digest == "" {
+		t.Fatal("expected a non-empty digest")
+	}
+}

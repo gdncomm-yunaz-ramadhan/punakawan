@@ -262,3 +262,46 @@ func runInLaneHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, Ru
 		}, nil
 	}
 }
+
+// BuildLaneContextInput is build_lane_context's input.
+type BuildLaneContextInput struct {
+	OrchestrationId string `json:"orchestration_id"`
+	LaneId          string `json:"lane_id"`
+}
+
+// BuildLaneContextOutput is a lane's bounded, hashed context: its
+// pinned requirement sources, project delivery profile, and exact base
+// commit, plus a digest identifying this exact combination.
+type BuildLaneContextOutput struct {
+	Lane       protocol.DeliveryLane           `json:"lane"`
+	ParentTask protocol.ParentTask             `json:"parent_task"`
+	Sources    []protocol.RequirementSource    `json:"sources"`
+	Profile    protocol.ProjectDeliveryProfile `json:"profile"`
+	BaseSha    string                          `json:"base_sha"`
+	Digest     string                          `json:"digest"`
+}
+
+func buildLaneContextHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, BuildLaneContextInput) (*mcp.CallToolResult, BuildLaneContextOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in BuildLaneContextInput) (*mcp.CallToolResult, BuildLaneContextOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, BuildLaneContextOutput{}, err
+		}
+		lc, err := store.BuildLaneContext(ctx, in.OrchestrationId, in.LaneId)
+		if err != nil {
+			return nil, BuildLaneContextOutput{}, fmt.Errorf("mcpserver: build lane context: %w", err)
+		}
+		out := BuildLaneContextOutput{
+			Lane:       *lc.Lane,
+			ParentTask: *lc.ParentTask,
+			Sources:    []protocol.RequirementSource{},
+			Profile:    *lc.Profile,
+			BaseSha:    lc.BaseSha,
+			Digest:     lc.Digest,
+		}
+		for _, src := range lc.Sources {
+			out.Sources = append(out.Sources, *src)
+		}
+		return nil, out, nil
+	}
+}
