@@ -1,0 +1,76 @@
+packages/github-adapter/src/manifest.ts
+  708d680d348b9cc2 27
+internal/delivery/verification_test.go
+  708d680d348b9cc2 1-380
+internal/delivery/reduce.go
+  708d680d348b9cc2 187-196
+protocol/verificationmatrix.schema.json
+  708d680d348b9cc2 1-30
+packages/github-adapter/src/normalize.ts
+  708d680d348b9cc2 142-181
+internal/delivery/errors.go
+  708d680d348b9cc2 95-109
+packages/github-adapter/src/operations.ts
+  708d680d348b9cc2 1,3,9,57-81
+protocol/deliveryevent.schema.json
+  708d680d348b9cc2 23
+internal/delivery/verification.go
+  708d680d348b9cc2 1-397
+internal/delivery/preflight_test.go
+  708d680d348b9cc2 1-122
+protocol/verificationdimension.schema.json
+  708d680d348b9cc2 1-16
+protocol/reviewconclusion.schema.json
+  708d680d348b9cc2 1-24
+internal/delivery/githubidentity.go
+  708d680d348b9cc2 1-66
+packages/github-adapter/src/restClient.ts
+  708d680d348b9cc2 46-62,124,126
+packages/github-adapter/src/adapter.ts
+  708d680d348b9cc2 11,52-56
+protocol/cicheck.schema.json
+  708d680d348b9cc2 1-18
+pkg/protocol/doc.go
+  708d680d348b9cc2 6
+packages/github-adapter/test/fakeGitHubRest.ts
+  708d680d348b9cc2 37-45,107-113
+internal/delivery/preflight.go
+  708d680d348b9cc2 14-16,18-23,88-114
+internal/delivery/profiles_test.go
+  708d680d348b9cc2 73,98
+packages/github-adapter/test/adapter.test.ts
+  708d680d348b9cc2 6,28,36-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "a28f695fc92985765e7b6743229ae58935c1b320",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1258,
+      "total_deletions": 25,
+      "accepted_lines": 1252,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
