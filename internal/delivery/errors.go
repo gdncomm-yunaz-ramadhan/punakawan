@@ -39,4 +39,22 @@ var (
 	// inferred (repository-fact or model-inference origin) rather than
 	// explicitly declared (explicit-source or user origin).
 	ErrUnsafeCrossProjectEdge = errors.New("delivery: cross-project edge requires an explicit-source or user origin")
+
+	// ErrLaneNotRunnable is returned when a lease is requested against a
+	// lane that is not currently runnable (already leased, still
+	// waiting/blocked, or terminal).
+	ErrLaneNotRunnable = errors.New("delivery: lane is not runnable")
+
+	// ErrProjectAtConcurrencyLimit is returned when granting a lease
+	// would exceed one mutating lane per project within an orchestration.
+	ErrProjectAtConcurrencyLimit = errors.New("delivery: project already has a mutating lane leased or running")
+
+	// ErrLeaseTokenMismatch is returned when a heartbeat/complete/reject
+	// call presents a lease token that does not match the lane's current
+	// lease - it belongs to an expired or already-superseded lease.
+	ErrLeaseTokenMismatch = errors.New("delivery: lease token does not match the lane's current lease")
+
+	// ErrLeaseNotExpired is returned when a caller attempts to reclaim a
+	// lease that has not actually passed its expiry deadline.
+	ErrLeaseNotExpired = errors.New("delivery: lease has not expired")
 )

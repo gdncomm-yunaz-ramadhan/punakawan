@@ -3236,8 +3236,16 @@ const DeliveryEventTypeEdgeAdded DeliveryEventType = "edge.added"
 const DeliveryEventTypeEdgeRemoved DeliveryEventType = "edge.removed"
 const DeliveryEventTypeInputRegistered DeliveryEventType = "input.registered"
 const DeliveryEventTypeInputResolved DeliveryEventType = "input.resolved"
+const DeliveryEventTypeLaneBlocked DeliveryEventType = "lane.blocked"
 const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
 const DeliveryEventTypeLaneStatusChanged DeliveryEventType = "lane.status_changed"
+const DeliveryEventTypeLaneUnblocked DeliveryEventType = "lane.unblocked"
+const DeliveryEventTypeLeaseCancelled DeliveryEventType = "lease.cancelled"
+const DeliveryEventTypeLeaseCompleted DeliveryEventType = "lease.completed"
+const DeliveryEventTypeLeaseGranted DeliveryEventType = "lease.granted"
+const DeliveryEventTypeLeaseHeartbeat DeliveryEventType = "lease.heartbeat"
+const DeliveryEventTypeLeaseRejected DeliveryEventType = "lease.rejected"
+const DeliveryEventTypeLeaseTimedOut DeliveryEventType = "lease.timed_out"
 const DeliveryEventTypeManifestApproved DeliveryEventType = "manifest.approved"
 const DeliveryEventTypeManifestCreated DeliveryEventType = "manifest.created"
 const DeliveryEventTypeManifestRejected DeliveryEventType = "manifest.rejected"
@@ -3256,6 +3264,14 @@ var enumValues_DeliveryEventType = []interface{}{
 	"input.resolved",
 	"lane.created",
 	"lane.status_changed",
+	"lane.blocked",
+	"lane.unblocked",
+	"lease.granted",
+	"lease.heartbeat",
+	"lease.completed",
+	"lease.rejected",
+	"lease.timed_out",
+	"lease.cancelled",
 	"requirement.captured",
 	"task.created",
 	"task.routed",
@@ -3325,24 +3341,40 @@ func (j *DeliveryEvent) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// One project's independent delivery lane within a DeliveryOrchestration
-// (punokawan-14yn.1). A lane always carries its own project_id so cross-project
-// reads and writes fail closed. Worktree lifecycle, worker scheduling, and role
-// execution are later tasks (punokawan-14yn.3/5); this task only defines and
-// persists lane identity and status. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// One project's independent delivery lane within a DeliveryOrchestration, and the
+// schedulable unit the worker scheduler leases and advances through
+// waiting/blocked/runnable/leased/running/review/failed/accepted. A lane always
+// carries its own project_id so cross-project reads and writes fail closed.
 type DeliveryLane struct {
+	// Number of leases granted so far for this lane; incremented on retry.
+	Attempt *int `json:"attempt,omitempty,omitzero" yaml:"attempt,omitempty" mapstructure:"attempt,omitempty"`
+
+	// Exact blocker ids (unresolved predecessor task ids, or a reported discovered
+	// blocker) while status is waiting or blocked.
+	BlockedBy []string `json:"blocked_by,omitempty,omitzero" yaml:"blocked_by,omitempty" mapstructure:"blocked_by,omitempty"`
+
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
 
 	// Filesystem-safe ULID (Crockford base32, 26 chars).
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
+	// Lease/heartbeat deadline; past this with no renewal, the lease is expired and
+	// the lane returns to runnable.
+	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty,omitzero" yaml:"lease_expires_at,omitempty" mapstructure:"lease_expires_at,omitempty"`
+
+	// Opaque token the leaseholder must present to heartbeat/complete/reject - proves
+	// it still holds this lease, not a stale or resumed one.
+	LeaseToken *string `json:"lease_token,omitempty,omitzero" yaml:"lease_token,omitempty" mapstructure:"lease_token,omitempty"`
+
+	// Worker holding the current lease; empty when not leased/running.
+	LeaseWorkerId *string `json:"lease_worker_id,omitempty,omitzero" yaml:"lease_worker_id,omitempty" mapstructure:"lease_worker_id,omitempty"`
+
 	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
 	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
 
-	// Id of the parent task this lane delivers, assigned once punokawan-14yn.2's
-	// dependency graph resolves it. Empty until then.
+	// Id of the parent task this lane delivers, assigned once the dependency graph
+	// resolves it. Empty until then.
 	ParentTaskId *string `json:"parent_task_id,omitempty,omitzero" yaml:"parent_task_id,omitempty" mapstructure:"parent_task_id,omitempty"`
 
 	// ProjectId corresponds to the JSON schema field "project_id".
@@ -3351,7 +3383,12 @@ type DeliveryLane struct {
 	// Optimistic-concurrency counter; incremented on every applied event.
 	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
 
-	// Status corresponds to the JSON schema field "status".
+	// The scheduling state machine. waiting: predecessors unresolved. blocked: an
+	// unresolved hard blocker was reported with evidence. runnable: no unresolved
+	// predecessor, no worker leased yet. leased: a worker holds an unexpired lease
+	// but has not reported starting. running: the leased worker is actively
+	// executing. review: work reported complete, awaiting review. failed: rejected,
+	// expired past retry budget, or reported failed. accepted: terminal success.
 	Status DeliveryLaneStatus `json:"status" yaml:"status" mapstructure:"status"`
 
 	// UpdatedAt corresponds to the JSON schema field "updated_at".
@@ -3360,18 +3397,24 @@ type DeliveryLane struct {
 
 type DeliveryLaneStatus string
 
-const DeliveryLaneStatusActive DeliveryLaneStatus = "active"
-const DeliveryLaneStatusCancelled DeliveryLaneStatus = "cancelled"
-const DeliveryLaneStatusCompleted DeliveryLaneStatus = "completed"
+const DeliveryLaneStatusAccepted DeliveryLaneStatus = "accepted"
+const DeliveryLaneStatusBlocked DeliveryLaneStatus = "blocked"
 const DeliveryLaneStatusFailed DeliveryLaneStatus = "failed"
-const DeliveryLaneStatusPending DeliveryLaneStatus = "pending"
+const DeliveryLaneStatusLeased DeliveryLaneStatus = "leased"
+const DeliveryLaneStatusReview DeliveryLaneStatus = "review"
+const DeliveryLaneStatusRunnable DeliveryLaneStatus = "runnable"
+const DeliveryLaneStatusRunning DeliveryLaneStatus = "running"
+const DeliveryLaneStatusWaiting DeliveryLaneStatus = "waiting"
 
 var enumValues_DeliveryLaneStatus = []interface{}{
-	"pending",
-	"active",
-	"cancelled",
-	"completed",
+	"waiting",
+	"blocked",
+	"runnable",
+	"leased",
+	"running",
+	"review",
 	"failed",
+	"accepted",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -3425,6 +3468,9 @@ func (j *DeliveryLane) UnmarshalJSON(value []byte) error {
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
+	}
+	if plain.Attempt != nil && 0 > *plain.Attempt {
+		return fmt.Errorf("field %s: must be >= %v", "attempt", 0)
 	}
 	if 0 > plain.Revision {
 		return fmt.Errorf("field %s: must be >= %v", "revision", 0)

@@ -17,6 +17,8 @@
         "orchestration.created", "orchestration.cancelled", "orchestration.completed",
         "input.registered", "input.resolved",
         "lane.created", "lane.status_changed",
+        "lane.blocked", "lane.unblocked",
+        "lease.granted", "lease.heartbeat", "lease.completed", "lease.rejected", "lease.timed_out", "lease.cancelled",
         "requirement.captured",
         "task.created", "task.routed",
         "edge.added", "edge.removed",

@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -102,7 +103,7 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 		Id:              laneID,
 		OrchestrationId: orchestrationID,
 		ProjectId:       projectID,
-		Status:          protocol.DeliveryLaneStatusPending,
+		Status:          protocol.DeliveryLaneStatusWaiting,
 		CreatedAt:       laneEvents[0].OccurredAt,
 	}
 	if parentTaskID, ok := laneEvents[0].Payload["parent_task_id"].(string); ok && parentTaskID != "" {
@@ -118,11 +119,79 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 		case protocol.DeliveryEventTypeLaneStatusChanged:
 			status, _ := ev.Payload["status"].(string)
 			l.Status = protocol.DeliveryLaneStatus(status)
+		case protocol.DeliveryEventTypeLaneBlocked:
+			l.Status = protocol.DeliveryLaneStatusBlocked
+			l.BlockedBy = stringSliceField(ev.Payload, "blocked_by")
+		case protocol.DeliveryEventTypeLaneUnblocked:
+			l.Status = protocol.DeliveryLaneStatusRunnable
+			l.BlockedBy = nil
+		case protocol.DeliveryEventTypeLeaseGranted:
+			l.Status = protocol.DeliveryLaneStatusLeased
+			workerID := stringField(ev.Payload, "worker_id")
+			token := stringField(ev.Payload, "lease_token")
+			l.LeaseWorkerId = &workerID
+			l.LeaseToken = &token
+			if expiresAt, ok := ev.Payload["expires_at"].(string); ok {
+				if t, err := time.Parse(timeLayout, expiresAt); err == nil {
+					l.LeaseExpiresAt = &t
+				}
+			}
+			attempt := int(numberField(ev.Payload, "attempt"))
+			l.Attempt = &attempt
+		case protocol.DeliveryEventTypeLeaseHeartbeat:
+			l.Status = protocol.DeliveryLaneStatusRunning
+			if expiresAt, ok := ev.Payload["expires_at"].(string); ok {
+				if t, err := time.Parse(timeLayout, expiresAt); err == nil {
+					l.LeaseExpiresAt = &t
+				}
+			}
+		case protocol.DeliveryEventTypeLeaseCompleted:
+			l.Status = protocol.DeliveryLaneStatusReview
+		case protocol.DeliveryEventTypeLeaseRejected, protocol.DeliveryEventTypeLeaseTimedOut:
+			l.Status = protocol.DeliveryLaneStatusRunnable
+			l.LeaseWorkerId, l.LeaseToken, l.LeaseExpiresAt = nil, nil, nil
+		case protocol.DeliveryEventTypeLeaseCancelled:
+			l.Status = protocol.DeliveryLaneStatusFailed
+			l.LeaseWorkerId, l.LeaseToken, l.LeaseExpiresAt = nil, nil, nil
 		default:
 			return nil, fmt.Errorf("delivery: unknown lane event type %q", ev.Type)
 		}
 	}
 	return l, nil
+}
+
+// allLanes reduces every lane entity in events into its current
+// DeliveryLane state, keyed by lane id.
+func allLanes(orchestrationID string, events []protocol.DeliveryEvent) (map[string]*protocol.DeliveryLane, error) {
+	ids := map[string]bool{}
+	for _, ev := range events {
+		if ev.Type == protocol.DeliveryEventTypeLaneCreated && ev.EntityId != nil {
+			ids[*ev.EntityId] = true
+		}
+	}
+	out := make(map[string]*protocol.DeliveryLane, len(ids))
+	for id := range ids {
+		l, err := reduceLane(orchestrationID, id, events)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = l
+	}
+	return out, nil
+}
+
+func stringSliceField(payload protocol.DeliveryEventPayload, key string) []string {
+	raw, ok := payload[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // reduceRequirementSource derives one RequirementSource's current state
