@@ -1,0 +1,82 @@
+internal/panel/sources/sources_test.go
+  7bf9711812567778 54-56
+internal/panel/server/server_test.go
+  7bf9711812567778 75-77
+internal/tasks/tasks_test.go
+  7bf9711812567778 12,26-29,32,34,36-37
+internal/knowledge/crossproject_test.go
+  7bf9711812567778 11,21,23,45-48,50,55-56,65,72-74,76,91,93
+internal/knowledge/importexport.go
+  7bf9711812567778 19-20,39,64,72,74,83,87-90,95,156
+internal/taskcontext/build_test.go
+  7bf9711812567778 13,18-19,22,24,26-27
+internal/mcpserver/tools_requirement_test.go
+  7bf9711812567778 11,17,19,21-22
+internal/reconcile/reconcile_test.go
+  7bf9711812567778 11,27,29,31-32
+internal/dossier/dossier_test.go
+  7bf9711812567778 12,87-88,91,93,95-96
+internal/roles/roles_test.go
+  7bf9711812567778 4,9,14,16,18-19
+internal/search/search_helpers_test.go
+  7bf9711812567778 4,10,16,18,20-21
+internal/knowledge/service_test.go
+  7bf9711812567778 4,10,14-16,19-20,22-25,27,29-35,203-210,212-261,264-265,267,269-270,272,274,276-277,280-284,286-287,289-291,293-294
+internal/knowledge/commit_test.go
+  7bf9711812567778 4,8-12,15,19-20,23-26,28-29,33-36,39-41,43,45,47-48
+internal/knowledge/service.go
+  7bf9711812567778 4,11,28-42,46,50-51,55-57,98,114,142,148-154,157,160-163,183,185-187
+internal/knowledge/query.go
+  7bf9711812567778 13-15,18,26-31,55-58,68-73,86,93,102,134-138,143,146,150,152
+internal/knowledge/commit.go
+  7bf9711812567778 4-6,8-10,13-15,17-25,27-28,30-32,34
+internal/app/app.go
+  7bf9711812567778 238-243,260,264-265,381-385,413-414,421
+internal/mcpserver/tools_projectfilter_test.go
+  7bf9711812567778 13-19,40,58,60,80-83,85,92,95,118,120,148,150,165
+internal/panel/api/recipe_review_e2e_test.go
+  7bf9711812567778 5,16,22,24,26-27
+internal/mcpserver/tools_knowledgesearch.go
+  7bf9711812567778 76-78,80
+internal/knowledge/knowledge.go
+  7bf9711812567778 1-91
+internal/app/openknowledge_hub_test.go
+  7bf9711812567778 8,10,14-15,39-40,43,52-56,64-65,67,69-70,73-80,82-83,85-87,89-90
+internal/recipe/repository_test.go
+  7bf9711812567778 4,10,19,21,23-24
+internal/knowledge/crossproject.go
+  7bf9711812567778 13-18,20-21,25,39-46,48-49,55-56,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "88fe9d4bd5238ab959178b6871e009d87cb295b4",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 645,
+      "total_deletions": 721,
+      "accepted_lines": 645,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
