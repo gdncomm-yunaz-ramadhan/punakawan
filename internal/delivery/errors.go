@@ -107,4 +107,12 @@ var (
 	// requirement; only a stated reason lets a lane's own implementer
 	// record its review conclusion.
 	ErrIndependenceRequired = errors.New("delivery: review conclusion requires an independent reviewer or an override reason")
+
+	// ErrRepairCyclesExhausted is returned when StartRepairCycle is called
+	// against a lane that has already used up its repair-cycle budget. The
+	// lane is still escalated (lane.escalated is emitted and the reloaded
+	// lane is returned alongside this error) - this is a distinguishable,
+	// expected outcome for a caller to report honestly, not a normal
+	// repair-cycle start.
+	ErrRepairCyclesExhausted = errors.New("delivery: lane has exhausted its repair-cycle budget and was escalated")
 )

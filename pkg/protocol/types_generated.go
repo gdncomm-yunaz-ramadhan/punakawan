@@ -3374,8 +3374,11 @@ const DeliveryEventTypeLaneBagongSubmitted DeliveryEventType = "lane.bagong_subm
 const DeliveryEventTypeLaneBlocked DeliveryEventType = "lane.blocked"
 const DeliveryEventTypeLaneCiCheckReported DeliveryEventType = "lane.ci_check_reported"
 const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
+const DeliveryEventTypeLaneEscalated DeliveryEventType = "lane.escalated"
 const DeliveryEventTypeLaneGarengSubmitted DeliveryEventType = "lane.gareng_submitted"
 const DeliveryEventTypeLanePetrukSubmitted DeliveryEventType = "lane.petruk_submitted"
+const DeliveryEventTypeLanePrPublished DeliveryEventType = "lane.pr_published"
+const DeliveryEventTypeLaneRepairCycleStarted DeliveryEventType = "lane.repair_cycle_started"
 const DeliveryEventTypeLaneReviewConclusionRecorded DeliveryEventType = "lane.review_conclusion_recorded"
 const DeliveryEventTypeLaneSemarSubmitted DeliveryEventType = "lane.semar_submitted"
 const DeliveryEventTypeLaneStatusChanged DeliveryEventType = "lane.status_changed"
@@ -3418,6 +3421,9 @@ var enumValues_DeliveryEventType = []interface{}{
 	"lane.verification_dimension_recorded",
 	"lane.ci_check_reported",
 	"lane.review_conclusion_recorded",
+	"lane.pr_published",
+	"lane.repair_cycle_started",
+	"lane.escalated",
 	"lease.granted",
 	"lease.heartbeat",
 	"lease.completed",
@@ -3523,6 +3529,11 @@ type DeliveryLane struct {
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
 
+	// When this lane was last escalated for a human to look at, e.g. after exhausting
+	// its repair-cycle budget. Absent while the lane has never been escalated.
+	// Escalation never changes the lane's own scheduling status.
+	EscalatedAt *time.Time `json:"escalated_at,omitempty,omitzero" yaml:"escalated_at,omitempty" mapstructure:"escalated_at,omitempty"`
+
 	// Id of the knowledge record holding Gareng's feasibility review for this lane's
 	// current attempt. Cleared, along with petruk_record_id and bagong_record_id,
 	// whenever it is resubmitted.
@@ -3553,8 +3564,27 @@ type DeliveryLane struct {
 	// attempt. Cleared, along with bagong_record_id, whenever it is resubmitted.
 	PetrukRecordId *string `json:"petruk_record_id,omitempty,omitzero" yaml:"petruk_record_id,omitempty" mapstructure:"petruk_record_id,omitempty"`
 
+	// The provider's own number for the lane's published pull request. Once set, a
+	// lane never opens a second pull request for the same attempt.
+	PrNumber *int `json:"pr_number,omitempty,omitzero" yaml:"pr_number,omitempty" mapstructure:"pr_number,omitempty"`
+
+	// Which provider the lane's published pull request lives on. Absent until a pull
+	// request has actually been published for this lane.
+	PrProvider *DeliveryLanePrProvider `json:"pr_provider,omitempty,omitzero" yaml:"pr_provider,omitempty" mapstructure:"pr_provider,omitempty"`
+
+	// The repository the lane's published pull request was opened against, in the
+	// provider's own repository-identifier form (e.g. "owner/repo" for GitHub).
+	PrRepoSlug *string `json:"pr_repo_slug,omitempty,omitzero" yaml:"pr_repo_slug,omitempty" mapstructure:"pr_repo_slug,omitempty"`
+
+	// A link to the lane's published pull request.
+	PrUrl *string `json:"pr_url,omitempty,omitzero" yaml:"pr_url,omitempty" mapstructure:"pr_url,omitempty"`
+
 	// ProjectId corresponds to the JSON schema field "project_id".
 	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
+
+	// Number of repair cycles started for this lane so far. Absent is equivalent to
+	// zero.
+	RepairCycleCount *int `json:"repair_cycle_count,omitempty,omitzero" yaml:"repair_cycle_count,omitempty" mapstructure:"repair_cycle_count,omitempty"`
 
 	// Optimistic-concurrency counter; incremented on every applied event.
 	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
@@ -3579,6 +3609,38 @@ type DeliveryLane struct {
 	// while the worktree exists on disk, cleared (but branch/base_sha/base_remote
 	// kept) when removed.
 	WorktreePath *string `json:"worktree_path,omitempty,omitzero" yaml:"worktree_path,omitempty" mapstructure:"worktree_path,omitempty"`
+}
+
+type DeliveryLanePrProvider string
+
+const DeliveryLanePrProviderGeneric DeliveryLanePrProvider = "generic"
+const DeliveryLanePrProviderGithub DeliveryLanePrProvider = "github"
+const DeliveryLanePrProviderGitlab DeliveryLanePrProvider = "gitlab"
+
+var enumValues_DeliveryLanePrProvider = []interface{}{
+	"github",
+	"gitlab",
+	"generic",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryLanePrProvider) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DeliveryLanePrProvider {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DeliveryLanePrProvider, v)
+	}
+	*j = DeliveryLanePrProvider(v)
+	return nil
 }
 
 type DeliveryLaneStatus string
@@ -3657,6 +3719,9 @@ func (j *DeliveryLane) UnmarshalJSON(value []byte) error {
 	}
 	if plain.Attempt != nil && 0 > *plain.Attempt {
 		return fmt.Errorf("field %s: must be >= %v", "attempt", 0)
+	}
+	if plain.RepairCycleCount != nil && 0 > *plain.RepairCycleCount {
+		return fmt.Errorf("field %s: must be >= %v", "repair_cycle_count", 0)
 	}
 	if 0 > plain.Revision {
 		return fmt.Errorf("field %s: must be >= %v", "revision", 0)

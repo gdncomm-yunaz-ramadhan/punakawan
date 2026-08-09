@@ -551,4 +551,43 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "submit_lane_bagong_review",
 		Description: "Record Bagong's independent review for a held lane's current attempt. Requires Petruk's plan to already be recorded. Once recorded, the lease can be completed via complete_lease.",
 	}, submitLaneBagongHandler(a))
+
+	// Publish, repair, and merge-readiness: turning a verified lane into a
+	// published pull request, a bounded repair loop for a lane whose review
+	// or CI came back lacking, and a read-only merge-readiness check.
+	// Nothing here ever merges or closes a pull request.
+	addTool(server, reg, &mcp.Tool{
+		Name:        "publish_pr",
+		Description: "Publish a held lane's pull request. Idempotent per lane: once a lane already has a published pull request, this returns it unchanged instead of opening a second one, even after a retry with a new call. Requires the lane's current lease token. This is a GitHub adapter write and requires that run's adapter-write approval to already exist (see call_adapter_operation/respond_to_adapter_approval); it fails with an actionable message rather than eliciting one itself. Never merges or closes anything - only opens.",
+	}, publishPrHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "record_verification_dimension",
+		Description: "Record one verification dimension's status (logic, unit, integration, quality, e2e, or ci) for a held lane's current attempt, with optional evidence_id and summary. The latest recording for a dimension wins.",
+	}, recordVerificationDimensionHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "record_ci_check",
+		Description: "Report one CI check's latest status for a held lane's current attempt. The ci verification dimension is derived from every required check's latest reported status unless it has been explicitly recorded via record_verification_dimension instead.",
+	}, recordCiCheckHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "submit_review_conclusion",
+		Description: "Record a reviewer's conclusion (approved, changes_requested, or blocked) for a held lane's current attempt. Rejected unless the reviewer's session is independent from implementer_session_id, or independence_override_reason is explicitly given.",
+	}, submitReviewConclusionHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "start_repair_cycle",
+		Description: "Start another repair cycle for a lane whose review or CI came back lacking, kicking it back to runnable for rework. After a fixed number of repair cycles for the same attempt, this escalates the lane for a human to look at instead of starting another - reported back as escalated=true, not as a tool-call error, since it is an expected outcome.",
+	}, startRepairCycleHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "get_verification_matrix",
+		Description: "Read a lane's current verification matrix: exactly one entry per fixed dimension (logic, unit, integration, quality, e2e, ci), defaulting to pending when nothing has been recorded or derived for it yet. Read-only.",
+	}, getVerificationMatrixHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "check_merge_readiness",
+		Description: "Check whether a lane is ready to merge against its project's required verification gates and latest review conclusion, reporting which gates are still failing if not. Read-only; never merges or closes anything.",
+	}, checkMergeReadinessHandler(a))
 }

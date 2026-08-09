@@ -194,6 +194,34 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 			// verification.go's package doc for why a verification matrix
 			// and a lane's review conclusions are computed read-models
 			// instead of accumulating lane state here.
+		case protocol.DeliveryEventTypeLanePrPublished:
+			// PR identity is 1:1-per-lane durable state other code needs to
+			// read cheaply without a full event scan, the same precedent as
+			// branch/worktree_path/base_sha above - unlike verification and
+			// review conclusions, which are naturally multi-valued and stay
+			// off this struct. Publishing a PR is orthogonal to a lane's
+			// lease/lifecycle status, so status is left untouched here.
+			provider := protocol.DeliveryLanePrProvider(stringField(ev.Payload, "provider"))
+			repoSlug := stringField(ev.Payload, "repo_slug")
+			number := int(numberField(ev.Payload, "number"))
+			url := stringField(ev.Payload, "url")
+			l.PrProvider = &provider
+			l.PrRepoSlug = &repoSlug
+			l.PrNumber = &number
+			l.PrUrl = &url
+		case protocol.DeliveryEventTypeLaneRepairCycleStarted:
+			count := 0
+			if l.RepairCycleCount != nil {
+				count = *l.RepairCycleCount
+			}
+			count++
+			l.RepairCycleCount = &count
+			l.Status = protocol.DeliveryLaneStatusRunnable
+		case protocol.DeliveryEventTypeLaneEscalated:
+			// A human must look at this attempt; escalation never changes
+			// whatever status the lane is currently in.
+			escalatedAt := ev.OccurredAt
+			l.EscalatedAt = &escalatedAt
 		default:
 			return nil, fmt.Errorf("delivery: unknown lane event type %q", ev.Type)
 		}

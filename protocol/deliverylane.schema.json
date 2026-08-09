@@ -27,6 +27,12 @@
     "semar_record_id": { "type": "string", "description": "Id of the knowledge record holding Semar's synthesis for this lane's current attempt. Cleared, along with every later stage below, whenever it is resubmitted." },
     "gareng_record_id": { "type": "string", "description": "Id of the knowledge record holding Gareng's feasibility review for this lane's current attempt. Cleared, along with petruk_record_id and bagong_record_id, whenever it is resubmitted." },
     "petruk_record_id": { "type": "string", "description": "Id of the knowledge record holding Petruk's plan for this lane's current attempt. Cleared, along with bagong_record_id, whenever it is resubmitted." },
-    "bagong_record_id": { "type": "string", "description": "Id of the knowledge record holding Bagong's independent review for this lane's current attempt. A held lease cannot be completed until this is set." }
+    "bagong_record_id": { "type": "string", "description": "Id of the knowledge record holding Bagong's independent review for this lane's current attempt. A held lease cannot be completed until this is set." },
+    "pr_provider": { "type": "string", "enum": ["github", "gitlab", "generic"], "description": "Which provider the lane's published pull request lives on. Absent until a pull request has actually been published for this lane." },
+    "pr_repo_slug": { "type": "string", "description": "The repository the lane's published pull request was opened against, in the provider's own repository-identifier form (e.g. \"owner/repo\" for GitHub)." },
+    "pr_number": { "type": "integer", "description": "The provider's own number for the lane's published pull request. Once set, a lane never opens a second pull request for the same attempt." },
+    "pr_url": { "type": "string", "description": "A link to the lane's published pull request." },
+    "repair_cycle_count": { "type": "integer", "minimum": 0, "description": "Number of repair cycles started for this lane so far. Absent is equivalent to zero." },
+    "escalated_at": { "type": "string", "format": "date-time", "description": "When this lane was last escalated for a human to look at, e.g. after exhausting its repair-cycle budget. Absent while the lane has never been escalated. Escalation never changes the lane's own scheduling status." }
   }
 }

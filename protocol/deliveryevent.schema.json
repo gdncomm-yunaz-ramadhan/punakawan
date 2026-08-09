@@ -21,6 +21,7 @@
         "lane.worktree_created", "lane.worktree_removed",
         "lane.semar_submitted", "lane.gareng_submitted", "lane.petruk_submitted", "lane.bagong_submitted",
         "lane.verification_dimension_recorded", "lane.ci_check_reported", "lane.review_conclusion_recorded",
+        "lane.pr_published", "lane.repair_cycle_started", "lane.escalated",
         "lease.granted", "lease.heartbeat", "lease.completed", "lease.rejected", "lease.timed_out", "lease.cancelled",
         "requirement.captured",
         "task.created", "task.routed",

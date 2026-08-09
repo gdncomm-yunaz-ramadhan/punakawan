@@ -80,4 +80,28 @@ export interface DeliveryLane {
    * Id of the knowledge record holding Bagong's independent review for this lane's current attempt. A held lease cannot be completed until this is set.
    */
   bagong_record_id?: string;
+  /**
+   * Which provider the lane's published pull request lives on. Absent until a pull request has actually been published for this lane.
+   */
+  pr_provider?: "github" | "gitlab" | "generic";
+  /**
+   * The repository the lane's published pull request was opened against, in the provider's own repository-identifier form (e.g. "owner/repo" for GitHub).
+   */
+  pr_repo_slug?: string;
+  /**
+   * The provider's own number for the lane's published pull request. Once set, a lane never opens a second pull request for the same attempt.
+   */
+  pr_number?: number;
+  /**
+   * A link to the lane's published pull request.
+   */
+  pr_url?: string;
+  /**
+   * Number of repair cycles started for this lane so far. Absent is equivalent to zero.
+   */
+  repair_cycle_count?: number;
+  /**
+   * When this lane was last escalated for a human to look at, e.g. after exhausting its repair-cycle budget. Absent while the lane has never been escalated. Escalation never changes the lane's own scheduling status.
+   */
+  escalated_at?: string;
 }
