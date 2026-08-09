@@ -1,36 +1,38 @@
 package knowledge
 
 import (
+	"context"
 	"errors"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/ygrip/punakawan/internal/tools"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
+// newTestStore opens the shared SQLite storage kernel in a temp dir and scopes
+// a Store to a fixed test project id - the same pattern taskstore's tests use,
+// with no external dolt binary and no t.Skip.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
+	return newTestStoreForProject(t, newTestDB(t), "test-project")
+}
 
-	dir := t.TempDir()
-	dataDir := filepath.Join(dir, "knowledge")
-	sup := tools.New(dir)
-
-	store, err := Open(sup, dataDir)
+// newTestDB opens a shared kernel over a fresh temp database file.
+func newTestDB(t *testing.T) *storage.DB {
+	t.Helper()
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Close: %v", err)
-		}
-	})
-	return store
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func newTestStoreForProject(t *testing.T, db *storage.DB, projectID string) *Store {
+	t.Helper()
+	return New(db, projectID)
 }
 
 func TestKnowledgeStoreCRUD(t *testing.T) {
@@ -198,38 +200,97 @@ func TestSupersedeReturnsErrNotFoundForMissingRecord(t *testing.T) {
 	}
 }
 
-func TestOpenReusesExistingDoltServer(t *testing.T) {
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-	dir := t.TempDir()
-	dataDir := filepath.Join(dir, "knowledge")
-	sup := tools.New(dir)
+// TestProjectScopingPreventsLeakage mirrors taskstore's isolation test: two
+// Stores over the same shared *storage.DB but different project ids must not
+// see each other's records even when the record ids are identical, across
+// Get, ListRecords and Related.
+func TestProjectScopingPreventsLeakage(t *testing.T) {
+	db := newTestDB(t)
+	a := New(db, "project-a")
+	b := New(db, "project-b")
 
-	owner, err := Open(sup, dataDir)
-	if err != nil {
-		t.Fatalf("Open owner: %v", err)
-	}
-	shared, err := Open(sup, dataDir)
-	if err != nil {
-		_ = owner.Close()
-		t.Fatalf("Open shared: %v", err)
-	}
-	if shared.server != nil {
-		t.Fatal("expected the second store to reuse the existing server")
+	// Identical ids in both projects, so any leak would be a visible collision.
+	recA := validRecord()
+	recA.Title = "belongs to A"
+	if err := a.Put(recA); err != nil {
+		t.Fatalf("Put in A: %v", err)
 	}
 
-	server := owner.server
-	if err := owner.Close(); err != nil {
-		t.Fatalf("Close owner: %v", err)
+	// b has nothing under that id.
+	if _, err := b.Get(recA.Id); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("project B must not see project A's record, got err=%v", err)
 	}
-	if err := shared.db.Ping(); err != nil {
-		t.Fatalf("shared connection stopped with owner: %v", err)
+
+	// A's own Get sees it, with A's title.
+	gotA, err := a.Get(recA.Id)
+	if err != nil {
+		t.Fatalf("Get in A: %v", err)
 	}
-	if err := shared.Close(); err != nil {
-		t.Fatalf("Close shared: %v", err)
+	if gotA.Title != "belongs to A" {
+		t.Fatalf("A's record title = %q, want %q", gotA.Title, "belongs to A")
 	}
-	if server != nil {
-		_ = server.Stop()
+
+	// Now B puts a record with the same id but a distinct title and a relation.
+	recB := validRecord()
+	recB.Title = "belongs to B"
+	target := validRecord()
+	target.Id = "pkw:req/fixture/REQ-target"
+	if err := b.Put(target); err != nil {
+		t.Fatalf("Put target in B: %v", err)
+	}
+	recB.Relations = []protocol.KnowledgeRecordRelationsElem{
+		{Type: protocol.KnowledgeRecordRelationsElemTypeDependsOn, Target: target.Id},
+	}
+	if err := b.Put(recB); err != nil {
+		t.Fatalf("Put in B: %v", err)
+	}
+
+	// Each project's Get returns its own record under the shared id.
+	gotA, err = a.Get(recA.Id)
+	if err != nil {
+		t.Fatalf("Get in A after B write: %v", err)
+	}
+	if gotA.Title != "belongs to A" {
+		t.Fatalf("A's record leaked B's data: title = %q", gotA.Title)
+	}
+	gotB, err := b.Get(recB.Id)
+	if err != nil {
+		t.Fatalf("Get in B: %v", err)
+	}
+	if gotB.Title != "belongs to B" {
+		t.Fatalf("B's record title = %q, want %q", gotB.Title, "belongs to B")
+	}
+
+	// ListRecords is scoped: A sees exactly its one record, B sees its two.
+	listA, _, err := a.ListRecords(context.Background(), KnowledgeListQuery{})
+	if err != nil {
+		t.Fatalf("ListRecords A: %v", err)
+	}
+	if len(listA) != 1 {
+		t.Fatalf("project A ListRecords = %d, want 1", len(listA))
+	}
+	listB, _, err := b.ListRecords(context.Background(), KnowledgeListQuery{})
+	if err != nil {
+		t.Fatalf("ListRecords B: %v", err)
+	}
+	if len(listB) != 2 {
+		t.Fatalf("project B ListRecords = %d, want 2", len(listB))
+	}
+
+	// Related is scoped: B's relation must not surface for A, and A (which has
+	// no target id at all) sees nothing related.
+	relB, err := b.Related(target.Id)
+	if err != nil {
+		t.Fatalf("Related in B: %v", err)
+	}
+	if len(relB) != 1 || relB[0].Id != recB.Id {
+		t.Fatalf("B Related = %+v, want the single edge from recB", relB)
+	}
+	relA, err := a.Related(target.Id)
+	if err != nil {
+		t.Fatalf("Related in A: %v", err)
+	}
+	if len(relA) != 0 {
+		t.Fatalf("A Related = %+v, want none (B's edge must not leak)", relA)
 	}
 }

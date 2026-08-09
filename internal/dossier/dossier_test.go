@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workspace"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -83,28 +84,16 @@ func newTestWorkspace(t *testing.T) (*workspace.Workspace, *tools.Supervisor) {
 	return ws, sup
 }
 
-// newTestStore mirrors internal/knowledge's own newTestStore helper,
-// skipping if dolt is not installed.
+// newTestStore mirrors internal/knowledge's own newTestStore helper: a Store
+// over the shared SQLite kernel in a temp dir, scoped to a fixed test project.
 func newTestStore(t *testing.T) *knowledge.Store {
 	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-
-	dir := t.TempDir()
-	dataDir := filepath.Join(dir, "knowledge")
-	sup := tools.New(dir)
-
-	store, err := knowledge.Open(sup, dataDir)
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Close: %v", err)
-		}
-	})
-	return store
+	t.Cleanup(func() { db.Close() })
+	return knowledge.New(db, "test-project")
 }
 
 func TestBuildProducesValidRecord(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -24,120 +23,6 @@ func newKnowledgeCmd() *cobra.Command {
 		Short: "Inspect and manage durable knowledge records",
 	}
 	cmd.AddCommand(newRecipeCmd())
-	cmd.AddCommand(newHubCmd())
-	return cmd
-}
-
-// newHubCmd is ADR-0020's one-time migration surface: `punakawan knowledge
-// hub migrate` moves this project's existing legacy per-project Dolt store
-// into a shared hub. It is explicit and on-demand by design (per direct
-// instruction: "just create a one time script to move existing data") -
-// nothing else in punakawan calls this on a project's behalf.
-func newHubCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "hub",
-		Short: "Manage this project's shared Dolt hub (ADR-0020)",
-	}
-	cmd.AddCommand(newHubMigrateCmd())
-	cmd.AddCommand(newHubExportCmd())
-	cmd.AddCommand(newHubImportCmd())
-	return cmd
-}
-
-func newHubMigrateCmd() *cobra.Command {
-	var hubDir, projectID string
-	cmd := &cobra.Command{
-		Use:   "migrate",
-		Short: "Move this project's legacy Dolt knowledge store into a shared hub",
-		Long: `Copies this project's existing .punakawan/knowledge Dolt store (and its
-ADR-0018 taskstore tables, which already live in the same database) into
-hubDir/projectID, then records the pointer so this project reads/writes
-through the hub from now on.
-
-The legacy directory is left in place afterward as an inert backup - this
-never deletes it. It refuses outright, rather than silently producing an
-unreadable migration, if a dolt sql-server is currently serving either the
-legacy store or the hub itself: Dolt only discovers a hub's project
-directories when its own server starts, so a directory copied in while
-that server is already running stays invisible until the next restart.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := loadApp()
-			if err != nil {
-				return err
-			}
-			defer a.Close()
-
-			if err := knowledge.MigrateToHub(a.Workspace.Root, hubDir, projectID); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "migrated %s into hub %s as project %q\n", a.Workspace.Root, hubDir, projectID)
-			fmt.Fprintln(cmd.OutOrStdout(), "the legacy .punakawan/knowledge directory was left in place; remove it by hand once you are satisfied.")
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&hubDir, "hub-dir", "", "shared hub data directory (required)")
-	cmd.Flags().StringVar(&projectID, "project-id", "", "project id to use as this project's hub database name (required)")
-	cmd.MarkFlagRequired("hub-dir")
-	cmd.MarkFlagRequired("project-id")
-	return cmd
-}
-
-func newHubExportCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "export",
-		Short: "Snapshot this project's hub database into .punakawan/knowledge for git",
-		Long: `Refreshes .punakawan/knowledge with this project's current hub state, so it
-stays a normal, git-committable Dolt repository even though the hub is now
-canonical storage (ADR-0020). Explicit and on-demand only - nothing mirrors
-this automatically on every write. Safe to run repeatedly: each run fully
-replaces the previous snapshot. Requires this project to already be on a
-hub (see 'punakawan knowledge hub migrate').`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := loadApp()
-			if err != nil {
-				return err
-			}
-			defer a.Close()
-
-			if err := knowledge.ExportFromHub(a.Supervisor, a.Workspace.Root); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "exported %s's hub state into .punakawan/knowledge\n", a.Workspace.Root)
-			return nil
-		},
-	}
-}
-
-func newHubImportCmd() *cobra.Command {
-	var hubDir, projectID string
-	cmd := &cobra.Command{
-		Use:   "import",
-		Short: "Seed a hub project database from a committed .punakawan/knowledge snapshot",
-		Long: `Restores this project onto a hub from its .punakawan/knowledge snapshot -
-the file 'punakawan knowledge hub export' produces and that git tracks. Use
-this on a new machine (or a new hub) to pick up where the snapshot left
-off. Mechanically identical to 'hub migrate' (both copy a valid, static Dolt
-repository at that path into hubDir/projectID); named separately because
-they answer different questions - restoring a snapshot vs. adopting an
-existing live per-project store.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := loadApp()
-			if err != nil {
-				return err
-			}
-			defer a.Close()
-
-			if err := knowledge.ImportToHub(a.Workspace.Root, hubDir, projectID); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "imported %s's .punakawan/knowledge snapshot into hub %s as project %q\n", a.Workspace.Root, hubDir, projectID)
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&hubDir, "hub-dir", "", "shared hub data directory (required)")
-	cmd.Flags().StringVar(&projectID, "project-id", "", "project id to use as this project's hub database name (required)")
-	cmd.MarkFlagRequired("hub-dir")
-	cmd.MarkFlagRequired("project-id")
 	return cmd
 }
 

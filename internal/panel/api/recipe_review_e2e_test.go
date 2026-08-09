@@ -2,10 +2,10 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,37 +13,18 @@ import (
 	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/recipe"
-	"github.com/ygrip/punakawan/internal/tools"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// requireDoltForRecipeE2E skips the retrieval_recipe end-to-end test when
-// no dolt binary is available, mirroring internal/recipe's own
-// newTestStore skip precedent - this test exercises the real Dolt-backed
-// knowledge store, not a fake, since RecipeStore's whole point is
-// wrapping that store faithfully.
-func requireDoltForRecipeE2E(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-}
-
 func newTestRecipeStore(t *testing.T) (*recipe.RecipeStore, *knowledge.Store) {
 	t.Helper()
-	requireDoltForRecipeE2E(t)
-
-	dir := t.TempDir()
-	sup := tools.New(dir)
-	store, err := knowledge.Open(sup, filepath.Join(dir, "knowledge"))
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("knowledge.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Close: %v", err)
-		}
-	})
+	t.Cleanup(func() { db.Close() })
+	store := knowledge.New(db, "test-project")
 	return &recipe.RecipeStore{Repo: &recipe.Repository{Store: store}}, store
 }
 

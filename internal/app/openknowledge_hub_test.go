@@ -5,13 +5,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/ygrip/punakawan/internal/hub"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // newThrowawayWorkspaceDir builds a fresh git repo dir - unlike
-// fixtureWorkspace (a shared, checked-in fixture), this one is safe to write
-// .punakawan/hub-ref.yaml into before Load ever sees it.
+// fixtureWorkspace (a shared, checked-in fixture), this one is safe to mutate
+// per test.
 func newThrowawayWorkspaceDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -35,9 +36,11 @@ func newThrowawayWorkspaceDir(t *testing.T) string {
 }
 
 // newThrowawayApp builds a minimal, real *App over a fresh throwaway
-// workspace with no hub-ref.
+// workspace, with the shared storage kernel pointed at an isolated temp dir so
+// the test never touches this machine's real data directory.
 func newThrowawayApp(t *testing.T) *App {
 	t.Helper()
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 	a, err := Load(newThrowawayWorkspaceDir(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -46,63 +49,44 @@ func newThrowawayApp(t *testing.T) *App {
 	return a
 }
 
-func requireDoltForAppTest(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-}
-
-func TestOpenKnowledgeWithoutHubRefUsesLegacyPerProjectPath(t *testing.T) {
-	requireDoltForAppTest(t)
+// TestOpenKnowledgeRoundTripsThroughTheSharedKernel confirms OpenKnowledge now
+// returns a Store backed by the shared SQLite kernel (no external process, no
+// hub-ref decision), scoped to the workspace id, that a record round-trips
+// through.
+func TestOpenKnowledgeRoundTripsThroughTheSharedKernel(t *testing.T) {
 	a := newThrowawayApp(t)
 
 	store, err := a.OpenKnowledge()
 	if err != nil {
 		t.Fatalf("OpenKnowledge: %v", err)
 	}
-	// Legacy path's dbName is always "knowledge" (filepath.Base of
-	// .punakawan/knowledge) - confirm the connection actually targets it, not
-	// silently something else, by querying the active database name.
-	var dbName string
-	if err := store.DB().QueryRow("SELECT DATABASE()").Scan(&dbName); err != nil {
-		t.Fatalf("query current database: %v", err)
-	}
-	if dbName != "knowledge" {
-		t.Fatalf("expected the unchanged legacy dbName 'knowledge', got %q", dbName)
-	}
-}
 
-func TestOpenKnowledgeWithHubRefUsesTheHub(t *testing.T) {
-	requireDoltForAppTest(t)
-
-	dir := newThrowawayWorkspaceDir(t)
-	hubDir := filepath.Join(t.TempDir(), "hub")
-	if err := hub.Write(dir, hub.Ref{HubDir: hubDir, ProjectID: "test-project"}); err != nil {
-		t.Fatalf("hub.Write: %v", err)
-	}
-
-	// The hub-ref must exist before Load builds the Supervisor's allowed
-	// roots (Load reads it once, up front, to sandbox-permit hubDir) -
-	// OpenKnowledge itself only decides hub vs legacy lazily on first call.
-	a, err := Load(dir)
+	// OpenKnowledge memoizes: a second call returns the same *Store.
+	store2, err := a.OpenKnowledge()
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("OpenKnowledge (second): %v", err)
 	}
-	t.Cleanup(func() { _ = a.Close() })
+	if store != store2 {
+		t.Fatal("expected OpenKnowledge to memoize and return the same store")
+	}
 
-	store, err := a.OpenKnowledge()
+	rec := protocol.KnowledgeRecord{
+		Id:         "pkw:req/fixture/APP-1",
+		Type:       protocol.KnowledgeRecordTypeRequirement,
+		Status:     "active",
+		Title:      "app-wired record",
+		Source:     protocol.KnowledgeRecordSource{Provider: "test", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodManual},
+		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateObserved},
+	}
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	got, err := store.Get(rec.Id)
 	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
-	var dbName string
-	if err := store.DB().QueryRow("SELECT DATABASE()").Scan(&dbName); err != nil {
-		t.Fatalf("query current database: %v", err)
-	}
-	if dbName != "test-project" {
-		t.Fatalf("expected the hub-ref's project_id as the active database, got %q", dbName)
-	}
-	if _, err := os.Stat(filepath.Join(hubDir, "test-project.events")); err != nil {
-		t.Fatalf("expected hub events dir to be created under hubDir: %v", err)
+	if got.Title != rec.Title {
+		t.Fatalf("round-trip mismatch: got %q, want %q", got.Title, rec.Title)
 	}
 }

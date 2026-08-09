@@ -10,38 +10,19 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// qualifiedTable returns table, qualified with project's database name only
-// when project names a database other than this Store's own (OwnProject) -
-// ADR-0020's project filter, letting a single hub connection reach a sibling
-// project's database via Dolt/MySQL's `db`.`table` syntax rather than opening
-// a second connection. project must already be validated against
-// projectIDPattern before reaching here: it cannot be parameterized as a SQL
-// identifier.
-func (s *Store) qualifiedTable(project, table string) string {
-	if project == "" || project == s.project {
-		return "`" + table + "`"
-	}
-	return "`" + project + "`.`" + table + "`"
-}
-
-// GetInProject is Get scoped to project's database instead of this Store's
-// own (ADR-0020): with project empty or equal to OwnProject, it behaves
-// exactly like Get. Naming a different project only works when that project
-// is served by the same dolt sql-server as this Store (true of any two
-// projects registered on the same hub) - reaching a legacy, non-hub Store, or
-// a project not on this Store's hub, surfaces Dolt's own "database not
-// found" error rather than a bespoke one, since that is exactly what
-// happened: there is nothing else to read from.
+// GetInProject is Get scoped to an explicitly named project instead of this
+// Store's own: with project empty it behaves exactly like Get. Now that every
+// project's records live in one shared database keyed by project_id, reaching
+// another project is just a different value in the WHERE clause - no separate
+// connection or database qualification, and no id-validation ceremony, since
+// project is a bound parameter, not an interpolated SQL identifier.
 func (s *Store) GetInProject(project, id string) (protocol.KnowledgeRecord, error) {
-	if project != "" && project != s.project && !projectIDPattern.MatchString(project) {
-		return protocol.KnowledgeRecord{}, fmt.Errorf("knowledge: GetInProject: invalid project %q", project)
+	if project == "" {
+		project = s.projectID
 	}
-	table := s.qualifiedTable(project, "knowledge_records")
 
 	var data []byte
-	err := withConnRetry(func() error {
-		return s.db.QueryRow(`SELECT data FROM `+table+` WHERE id = ?`, id).Scan(&data)
-	})
+	err := s.db.Reader().QueryRow(`SELECT data FROM knowledge_records WHERE project_id = ? AND id = ?`, project, id).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return protocol.KnowledgeRecord{}, ErrNotFound
 	}
@@ -55,28 +36,24 @@ func (s *Store) GetInProject(project, id string) (protocol.KnowledgeRecord, erro
 	return rec, nil
 }
 
-// SearchInProject is a lower-fidelity fallback for reaching a project other
-// than this Store's own from search_knowledge (ADR-0020's project filter):
-// the BM25 index a Store's own, same-project search normally queries is
-// built only from that Store's own project, so it cannot rank another
-// project's records at all. This scans the other project's knowledge_records
-// directly for a plain substring match instead - honest about being a scan,
-// not a ranked search, but sufficient to answer "does this term appear
-// anywhere in that project's records", which is what a deliberate
-// cross-project lookup is asking. types, if non-empty, restricts to those
-// record types. Results are ordered most-recently-updated first and capped
-// at limit (default 20).
+// SearchInProject is a plain substring scan of another project's records, the
+// cross-project fallback for search_knowledge: the BM25 index a same-project
+// search queries is built only from the calling project's records, so it
+// cannot rank another project's at all. This is honest about being a scan, not
+// a ranked search, but sufficient to answer "does this term appear anywhere in
+// that project's records". types, if non-empty, restricts to those record
+// types. Results are ordered most-recently-updated first and capped at limit
+// (default 20). project empty means this Store's own project.
 func (s *Store) SearchInProject(project, text string, types []string, limit int) ([]protocol.KnowledgeRecord, error) {
-	if project != "" && project != s.project && !projectIDPattern.MatchString(project) {
-		return nil, fmt.Errorf("knowledge: SearchInProject: invalid project %q", project)
+	if project == "" {
+		project = s.projectID
 	}
 	if limit <= 0 {
 		limit = 20
 	}
-	table := s.qualifiedTable(project, "knowledge_records")
 
-	query := "SELECT data FROM " + table + " WHERE data LIKE ?"
-	args := []any{"%" + text + "%"}
+	query := "SELECT data FROM knowledge_records WHERE project_id = ? AND data LIKE ?"
+	args := []any{project, "%" + text + "%"}
 	if len(types) > 0 {
 		placeholders := make([]string, len(types))
 		for i, t := range types {
@@ -87,11 +64,7 @@ func (s *Store) SearchInProject(project, text string, types []string, limit int)
 	}
 	query += fmt.Sprintf(" ORDER BY updated_at DESC LIMIT %d", limit)
 
-	var rows *sql.Rows
-	err := withConnRetry(func() (err error) {
-		rows, err = s.db.Query(query, args...)
-		return err
-	})
+	rows, err := s.db.Reader().Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: search in project %q: %w", project, err)
 	}

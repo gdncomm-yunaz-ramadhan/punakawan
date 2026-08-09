@@ -15,7 +15,6 @@ import (
 	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
-	"github.com/ygrip/punakawan/internal/hub"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/policy"
@@ -99,16 +98,6 @@ func Load(startDir string) (*App, error) {
 			return nil, err
 		}
 		roots = append(roots, path)
-	}
-	// A hub-backed project's Dolt server runs against a directory outside
-	// its own workspace tree (ADR-0020), so the supervisor's sandbox must be
-	// told about it up front - OpenKnowledge itself only decides hub vs
-	// legacy lazily, on first call, by which point the Supervisor already
-	// exists.
-	if ref, ok, err := hub.Lookup(ws.Root); err != nil {
-		return nil, err
-	} else if ok {
-		roots = append(roots, ref.HubDir)
 	}
 	sup := tools.New(roots...)
 
@@ -246,12 +235,12 @@ func (a *App) isClosed() bool {
 	return a.closed
 }
 
-// OpenKnowledge lazily starts the Dolt-backed knowledge store rooted at
-// .punakawan/knowledge under the workspace, memoizing the result. This is
-// deferred rather than wired eagerly in Load because it starts an external
-// Dolt server process: most commands (workspace show, git status, worktree
-// lifecycle, doctor) never touch durable knowledge and should not pay that
-// startup cost on every invocation.
+// OpenKnowledge lazily opens the durable knowledge store, memoizing the
+// result, scoped to this workspace's id within the shared storage kernel
+// (punokawan-14yn.15). Like OpenTaskStore, it is a thin scope over the one
+// shared *storage.DB rather than a per-project server, so it starts nothing:
+// the deferral simply avoids opening the kernel for commands that never touch
+// durable knowledge.
 func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -268,26 +257,12 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	store, err := a.openKnowledgeStore()
+	db, err := a.OpenStorage(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	a.knowledgeStore = store
-	return store, nil
-}
-
-// openKnowledgeStore picks between the hub-backed and legacy per-project
-// Dolt connection (ADR-0020). A project only uses the hub once something has
-// explicitly written its pointer file (hub.Write, from the future migration
-// tool) - an already-existing project with no pointer is completely
-// unaffected and opens its own dedicated server exactly as before.
-func (a *App) openKnowledgeStore() (*knowledge.Store, error) {
-	if ref, ok, err := hub.Lookup(a.Workspace.Root); err != nil {
-		return nil, err
-	} else if ok {
-		return knowledge.OpenInHub(a.Supervisor, ref.HubDir, ref.ProjectID)
-	}
-	return knowledge.Open(a.Supervisor, filepath.Join(a.Workspace.Root, ".punakawan", "knowledge"))
+	a.knowledgeStore = knowledge.New(db, a.Workspace.ID)
+	return a.knowledgeStore, nil
 }
 
 // OpenStorage lazily opens the shared SQLite storage kernel (punokawan-14yn.14),
@@ -403,10 +378,11 @@ func (a *App) SearchKnowledge(store *knowledge.Store, ix *search.Index, req sear
 	return search.Search(store, ix, req)
 }
 
-// Close releases resources opened on demand (the knowledge store's Dolt
-// server and the BM25 search index, if OpenKnowledge/OpenSearchIndex were
-// ever called) and shuts down any adapter processes the AdapterRegistry has
-// started.
+// Close releases resources opened on demand (the shared storage kernel and
+// the BM25 search index, if they were ever opened) and shuts down any adapter
+// processes the AdapterRegistry has started. The knowledge store is only a
+// scope over the shared kernel, so it owns nothing to close - closing the
+// kernel (below) covers it; Close just drops the memoized reference.
 func (a *App) Close() error {
 	a.closedMu.Lock()
 	a.closed = true
@@ -433,27 +409,14 @@ func (a *App) Close() error {
 	a.storageMu.Unlock()
 
 	a.knowledgeMu.Lock()
-	defer a.knowledgeMu.Unlock()
-
-	if a.knowledgeStore == nil {
-		if adapterErr != nil {
-			return adapterErr
-		}
-		if searchErr != nil {
-			return searchErr
-		}
-		return storageErr
-	}
-	knowledgeErr := a.knowledgeStore.Close()
 	a.knowledgeStore = nil
+	a.knowledgeMu.Unlock()
+
 	if adapterErr != nil {
 		return adapterErr
 	}
 	if searchErr != nil {
 		return searchErr
 	}
-	if storageErr != nil {
-		return storageErr
-	}
-	return knowledgeErr
+	return storageErr
 }

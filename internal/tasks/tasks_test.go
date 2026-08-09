@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -22,20 +23,18 @@ func requireBinary(t *testing.T, name string) {
 	}
 }
 
-// newTestStore opens a Dolt-backed knowledge Store rooted at t.TempDir(),
-// never touching this repository's own .beads/ or knowledge data.
+// newTestStore opens a knowledge Store over the shared SQLite kernel rooted at
+// root, never touching this repository's own .beads/ or knowledge data. The
+// sup parameter is retained so callers keep passing the same supervisor they
+// use for bd; the knowledge store no longer needs it.
 func newTestStore(t *testing.T, sup *tools.Supervisor, root string) *knowledge.Store {
 	t.Helper()
-	store, err := knowledge.Open(sup, filepath.Join(root, "knowledge"))
+	db, err := storage.Open(context.Background(), filepath.Join(root, "storage.db"))
 	if err != nil {
-		t.Fatalf("knowledge.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Store.Close: %v", err)
-		}
-	})
-	return store
+	t.Cleanup(func() { db.Close() })
+	return knowledge.New(db, "test-project")
 }
 
 // newTestBeadsProject initializes a throwaway bd project rooted at root.

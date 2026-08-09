@@ -1,34 +1,24 @@
 package search
 
 import (
-	"os/exec"
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
-	"github.com/ygrip/punakawan/internal/tools"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 func newTestStore(t *testing.T) *knowledge.Store {
 	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-
-	dir := t.TempDir()
-	sup := tools.New(dir)
-	store, err := knowledge.Open(sup, filepath.Join(dir, "knowledge"))
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("knowledge.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Close: %v", err)
-		}
-	})
-	return store
+	t.Cleanup(func() { db.Close() })
+	return knowledge.New(db, "test-project")
 }
 
 func newTestIndex(t *testing.T) *Index {

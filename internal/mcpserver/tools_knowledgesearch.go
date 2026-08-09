@@ -73,11 +73,11 @@ func searchKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			return nil, SearchKnowledgeOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
 
-		// ADR-0020: a project_id naming a different project than this Store's
-		// own bypasses the BM25 index entirely (it is built only from this
-		// Store's own project and cannot rank another project's records) in
+		// A project_id naming a different project than this workspace's own
+		// bypasses the BM25 index entirely (it is built only from this
+		// workspace's own project and cannot rank another project's records) in
 		// favor of a plain cross-project substring scan.
-		if in.ProjectId != "" && in.ProjectId != store.OwnProject() {
+		if in.ProjectId != "" && in.ProjectId != a.Workspace.ID {
 			records, err := store.SearchInProject(in.ProjectId, in.Query, in.Types, in.Limit)
 			if err != nil {
 				return nil, SearchKnowledgeOutput{}, fmt.Errorf("mcpserver: search knowledge in project %q: %w", in.ProjectId, err)

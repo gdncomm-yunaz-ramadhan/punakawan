@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/hub"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// newHubTestApp builds a real *app.App like newTestApp, but pre-registers it
-// on a shared hub (hubDir, projectID) before Load - Load reads the hub-ref
-// once, up front, to sandbox-permit hubDir, so the ref must exist before it
-// runs (see openknowledge_hub_test.go's identical requirement).
-func newHubTestApp(t *testing.T, hubDir, projectID string) *app.App {
+// newProjectTestApp builds a real *app.App whose workspace id is projectID, so
+// its knowledge is scoped to that project within the shared SQLite kernel.
+// Unlike newTestApp it does NOT set PUNAKAWAN_DATA_DIR: cross-project tests set
+// one shared data dir for the whole test so two apps with different project ids
+// reach the same kernel, which is exactly what makes a deliberately-named
+// sibling project reachable.
+func newProjectTestApp(t *testing.T, projectID string) *app.App {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -36,12 +37,9 @@ func newHubTestApp(t *testing.T, hubDir, projectID string) *app.App {
 	if err := os.MkdirAll(punakawanDir, 0o755); err != nil {
 		t.Fatalf("mkdir .punakawan: %v", err)
 	}
-	workspaceYAML := "version: punakawan.workspace/v1\nid: smoke\nname: Smoke\nrepositories:\n  - id: repo-a\n    path: ./repo-a\n"
+	workspaceYAML := "version: punakawan.workspace/v1\nid: " + projectID + "\nname: " + projectID + "\nrepositories:\n  - id: repo-a\n    path: ./repo-a\n"
 	if err := os.WriteFile(filepath.Join(punakawanDir, "workspace.yaml"), []byte(workspaceYAML), 0o644); err != nil {
 		t.Fatalf("write workspace.yaml: %v", err)
-	}
-	if err := hub.Write(dir, hub.Ref{HubDir: hubDir, ProjectID: projectID}); err != nil {
-		t.Fatalf("hub.Write: %v", err)
 	}
 
 	a, err := app.Load(dir)
@@ -57,10 +55,9 @@ func newHubTestApp(t *testing.T, hubDir, projectID string) *app.App {
 }
 
 func TestGetKnowledgeRecordsDefaultsToTheCallingProject(t *testing.T) {
-	requireDolt(t)
-	hubDir := filepath.Join(t.TempDir(), "hub")
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
-	a := newHubTestApp(t, hubDir, "proj-caller")
+	a := newProjectTestApp(t, "proj-caller")
 	cs := connect(t, a)
 
 	store, err := a.OpenKnowledge()
@@ -80,21 +77,22 @@ func TestGetKnowledgeRecordsDefaultsToTheCallingProject(t *testing.T) {
 	}
 }
 
-func TestGetKnowledgeRecordsReachesASiblingHubProjectWhenNamedExplicitly(t *testing.T) {
-	requireDolt(t)
-	hubDir := filepath.Join(t.TempDir(), "hub")
+func TestGetKnowledgeRecordsReachesASiblingProjectWhenNamedExplicitly(t *testing.T) {
+	// One shared kernel for both projects, so naming the sibling explicitly can
+	// reach it.
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
-	other := newHubTestApp(t, hubDir, "proj-other")
+	other := newProjectTestApp(t, "proj-other")
 	otherStore, err := other.OpenKnowledge()
 	if err != nil {
 		t.Fatalf("OpenKnowledge (other): %v", err)
 	}
 	otherRec := putFixtureRecord(t, otherStore, "OTHER-1", "sibling project record", nil)
 
-	caller := newHubTestApp(t, hubDir, "proj-caller")
+	caller := newProjectTestApp(t, "proj-caller")
 	cs := connect(t, caller)
 
-	// Without project_id, the caller's own (empty) project must not see it.
+	// Without project_id, the caller's own project must not see it.
 	var out map[string]any
 	callTool(t, cs, "get_knowledge_records", map[string]any{
 		"ids": []string{otherRec.Id},
@@ -117,10 +115,9 @@ func TestGetKnowledgeRecordsReachesASiblingHubProjectWhenNamedExplicitly(t *test
 }
 
 func TestSearchKnowledgeDefaultsToTheCallingProject(t *testing.T) {
-	requireDolt(t)
-	hubDir := filepath.Join(t.TempDir(), "hub")
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
-	a := newHubTestApp(t, hubDir, "proj-caller")
+	a := newProjectTestApp(t, "proj-caller")
 	cs := connect(t, a)
 
 	store, err := a.OpenKnowledge()
@@ -148,10 +145,9 @@ func TestSearchKnowledgeDefaultsToTheCallingProject(t *testing.T) {
 }
 
 func TestSearchKnowledgeCrossProjectFallsBackToASubstringScan(t *testing.T) {
-	requireDolt(t)
-	hubDir := filepath.Join(t.TempDir(), "hub")
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
-	other := newHubTestApp(t, hubDir, "proj-other")
+	other := newProjectTestApp(t, "proj-other")
 	otherStore, err := other.OpenKnowledge()
 	if err != nil {
 		t.Fatalf("OpenKnowledge (other): %v", err)
@@ -166,7 +162,7 @@ func TestSearchKnowledgeCrossProjectFallsBackToASubstringScan(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 
-	caller := newHubTestApp(t, hubDir, "proj-caller")
+	caller := newProjectTestApp(t, "proj-caller")
 	cs := connect(t, caller)
 
 	var out map[string]any

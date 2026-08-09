@@ -72,6 +72,9 @@ func runGit(t *testing.T, dir string, args ...string) {
 // helper.
 func newTestApp(t *testing.T) *app.App {
 	t.Helper()
+	// Isolate the shared SQLite kernel to a per-test temp dir so OpenKnowledge/
+	// OpenTaskStore never touch this machine's real, shared database.
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo-a")
