@@ -1,0 +1,78 @@
+internal/mcpserver/tools.go
+  708d680d348b9cc2 197,337,347
+internal/mcpserver/tools_contextrequest_test.go
+  708d680d348b9cc2 16,18,43,77
+internal/panel/deps_subsystems.go
+  708d680d348b9cc2 12,14-19
+internal/prreview/prreview.go
+  708d680d348b9cc2 4-7
+internal/panel/events/reconciler_test.go
+  708d680d348b9cc2 326,328,420
+internal/scenario/scenario_test.go
+  708d680d348b9cc2 2,36
+internal/roleconfig/defaults.go
+  708d680d348b9cc2 11
+internal/panel/deps.go
+  708d680d348b9cc2 105-108
+internal/mcpserver/tools_projectmetadata_test.go
+  708d680d348b9cc2 5,7-8
+internal/mcpserver/tools_roles.go
+  708d680d348b9cc2 11-12,21-22
+internal/mcpserver/tools_reviewpr.go
+  708d680d348b9cc2 91-94
+internal/panel/events/reconciler.go
+  708d680d348b9cc2 26-28,47-48,202,204-206,217
+prompts/bagong/prompt.md
+  708d680d348b9cc2 9,87,129
+internal/mcpserver/tools_knowledgecreate.go
+  708d680d348b9cc2 45-46,48
+internal/mcpserver/tools_learning_knowledgecreate_test.go
+  708d680d348b9cc2 84
+README.md
+  708d680d348b9cc2 137
+prompts/gareng/prompt.md
+  708d680d348b9cc2 9
+prompts/petruk/prompt.md
+  708d680d348b9cc2 9
+internal/mcpserver/tools_contextrequest.go
+  708d680d348b9cc2 16-18,20-22,97-100,115
+internal/mcpserver/capability_registry_test.go
+  708d680d348b9cc2 26
+internal/mcpserver/tools_roleconfig_wiring_test.go
+  708d680d348b9cc2 3
+.punakawan/workflows/implementation-with-tests.yaml
+  708d680d348b9cc2 21,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "627d7df59608c827550d4347566e4b45a000d7f2",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 76,
+      "total_deletions": 962,
+      "accepted_lines": 74,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
