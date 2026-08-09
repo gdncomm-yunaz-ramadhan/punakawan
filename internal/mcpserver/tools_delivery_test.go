@@ -2,6 +2,10 @@ package mcpserver
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -239,5 +243,153 @@ func TestReportDiscoveredDependencyBlocksOnlyAffectedLane(t *testing.T) {
 	}
 	if lane, ok := byID[unrelatedLane.Id]; !ok || lane.Status != protocol.DeliveryLaneStatusRunnable {
 		t.Fatalf("expected unrelated lane %s to stay runnable, got %+v (present=%v)", unrelatedLane.Id, lane, ok)
+	}
+}
+
+// runGitCmd runs `git <args...>` for fixture setup - the code under
+// test already exercises the supervised path, so the fixture just
+// needs a real repository to point it at.
+func runGitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s (dir=%q): %v\n%s", strings.Join(args, " "), dir, err, out)
+	}
+}
+
+// seedRunnableLaneWithGitProject is seedRunnableLane plus a real bare
+// remote and local checkout, and a delivery profile pointing at that
+// checkout - everything create_worktree needs to actually build a
+// worktree for the returned lane.
+func seedRunnableLaneWithGitProject(t *testing.T, a *app.App) (orchestrationID, laneID string) {
+	t.Helper()
+	ctx := context.Background()
+
+	remoteDir := t.TempDir()
+	runGitCmd(t, remoteDir, "init", "--bare", "-b", "main")
+	localDir := t.TempDir()
+	runGitCmd(t, "", "clone", remoteDir, localDir)
+	runGitCmd(t, localDir, "config", "user.email", "test@example.com")
+	runGitCmd(t, localDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(localDir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	runGitCmd(t, localDir, "add", "README.md")
+	runGitCmd(t, localDir, "commit", "-m", "initial commit")
+	runGitCmd(t, localDir, "push", "-u", "origin", "main")
+
+	db, err := a.OpenStorage(ctx)
+	if err != nil {
+		t.Fatalf("OpenStorage: %v", err)
+	}
+	store := delivery.NewStore(db)
+
+	orch, err := store.CreateOrchestration(ctx, "orch-"+delivery.NewID(), delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	proj, err := store.RegisterProject(ctx, "proj-"+delivery.NewID(), delivery.NewID(), "run-in-lane-test", remoteDir, "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	if _, err := store.SetDeliveryProfile(ctx, "profile-"+delivery.NewID(), delivery.NewID(), proj.Id, delivery.ProfileInput{
+		LocalPath:       localDir,
+		CanonicalRemote: "origin",
+		BaseBranch:      "main",
+	}); err != nil {
+		t.Fatalf("SetDeliveryProfile: %v", err)
+	}
+	source, err := store.CaptureRequirement(ctx, "cap-"+delivery.NewID(), orch.Id, delivery.SourceInput{Provider: "jira", ExternalID: "RUN-1", Title: "seed requirement"})
+	if err != nil {
+		t.Fatalf("CaptureRequirement: %v", err)
+	}
+	task, err := store.CreateParentTask(ctx, "task-"+delivery.NewID(), delivery.NewID(), orch.Id, "seed task", []string{source.Id})
+	if err != nil {
+		t.Fatalf("CreateParentTask: %v", err)
+	}
+	if _, err := store.RouteParentTask(ctx, "route-"+delivery.NewID(), orch.Id, task.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask: %v", err)
+	}
+	lane, err := store.CreateLane(ctx, "lane-"+delivery.NewID(), delivery.NewID(), orch.Id, proj.Id, task.Id)
+	if err != nil {
+		t.Fatalf("CreateLane: %v", err)
+	}
+	return orch.Id, lane.Id
+}
+
+// TestCreateWorktreeAndRunInLaneEndToEnd drives the full pull-based
+// execution path over the real MCP wire: list, claim, create a
+// worktree, then run a command scoped to it - proving the command
+// actually executed inside the lane's own worktree, not the project's
+// main checkout.
+func TestCreateWorktreeAndRunInLaneEndToEnd(t *testing.T) {
+	a := newTestApp(t)
+	orchID, laneID := seedRunnableLaneWithGitProject(t, a)
+	cs := connect(t, a)
+
+	var listOut ListRunnableLanesOutput
+	callTool(t, cs, "list_runnable_lanes", map[string]any{"orchestration_id": orchID}, &listOut)
+	if len(listOut.Lanes) != 1 {
+		t.Fatalf("expected exactly one runnable lane, got %+v", listOut.Lanes)
+	}
+
+	var claimOut LaneOutput
+	callTool(t, cs, "claim_lane", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"expected_revision": listOut.Lanes[0].Revision,
+		"worker_id":         "agent-1",
+	}, &claimOut)
+	leaseToken := *claimOut.Lane.LeaseToken
+
+	var wtOut LaneOutput
+	callTool(t, cs, "create_worktree", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"expected_revision": claimOut.Lane.Revision,
+	}, &wtOut)
+	if wtOut.Lane.WorktreePath == nil || *wtOut.Lane.WorktreePath == "" {
+		t.Fatalf("expected worktree_path set, got %+v", wtOut.Lane)
+	}
+
+	var runOut RunInLaneOutput
+	callTool(t, cs, "run_in_lane", map[string]any{
+		"orchestration_id": orchID,
+		"lane_id":          laneID,
+		"lease_token":      leaseToken,
+		"command":          "git",
+		"args":             []string{"rev-parse", "--show-toplevel"},
+	}, &runOut)
+	if runOut.ExitCode != 0 {
+		t.Fatalf("run_in_lane exited %d: %s", runOut.ExitCode, runOut.Stderr)
+	}
+
+	wantRoot, err := filepath.EvalSymlinks(*wtOut.Lane.WorktreePath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(worktree path): %v", err)
+	}
+	gotRoot, err := filepath.EvalSymlinks(strings.TrimSpace(runOut.Stdout))
+	if err != nil {
+		t.Fatalf("EvalSymlinks(command output): %v", err)
+	}
+	if gotRoot != wantRoot {
+		t.Fatalf("run_in_lane executed with toplevel %q, want the lane's own worktree %q", gotRoot, wantRoot)
+	}
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "run_in_lane", Arguments: map[string]any{
+		"orchestration_id": orchID,
+		"lane_id":          laneID,
+		"lease_token":      "not-the-real-token",
+		"command":          "git",
+		"args":             []string{"status"},
+	}})
+	if err != nil {
+		t.Fatalf("CallTool(run_in_lane): %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected run_in_lane with a wrong lease token to fail")
 	}
 }

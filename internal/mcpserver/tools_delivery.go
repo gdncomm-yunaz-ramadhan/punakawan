@@ -91,6 +91,27 @@ func claimLaneHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, Cl
 	}
 }
 
+// CreateWorktreeInput is create_worktree's input.
+type CreateWorktreeInput struct {
+	OrchestrationId  string `json:"orchestration_id"`
+	LaneId           string `json:"lane_id"`
+	ExpectedRevision int    `json:"expected_revision" jsonschema:"the lane's current revision, so a concurrent change is never overwritten"`
+}
+
+func createWorktreeHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CreateWorktreeInput) (*mcp.CallToolResult, LaneOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in CreateWorktreeInput) (*mcp.CallToolResult, LaneOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, LaneOutput{}, err
+		}
+		lane, err := store.CreateWorktree(ctx, delivery.NewID(), in.OrchestrationId, in.LaneId, in.ExpectedRevision)
+		if err != nil {
+			return nil, LaneOutput{}, fmt.Errorf("mcpserver: create worktree: %w", err)
+		}
+		return nil, LaneOutput{Lane: *lane}, nil
+	}
+}
+
 // LeaseActionInput is the shared input for heartbeat_lease, complete_lease,
 // and reject_lease - every call that must present the lease token it was
 // handed by claim_lane.
@@ -194,5 +215,50 @@ func reportDiscoveredDependencyHandler(a *app.App) func(context.Context, *mcp.Ca
 			out.Lanes = append(out.Lanes, *l)
 		}
 		return nil, out, nil
+	}
+}
+
+// RunInLaneInput is run_in_lane's input: the only execution surface
+// this delivery domain exposes, scoped strictly to the caller's own
+// leased lane worktree - a worker can never touch anything outside its
+// own lease's scope through this tool, regardless of what command or
+// arguments it passes.
+type RunInLaneInput struct {
+	OrchestrationId string   `json:"orchestration_id"`
+	LaneId          string   `json:"lane_id"`
+	LeaseToken      string   `json:"lease_token" jsonschema:"must match the lane's current lease; a stale or mismatched token is rejected"`
+	Command         string   `json:"command" jsonschema:"executable name, resolved via PATH only - never treated as an absolute path"`
+	Args            []string `json:"args,omitempty"`
+	TimeoutSeconds  int      `json:"timeout_seconds,omitempty" jsonschema:"defaults to the supervisor's own default when omitted"`
+}
+
+// RunInLaneOutput is the completed command's result: a non-zero exit
+// code is reported here, not as a tool error - only a command that
+// could not be run at all (disallowed scope, failed to start, timeout)
+// is a tool error.
+type RunInLaneOutput struct {
+	Stdout    string `json:"stdout"`
+	Stderr    string `json:"stderr"`
+	ExitCode  int    `json:"exit_code"`
+	Truncated bool   `json:"truncated"`
+}
+
+func runInLaneHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RunInLaneInput) (*mcp.CallToolResult, RunInLaneOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in RunInLaneInput) (*mcp.CallToolResult, RunInLaneOutput, error) {
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, RunInLaneOutput{}, err
+		}
+		timeout := time.Duration(in.TimeoutSeconds) * time.Second
+		res, err := store.RunInLane(ctx, in.OrchestrationId, in.LaneId, in.LeaseToken, in.Command, in.Args, timeout)
+		if err != nil {
+			return nil, RunInLaneOutput{}, fmt.Errorf("mcpserver: run in lane: %w", err)
+		}
+		return nil, RunInLaneOutput{
+			Stdout:    string(res.Stdout),
+			Stderr:    string(res.Stderr),
+			ExitCode:  res.ExitCode,
+			Truncated: res.Truncated,
+		}, nil
 	}
 }

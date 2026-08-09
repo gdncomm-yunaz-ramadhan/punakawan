@@ -498,6 +498,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, claimLaneHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "create_worktree",
+		Description: "Create (or resume) a held lane's own isolated git worktree and branch, forked from its project's configured base branch. Never touches the project's main checkout.",
+	}, createWorktreeHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "heartbeat_lease",
 		Description: "Renew a held lease before it expires, proving the worker is still alive. Fails if lease_token does not match the lane's current lease (it was reclaimed after expiring, or never matched to begin with).",
 	}, heartbeatLeaseHandler(a))
@@ -516,4 +521,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "report_discovered_dependency",
 		Description: "Report a dependency discovered mid-execution rather than known upfront: records it as a new edge and re-syncs the frontier, pausing only the lanes actually affected while unrelated work continues.",
 	}, reportDiscoveredDependencyHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "run_in_lane",
+		Description: "Run one command scoped strictly to a held lease's own worktree - the only execution surface this delivery domain exposes, so a worker can never read, write, or execute anything outside its own lane. Requires the lane's current lease token.",
+	}, runInLaneHandler(a))
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -316,6 +317,59 @@ func TestCommitLaneAndPushLane(t *testing.T) {
 	lsRemote := runGitCmd(t, "", "ls-remote", f.remoteDir, "refs/heads/"+branch)
 	if !strings.Contains(lsRemote, sha) {
 		t.Fatalf("expected bare remote %s to have branch %s at %s, got:\n%s", f.remoteDir, branch, sha, lsRemote)
+	}
+}
+
+// TestRunInLaneScopesToWorktreeAndChecksLeaseToken checks the two
+// halves of worker isolation this method provides: a command only runs
+// at all when the caller presents the lane's own current lease token,
+// and once it runs, its working directory is the lane's own worktree -
+// never the base checkout or any other lane's directory.
+func TestRunInLaneScopesToWorktreeAndChecksLeaseToken(t *testing.T) {
+	f := newWorktreeFixture(t)
+	ctx := context.Background()
+	lane := f.lane(t)
+
+	created, err := f.store.CreateWorktree(ctx, "run-create", f.orchestrationID, f.laneID, lane.Revision)
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	if _, err := f.store.SyncFrontier(ctx, "run-sync", f.orchestrationID); err != nil {
+		t.Fatalf("SyncFrontier: %v", err)
+	}
+	created, err = f.store.GetLane(ctx, f.orchestrationID, f.laneID)
+	if err != nil {
+		t.Fatalf("GetLane after sync: %v", err)
+	}
+
+	leased, err := f.store.GrantLease(ctx, "run-lease", f.orchestrationID, f.laneID, created.Revision, "worker-1", time.Minute)
+	if err != nil {
+		t.Fatalf("GrantLease: %v", err)
+	}
+
+	if _, err := f.store.RunInLane(ctx, f.orchestrationID, f.laneID, "wrong-token", "git", []string{"rev-parse", "--show-toplevel"}, 0); !errors.Is(err, ErrLeaseTokenMismatch) {
+		t.Fatalf("expected ErrLeaseTokenMismatch for a wrong lease token, got %v", err)
+	}
+
+	res, err := f.store.RunInLane(ctx, f.orchestrationID, f.laneID, *leased.LeaseToken, "git", []string{"rev-parse", "--show-toplevel"}, 0)
+	if err != nil {
+		t.Fatalf("RunInLane: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("git rev-parse --show-toplevel failed: %s", res.Stderr)
+	}
+
+	wantRoot, err := filepath.EvalSymlinks(*leased.WorktreePath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(worktree path): %v", err)
+	}
+	gotRoot, err := filepath.EvalSymlinks(strings.TrimSpace(string(res.Stdout)))
+	if err != nil {
+		t.Fatalf("EvalSymlinks(command output): %v", err)
+	}
+	if gotRoot != wantRoot {
+		t.Fatalf("command ran with toplevel %q, want the lane's own worktree %q", gotRoot, wantRoot)
 	}
 }
 

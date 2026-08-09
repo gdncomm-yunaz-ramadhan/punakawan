@@ -469,3 +469,30 @@ func (s *Store) PushLane(ctx context.Context, orchestrationID, laneID string) (s
 	}
 	return *lane.Branch, nil
 }
+
+// RunInLane runs one command scoped strictly to laneID's own worktree:
+// the supervisor's only allowed working directory is that worktree, so
+// the command can never read, write, or execute anything outside its
+// own lease's scope, regardless of what arguments it is given. Requires
+// leaseToken to match the lane's current lease, the same ownership
+// check heartbeat/complete/reject already make - only the worker that
+// actually holds this lane's lease can run anything in it.
+func (s *Store) RunInLane(ctx context.Context, orchestrationID, laneID, leaseToken, name string, args []string, timeout time.Duration) (*tools.Result, error) {
+	lane, err := s.GetLane(ctx, orchestrationID, laneID)
+	if err != nil {
+		return nil, err
+	}
+	if lane.LeaseToken == nil || *lane.LeaseToken != leaseToken {
+		return nil, ErrLeaseTokenMismatch
+	}
+	if lane.WorktreePath == nil || *lane.WorktreePath == "" {
+		return nil, fmt.Errorf("delivery: lane %s has no active worktree to run in", laneID)
+	}
+
+	sup := tools.New(*lane.WorktreePath)
+	res, err := sup.Run(ctx, tools.Spec{Name: name, Args: args, Dir: *lane.WorktreePath, Timeout: timeout})
+	if err != nil {
+		return nil, fmt.Errorf("delivery: run %s in lane %s: %w", name, laneID, err)
+	}
+	return res, nil
+}
