@@ -43,6 +43,9 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 				}
 				o.UnresolvedInputs = elems
 			}
+			if defID, ok := ev.Payload["workflow_definition_id"].(string); ok && defID != "" {
+				o.WorkflowDefinitionId = &defID
+			}
 		case protocol.DeliveryEventTypeInputRegistered:
 			ref, _ := ev.Payload["reference"].(string)
 			note, _ := ev.Payload["note"].(string)

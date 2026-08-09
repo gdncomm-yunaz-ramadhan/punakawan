@@ -266,6 +266,15 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 // there is then nothing to derive the same id from on a hypothetical
 // retry.
 func (s *Store) StartDelivery(ctx context.Context, idempotencyKey string, references []string) (*DeliveryView, error) {
+	return s.StartDeliveryWithDefinition(ctx, idempotencyKey, references, "")
+}
+
+// StartDeliveryWithDefinition is StartDelivery plus an optional
+// workflowDefinitionID, threaded through to
+// CreateOrchestrationWithDefinition so the new orchestration's role-stage
+// gate can be customized by that definition's Roles map. An empty
+// workflowDefinitionID behaves identically to StartDelivery.
+func (s *Store) StartDeliveryWithDefinition(ctx context.Context, idempotencyKey string, references []string, workflowDefinitionID string) (*DeliveryView, error) {
 	orchestrationID := NewID()
 	createKey := orchestrationID
 	if idempotencyKey != "" {
@@ -283,7 +292,7 @@ func (s *Store) StartDelivery(ctx context.Context, idempotencyKey string, refere
 		}
 	}
 
-	if _, err := s.CreateOrchestration(ctx, createKey, orchestrationID, pending); err != nil {
+	if _, err := s.CreateOrchestrationWithDefinition(ctx, createKey, orchestrationID, pending, workflowDefinitionID); err != nil {
 		return nil, err
 	}
 	// Each capture uses its own fresh key rather than one derived from

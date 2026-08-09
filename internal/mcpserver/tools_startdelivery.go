@@ -26,6 +26,12 @@ type StartDeliveryInput struct {
 	// resolves to the same orchestration instead of minting a second
 	// one for the same request.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	// WorkflowDefinitionId is optional: when set, it must name an
+	// existing, enabled workflow definition (rejected outright
+	// otherwise), and the new orchestration's lane role-stage gate then
+	// consults that definition's Roles map instead of always requiring
+	// all four of semar/gareng/petruk/bagong.
+	WorkflowDefinitionId string `json:"workflow_definition_id,omitempty"`
 }
 
 // StartDeliveryOutput is start_delivery's output: the new
@@ -43,7 +49,7 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		if err != nil {
 			return nil, StartDeliveryOutput{}, err
 		}
-		view, err := store.StartDelivery(ctx, in.IdempotencyKey, in.References)
+		view, err := store.StartDeliveryWithDefinition(ctx, in.IdempotencyKey, in.References, in.WorkflowDefinitionId)
 		if err != nil {
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: start delivery: %w", err)
 		}

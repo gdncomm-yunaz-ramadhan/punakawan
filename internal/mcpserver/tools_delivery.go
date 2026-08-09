@@ -10,6 +10,7 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/roles"
+	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -19,12 +20,48 @@ import (
 // reasonable time.
 const defaultLeaseSeconds = 300
 
+// workflowDefinitionResolver adapts internal/workflowdef.Store to
+// delivery.WorkflowDefinitionResolver, the only place in this server
+// where internal/delivery's decoupling interface is bound to the
+// concrete workflowdef package - every delivery.Store call site here
+// gets the same binding through openDeliveryStore below.
+type workflowDefinitionResolver struct {
+	store *workflowdef.Store
+}
+
+func (r workflowDefinitionResolver) ValidateEnabled(ctx context.Context, id string) error {
+	def, err := r.store.Get(id)
+	if err != nil {
+		return err
+	}
+	if !def.Enabled {
+		return fmt.Errorf("workflow definition %q is disabled", id)
+	}
+	return nil
+}
+
+func (r workflowDefinitionResolver) RequiredRoleStages(ctx context.Context, id string) (map[string]bool, error) {
+	def, err := r.store.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(def.Roles))
+	for role, restriction := range def.Roles {
+		out[role] = restriction.Required
+	}
+	return out, nil
+}
+
 func openDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error) {
 	db, err := a.OpenStorage(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("mcpserver: open storage kernel: %w", err)
 	}
-	return delivery.NewStore(db), nil
+	defStore, err := workflowdef.Open(a.Workspace.Root)
+	if err != nil {
+		return nil, fmt.Errorf("mcpserver: open workflow definition store: %w", err)
+	}
+	return delivery.NewStore(db, delivery.WithWorkflowDefinitionResolver(workflowDefinitionResolver{store: defStore})), nil
 }
 
 // ListRunnableLanesInput is list_runnable_lanes' input.

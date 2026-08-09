@@ -49,24 +49,92 @@ func (stage RoleStage) eventType() (protocol.DeliveryEventType, error) {
 	}
 }
 
-// precedingRecordID returns the record id the lane already has
-// recorded for the stage immediately before stage, or "" if that
-// predecessor has not been recorded yet (or stage is the first stage,
-// which has no predecessor to check).
-func precedingRecordID(lane *protocol.DeliveryLane, stage RoleStage) string {
-	var id *string
+// roleStageName returns the workflow definition Roles map key
+// corresponding to stage (semar|gareng|petruk|bagong), matching
+// internal/workflowdef.RoleRestriction's map keys.
+func roleStageName(stage RoleStage) string {
 	switch stage {
+	case RoleStageSemar:
+		return "semar"
 	case RoleStageGareng:
-		id = lane.SemarRecordId
+		return "gareng"
 	case RoleStagePetruk:
-		id = lane.GarengRecordId
+		return "petruk"
 	case RoleStageBagong:
-		id = lane.PetrukRecordId
-	}
-	if id == nil {
+		return "bagong"
+	default:
 		return ""
 	}
-	return *id
+}
+
+// isRequired reports whether stage is required per requiredStages, a
+// map of role name to its Required flag resolved from a workflow
+// definition's Roles map. A stage whose name is absent from
+// requiredStages - including when requiredStages is nil, which is what
+// a lane with no attached definition (or no configured resolver)
+// always resolves to - defaults to required, matching this package's
+// behavior before workflow definitions could customize the gate. Only
+// an explicit false entry turns a stage off.
+func isRequired(requiredStages map[string]bool, stage RoleStage) bool {
+	if v, ok := requiredStages[roleStageName(stage)]; ok {
+		return v
+	}
+	return true
+}
+
+// recordIDForStage returns the lane's currently recorded record id for
+// stage, or nil if that stage has not been recorded for the lane's
+// current attempt.
+func recordIDForStage(lane *protocol.DeliveryLane, stage RoleStage) *string {
+	switch stage {
+	case RoleStageSemar:
+		return lane.SemarRecordId
+	case RoleStageGareng:
+		return lane.GarengRecordId
+	case RoleStagePetruk:
+		return lane.PetrukRecordId
+	case RoleStageBagong:
+		return lane.BagongRecordId
+	default:
+		return nil
+	}
+}
+
+// precedingRecordID returns the record id the lane already has
+// recorded for the nearest required stage before stage, skipping over
+// any stage requiredStages marks not required, or "" if that stage has
+// not been recorded yet (or stage has no required predecessor - either
+// because it is the first stage, or because every stage before it was
+// marked not required). With requiredStages nil or empty every stage is
+// required, so this reduces to exactly stage's immediate predecessor -
+// this package's behavior before workflow definitions could customize
+// the gate.
+func precedingRecordID(lane *protocol.DeliveryLane, stage RoleStage, requiredStages map[string]bool) string {
+	for s := stage - 1; s >= RoleStageSemar; s-- {
+		if !isRequired(requiredStages, s) {
+			continue
+		}
+		id := recordIDForStage(lane, s)
+		if id == nil {
+			return ""
+		}
+		return *id
+	}
+	return ""
+}
+
+// lastRequiredStage returns the last (highest-order) stage requiredStages
+// marks required, walking backward from Bagong to Semar, and true. It
+// returns ok=false only if every one of the four stages was explicitly
+// marked not required - a degenerate configuration in which the gate has
+// nothing left to require.
+func lastRequiredStage(requiredStages map[string]bool) (stage RoleStage, ok bool) {
+	for s := RoleStageBagong; s >= RoleStageSemar; s-- {
+		if isRequired(requiredStages, s) {
+			return s, true
+		}
+	}
+	return 0, false
 }
 
 // RecordRoleStage records recordID as laneID's current attempt's
@@ -100,8 +168,22 @@ func (s *Store) RecordRoleStage(ctx context.Context, idempotencyKey, orchestrati
 		if lane.LeaseToken == nil || *lane.LeaseToken != leaseToken {
 			return ErrLeaseTokenMismatch
 		}
-		if stage != RoleStageSemar && precedingRecordID(lane, stage) == "" {
-			return ErrRoleStageOutOfOrder
+		if stage != RoleStageSemar {
+			orch, err := reduceOrchestration(orchestrationID, events)
+			if err != nil {
+				return err
+			}
+			var workflowDefinitionID string
+			if orch.WorkflowDefinitionId != nil {
+				workflowDefinitionID = *orch.WorkflowDefinitionId
+			}
+			requiredStages, err := s.resolveRequiredStages(ctx, workflowDefinitionID)
+			if err != nil {
+				return err
+			}
+			if precedingRecordID(lane, stage, requiredStages) == "" {
+				return ErrRoleStageOutOfOrder
+			}
 		}
 
 		payload, err := json.Marshal(map[string]interface{}{"record_id": recordID})

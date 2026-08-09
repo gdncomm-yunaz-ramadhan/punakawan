@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,9 +16,42 @@ import (
 func leasedLaneForRoleStages(t *testing.T) (*Store, string, string, string) {
 	t.Helper()
 	s := newTestStore(t)
+	return leasedLaneForRoleStagesWithStore(t, s, "")
+}
+
+// fakeWorkflowDefinitionResolver is a minimal, in-memory
+// WorkflowDefinitionResolver stand-in for internal/workflowdef.Store,
+// so this package's own tests can exercise the definition-aware gate
+// without depending on that package at all - the same decoupling the
+// interface itself exists for.
+type fakeWorkflowDefinitionResolver struct {
+	enabled        map[string]bool
+	requiredStages map[string]map[string]bool
+}
+
+func (f *fakeWorkflowDefinitionResolver) ValidateEnabled(ctx context.Context, id string) error {
+	if !f.enabled[id] {
+		return fmt.Errorf("fake workflow definition %q does not exist or is disabled", id)
+	}
+	return nil
+}
+
+func (f *fakeWorkflowDefinitionResolver) RequiredRoleStages(ctx context.Context, id string) (map[string]bool, error) {
+	return f.requiredStages[id], nil
+}
+
+// leasedLaneForRoleStagesWithStore is leasedLaneForRoleStages but reuses
+// an already-constructed store (so the caller can wire it with a
+// WorkflowDefinitionResolver first) and optionally attaches
+// workflowDefinitionID to the seeded orchestration.
+func leasedLaneForRoleStagesWithStore(t *testing.T, s *Store, workflowDefinitionID string) (*Store, string, string, string) {
+	t.Helper()
 	ctx := context.Background()
-	orch := createTestOrchestration(t, s)
-	proj := registerProject(t, s, "rolestage-project")
+	orch, err := s.CreateOrchestrationWithDefinition(ctx, "orch-"+NewID(), NewID(), nil, workflowDefinitionID)
+	if err != nil {
+		t.Fatalf("CreateOrchestrationWithDefinition: %v", err)
+	}
+	proj := registerProject(t, s, "rolestage-project-"+NewID())
 	task := createTestTask(t, s, orch.Id, "rolestage task")
 	if _, err := s.RouteParentTask(ctx, "route-1", orch.Id, task.Id, proj.Id); err != nil {
 		t.Fatalf("RouteParentTask: %v", err)
@@ -186,4 +220,111 @@ func TestCompleteLeaseRequiresBagongStage(t *testing.T) {
 	if rejected.Status != protocol.DeliveryLaneStatusRunnable {
 		t.Fatalf("expected the lane back to runnable after rejection, got %s", rejected.Status)
 	}
+}
+
+// TestCompleteLeaseHonorsDefinitionOptionalStages: a definition that
+// explicitly marks gareng and petruk not required lets CompleteLease
+// succeed once only Semar and Bagong are recorded - both the ordering
+// gate (RecordRoleStage) and the completion gate (CompleteLease) must
+// skip the two optional stages.
+func TestCompleteLeaseHonorsDefinitionOptionalStages(t *testing.T) {
+	const defID = "hotfix-workflow"
+	resolver := &fakeWorkflowDefinitionResolver{
+		enabled: map[string]bool{defID: true},
+		requiredStages: map[string]map[string]bool{
+			defID: {"gareng": false, "petruk": false},
+		},
+	}
+	s := NewStore(newTestDB(t), WithWorkflowDefinitionResolver(resolver))
+	_, orchID, laneID, token := leasedLaneForRoleStagesWithStore(t, s, defID)
+	ctx := context.Background()
+
+	lane, err := s.GetLane(ctx, orchID, laneID)
+	if err != nil {
+		t.Fatalf("GetLane: %v", err)
+	}
+
+	// Gareng and petruk are skipped entirely - recording bagong directly
+	// after semar must not be treated as out of order.
+	lane, err = s.RecordRoleStage(ctx, "semar-1", orchID, laneID, token, RoleStageSemar, "rec-semar", lane.Revision)
+	if err != nil {
+		t.Fatalf("RecordRoleStage(semar): %v", err)
+	}
+	lane, err = s.RecordRoleStage(ctx, "bagong-1", orchID, laneID, token, RoleStageBagong, "rec-bagong", lane.Revision)
+	if err != nil {
+		t.Fatalf("RecordRoleStage(bagong) skipping gareng/petruk: %v", err)
+	}
+
+	completed, err := s.CompleteLease(ctx, "complete-1", orchID, laneID, token, lane.Revision)
+	if err != nil {
+		t.Fatalf("CompleteLease with only semar+bagong recorded and gareng/petruk marked not required: %v", err)
+	}
+	if completed.Status != protocol.DeliveryLaneStatusReview {
+		t.Fatalf("expected review status, got %s", completed.Status)
+	}
+}
+
+// TestCompleteLeaseRequiresAllFourWithEmptyRolesMap: a definition
+// attached to the orchestration but with an empty Roles map must not
+// loosen the gate at all - a restriction only takes effect once it is
+// stated, so every one of the four stages absent from an empty map
+// still defaults to required.
+func TestCompleteLeaseRequiresAllFourWithEmptyRolesMap(t *testing.T) {
+	const defID = "no-restrictions-workflow"
+	resolver := &fakeWorkflowDefinitionResolver{
+		enabled:        map[string]bool{defID: true},
+		requiredStages: map[string]map[string]bool{defID: {}},
+	}
+	s := NewStore(newTestDB(t), WithWorkflowDefinitionResolver(resolver))
+	_, orchID, laneID, token := leasedLaneForRoleStagesWithStore(t, s, defID)
+	ctx := context.Background()
+
+	lane, err := s.GetLane(ctx, orchID, laneID)
+	if err != nil {
+		t.Fatalf("GetLane: %v", err)
+	}
+	lane, err = s.RecordRoleStage(ctx, "semar-1", orchID, laneID, token, RoleStageSemar, "rec-semar", lane.Revision)
+	if err != nil {
+		t.Fatalf("RecordRoleStage(semar): %v", err)
+	}
+
+	if _, err := s.RecordRoleStage(ctx, "bagong-early", orchID, laneID, token, RoleStageBagong, "rec-bagong", lane.Revision); !errors.Is(err, ErrRoleStageOutOfOrder) {
+		t.Fatalf("expected ErrRoleStageOutOfOrder skipping gareng/petruk with an empty Roles map, got %v", err)
+	}
+
+	if _, err := s.CompleteLease(ctx, "complete-early", orchID, laneID, token, lane.Revision); !errors.Is(err, ErrRoleStagesIncomplete) {
+		t.Fatalf("expected ErrRoleStagesIncomplete with an empty Roles map (all four still required), got %v", err)
+	}
+}
+
+// TestCreateOrchestrationWithDefinitionRejectsUnknownOrDisabled:
+// attaching a workflow_definition_id that does not exist, or names a
+// disabled definition, is rejected at attach time rather than silently
+// ignored, and with no resolver configured at all it fails closed
+// rather than silently accepting the id unchecked.
+func TestCreateOrchestrationWithDefinitionRejectsUnknownOrDisabled(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("unknown id", func(t *testing.T) {
+		resolver := &fakeWorkflowDefinitionResolver{enabled: map[string]bool{}}
+		s := NewStore(newTestDB(t), WithWorkflowDefinitionResolver(resolver))
+		if _, err := s.CreateOrchestrationWithDefinition(ctx, "orch-unknown", NewID(), nil, "does-not-exist"); err == nil {
+			t.Fatal("expected an error attaching an unknown workflow_definition_id")
+		}
+	})
+
+	t.Run("disabled id", func(t *testing.T) {
+		resolver := &fakeWorkflowDefinitionResolver{enabled: map[string]bool{"disabled-workflow": false}}
+		s := NewStore(newTestDB(t), WithWorkflowDefinitionResolver(resolver))
+		if _, err := s.CreateOrchestrationWithDefinition(ctx, "orch-disabled", NewID(), nil, "disabled-workflow"); err == nil {
+			t.Fatal("expected an error attaching a disabled workflow_definition_id")
+		}
+	})
+
+	t.Run("no resolver configured", func(t *testing.T) {
+		s := newTestStore(t)
+		if _, err := s.CreateOrchestrationWithDefinition(ctx, "orch-noresolver", NewID(), nil, "some-workflow"); err == nil {
+			t.Fatal("expected an error attaching a workflow_definition_id with no resolver configured")
+		}
+	})
 }

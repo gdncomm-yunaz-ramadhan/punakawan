@@ -327,11 +327,16 @@ func (s *Store) Heartbeat(ctx context.Context, idempotencyKey, orchestrationID, 
 // stage before it can be reported done (ErrRoleStagesIncomplete
 // otherwise).
 func (s *Store) CompleteLease(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int) (*protocol.DeliveryLane, error) {
-	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseCompleted, func(lane *protocol.DeliveryLane) error {
+	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseCompleted, func(lane *protocol.DeliveryLane, requiredStages map[string]bool) error {
 		if lane.SemarRecordId == nil {
 			return nil
 		}
-		if lane.BagongRecordId == nil || *lane.BagongRecordId == "" {
+		stage, ok := lastRequiredStage(requiredStages)
+		if !ok {
+			return nil
+		}
+		id := recordIDForStage(lane, stage)
+		if id == nil || *id == "" {
 			return ErrRoleStagesIncomplete
 		}
 		return nil
@@ -347,7 +352,7 @@ func (s *Store) RejectLease(ctx context.Context, idempotencyKey, orchestrationID
 	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseRejected, nil)
 }
 
-func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int, eventType protocol.DeliveryEventType, precondition func(*protocol.DeliveryLane) error) (*protocol.DeliveryLane, error) {
+func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int, eventType protocol.DeliveryEventType, precondition func(*protocol.DeliveryLane, map[string]bool) error) (*protocol.DeliveryLane, error) {
 	err := s.db.Write(ctx, idempotencyKey, string(eventType)+" "+laneID, func(tx *sql.Tx) error {
 		events, err := loadEventsTx(ctx, tx, orchestrationID)
 		if err != nil {
@@ -367,7 +372,19 @@ func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orches
 			return ErrLeaseTokenMismatch
 		}
 		if precondition != nil {
-			if err := precondition(lane); err != nil {
+			orch, err := reduceOrchestration(orchestrationID, events)
+			if err != nil {
+				return err
+			}
+			var workflowDefinitionID string
+			if orch.WorkflowDefinitionId != nil {
+				workflowDefinitionID = *orch.WorkflowDefinitionId
+			}
+			requiredStages, err := s.resolveRequiredStages(ctx, workflowDefinitionID)
+			if err != nil {
+				return err
+			}
+			if err := precondition(lane, requiredStages); err != nil {
 				return err
 			}
 		}

@@ -26,4 +26,8 @@ export interface DeliveryOrchestration {
    * Optimistic-concurrency counter; incremented on every applied event.
    */
   revision: number;
+  /**
+   * Id of a saved workflow definition this run was configured from, if any. When set, its per-role restrictions decide which of the four role stages a lane must complete before its lease can be marked done, in place of the default of requiring all four. Absent when no such definition was attached.
+   */
+  workflow_definition_id?: string;
 }

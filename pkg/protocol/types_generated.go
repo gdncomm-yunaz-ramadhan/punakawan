@@ -3754,6 +3754,12 @@ type DeliveryOrchestration struct {
 
 	// UpdatedAt corresponds to the JSON schema field "updated_at".
 	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at" mapstructure:"updated_at"`
+
+	// Id of a saved workflow definition this run was configured from, if any. When
+	// set, its per-role restrictions decide which of the four role stages a lane must
+	// complete before its lease can be marked done, in place of the default of
+	// requiring all four. Absent when no such definition was attached.
+	WorkflowDefinitionId *string `json:"workflow_definition_id,omitempty,omitzero" yaml:"workflow_definition_id,omitempty" mapstructure:"workflow_definition_id,omitempty"`
 }
 
 type DeliveryOrchestrationStatus string

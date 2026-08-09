@@ -24,10 +24,26 @@ const timeLayout = time.RFC3339Nano
 // an explicit id.
 type Store struct {
 	db *storage.DB
+	// workflowDefinitions is nil unless WithWorkflowDefinitionResolver is
+	// passed to NewStore. It is an injected interface rather than a
+	// direct dependency on internal/workflowdef's concrete store because
+	// that store owns an entirely separate persistence lifecycle (one
+	// YAML file per definition id) than this package's own event log, so
+	// there is no shared lifecycle to couple to directly.
+	workflowDefinitions WorkflowDefinitionResolver
 }
 
-// NewStore wraps an opened storage kernel database.
-func NewStore(db *storage.DB) *Store { return &Store{db: db} }
+// NewStore wraps an opened storage kernel database. opts is variadic so
+// every existing call site keeps compiling unchanged; pass
+// WithWorkflowDefinitionResolver to enable workflow_definition_id
+// attachment and the role-stage gate's definition-aware behavior.
+func NewStore(db *storage.DB, opts ...StoreOption) *Store {
+	s := &Store{db: db}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
 
 // NewID mints a filesystem-safe ULID for a new project, orchestration,
 // or lane. Callers generate ids up front so creation calls are
@@ -81,12 +97,40 @@ func (s *Store) GetProject(ctx context.Context, id string) (*protocol.DeliveryPr
 
 // CreateOrchestration appends the orchestration.created event that
 // establishes id. A duplicate idempotencyKey is harmless and returns
-// the already-created orchestration.
+// the already-created orchestration. It is a thin wrapper over
+// CreateOrchestrationWithDefinition with an empty workflow_definition_id,
+// so every existing caller of this exact signature keeps compiling and
+// behaving exactly as before.
 func (s *Store) CreateOrchestration(ctx context.Context, idempotencyKey, id string, inputs []protocol.DeliveryOrchestrationUnresolvedInputsElem) (*protocol.DeliveryOrchestration, error) {
+	return s.CreateOrchestrationWithDefinition(ctx, idempotencyKey, id, inputs, "")
+}
+
+// CreateOrchestrationWithDefinition is CreateOrchestration plus an
+// optional workflowDefinitionID to attach: once set, every lane's
+// role-stage gate consults that definition's Roles map instead of
+// always requiring all four stages. An empty
+// workflowDefinitionID behaves identically to CreateOrchestration. A
+// non-empty one is validated (must exist and be enabled) via the
+// configured WorkflowDefinitionResolver before anything is written -
+// with none configured, attaching a definition is rejected outright
+// rather than silently accepted and later ignored by the gate.
+func (s *Store) CreateOrchestrationWithDefinition(ctx context.Context, idempotencyKey, id string, inputs []protocol.DeliveryOrchestrationUnresolvedInputsElem, workflowDefinitionID string) (*protocol.DeliveryOrchestration, error) {
+	if workflowDefinitionID != "" {
+		if s.workflowDefinitions == nil {
+			return nil, fmt.Errorf("delivery: workflow_definition_id %q given but no workflow definition resolver is configured", workflowDefinitionID)
+		}
+		if err := s.workflowDefinitions.ValidateEnabled(ctx, workflowDefinitionID); err != nil {
+			return nil, fmt.Errorf("delivery: attach workflow definition %q: %w", workflowDefinitionID, err)
+		}
+	}
 	if inputs == nil {
 		inputs = []protocol.DeliveryOrchestrationUnresolvedInputsElem{}
 	}
-	payload, err := json.Marshal(map[string]interface{}{"unresolved_inputs": inputs})
+	payloadMap := map[string]interface{}{"unresolved_inputs": inputs}
+	if workflowDefinitionID != "" {
+		payloadMap["workflow_definition_id"] = workflowDefinitionID
+	}
+	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		return nil, fmt.Errorf("delivery: encode orchestration.created payload: %w", err)
 	}

@@ -626,6 +626,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, cancelDeliveryHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "invoke_workflow_definition",
+		Description: "Invoke a saved workflow definition by id. A definition with a non-empty roles map is delivery-shaped: this starts a delivery orchestration (inputs must include a references array, matching start_delivery) and returns its orchestration id, fetchable via get_delivery. Every other definition is invoked through the legacy step-execution run engine and returns a workflow run id instead.",
+	}, invokeWorkflowDefinitionHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "register_project",
 		Description: "Register a target project (repository URL and default branch) in the delivery registry, so orchestrations have somewhere to route tasks and create lanes against. A duplicate slug fails.",
 	}, registerProjectHandler(a))

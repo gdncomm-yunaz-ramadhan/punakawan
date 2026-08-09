@@ -12,7 +12,11 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-func newTestStore(t *testing.T) *Store {
+// newTestDB opens a throwaway storage kernel database, for tests that
+// need to construct their own Store (e.g. with NewStore's optional
+// WithWorkflowDefinitionResolver) rather than using newTestStore's
+// default, resolver-less Store.
+func newTestDB(t *testing.T) *storage.DB {
 	t.Helper()
 	// t.TempDir() lives outside any Git checkout — this exercises
 	// acceptance criterion 1's "a server outside Git" requirement
@@ -22,7 +26,12 @@ func newTestStore(t *testing.T) *Store {
 		t.Fatalf("storage.Open: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return NewStore(db)
+	return db
+}
+
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	return NewStore(newTestDB(t))
 }
 
 // disableProjectForTest bypasses the public API: project lifecycle
