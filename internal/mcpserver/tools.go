@@ -624,4 +624,24 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "cancel_delivery",
 		Description: "Cancel a delivery orchestration that has not already reached a terminal status. Returns the orchestration's refreshed status.",
 	}, cancelDeliveryHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "register_project",
+		Description: "Register a target project (repository URL and default branch) in the delivery registry, so orchestrations have somewhere to route tasks and create lanes against. A duplicate slug fails.",
+	}, registerProjectHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "create_parent_task",
+		Description: "Group one or more already-captured requirement sources into a new, unrouted parent task for a delivery orchestration. The caller decides how a requirement is broken down; this only records that decision. Returns the created task and the orchestration's refreshed status.",
+	}, createParentTaskHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "create_lane",
+		Description: "Create a delivery lane scoped to a project and, optionally, a parent task already routed to that same project. Returns the created lane and the orchestration's refreshed status.",
+	}, createLaneHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "add_dependency_edge",
+		Description: "Record an up-front, explicitly-authored dependency between two parent tasks in a delivery orchestration - the caller stating a dependency it already knows about, before either task's lane has been leased. Rejects unknown task ids and any edge that would create a cycle. Returns the created edge and the orchestration's refreshed status.",
+	}, addDependencyEdgeHandler(a))
 }
