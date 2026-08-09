@@ -32,5 +32,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newPanelCmd())
 	root.AddCommand(newKnowledgeCmd())
 	root.AddCommand(newDaemonCmd())
+	root.AddCommand(newDeliverCmd())
 	return root
 }

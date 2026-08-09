@@ -590,4 +590,38 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "check_merge_readiness",
 		Description: "Check whether a lane is ready to merge against its project's required verification gates and latest review conclusion, reporting which gates are still failing if not. Read-only; never merges or closes anything.",
 	}, checkMergeReadinessHandler(a))
+
+	// Delivery facades: six higher-level tools over the granular delivery
+	// primitives above, for a caller that wants "start this delivery and
+	// tell me what's going on" without first learning the whole
+	// orchestration/lane/task/manifest model.
+	addTool(server, reg, &mcp.Tool{
+		Name:        "start_delivery",
+		Description: "Bootstrap one new delivery orchestration from a batch of requirement references (Jira keys, GitHub owner/repo#number references, URLs, or free text) and return its id plus current status. A reference this call cannot confidently classify becomes a pending question rather than failing the whole call.",
+	}, startDeliveryHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "get_delivery",
+		Description: "Read one delivery orchestration's current status: every lane grouped by project, still-blocked lanes, pending approvals, pending questions, and one sentence naming the single most useful next step. Read-only.",
+	}, getDeliveryHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "resume_delivery",
+		Description: "Identical to get_delivery: this domain is event-sourced, so checking current status after reconnecting is already the same call as resuming - there is no separate resume mechanism to invoke.",
+	}, resumeDeliveryHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "answer_delivery_question",
+		Description: "Answer one pending delivery question, either by supplying a now-known requirement's real content (provider/external_id/url/title/summary) or by routing an ambiguously-scoped parent task to a project (parent_task_id/project_id). Returns the orchestration's refreshed status.",
+	}, answerDeliveryQuestionHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "approve_project_delivery",
+		Description: "Approve (or, with reject set, reject) one project's pending approval manifest for a delivery orchestration. Returns the orchestration's refreshed status.",
+	}, approveProjectDeliveryHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "cancel_delivery",
+		Description: "Cancel a delivery orchestration that has not already reached a terminal status. Returns the orchestration's refreshed status.",
+	}, cancelDeliveryHandler(a))
 }

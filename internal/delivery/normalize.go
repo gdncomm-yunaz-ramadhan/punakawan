@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -88,4 +89,44 @@ func contentHash(in SourceInput) string {
 func contentDigest(fields ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(fields, "\x00")))
 	return hex.EncodeToString(sum[:])
+}
+
+// jiraKeyPattern matches the conventional Jira issue key shape
+// (uppercase project key, hyphen, number) - e.g. "PAY-1842".
+var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,9}-[0-9]+$`)
+
+// githubShortRefPattern matches the conventional "owner/repo#number"
+// shorthand for a GitHub issue or pull request.
+var githubShortRefPattern = regexp.MustCompile(`^[\w.-]+/[\w.-]+#[0-9]+$`)
+
+// ClassifyReference guesses a bare, unstructured reference string's
+// SourceInput shape, for a caller (start_delivery and the `punakawan
+// deliver` CLI) that only has a plain string rather than an
+// already-typed SourceInput an adapter fetched. It reports confident
+// only when the string unambiguously matches one recognized shape: an
+// absolute http(s) URL, a Jira-style PROJECT-123 key, or a GitHub
+// owner/repo#123 short reference. Everything else - including a bare
+// Confluence page id, which has no distinguishable shape from an
+// arbitrary number, and plain free text, which is indistinguishable
+// from an unrecognized reference the caller simply mistyped - comes
+// back not confident. Guessing wrong here would silently mis-file a
+// requirement under the wrong provider (or invent a freetext source
+// nobody asked for), so an unclear reference is left for the caller to
+// resolve explicitly instead (grounded truth over confident
+// performance).
+func ClassifyReference(ref string) (SourceInput, bool) {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return SourceInput{}, false
+	}
+	if u, err := url.Parse(trimmed); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+		return SourceInput{Provider: "url", URL: trimmed, Title: trimmed}, true
+	}
+	if jiraKeyPattern.MatchString(trimmed) {
+		return SourceInput{Provider: "jira", ExternalID: trimmed, Title: trimmed}, true
+	}
+	if githubShortRefPattern.MatchString(trimmed) {
+		return SourceInput{Provider: "github", ExternalID: trimmed, Title: trimmed}, true
+	}
+	return SourceInput{}, false
 }
