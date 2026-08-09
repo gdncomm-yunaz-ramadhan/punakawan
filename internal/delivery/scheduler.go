@@ -1,15 +1,17 @@
 // scheduler.go implements the worker-scheduling core: the runnable
 // frontier (reusing Frontier's pure graph-reachability logic), one
-// mutating lane per project within an orchestration, and the lease
-// lifecycle (grant/heartbeat/complete/reject/expire) every lane moves
-// through.
+// mutating lane per project within an orchestration, a global cap on
+// how many distinct projects may have mutating work in flight across
+// every orchestration at once, and the lease lifecycle
+// (grant/heartbeat/complete/reject/expire) every lane moves through.
 //
-// A global concurrency cap across all open orchestrations at once is
-// deliberately not enforced here - correctly limiting it requires
-// scanning every open orchestration's event log, not just this one's,
-// which is left as a documented follow-up rather than built as a
-// full-table scan in this pass. What is enforced, per orchestration, is
-// one mutating lane per project.
+// The global cap is computed with a full scan across every
+// orchestration's own event log on each lease grant: an accurate count
+// of "how many distinct projects currently have mutating work anywhere"
+// genuinely needs every orchestration's own view of its lanes, not just
+// the one being granted against, so there is no cheaper correct way to
+// compute it without a separate materialized index this task does not
+// introduce.
 package delivery
 
 import (
@@ -157,9 +159,59 @@ func sameBlockers(a, b []string) bool {
 	return true
 }
 
-// GrantLease claims lane for workerID, provided it is currently runnable
-// and the project does not already have another mutating lane leased or
-// running. expectedRevision is checked against the lane's current
+// defaultMaxConcurrentProjects caps how many distinct projects may have
+// mutating (leased or running) work in flight across every
+// orchestration at once, unless a project already has work in flight
+// and is simply continuing to use its own existing slot.
+const defaultMaxConcurrentProjects = 4
+
+// activeProjectIDs scans every orchestration's own event log and
+// returns the set of project ids that currently have at least one
+// leased or running lane, anywhere.
+func activeProjectIDs(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT orchestration_id FROM delivery_events`)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: list orchestrations: %w", err)
+	}
+	var orchestrationIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		orchestrationIDs = append(orchestrationIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	active := map[string]bool{}
+	for _, id := range orchestrationIDs {
+		events, err := loadEventsTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		lanes, err := allLanes(id, events)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range lanes {
+			if l.Status == protocol.DeliveryLaneStatusLeased || l.Status == protocol.DeliveryLaneStatusRunning {
+				active[l.ProjectId] = true
+			}
+		}
+	}
+	return active, nil
+}
+
+// GrantLease claims lane for workerID, provided it is currently
+// runnable, the project does not already have another mutating lane
+// leased or running within this orchestration, and granting it would
+// not bring a new project into mutating work while the global cap is
+// already full. expectedRevision is checked against the lane's current
 // derived revision for optimistic concurrency, same as UpdateLaneStatus.
 // The lease expires at leaseDuration from now unless renewed via
 // Heartbeat.
@@ -191,6 +243,14 @@ func (s *Store) GrantLease(ctx context.Context, idempotencyKey, orchestrationID,
 			if other.Status == protocol.DeliveryLaneStatusLeased || other.Status == protocol.DeliveryLaneStatusRunning {
 				return ErrProjectAtConcurrencyLimit
 			}
+		}
+
+		active, err := activeProjectIDs(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if !active[lane.ProjectId] && len(active) >= defaultMaxConcurrentProjects {
+			return ErrGlobalConcurrencyLimit
 		}
 
 		attempt := 1

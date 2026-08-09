@@ -279,3 +279,58 @@ func lanesByID(lanes []*protocol.DeliveryLane) map[string]*protocol.DeliveryLane
 	}
 	return out
 }
+
+// TestGrantLeaseEnforcesGlobalConcurrencyLimit checks the cap on how
+// many distinct projects may have mutating work in flight across every
+// orchestration at once: five separate projects, each in its own
+// orchestration (so the per-orchestration per-project check never
+// applies), can only have defaultMaxConcurrentProjects of them leased
+// simultaneously - and completing one frees a slot for the next.
+func TestGrantLeaseEnforcesGlobalConcurrencyLimit(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	type seeded struct {
+		orch *protocol.DeliveryOrchestration
+		lane *protocol.DeliveryLane
+	}
+	var seed []seeded
+	for i := 0; i < defaultMaxConcurrentProjects+1; i++ {
+		orch := createTestOrchestration(t, s)
+		proj := registerProject(t, s, "global-cap-project-"+NewID())
+		task := createTestTask(t, s, orch.Id, "task")
+		if _, err := s.RouteParentTask(ctx, "route-"+NewID(), orch.Id, task.Id, proj.Id); err != nil {
+			t.Fatalf("RouteParentTask: %v", err)
+		}
+		lane, err := s.CreateLane(ctx, "lane-"+NewID(), NewID(), orch.Id, proj.Id, task.Id)
+		if err != nil {
+			t.Fatalf("CreateLane: %v", err)
+		}
+		if _, err := s.SyncFrontier(ctx, "sync-"+NewID(), orch.Id); err != nil {
+			t.Fatalf("SyncFrontier: %v", err)
+		}
+		seed = append(seed, seeded{orch: orch, lane: lane})
+	}
+
+	var leased []*protocol.DeliveryLane
+	for i := 0; i < defaultMaxConcurrentProjects; i++ {
+		l, err := s.GrantLease(ctx, "lease-"+NewID(), seed[i].orch.Id, seed[i].lane.Id, 2, "worker-"+NewID(), time.Minute)
+		if err != nil {
+			t.Fatalf("GrantLease(%d): %v", i, err)
+		}
+		leased = append(leased, l)
+	}
+
+	extra := seed[defaultMaxConcurrentProjects]
+	if _, err := s.GrantLease(ctx, "lease-extra", extra.orch.Id, extra.lane.Id, 2, "worker-extra", time.Minute); !errors.Is(err, ErrGlobalConcurrencyLimit) {
+		t.Fatalf("expected ErrGlobalConcurrencyLimit for the project beyond the cap, got %v", err)
+	}
+
+	if _, err := s.CompleteLease(ctx, "complete-0", seed[0].orch.Id, seed[0].lane.Id, *leased[0].LeaseToken, leased[0].Revision); err != nil {
+		t.Fatalf("CompleteLease(0): %v", err)
+	}
+
+	if _, err := s.GrantLease(ctx, "lease-extra-2", extra.orch.Id, extra.lane.Id, 2, "worker-extra", time.Minute); err != nil {
+		t.Fatalf("expected the freed slot to let the extra project lease, got %v", err)
+	}
+}

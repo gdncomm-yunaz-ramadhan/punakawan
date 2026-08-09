@@ -49,6 +49,12 @@ var (
 	// would exceed one mutating lane per project within an orchestration.
 	ErrProjectAtConcurrencyLimit = errors.New("delivery: project already has a mutating lane leased or running")
 
+	// ErrGlobalConcurrencyLimit is returned when granting a lease would
+	// bring a new project into mutating work while the maximum number
+	// of distinct projects already have a mutating lane in flight,
+	// across every orchestration.
+	ErrGlobalConcurrencyLimit = errors.New("delivery: maximum number of projects already have mutating work in flight")
+
 	// ErrLeaseTokenMismatch is returned when a heartbeat/complete/reject
 	// call presents a lease token that does not match the lane's current
 	// lease - it belongs to an expired or already-superseded lease.
