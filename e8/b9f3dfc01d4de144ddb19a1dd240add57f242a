@@ -1,0 +1,58 @@
+protocol/deliveryevent.schema.json
+  708d680d348b9cc2 24
+internal/delivery/githubprprovider.go
+  708d680d348b9cc2 1-52
+internal/delivery/repair_test.go
+  708d680d348b9cc2 1-215
+internal/mcpserver/tools_delivery_pr_test.go
+  708d680d348b9cc2 1-376
+internal/delivery/errors.go
+  708d680d348b9cc2 110-117
+internal/mcpserver/tools_delivery_pr.go
+  708d680d348b9cc2 1-283
+internal/delivery/publish_test.go
+  708d680d348b9cc2 1-113
+internal/delivery/publish.go
+  708d680d348b9cc2 1-117
+internal/mcpserver/tools.go
+  708d680d348b9cc2 554-592
+protocol/deliverylane.schema.json
+  708d680d348b9cc2 30-36
+internal/delivery/reduce.go
+  708d680d348b9cc2 197-224
+internal/delivery/repair.go
+  708d680d348b9cc2 1-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e8b9f3dfc01d4de144ddb19a1dd240add57f242a",
+  "prompts": {
+    "708d680d348b9cc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19eddefc-e58f-4e99-9505-2b5c93373e72",
+        "model": "<synthetic>"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1432,
+      "total_deletions": 37,
+      "accepted_lines": 1396,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
