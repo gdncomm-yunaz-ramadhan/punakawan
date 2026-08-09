@@ -70,7 +70,7 @@ func TestRunPreflightReportsRealChecksHonestly(t *testing.T) {
 		RequiredExecutables: []string{"git"},
 		RequiredServices:    []string{"some-service"},
 	}
-	checks := RunPreflight(context.Background(), profile, gitops.NewInspector(sup))
+	checks := RunPreflight(context.Background(), profile, gitops.NewInspector(sup), nil, "")
 
 	byName := map[string]protocol.PreflightCheck{}
 	for _, c := range checks {
@@ -95,7 +95,7 @@ func TestRunPreflightMissingExecutableFails(t *testing.T) {
 		BaseBranch:          "main",
 		RequiredExecutables: []string{"definitely-not-a-real-binary-xyz"},
 	}
-	checks := RunPreflight(context.Background(), profile, nil)
+	checks := RunPreflight(context.Background(), profile, nil, nil, "")
 	found := false
 	for _, c := range checks {
 		if c.Name == "executable:definitely-not-a-real-binary-xyz" {

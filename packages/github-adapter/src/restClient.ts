@@ -43,6 +43,23 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): GitHubC
   return { token, apiBaseUrl, graphqlUrl };
 }
 
+/**
+ * Thrown for a non-ok REST response, carrying the response's actual status
+ * code rather than leaving callers to parse it back out of the message
+ * text - a diagnostic caller (e.g. getRepository's 404-means-inaccessible
+ * handling) checks `error.status` directly instead of pattern-matching a
+ * human-readable string.
+ */
+export class GitHubRestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'GitHubRestError';
+  }
+}
+
 function errorDetail(data: unknown): string {
   if (typeof data === 'string') return data;
   try {
@@ -104,8 +121,9 @@ export class GitHubRestClient {
         response.status === 401 || response.status === 403
           ? ' Check the token and its repository/PR permissions (contents, pull-requests, checks scopes).'
           : '';
-      throw new Error(
+      throw new GitHubRestError(
         `GitHub REST ${options.method ?? 'GET'} ${url.pathname} failed with HTTP ${response.status}: ${errorDetail(data)}.${authHint}`,
+        response.status,
       );
     }
 

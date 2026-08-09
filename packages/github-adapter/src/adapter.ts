@@ -8,6 +8,7 @@ import {
   getPullRequest,
   getPullRequestChecks,
   getPullRequestFiles,
+  getRepository,
   listPullRequestComments,
   listUnresolvedReviewThreads,
   replyToReviewComment,
@@ -48,6 +49,11 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
       const { op, ...rest } = params as { op: string } & Record<string, unknown>;
 
       switch (op) {
+        case 'github.getRepository': {
+          const { repository } = rest as { repository: string };
+          if (!repository) throw new Error('github.getRepository requires "repository"');
+          return getRepository(getClient(), { repository });
+        }
         case 'github.getPullRequest': {
           const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };
           if (!repository || pullRequestNumber === undefined) {

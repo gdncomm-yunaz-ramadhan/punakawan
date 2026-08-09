@@ -2225,6 +2225,141 @@ func (j *BrowserFlow) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// One reported status of a single CI check run against a lane's branch (e.g. one
+// GitHub check run, one Jenkins job). A lane's CI dimension in its
+// VerificationMatrix is derived by folding every reported CICheck for that lane,
+// grouped by external_id, keeping the latest status per check - this record is the
+// raw input to that fold, not itself a derived state.
+type CICheck struct {
+	// The provider's own stable identifier for this check (e.g. a GitHub check-run
+	// id, a Jenkins job/build key). Distinct checks are grouped by this id when
+	// folding, not by name, since a check's display name can be reused across
+	// unrelated jobs.
+	ExternalId string `json:"external_id" yaml:"external_id" mapstructure:"external_id"`
+
+	// Human-readable check name, for display only.
+	Name string `json:"name" yaml:"name" mapstructure:"name"`
+
+	// Which CI system reported this check, so the same external_id from two different
+	// providers is never confused with the same check.
+	Provider CICheckProvider `json:"provider" yaml:"provider" mapstructure:"provider"`
+
+	// ReportedAt corresponds to the JSON schema field "reported_at".
+	ReportedAt time.Time `json:"reported_at" yaml:"reported_at" mapstructure:"reported_at"`
+
+	// Whether this check gates the lane's CI dimension. A lane's derived CI status
+	// only depends on required checks - an optional check failing never fails the CI
+	// dimension.
+	Required bool `json:"required" yaml:"required" mapstructure:"required"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status CICheckStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Link to the check's own detail page, if the provider exposes one.
+	Url *string `json:"url,omitempty,omitzero" yaml:"url,omitempty" mapstructure:"url,omitempty"`
+}
+
+type CICheckProvider string
+
+const CICheckProviderGeneric CICheckProvider = "generic"
+const CICheckProviderGithub CICheckProvider = "github"
+const CICheckProviderJenkins CICheckProvider = "jenkins"
+
+var enumValues_CICheckProvider = []interface{}{
+	"github",
+	"jenkins",
+	"generic",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *CICheckProvider) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_CICheckProvider {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_CICheckProvider, v)
+	}
+	*j = CICheckProvider(v)
+	return nil
+}
+
+type CICheckStatus string
+
+const CICheckStatusCancelled CICheckStatus = "cancelled"
+const CICheckStatusFailed CICheckStatus = "failed"
+const CICheckStatusPassed CICheckStatus = "passed"
+const CICheckStatusQueued CICheckStatus = "queued"
+const CICheckStatusRunning CICheckStatus = "running"
+
+var enumValues_CICheckStatus = []interface{}{
+	"queued",
+	"running",
+	"passed",
+	"failed",
+	"cancelled",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *CICheckStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_CICheckStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_CICheckStatus, v)
+	}
+	*j = CICheckStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *CICheck) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["external_id"]; raw != nil && !ok {
+		return fmt.Errorf("field external_id in CICheck: required")
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in CICheck: required")
+	}
+	if _, ok := raw["provider"]; raw != nil && !ok {
+		return fmt.Errorf("field provider in CICheck: required")
+	}
+	if _, ok := raw["reported_at"]; raw != nil && !ok {
+		return fmt.Errorf("field reported_at in CICheck: required")
+	}
+	if _, ok := raw["required"]; raw != nil && !ok {
+		return fmt.Errorf("field required in CICheck: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in CICheck: required")
+	}
+	type Plain CICheck
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = CICheck(plain)
+	return nil
+}
+
 // The primary proof artifact for a change, per
 // punakawan-role-config-distinguished-improvements-plan.md Part IV §32/§33.
 // Machine- and human-readable, versioned, project-scoped, evidence-backed,
@@ -3237,12 +3372,15 @@ const DeliveryEventTypeInputRegistered DeliveryEventType = "input.registered"
 const DeliveryEventTypeInputResolved DeliveryEventType = "input.resolved"
 const DeliveryEventTypeLaneBagongSubmitted DeliveryEventType = "lane.bagong_submitted"
 const DeliveryEventTypeLaneBlocked DeliveryEventType = "lane.blocked"
+const DeliveryEventTypeLaneCiCheckReported DeliveryEventType = "lane.ci_check_reported"
 const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
 const DeliveryEventTypeLaneGarengSubmitted DeliveryEventType = "lane.gareng_submitted"
 const DeliveryEventTypeLanePetrukSubmitted DeliveryEventType = "lane.petruk_submitted"
+const DeliveryEventTypeLaneReviewConclusionRecorded DeliveryEventType = "lane.review_conclusion_recorded"
 const DeliveryEventTypeLaneSemarSubmitted DeliveryEventType = "lane.semar_submitted"
 const DeliveryEventTypeLaneStatusChanged DeliveryEventType = "lane.status_changed"
 const DeliveryEventTypeLaneUnblocked DeliveryEventType = "lane.unblocked"
+const DeliveryEventTypeLaneVerificationDimensionRecorded DeliveryEventType = "lane.verification_dimension_recorded"
 const DeliveryEventTypeLaneWorktreeCreated DeliveryEventType = "lane.worktree_created"
 const DeliveryEventTypeLaneWorktreeRemoved DeliveryEventType = "lane.worktree_removed"
 const DeliveryEventTypeLeaseCancelled DeliveryEventType = "lease.cancelled"
@@ -3277,6 +3415,9 @@ var enumValues_DeliveryEventType = []interface{}{
 	"lane.gareng_submitted",
 	"lane.petruk_submitted",
 	"lane.bagong_submitted",
+	"lane.verification_dimension_recorded",
+	"lane.ci_check_reported",
+	"lane.review_conclusion_recorded",
 	"lease.granted",
 	"lease.heartbeat",
 	"lease.completed",
@@ -8341,6 +8482,168 @@ func (j *RequirementSource) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// One reviewer's recorded outcome for a lane's current attempt, computed and
+// stored the same way VerificationMatrix is (a scan of the lane's own event log,
+// not a DeliveryLane field), since a lane may accumulate more than one conclusion
+// across retries. independence_level and the reviewer's own
+// worker/session/model/provider identity are recorded so a later reader can tell
+// whether this conclusion came from a genuinely separate reviewer rather than the
+// same session that implemented the change - recording the same session as
+// reviewer is rejected unless an override reason is given.
+type ReviewConclusion struct {
+	// ReviewFinding ids that must be resolved before this conclusion could become
+	// approved; empty when the outcome is already approved.
+	BlockingFindingIds []string `json:"blocking_finding_ids" yaml:"blocking_finding_ids" mapstructure:"blocking_finding_ids"`
+
+	// EvidenceArtifact ids the reviewer's conclusion is grounded in.
+	EvidenceIds []string `json:"evidence_ids" yaml:"evidence_ids" mapstructure:"evidence_ids"`
+
+	// Filesystem-safe ULID (Crockford base32, 26 chars).
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// How independent this reviewer was from whoever implemented the attempt being
+	// reviewed.
+	IndependenceLevel ReviewConclusionIndependenceLevel `json:"independence_level" yaml:"independence_level" mapstructure:"independence_level"`
+
+	// Required to record a conclusion whose reviewer_session_id matches the
+	// implementer's own session; absent otherwise.
+	IndependenceOverrideReason *string `json:"independence_override_reason,omitempty,omitzero" yaml:"independence_override_reason,omitempty" mapstructure:"independence_override_reason,omitempty"`
+
+	// LaneId corresponds to the JSON schema field "lane_id".
+	LaneId string `json:"lane_id" yaml:"lane_id" mapstructure:"lane_id"`
+
+	// Outcome corresponds to the JSON schema field "outcome".
+	Outcome ReviewConclusionOutcome `json:"outcome" yaml:"outcome" mapstructure:"outcome"`
+
+	// RecordedAt corresponds to the JSON schema field "recorded_at".
+	RecordedAt time.Time `json:"recorded_at" yaml:"recorded_at" mapstructure:"recorded_at"`
+
+	// ReviewerModel corresponds to the JSON schema field "reviewer_model".
+	ReviewerModel *string `json:"reviewer_model,omitempty,omitzero" yaml:"reviewer_model,omitempty" mapstructure:"reviewer_model,omitempty"`
+
+	// ReviewerProvider corresponds to the JSON schema field "reviewer_provider".
+	ReviewerProvider *string `json:"reviewer_provider,omitempty,omitzero" yaml:"reviewer_provider,omitempty" mapstructure:"reviewer_provider,omitempty"`
+
+	// ReviewerSessionId corresponds to the JSON schema field "reviewer_session_id".
+	ReviewerSessionId string `json:"reviewer_session_id" yaml:"reviewer_session_id" mapstructure:"reviewer_session_id"`
+
+	// ReviewerWorkerId corresponds to the JSON schema field "reviewer_worker_id".
+	ReviewerWorkerId string `json:"reviewer_worker_id" yaml:"reviewer_worker_id" mapstructure:"reviewer_worker_id"`
+
+	// The computed_at of the VerificationMatrix the reviewer actually looked at -
+	// pins exactly what verification state this conclusion was formed against.
+	VerificationMatrixComputedAt time.Time `json:"verification_matrix_computed_at" yaml:"verification_matrix_computed_at" mapstructure:"verification_matrix_computed_at"`
+}
+
+type ReviewConclusionIndependenceLevel string
+
+const ReviewConclusionIndependenceLevelDifferentSession ReviewConclusionIndependenceLevel = "different_session"
+const ReviewConclusionIndependenceLevelDifferentWorker ReviewConclusionIndependenceLevel = "different_worker"
+const ReviewConclusionIndependenceLevelSameSession ReviewConclusionIndependenceLevel = "same_session"
+
+var enumValues_ReviewConclusionIndependenceLevel = []interface{}{
+	"same_session",
+	"different_session",
+	"different_worker",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReviewConclusionIndependenceLevel) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ReviewConclusionIndependenceLevel {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ReviewConclusionIndependenceLevel, v)
+	}
+	*j = ReviewConclusionIndependenceLevel(v)
+	return nil
+}
+
+type ReviewConclusionOutcome string
+
+const ReviewConclusionOutcomeApproved ReviewConclusionOutcome = "approved"
+const ReviewConclusionOutcomeBlocked ReviewConclusionOutcome = "blocked"
+const ReviewConclusionOutcomeChangesRequested ReviewConclusionOutcome = "changes_requested"
+
+var enumValues_ReviewConclusionOutcome = []interface{}{
+	"approved",
+	"changes_requested",
+	"blocked",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReviewConclusionOutcome) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ReviewConclusionOutcome {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ReviewConclusionOutcome, v)
+	}
+	*j = ReviewConclusionOutcome(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReviewConclusion) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["blocking_finding_ids"]; raw != nil && !ok {
+		return fmt.Errorf("field blocking_finding_ids in ReviewConclusion: required")
+	}
+	if _, ok := raw["evidence_ids"]; raw != nil && !ok {
+		return fmt.Errorf("field evidence_ids in ReviewConclusion: required")
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in ReviewConclusion: required")
+	}
+	if _, ok := raw["independence_level"]; raw != nil && !ok {
+		return fmt.Errorf("field independence_level in ReviewConclusion: required")
+	}
+	if _, ok := raw["lane_id"]; raw != nil && !ok {
+		return fmt.Errorf("field lane_id in ReviewConclusion: required")
+	}
+	if _, ok := raw["outcome"]; raw != nil && !ok {
+		return fmt.Errorf("field outcome in ReviewConclusion: required")
+	}
+	if _, ok := raw["recorded_at"]; raw != nil && !ok {
+		return fmt.Errorf("field recorded_at in ReviewConclusion: required")
+	}
+	if _, ok := raw["reviewer_session_id"]; raw != nil && !ok {
+		return fmt.Errorf("field reviewer_session_id in ReviewConclusion: required")
+	}
+	if _, ok := raw["reviewer_worker_id"]; raw != nil && !ok {
+		return fmt.Errorf("field reviewer_worker_id in ReviewConclusion: required")
+	}
+	if _, ok := raw["verification_matrix_computed_at"]; raw != nil && !ok {
+		return fmt.Errorf("field verification_matrix_computed_at in ReviewConclusion: required")
+	}
+	type Plain ReviewConclusion
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ReviewConclusion(plain)
+	return nil
+}
+
 // One deduplicated, prioritized finding from review_pr's pipeline: Gareng/Petruk
 // build independent review capsules, Bagong verifies findings against the diff and
 // evidence, Semar deduplicates and prioritizes. See
@@ -8988,6 +9291,282 @@ func (j *TestReportSummary) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s: must be >= %v", "total_tests", 0)
 	}
 	*j = TestReportSummary(plain)
+	return nil
+}
+
+// The latest known status of one of the fixed dimensions a lane's attempt is
+// verified against before a review conclusion may rely on it.
+// logic/unit/integration/quality/e2e are recorded directly by whichever role or
+// tool ran that check; ci is either recorded directly or derived from folded
+// CICheck reports for the lane, with an explicit recording always taking
+// precedence over the derived value.
+type VerificationDimension struct {
+	// When this dimension's status was last recorded or derived.
+	CheckedAt *time.Time `json:"checked_at,omitempty,omitzero" yaml:"checked_at,omitempty" mapstructure:"checked_at,omitempty"`
+
+	// Id of the EvidenceArtifact backing this dimension's status, if the recording
+	// included one.
+	EvidenceId *string `json:"evidence_id,omitempty,omitzero" yaml:"evidence_id,omitempty" mapstructure:"evidence_id,omitempty"`
+
+	// Name corresponds to the JSON schema field "name".
+	Name VerificationDimensionName `json:"name" yaml:"name" mapstructure:"name"`
+
+	// pending means no evidence has been recorded for this dimension yet - it is
+	// never defaulted to passed or failed without evidence.
+	Status VerificationDimensionStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Short human-readable explanation of the status, if the recording included one.
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+type VerificationDimensionName string
+
+const VerificationDimensionNameCi VerificationDimensionName = "ci"
+const VerificationDimensionNameE2E VerificationDimensionName = "e2e"
+const VerificationDimensionNameIntegration VerificationDimensionName = "integration"
+const VerificationDimensionNameLogic VerificationDimensionName = "logic"
+const VerificationDimensionNameQuality VerificationDimensionName = "quality"
+const VerificationDimensionNameUnit VerificationDimensionName = "unit"
+
+var enumValues_VerificationDimensionName = []interface{}{
+	"logic",
+	"unit",
+	"integration",
+	"quality",
+	"e2e",
+	"ci",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VerificationDimensionName) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_VerificationDimensionName {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VerificationDimensionName, v)
+	}
+	*j = VerificationDimensionName(v)
+	return nil
+}
+
+type VerificationDimensionStatus string
+
+const VerificationDimensionStatusFailed VerificationDimensionStatus = "failed"
+const VerificationDimensionStatusPassed VerificationDimensionStatus = "passed"
+const VerificationDimensionStatusPending VerificationDimensionStatus = "pending"
+
+var enumValues_VerificationDimensionStatus = []interface{}{
+	"pending",
+	"passed",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VerificationDimensionStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_VerificationDimensionStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VerificationDimensionStatus, v)
+	}
+	*j = VerificationDimensionStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VerificationDimension) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in VerificationDimension: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in VerificationDimension: required")
+	}
+	type Plain VerificationDimension
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = VerificationDimension(plain)
+	return nil
+}
+
+// A computed, non-reduced snapshot of one lane's verification state across its
+// fixed set of dimensions, built by scanning the lane's own event log rather than
+// by adding accumulating fields to DeliveryLane - unlike a lane's
+// single-latest-pointer role-stage fields, a verification matrix is naturally
+// multi-valued and grows over a lane's lifetime as more dimensions are checked.
+// Always carries exactly one entry per fixed dimension name, defaulting to pending
+// when nothing has been recorded for it yet, so a caller never has to special-case
+// a missing dimension.
+type VerificationMatrix struct {
+	// Timestamp of the last lane event folded into this matrix, or the lane's own
+	// created_at if it has no events yet - never wall-clock time, so the same event
+	// log always computes the same matrix.
+	ComputedAt time.Time `json:"computed_at" yaml:"computed_at" mapstructure:"computed_at"`
+
+	// Exactly one entry per fixed dimension name (logic, unit, integration, quality,
+	// e2e, ci), in that order.
+	Dimensions []VerificationMatrixDimensionsElem `json:"dimensions" yaml:"dimensions" mapstructure:"dimensions"`
+
+	// LaneId corresponds to the JSON schema field "lane_id".
+	LaneId string `json:"lane_id" yaml:"lane_id" mapstructure:"lane_id"`
+
+	// OrchestrationId corresponds to the JSON schema field "orchestration_id".
+	OrchestrationId string `json:"orchestration_id" yaml:"orchestration_id" mapstructure:"orchestration_id"`
+}
+
+type VerificationMatrixDimensionsElem struct {
+	// CheckedAt corresponds to the JSON schema field "checked_at".
+	CheckedAt *time.Time `json:"checked_at,omitempty,omitzero" yaml:"checked_at,omitempty" mapstructure:"checked_at,omitempty"`
+
+	// EvidenceId corresponds to the JSON schema field "evidence_id".
+	EvidenceId *string `json:"evidence_id,omitempty,omitzero" yaml:"evidence_id,omitempty" mapstructure:"evidence_id,omitempty"`
+
+	// Name corresponds to the JSON schema field "name".
+	Name VerificationMatrixDimensionsElemName `json:"name" yaml:"name" mapstructure:"name"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status VerificationMatrixDimensionsElemStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Summary corresponds to the JSON schema field "summary".
+	Summary *string `json:"summary,omitempty,omitzero" yaml:"summary,omitempty" mapstructure:"summary,omitempty"`
+}
+
+type VerificationMatrixDimensionsElemName string
+
+const VerificationMatrixDimensionsElemNameCi VerificationMatrixDimensionsElemName = "ci"
+const VerificationMatrixDimensionsElemNameE2E VerificationMatrixDimensionsElemName = "e2e"
+const VerificationMatrixDimensionsElemNameIntegration VerificationMatrixDimensionsElemName = "integration"
+const VerificationMatrixDimensionsElemNameLogic VerificationMatrixDimensionsElemName = "logic"
+const VerificationMatrixDimensionsElemNameQuality VerificationMatrixDimensionsElemName = "quality"
+const VerificationMatrixDimensionsElemNameUnit VerificationMatrixDimensionsElemName = "unit"
+
+var enumValues_VerificationMatrixDimensionsElemName = []interface{}{
+	"logic",
+	"unit",
+	"integration",
+	"quality",
+	"e2e",
+	"ci",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VerificationMatrixDimensionsElemName) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_VerificationMatrixDimensionsElemName {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VerificationMatrixDimensionsElemName, v)
+	}
+	*j = VerificationMatrixDimensionsElemName(v)
+	return nil
+}
+
+type VerificationMatrixDimensionsElemStatus string
+
+const VerificationMatrixDimensionsElemStatusFailed VerificationMatrixDimensionsElemStatus = "failed"
+const VerificationMatrixDimensionsElemStatusPassed VerificationMatrixDimensionsElemStatus = "passed"
+const VerificationMatrixDimensionsElemStatusPending VerificationMatrixDimensionsElemStatus = "pending"
+
+var enumValues_VerificationMatrixDimensionsElemStatus = []interface{}{
+	"pending",
+	"passed",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VerificationMatrixDimensionsElemStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_VerificationMatrixDimensionsElemStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VerificationMatrixDimensionsElemStatus, v)
+	}
+	*j = VerificationMatrixDimensionsElemStatus(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VerificationMatrixDimensionsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in VerificationMatrixDimensionsElem: required")
+	}
+	if _, ok := raw["status"]; raw != nil && !ok {
+		return fmt.Errorf("field status in VerificationMatrixDimensionsElem: required")
+	}
+	type Plain VerificationMatrixDimensionsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = VerificationMatrixDimensionsElem(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VerificationMatrix) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["computed_at"]; raw != nil && !ok {
+		return fmt.Errorf("field computed_at in VerificationMatrix: required")
+	}
+	if _, ok := raw["dimensions"]; raw != nil && !ok {
+		return fmt.Errorf("field dimensions in VerificationMatrix: required")
+	}
+	if _, ok := raw["lane_id"]; raw != nil && !ok {
+		return fmt.Errorf("field lane_id in VerificationMatrix: required")
+	}
+	if _, ok := raw["orchestration_id"]; raw != nil && !ok {
+		return fmt.Errorf("field orchestration_id in VerificationMatrix: required")
+	}
+	type Plain VerificationMatrix
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = VerificationMatrix(plain)
 	return nil
 }
 

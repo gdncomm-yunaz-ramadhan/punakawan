@@ -11,13 +11,16 @@ import (
 
 // RunPreflight computes every capability check this task defines for
 // profile, using inspector for the git-specific checks (reusing
-// internal/gitops rather than re-implementing remote/push detection).
+// internal/gitops rather than re-implementing remote/push detection) and,
+// when githubGate and repoSlug are both provided, githubGate for the
+// GitHub-specific pr-permissions and private-repository-identity checks.
 // A check is only ever reported pass or fail if it was actually
-// evaluated; anything this package cannot yet verify (PR permissions,
-// CI visibility, external service reachability, subprocess
-// restrictions, quality-tool configuration) is reported skipped with an
-// explanation, never a fabricated pass.
-func RunPreflight(ctx context.Context, profile *protocol.ProjectDeliveryProfile, inspector *gitops.Inspector) []protocol.PreflightCheck {
+// evaluated; anything this package cannot yet verify for the given
+// inputs (ci-visibility always, or the two GitHub checks when githubGate
+// is nil or repoSlug is empty - no provider besides GitHub is wired up
+// yet, and there is nothing to check without a repository to ask about)
+// is reported skipped with an explanation, never a fabricated pass.
+func RunPreflight(ctx context.Context, profile *protocol.ProjectDeliveryProfile, inspector *gitops.Inspector, githubGate adapterGate, repoSlug string) []protocol.PreflightCheck {
 	var checks []protocol.PreflightCheck
 	add := func(name string, classification protocol.PreflightCheckClassification, status protocol.PreflightCheckStatus, detail string) {
 		c := protocol.PreflightCheck{Name: name, Classification: classification, Status: status}
@@ -82,12 +85,33 @@ func RunPreflight(ctx context.Context, profile *protocol.ProjectDeliveryProfile,
 		}
 	}
 
-	// Not implemented anywhere in this codebase yet (internal/gitops's own
-	// DetectCapabilities comments flag PR-permission checking the same
-	// way): reported skipped rather than a fabricated pass, matching this
-	// task's failure-behavior requirement to fail early and honestly.
-	add("pr-permissions", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusSkipped, "no provider adapter implements PR-permission checking yet")
-	add("private-repository-identity", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusSkipped, "no provider adapter implements identity checking yet")
+	// pr-permissions and private-repository-identity are only actually
+	// evaluated for GitHub, and only once a repository is known to ask
+	// about - every other provider, or a GitHub project with no gate
+	// configured yet, still gets the same honest skip this task always
+	// reported here.
+	if githubGate == nil || repoSlug == "" {
+		add("pr-permissions", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusSkipped, "no provider adapter implements PR-permission checking yet")
+		add("private-repository-identity", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusSkipped, "no provider adapter implements identity checking yet")
+	} else if accessible, _, canCreatePR, detail, err := CheckGitHubRepositoryAccess(ctx, githubGate, repoSlug); err != nil {
+		add("private-repository-identity", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusFail, err.Error())
+		add("pr-permissions", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusFail, err.Error())
+	} else {
+		if accessible {
+			add("private-repository-identity", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusPass, detail)
+		} else {
+			add("private-repository-identity", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusFail, detail)
+		}
+		if canCreatePR {
+			add("pr-permissions", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusPass, detail)
+		} else {
+			add("pr-permissions", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusFail, detail)
+		}
+	}
+
+	// CI-adapter reachability is left for a later phase (it needs a
+	// bounded repair loop to be useful, which does not exist yet) -
+	// always reported skipped here.
 	add("ci-visibility", protocol.PreflightCheckClassificationDelegatedToCi, protocol.PreflightCheckStatusSkipped, "CI adapter reachability is not implemented yet")
 
 	for _, svc := range profile.RequiredServices {

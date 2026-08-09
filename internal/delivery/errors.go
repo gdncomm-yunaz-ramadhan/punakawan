@@ -92,4 +92,19 @@ var (
 	// out on the lane's own branch - resume validation failed, so
 	// nothing is recreated or deleted automatically.
 	ErrWorktreeMismatch = errors.New("delivery: lane's recorded worktree no longer matches its recorded branch")
+
+	// ErrLaneTerminal is returned when a verification dimension, CI
+	// check, or review conclusion is recorded against a lane that has
+	// already reached a terminal status (accepted or failed) - the
+	// attempt it would apply to is over, so recording it would only
+	// misattribute new evidence to a closed attempt.
+	ErrLaneTerminal = errors.New("delivery: lane has already reached a terminal status")
+
+	// ErrIndependenceRequired is returned when a review conclusion's
+	// reviewer_session_id matches the session that implemented the
+	// attempt it reviews, and no independence_override_reason was given
+	// to explicitly acknowledge that. Independent review is the default
+	// requirement; only a stated reason lets a lane's own implementer
+	// record its review conclusion.
+	ErrIndependenceRequired = errors.New("delivery: review conclusion requires an independent reviewer or an override reason")
 )

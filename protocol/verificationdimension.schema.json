@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/verificationdimension.schema.json",
+  "title": "VerificationDimension",
+  "description": "The latest known status of one of the fixed dimensions a lane's attempt is verified against before a review conclusion may rely on it. logic/unit/integration/quality/e2e are recorded directly by whichever role or tool ran that check; ci is either recorded directly or derived from folded CICheck reports for the lane, with an explicit recording always taking precedence over the derived value.",
+  "type": "object",
+  "required": ["name", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "enum": ["logic", "unit", "integration", "quality", "e2e", "ci"] },
+    "status": { "type": "string", "enum": ["pending", "passed", "failed"], "description": "pending means no evidence has been recorded for this dimension yet - it is never defaulted to passed or failed without evidence." },
+    "evidence_id": { "type": "string", "description": "Id of the EvidenceArtifact backing this dimension's status, if the recording included one." },
+    "summary": { "type": "string", "description": "Short human-readable explanation of the status, if the recording included one." },
+    "checked_at": { "type": "string", "format": "date-time", "description": "When this dimension's status was last recorded or derived." }
+  }
+}

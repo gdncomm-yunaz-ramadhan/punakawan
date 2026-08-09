@@ -184,6 +184,16 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 		case protocol.DeliveryEventTypeLaneBagongSubmitted:
 			recordID := stringField(ev.Payload, "record_id")
 			l.BagongRecordId = &recordID
+		case protocol.DeliveryEventTypeLaneVerificationDimensionRecorded,
+			protocol.DeliveryEventTypeLaneCiCheckReported,
+			protocol.DeliveryEventTypeLaneReviewConclusionRecorded:
+			// Recorded in the lane's own event log (so verification.go's
+			// BuildVerificationMatrix/GetLatestReviewConclusion can scan
+			// them directly and so this switch stays exhaustive), but
+			// deliberately not folded into any DeliveryLane field - see
+			// verification.go's package doc for why a verification matrix
+			// and a lane's review conclusions are computed read-models
+			// instead of accumulating lane state here.
 		default:
 			return nil, fmt.Errorf("delivery: unknown lane event type %q", ev.Type)
 		}

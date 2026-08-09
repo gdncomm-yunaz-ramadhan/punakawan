@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/verificationmatrix.schema.json",
+  "title": "VerificationMatrix",
+  "description": "A computed, non-reduced snapshot of one lane's verification state across its fixed set of dimensions, built by scanning the lane's own event log rather than by adding accumulating fields to DeliveryLane - unlike a lane's single-latest-pointer role-stage fields, a verification matrix is naturally multi-valued and grows over a lane's lifetime as more dimensions are checked. Always carries exactly one entry per fixed dimension name, defaulting to pending when nothing has been recorded for it yet, so a caller never has to special-case a missing dimension.",
+  "type": "object",
+  "required": ["lane_id", "orchestration_id", "dimensions", "computed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "lane_id": { "type": "string" },
+    "orchestration_id": { "type": "string" },
+    "dimensions": {
+      "type": "array",
+      "description": "Exactly one entry per fixed dimension name (logic, unit, integration, quality, e2e, ci), in that order.",
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "enum": ["logic", "unit", "integration", "quality", "e2e", "ci"] },
+          "status": { "type": "string", "enum": ["pending", "passed", "failed"] },
+          "evidence_id": { "type": "string" },
+          "summary": { "type": "string" },
+          "checked_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "computed_at": { "type": "string", "format": "date-time", "description": "Timestamp of the last lane event folded into this matrix, or the lane's own created_at if it has no events yet - never wall-clock time, so the same event log always computes the same matrix." }
+  }
+}
