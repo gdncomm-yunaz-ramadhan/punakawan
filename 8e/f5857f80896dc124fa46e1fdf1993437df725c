@@ -1,0 +1,56 @@
+internal/learning/import_test.go
+  7bf9711812567778 1-132
+internal/panel/registry/registry.go
+  7bf9711812567778 23,75-87
+internal/app/app.go
+  7bf9711812567778 10,348-356,383-390,419-426
+internal/learning/legacy_import.go
+  7bf9711812567778 1-84
+internal/storage/consolidation_test.go
+  7bf9711812567778 69-79
+internal/approvals/import_test.go
+  7bf9711812567778 1-140
+internal/approvals/legacy_import.go
+  7bf9711812567778 1-87
+internal/panel/registry/import_test.go
+  7bf9711812567778 1-129
+internal/syncqueue/import_test.go
+  7bf9711812567778 1-137
+internal/syncqueue/legacy_import.go
+  7bf9711812567778 1-85
+internal/panel/registry/legacy_import.go
+  7bf9711812567778 1-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8ef5857f80896dc124fa46e1fdf1993437df725c",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1275,
+      "total_deletions": 135,
+      "accepted_lines": 1146,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 33,
+      "overriden_lines": 0
+    }
+  }
+}
