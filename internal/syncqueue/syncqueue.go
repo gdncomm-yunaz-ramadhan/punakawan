@@ -11,16 +11,25 @@
 // separate MCP tool call from the Jira-write tools that fail into this
 // queue, so recording a failure here changes nothing about whether that
 // task can be marked done.
+//
+// Entries now live in the shared SQLite storage kernel (internal/storage,
+// punokawan-14yn.16), scoped to one project, rather than a per-workspace
+// JSONL file. History stays append-only: resolving an entry appends a new
+// record with the same Id rather than mutating the original, so Current
+// folds to the latest record per id while List returns full history.
 package syncqueue
 
 import (
-	"bufio"
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sync"
 	"time"
+
+	"github.com/ygrip/punakawan/internal/storage"
 )
 
 // Status is a queue entry's current state.
@@ -56,72 +65,85 @@ type Entry struct {
 	ResolvedAt    *time.Time `json:"resolved_at,omitempty"`
 }
 
-// Queue persists Entries as append-only JSONL, mirroring
-// internal/approvals.Store's convention: resolving an entry appends a new
-// record with the same Id rather than mutating the original, so Current
+// Queue appends and reads sync-queue entries for one project within the shared
+// storage kernel. Schema migration happens once, centrally, when the kernel
+// opens (internal/storage/migrations/0011_syncqueue.sql) - a Queue never
+// creates its own tables. History is append-only: resolving an entry appends a
+// new record with the same Id rather than mutating the original, so Current
 // folds to the latest record per id while List returns full history.
 type Queue struct {
-	path string
-	mu   sync.Mutex
+	db        *storage.DB
+	projectID string
 }
 
-// Open ensures .punakawan/syncqueue/ exists under workspaceRoot and returns
-// a Queue backed by queue.jsonl within it.
-func Open(workspaceRoot string) (*Queue, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "syncqueue")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("syncqueue: create %s: %w", dir, err)
+// New wraps db, scoping every read and write to projectID.
+func New(db *storage.DB, projectID string) *Queue {
+	return &Queue{db: db, projectID: projectID}
+}
+
+// writeKey returns a fresh random idempotency key. Append is a genuine append -
+// the same entry id may be written more than once (a failure, then a later
+// resolution, then a re-enqueued retry) and each such write must always take
+// effect - so every call wants a unique key rather than the kernel's replay
+// dedup collapsing them.
+func writeKey() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("syncqueue: generate write key: %w", err)
 	}
-	return &Queue{path: filepath.Join(dir, "queue.jsonl")}, nil
+	return hex.EncodeToString(b[:]), nil
 }
 
 // Append writes one entry record to the queue.
 func (q *Queue) Append(e Entry) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	f, err := os.OpenFile(q.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	data, err := json.Marshal(e)
 	if err != nil {
-		return fmt.Errorf("syncqueue: open %s: %w", q.path, err)
-	}
-	defer f.Close()
-
-	if err := json.NewEncoder(f).Encode(e); err != nil {
 		return fmt.Errorf("syncqueue: encode entry %s: %w", e.Id, err)
+	}
+
+	ctx := context.Background()
+	key, err := writeKey()
+	if err != nil {
+		return err
+	}
+	err = q.db.Write(ctx, key, "append sync queue entry "+e.Id, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO sync_queue_entries (project_id, id, data) VALUES (?, ?, ?)`,
+			q.projectID, e.Id, string(data)); err != nil {
+			return fmt.Errorf("syncqueue: append %s: %w", e.Id, err)
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return err
 	}
 	return nil
 }
 
-// List returns the full append-only history of entry records.
+// List returns the full append-only history of entry records, in the order
+// they were written.
 func (q *Queue) List() ([]Entry, error) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	f, err := os.Open(q.path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	rows, err := q.db.Reader().Query(
+		`SELECT data FROM sync_queue_entries WHERE project_id = ? ORDER BY seq ASC`, q.projectID)
 	if err != nil {
-		return nil, fmt.Errorf("syncqueue: open %s: %w", q.path, err)
+		return nil, fmt.Errorf("syncqueue: list: %w", err)
 	}
-	defer f.Close()
+	defer rows.Close()
 
 	var entries []Entry
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, fmt.Errorf("syncqueue: scan entry: %w", err)
 		}
 		var e Entry
-		if err := json.Unmarshal(line, &e); err != nil {
+		if err := json.Unmarshal(data, &e); err != nil {
 			return nil, fmt.Errorf("syncqueue: decode entry: %w", err)
 		}
 		entries = append(entries, e)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("syncqueue: scan %s: %w", q.path, err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("syncqueue: iterate entries: %w", err)
 	}
 	return entries, nil
 }
@@ -168,6 +190,10 @@ func (q *Queue) Pending() ([]Entry, error) {
 //     pending for the same (Adapter, Op, IssueIdOrKey), so a caller
 //     reviewing the queue can see two queued writes might race if both are
 //     retried.
+//
+// The conflict scan runs over Current, which is already scoped to this
+// Queue's project, so an entry belonging to another project can never be
+// picked up as a conflict here.
 func (q *Queue) Enqueue(e Entry) (Entry, error) {
 	current, err := q.Current()
 	if err != nil {

@@ -41,7 +41,6 @@ type App struct {
 	Worktrees       *gitops.WorktreeManager
 	Workflow        *workflow.Store
 	AdapterRegistry *adapters.Registry
-	SyncQueue       *syncqueue.Queue
 	PrReviews       *prreview.Store
 	ContextRequests *contextrequest.Store
 	// RoleConfig is the shared §47 role-configuration resolver: it maps a
@@ -66,6 +65,9 @@ type App struct {
 
 	learningMu    sync.Mutex
 	learningStore *learning.Store
+
+	syncQueueMu sync.Mutex
+	syncQueue   *syncqueue.Queue
 
 	searchIndexMu sync.Mutex
 	searchIndex   *search.Index
@@ -127,11 +129,6 @@ func Load(startDir string) (*App, error) {
 		}
 	}
 
-	syncQueue, err := syncqueue.Open(ws.Root)
-	if err != nil {
-		return nil, err
-	}
-
 	prReviews, err := prreview.OpenStore(ws.Root)
 	if err != nil {
 		return nil, err
@@ -150,20 +147,20 @@ func Load(startDir string) (*App, error) {
 		Supervisor:      sup,
 		Inspector:       gitops.NewInspector(sup),
 		Workflow:        wf,
-		SyncQueue:       syncQueue,
 		PrReviews:       prReviews,
 		ContextRequests: contextRequests,
 		RoleConfig:      roleResolver,
 	}
 
-	// The approval store now lives in the shared SQLite kernel, opened lazily
-	// so a command that never touches an approval never pays to open the
-	// kernel. The registry and worktree manager therefore take a provider
-	// (a.OpenApprovals) rather than an already-opened store, deferring the
-	// open to the first approval-gated operation.
+	// The approval store and sync queue now live in the shared SQLite kernel,
+	// opened lazily so a command that never touches an approval or records a
+	// failed adapter write never pays to open the kernel. The registry (and,
+	// for approvals, the worktree manager) therefore take a provider
+	// (a.OpenApprovals, a.OpenSyncQueue) rather than an already-opened store,
+	// deferring the open to the first operation that actually needs it.
 	registry := adapters.NewRegistry(specs, a.OpenApprovals)
 	registry.SetApprovalScope(pol.Approvals.Scope)
-	registry.SetSyncQueue(syncQueue)
+	registry.SetSyncQueue(a.OpenSyncQueue)
 	a.AdapterRegistry = registry
 	a.Worktrees = gitops.NewWorktreeManager(sup, a.OpenApprovals, pol)
 
@@ -378,6 +375,35 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 	return a.learningStore, nil
 }
 
+// OpenSyncQueue lazily opens the outbound-adapter-write sync queue, memoizing
+// the result, scoped to this workspace's id within the shared storage kernel
+// (punokawan-14yn.16). Like OpenApprovals, it is a thin scope over the one
+// shared *storage.DB rather than a per-project server, so it starts nothing:
+// the deferral simply avoids opening the kernel for commands that never record
+// or inspect a failed adapter write. The adapter registry holds this method as
+// a provider, so the kernel opens on the first adapter write that fails, not at
+// Load.
+func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.syncQueueMu.Lock()
+	defer a.syncQueueMu.Unlock()
+
+	if a.syncQueue != nil {
+		return a.syncQueue, nil
+	}
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	a.syncQueue = syncqueue.New(db, a.Workspace.ID)
+	return a.syncQueue, nil
+}
+
 // JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
 // config (.punakawan/jira-workflow.yaml). Safe to call even if the file
 // does not exist: jiraworkflow.Load returns a safe empty default in that
@@ -481,6 +507,10 @@ func (a *App) Close() error {
 	a.learningMu.Lock()
 	a.learningStore = nil
 	a.learningMu.Unlock()
+
+	a.syncQueueMu.Lock()
+	a.syncQueue = nil
+	a.syncQueueMu.Unlock()
 
 	if adapterErr != nil {
 		return adapterErr

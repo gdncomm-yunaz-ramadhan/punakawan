@@ -2,9 +2,11 @@ package mcpserver
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -209,11 +211,13 @@ func TestUpdateJiraTaskProgressEnqueuesFailureForRetry(t *testing.T) {
 	approveOp(t, gate, "run-1", "atlassian.addWorklog")
 	fc.failOps = map[string]bool{"atlassian.addWorklog": true}
 
-	queue, err := syncqueue.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("syncqueue.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	gate.SetSyncQueue(queue)
+	t.Cleanup(func() { db.Close() })
+	queue := syncqueue.New(db, "test-project")
+	gate.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
 
 	worklog := 1.0
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, RequestedBy: "petruk"}

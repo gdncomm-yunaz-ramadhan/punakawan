@@ -94,11 +94,14 @@ type Gate struct {
 	// SetApprovalScope (every existing test does) keeps the original
 	// per-run_id behavior unchanged.
 	scopeMode string
-	// syncQueue records a write that reaches the adapter (i.e. passed the
-	// approval check) but fails, for later retry (punokawan-nbz). nil by
-	// default, so a Gate built without calling SetSyncQueue (every existing
-	// test does) keeps the original behavior of simply returning the error.
-	syncQueue *syncqueue.Queue
+	// syncQueue lazily resolves the store that records a write which reaches
+	// the adapter (i.e. passed the approval check) but fails, for later retry
+	// (punokawan-nbz). nil by default, so a Gate built without calling
+	// SetSyncQueue (every existing test does) keeps the original behavior of
+	// simply returning the error. It is a provider rather than a resolved
+	// store so a Gate never forces the shared storage kernel open until a
+	// write actually fails (punokawan-14yn.16).
+	syncQueue func() (*syncqueue.Queue, error)
 }
 
 // NewGate constructs a Gate for an already-started adapter client and its
@@ -114,12 +117,13 @@ func (g *Gate) SetApprovalScope(mode string) {
 	g.scopeMode = mode
 }
 
-// SetSyncQueue configures q to record any write this Gate makes that fails
-// after passing its approval check, so it can be found and retried later
-// (punokawan-nbz) instead of the failure only ever existing as the error
-// returned from that one Call.
-func (g *Gate) SetSyncQueue(q *syncqueue.Queue) {
-	g.syncQueue = q
+// SetSyncQueue configures provider to record any write this Gate makes that
+// fails after passing its approval check, so it can be found and retried
+// later (punokawan-nbz) instead of the failure only ever existing as the
+// error returned from that one Call. provider is resolved lazily, only when
+// a write actually fails.
+func (g *Gate) SetSyncQueue(provider func() (*syncqueue.Queue, error)) {
+	g.syncQueue = provider
 }
 
 // approvalID is scoped to a key, not the adapter or operation: one human
@@ -269,8 +273,12 @@ func (g *Gate) Call(ctx context.Context, runID, op string, params map[string]any
 
 	raw, err := g.client.Call(ctx, "execute", merged)
 	if err != nil && g.syncQueue != nil {
+		queue, qerr := g.syncQueue()
+		if qerr != nil {
+			return nil, fmt.Errorf("adapters: call %q failed (%w), and opening the sync queue to record it also failed: %v", op, err, qerr)
+		}
 		entryID := fmt.Sprintf("sync-%s-%s-%s", g.adapterID, op, issueKey(params))
-		entry, qerr := g.syncQueue.Enqueue(syncqueue.Entry{
+		entry, qerr := queue.Enqueue(syncqueue.Entry{
 			Id:           entryID,
 			RunId:        runID,
 			Adapter:      g.adapterID,

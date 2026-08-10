@@ -167,30 +167,31 @@ func TestRegistrySetSyncQueuePropagatesToGates(t *testing.T) {
 	defer cancel()
 	defer r.Close(ctx)
 
-	queue, err := syncqueue.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("syncqueue.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	queue := syncqueue.New(db, "test-project")
 
-	// Set before the Gate exists: newly created Gates must pick it up.
-	r.SetSyncQueue(queue)
+	// Set before the Gate exists: newly created Gates must pick it up. The
+	// provider is a func, so identity is checked by resolving it and
+	// comparing the returned queue.
+	r.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
 	g, err := r.Gate(ctx, "prototype")
 	if err != nil {
 		t.Fatalf("Gate: %v", err)
 	}
-	if g.syncQueue != queue {
-		t.Fatal("syncQueue not set on a Gate created after SetSyncQueue")
+	if got, err := g.syncQueue(); err != nil || got != queue {
+		t.Fatalf("syncQueue provider on a Gate created after SetSyncQueue = %v (err %v), want the queue set", got, err)
 	}
 
 	// Set after the Gate already exists: the memoized instance must also
 	// pick it up, not just future Gate(...) callers.
-	other, err := syncqueue.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("syncqueue.Open: %v", err)
-	}
-	r.SetSyncQueue(other)
-	if g.syncQueue != other {
-		t.Fatal("syncQueue not updated on an already-memoized Gate")
+	other := syncqueue.New(db, "other-project")
+	r.SetSyncQueue(func() (*syncqueue.Queue, error) { return other, nil })
+	if got, err := g.syncQueue(); err != nil || got != other {
+		t.Fatalf("syncQueue provider on an already-memoized Gate = %v (err %v), want updated", got, err)
 	}
 }
 

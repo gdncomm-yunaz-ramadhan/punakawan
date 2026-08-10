@@ -272,11 +272,8 @@ func TestCallEnqueuesFailureWhenSyncQueueIsSet(t *testing.T) {
 	fc := &fakeCaller{failOps: map[string]bool{"atlassian.getJiraIssue": true}}
 	g := NewGate("atlassian", testManifest(), fc, store)
 
-	queue, err := syncqueue.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("syncqueue.Open: %v", err)
-	}
-	g.SetSyncQueue(queue)
+	queue := syncqueue.New(db, "test-project")
+	g.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
 
 	if _, err := g.Call(context.Background(), "run-1", "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
 		t.Fatal("expected the simulated adapter failure to surface")
