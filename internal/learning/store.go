@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // Status values mirror the coarse lifecycle a reviewer drives a proposal
@@ -315,4 +316,49 @@ func MetadataFingerprint(projectID, key string) string {
 // source content hash (plan §6.4).
 func KnowledgeFingerprint(projectID, recordType, subject, contentHash string) string {
 	return hash("knowledge|" + projectID + "|" + recordType + "|" + NormalizeKey(subject) + "|" + contentHash)
+}
+
+// GitCapabilitiesTargetId scopes a detected-git-capabilities proposal
+// (punokawan-14yn.9 AC3) to one repository within the project, so a
+// multi-repo workspace records one fact per repository rather than one
+// clobbering another. repoID defaults to "default" for a call site with no
+// repo id to give.
+func GitCapabilitiesTargetId(repoID string) string {
+	if repoID == "" {
+		repoID = "default"
+	}
+	return "git.capabilities:" + repoID
+}
+
+// gitCapabilitiesDigest is the subset of protocol.GitCapabilities that
+// GitCapabilitiesFingerprint hashes: the remote/base/tool facts
+// gitops.Inspector.DetectCapabilities actually derives from inspecting the
+// remote, its default branch, and push access. It deliberately excludes
+// working-tree-transient state (current branch, uncommitted/untracked
+// files, detached HEAD, worktree-ness, repository root) that changes on
+// nearly every run regardless of whether the remote/base/tool facts
+// themselves did - fingerprinting only this stable subset is what keeps
+// re-detecting an unchanged repository from looking like a new fact every
+// time.
+type gitCapabilitiesDigest struct {
+	Remotes          []protocol.GitCapabilitiesRemotesElem `json:"remotes"`
+	Provider         *protocol.GitCapabilitiesProvider     `json:"provider,omitempty"`
+	DefaultBranch    *string                                `json:"default_branch,omitempty"`
+	IsBareRepository *bool                                  `json:"is_bare_repository,omitempty"`
+	Capabilities     protocol.GitCapabilitiesCapabilities  `json:"capabilities"`
+}
+
+// GitCapabilitiesFingerprint = project scope + repo scope + the stable
+// remote/base/tool digest above (plan §6.4's per-pillar fingerprint idiom,
+// extended to gitops-detected git capability facts, punokawan-14yn.9 AC3).
+func GitCapabilitiesFingerprint(projectID, repoID string, caps protocol.GitCapabilities) string {
+	digest := gitCapabilitiesDigest{
+		Remotes:          caps.Remotes,
+		Provider:         caps.Provider,
+		DefaultBranch:    caps.DefaultBranch,
+		IsBareRepository: caps.IsBareRepository,
+		Capabilities:     caps.Capabilities,
+	}
+	b, _ := json.Marshal(digest) // marshaling plain structs/slices/pointers never fails
+	return hash("git_capabilities|" + projectID + "|" + repoID + "|" + string(b))
 }
