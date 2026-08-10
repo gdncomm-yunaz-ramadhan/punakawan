@@ -1,0 +1,36 @@
+internal/search/fts_lifecycle_test.go
+  7bf9711812567778 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "f441ec52aa31c7cefb9db38740f3e88a114ed846",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 146,
+      "total_deletions": 20,
+      "accepted_lines": 126,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
