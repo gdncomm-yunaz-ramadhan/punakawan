@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/deliverysummary"
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/sessionsummary"
@@ -26,9 +27,18 @@ func (s *SessionSource) checkWorkspace(workspaceID string) error {
 }
 
 // counts derives sessionsummary.Counts for run from its own evidence
-// ledger and event journal.
+// ledger, PR review findings, and event journal.
 //
-// It deliberately does NOT populate TaskCounts: bd issues carry no run_id,
+// EvidenceCount/ErrorCount/WarningCount are seeded from
+// deliverysummary.Build (punokawan-xu7m) - the same canonical evidence
+// ledger and PR review reads a PR body, Jira comment, and record_work_outcome
+// summary for this run draw from - so a run whose canonical data shows a
+// failing command or an open risk cannot show a clean session summary here
+// while contradicting itself elsewhere. The event journal then adds its own
+// execution-level failure/cancellation signal on top, since that is not
+// something deliverysummary observes at all.
+//
+// This deliberately does NOT populate TaskCounts: bd issues carry no run_id,
 // so the only bd data available is a workspace-wide snapshot that is
 // identical for every run. Attaching that same total to every session
 // summary misrepresented workspace-wide counts as per-session ones, so the
@@ -37,10 +47,23 @@ func (s *SessionSource) checkWorkspace(workspaceID string) error {
 func (s *SessionSource) counts(ctx context.Context, run protocol.WorkflowRun) sessionsummary.Counts {
 	var counts sessionsummary.Counts
 
-	if ledger, err := evidence.OpenLedger(s.App.Workspace.Root, run.Id); err == nil {
-		if recs, err := ledger.List(); err == nil {
-			counts.EvidenceCount = len(recs)
+	var risks []protocol.ReviewFinding
+	if s.App.PrReviews != nil {
+		if records, err := s.App.PrReviews.ForRun(run.Id); err == nil {
+			for _, rec := range records {
+				risks = append(risks, rec.Findings...)
+			}
 		}
+	}
+	if in, err := deliverysummary.Gather(ctx, deliverysummary.GatherInput{
+		WorkspaceRoot: s.App.Workspace.Root,
+		RunId:         run.Id,
+		Risks:         risks,
+	}); err == nil {
+		summary := deliverysummary.Build(in)
+		counts.EvidenceCount = summary.EvidenceCount
+		counts.ErrorCount = summary.CommandsFailed
+		counts.WarningCount = len(summary.Risks)
 	}
 
 	if journal, err := evidence.OpenJournal(s.App.Workspace.Root, run.Id); err == nil {

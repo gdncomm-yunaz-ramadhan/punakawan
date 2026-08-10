@@ -15,8 +15,10 @@ import (
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/internal/testrun"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -361,6 +363,64 @@ func TestSessionSourceListSkipCountsOmitsEvidenceCounts(t *testing.T) {
 	}
 	if len(skipped) != 1 || skipped[0].EvidenceCount == nil || *skipped[0].EvidenceCount != 0 {
 		t.Fatalf("List (SkipCounts) = %+v, want EvidenceCount=0 (counts skipped, not computed)", skipped)
+	}
+}
+
+// TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks is
+// punokawan-xu7m's AC1 for the panel: a run's session summary reports the
+// same failing-command and risk-finding counts a PR body or Jira comment
+// would render for that same run, because both read the same
+// deliverysummary.Build output rather than each deriving their own answer.
+func TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks(t *testing.T) {
+	a := newTestApp(t)
+	run := newTestRun(a, "run-test-1")
+	if err := a.Workflow.Append(run); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+
+	bundle, err := evidence.NewBundle(a.Workspace.Root, run.Id, "task-1")
+	if err != nil {
+		t.Fatalf("NewBundle: %v", err)
+	}
+	report := testrun.Report{
+		AllPassed: false,
+		Results: []testrun.CommandResult{
+			{Command: testrun.Command{Name: "go", Args: []string{"test", "./..."}}, ExitCode: 1},
+		},
+	}
+	if err := testrun.WriteBundle(report, bundle); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, run.Id)
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	if _, err := evidence.RecordArtifact(ledger, run.Id, "task-1", protocol.EvidenceRecordTypeTestReport, bundle, "tests.json", time.Now().UTC()); err != nil {
+		t.Fatalf("RecordArtifact: %v", err)
+	}
+	if err := a.PrReviews.Append(prreview.Record{
+		RunId: run.Id, RepoId: "repo-a", PullRequestNumber: 1,
+		Findings: []protocol.ReviewFinding{
+			{Id: "f1", Severity: protocol.ReviewFindingSeverityBlocker, Explanation: "unchecked error"},
+		},
+	}); err != nil {
+		t.Fatalf("PrReviews.Append: %v", err)
+	}
+
+	ss := &SessionSource{App: a}
+	summaries, err := ss.List(context.Background(), a.Workspace.ID, contract.SessionFilter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %+v, want 1", summaries)
+	}
+	got := summaries[0]
+	if got.ErrorCount == nil || *got.ErrorCount != 1 {
+		t.Fatalf("ErrorCount = %v, want 1 (the failing go test command)", got.ErrorCount)
+	}
+	if got.WarningCount == nil || *got.WarningCount != 1 {
+		t.Fatalf("WarningCount = %v, want 1 (the blocker-severity finding)", got.WarningCount)
 	}
 }
 

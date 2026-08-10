@@ -154,6 +154,50 @@ func (r Report) MarshalJSON() ([]byte, error) {
 	return json.MarshalIndent(out, "", "  ")
 }
 
+// UnmarshalJSON reads back the tests.json-shaped JSON MarshalJSON produces,
+// so a Report can round-trip through a written evidence bundle - callers
+// that only have an EvidenceRecord's path (e.g. internal/delivery, deriving
+// canonical test counts for a run) can decode the file straight into a
+// Report instead of re-deriving the shape themselves.
+func (r *Report) UnmarshalJSON(data []byte) error {
+	type resultJSON struct {
+		Command struct {
+			Name string   `json:"name"`
+			Args []string `json:"args"`
+			Dir  string   `json:"dir"`
+		} `json:"command"`
+		ExitCode   int    `json:"exit_code"`
+		Stdout     string `json:"stdout"`
+		Stderr     string `json:"stderr"`
+		DurationMs int64  `json:"duration_ms"`
+	}
+	type reportJSON struct {
+		Results   []resultJSON `json:"results"`
+		AllPassed bool         `json:"all_passed"`
+	}
+
+	var in reportJSON
+	if err := json.Unmarshal(data, &in); err != nil {
+		return err
+	}
+
+	out := Report{
+		Results:   make([]CommandResult, len(in.Results)),
+		AllPassed: in.AllPassed,
+	}
+	for i, res := range in.Results {
+		out.Results[i] = CommandResult{
+			Command:    Command{Name: res.Command.Name, Args: res.Command.Args, Dir: res.Command.Dir},
+			ExitCode:   res.ExitCode,
+			Stdout:     res.Stdout,
+			Stderr:     res.Stderr,
+			DurationMs: res.DurationMs,
+		}
+	}
+	*r = out
+	return nil
+}
+
 // WriteBundle marshals report as tests.json-shaped JSON and writes it to
 // bundle's "tests.json" path.
 func WriteBundle(report Report, bundle *evidence.Bundle) error {

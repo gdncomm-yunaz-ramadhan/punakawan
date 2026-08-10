@@ -141,8 +141,22 @@ const (
 // Log runs `git log -n <limit>` in repoPath with a machine-parseable format
 // and returns the parsed commits, most recent first.
 func (i *Inspector) Log(ctx context.Context, repoPath string, limit int) ([]Commit, error) {
+	return i.log(ctx, repoPath, "-n", strconv.Itoa(limit))
+}
+
+// LogRange runs `git log <from>..<to>` in repoPath and returns the parsed
+// commits, most recent first: exactly the commits to has that from does
+// not, e.g. a PR's base..head range. Unlike Log's count-off-HEAD limit,
+// this bounds the result to precisely one change's commits.
+func (i *Inspector) LogRange(ctx context.Context, repoPath, from, to string) ([]Commit, error) {
+	return i.log(ctx, repoPath, from+".."+to)
+}
+
+// log runs `git log <args...>` with the machine-parseable format Log and
+// LogRange share, and returns the parsed commits.
+func (i *Inspector) log(ctx context.Context, repoPath string, args ...string) ([]Commit, error) {
 	format := "%H" + logFieldSep + "%an" + logFieldSep + "%aI" + logFieldSep + "%s" + logRecordSep
-	res, err := i.run(ctx, repoPath, "log", "-n", strconv.Itoa(limit), "--format="+format)
+	res, err := i.run(ctx, repoPath, append([]string{"log", "--format=" + format}, args...)...)
 	if err != nil {
 		return nil, err
 	}

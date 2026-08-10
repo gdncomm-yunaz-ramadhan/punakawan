@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/adapters"
+	"github.com/ygrip/punakawan/internal/deliverysummary"
+	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -109,7 +111,7 @@ func TestCreatePrFromCapabilitiesSucceeds(t *testing.T) {
 		t.Fatalf("Approve: %v", err)
 	}
 
-	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(true), &fakeGateProvider{gate: gate}, baseCreatePrInput())
+	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(true), &fakeGateProvider{gate: gate}, deliverysummary.Summary{}, baseCreatePrInput())
 	if err != nil {
 		t.Fatalf("createPrFromCapabilities: %v", err)
 	}
@@ -133,7 +135,7 @@ func TestCreatePrFromCapabilitiesSucceeds(t *testing.T) {
 }
 
 func TestCreatePrFromCapabilitiesRejectsWithoutPushAccess(t *testing.T) {
-	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(false), &fakeGateProvider{}, baseCreatePrInput())
+	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(false), &fakeGateProvider{}, deliverysummary.Summary{}, baseCreatePrInput())
 	if err != nil {
 		t.Fatalf("createPrFromCapabilities: %v", err)
 	}
@@ -148,7 +150,7 @@ func TestCreatePrFromCapabilitiesRejectsWithoutPushAccess(t *testing.T) {
 func TestCreatePrFromCapabilitiesReportsUnsupportedProvider(t *testing.T) {
 	caps := githubCapabilities(true)
 	caps.Provider = nil
-	out, err := createPrFromCapabilities(context.Background(), nil, caps, &fakeGateProvider{}, baseCreatePrInput())
+	out, err := createPrFromCapabilities(context.Background(), nil, caps, &fakeGateProvider{}, deliverysummary.Summary{}, baseCreatePrInput())
 	if err != nil {
 		t.Fatalf("createPrFromCapabilities: %v", err)
 	}
@@ -158,7 +160,7 @@ func TestCreatePrFromCapabilitiesReportsUnsupportedProvider(t *testing.T) {
 }
 
 func TestCreatePrFromCapabilitiesReportsNoAdapterConfigured(t *testing.T) {
-	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(true), &fakeGateProvider{}, baseCreatePrInput())
+	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(true), &fakeGateProvider{}, deliverysummary.Summary{}, baseCreatePrInput())
 	if err != nil {
 		t.Fatalf("createPrFromCapabilities: %v", err)
 	}
@@ -169,7 +171,7 @@ func TestCreatePrFromCapabilitiesReportsNoAdapterConfigured(t *testing.T) {
 
 func TestCreatePrFromCapabilitiesRejectsWithoutApproval(t *testing.T) {
 	gate, _ := newCreatePrTestGate(t)
-	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(true), &fakeGateProvider{gate: gate}, baseCreatePrInput())
+	out, err := createPrFromCapabilities(context.Background(), nil, githubCapabilities(true), &fakeGateProvider{gate: gate}, deliverysummary.Summary{}, baseCreatePrInput())
 	if err != nil {
 		t.Fatalf("createPrFromCapabilities: %v", err)
 	}
@@ -188,15 +190,49 @@ func TestUnavailableReasonChecksInOrder(t *testing.T) {
 }
 
 func TestBuildPrBodyOmitsJiraSectionWhenEmpty(t *testing.T) {
-	body := buildPrBody(baseCreatePrInput())
+	body := buildPrBody(baseCreatePrInput(), deliverysummary.Summary{})
 	if strings.Contains(body, "## Jira references") {
 		t.Fatal("expected the Jira references section to be omitted when JiraKeys is empty")
 	}
 
 	in := baseCreatePrInput()
 	in.JiraKeys = []string{"PAY-1"}
-	body = buildPrBody(in)
+	body = buildPrBody(in, deliverysummary.Summary{})
 	if !strings.Contains(body, "## Jira references") || !strings.Contains(body, "PAY-1") {
 		t.Fatal("expected the Jira references section to be present and list PAY-1 when JiraKeys is set")
+	}
+}
+
+// TestBuildPrBodyRendersCanonicalSummaryWithoutCallerRestatingCounts is
+// punokawan-xu7m's AC1 for create_pr: when a run has canonical test/commit/
+// risk data, the PR body carries it verbatim from deliverysummary, not from
+// anything the caller typed into Verification/KnownRisks.
+func TestBuildPrBodyRendersCanonicalSummaryWithoutCallerRestatingCounts(t *testing.T) {
+	summary := deliverysummary.Build(deliverysummary.Input{
+		RunId: "run-1",
+		Commits: []gitops.Commit{
+			{SHA: "abc123def456", Subject: "fix refund rounding"},
+		},
+		Risks: []protocol.ReviewFinding{
+			{Id: "f1", Severity: protocol.ReviewFindingSeverityBlocker, Explanation: "unchecked error"},
+		},
+	})
+
+	body := buildPrBody(baseCreatePrInput(), summary)
+	if !strings.Contains(body, "## Verification (canonical)") {
+		t.Fatalf("expected a canonical verification section, got:\n%s", body)
+	}
+	if !strings.Contains(body, "fix refund rounding") {
+		t.Fatalf("expected the canonical commit to appear, got:\n%s", body)
+	}
+	if !strings.Contains(body, "unchecked error") {
+		t.Fatalf("expected the canonical risk to appear, got:\n%s", body)
+	}
+}
+
+func TestBuildPrBodyOmitsCanonicalSectionWhenSummaryIsEmpty(t *testing.T) {
+	body := buildPrBody(baseCreatePrInput(), deliverysummary.Summary{})
+	if strings.Contains(body, "Verification (canonical)") {
+		t.Fatalf("expected no canonical section for an empty summary, got:\n%s", body)
 	}
 }

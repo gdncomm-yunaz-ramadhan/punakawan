@@ -11,6 +11,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/deliverysummary"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -41,7 +42,12 @@ type UpdateJiraTaskProgressInput struct {
 	// it, and move the ticket" does not need a separate tool plus its own
 	// getTransitionsForJiraIssue lookup.
 	TransitionToStatus string `json:"transition_to_status,omitempty" jsonschema:"move the issue to this workflow status (matched case-insensitively against available transitions), e.g. 'In Progress' or 'Done'"`
-	RequestedBy        string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong; who is requesting this operation"`
+	// PrUrl, when given, is rendered into the posted comment's canonical
+	// Links section alongside this run's test/commit/risk counts - there is
+	// no other way for this tool to learn a PR's URL, since it has no
+	// repo_id/pull_request_number of its own to look one up by.
+	PrUrl       string `json:"pr_url,omitempty" jsonschema:"the pull request URL this progress update relates to, if one exists yet"`
+	RequestedBy string `json:"requested_by" jsonschema:"one of semar|gareng|petruk|bagong; who is requesting this operation"`
 }
 
 // UpdateJiraTaskProgressOutput is update_jira_task_progress's output.
@@ -91,7 +97,8 @@ func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, UpdateJiraTaskProgressOutput{}, fmt.Errorf("mcpserver: load jira workflow config: %w", err)
 		}
 
-		out, err := updateJiraTaskProgress(ctx, req, gate, cfg, in)
+		summary := buildDeliverySummary(ctx, a, in.RunId, "", "", "", in.PrUrl, "")
+		out, err := updateJiraTaskProgress(ctx, req, gate, cfg, summary, in)
 		return nil, out, err
 	}
 }
@@ -100,7 +107,9 @@ func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallTo
 // split out so it can be tested against a Gate built from a fake caller
 // (mirroring internal/adapters/gate_test.go's pattern) instead of a real
 // spawned adapter process, which would require live Jira credentials.
-func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, cfg *jiraworkflow.Config, in UpdateJiraTaskProgressInput) (UpdateJiraTaskProgressOutput, error) {
+// summary is punokawan-xu7m's canonical test/commit/risk/link block, folded
+// into the posted comment (if any) rather than restated in caller prose.
+func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, cfg *jiraworkflow.Config, summary deliverysummary.Summary, in UpdateJiraTaskProgressInput) (UpdateJiraTaskProgressOutput, error) {
 	var out UpdateJiraTaskProgressOutput
 	requestedBy, err := validateRequestedBy(in.RequestedBy)
 	if err != nil {
@@ -146,9 +155,13 @@ func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate 
 	}
 
 	if in.Comment != "" {
+		commentBody := in.Comment
+		if section := summary.Section("###"); section != "" {
+			commentBody += "\n\n" + section
+		}
 		if _, err := invokeAdapterOperation(ctx, req, gate, in.RunId, "atlassian.addJiraComment", map[string]any{
 			"issueIdOrKey": in.IssueIdOrKey,
-			"commentBody":  in.Comment,
+			"commentBody":  commentBody,
 		}, requestedBy); err != nil {
 			return out, recordPartialFailure(&out.FailedStep, &out.FailedError, anySucceeded, "comment", fmt.Errorf("mcpserver: post comment: %w", err))
 		}

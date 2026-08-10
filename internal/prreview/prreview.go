@@ -95,6 +95,25 @@ func (s *Store) List() ([]Record, error) {
 	return records, nil
 }
 
+// ForRun returns every record for runID, in append order. Unlike
+// ForPullRequest (keyed by repo+PR number, which a caller may not have on
+// hand yet - e.g. before a PR exists), every review submission already
+// carries the run_id it happened under, so this is the lookup a caller with
+// only a run id can use.
+func (s *Store) ForRun(runID string) ([]Record, error) {
+	all, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	var out []Record
+	for _, rec := range all {
+		if rec.RunId == runID {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
+}
+
 // ForPullRequest returns every record for repoID/prNumber, in append order.
 func (s *Store) ForPullRequest(repoID string, prNumber int) ([]Record, error) {
 	all, err := s.List()
