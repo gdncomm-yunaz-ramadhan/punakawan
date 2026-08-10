@@ -1,8 +1,8 @@
 // Package settings persists the panel's runtime-tunable configuration — the
 // values a user can change from the System panel without restarting or editing
 // a file by hand. Today that is the bounded per-project runtime pool: how many
-// project workspaces may have a live *app.App (and therefore a live dolt
-// sql-server) at once, and how long an idle one lingers before it is shut down.
+// project workspaces may have a live *app.App at once, and how long an idle
+// one lingers before it is shut down.
 //
 // Settings live at <primaryRoot>/.punakawan/panel/settings.json. A missing or
 // unreadable file is a normal state, not an error: Load returns the defaults.
@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	// DefaultMaxActiveRuntimes caps how many project runtimes (each backing one
-	// dolt sql-server) the panel keeps live at once, including the primary.
+	// DefaultMaxActiveRuntimes caps how many project runtimes the panel keeps
+	// live at once, including the primary.
 	DefaultMaxActiveRuntimes = 4
 	// DefaultRuntimeIdleTimeoutSeconds is how long a non-primary, unused runtime
 	// may sit idle before the panel shuts it down (12 minutes).

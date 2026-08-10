@@ -63,9 +63,8 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 	// primary. Non-primary workspaces are Acquire'd and reused across requests
 	// instead of app.Load/Close per call; the primary is never evicted or
 	// closed by the manager (Phase 3, §10.3). The cap and idle-shutdown window
-	// come from the user-tunable panel settings (each live runtime backs one
-	// dolt sql-server, so this bounds dolt resource use); a live SetMaxActive
-	// from the System panel adjusts the running pool.
+	// come from the user-tunable panel settings; a live SetMaxActive from the
+	// System panel adjusts the running pool.
 	st := settings.Load(a.Workspace.Root)
 	runtimeMgr := runtime.NewManager(a.Workspace.ID, a,
 		runtime.WithMaxActive(st.MaxActiveRuntimes),

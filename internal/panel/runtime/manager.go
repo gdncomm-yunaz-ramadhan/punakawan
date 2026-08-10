@@ -249,8 +249,7 @@ func (m *ProjectRuntimeManager) MaxActive() int {
 
 // SetMaxActive changes the pool cap at runtime (configurable via the system
 // panel). Values < 1 are ignored. Lowering the cap immediately evicts the LRU
-// idle, non-primary runtimes now over the new cap — each closed App stops its
-// project's dolt sql-server — so shrinking the cap frees resources at once
+// idle, non-primary runtimes now over the new cap, freeing resources at once
 // rather than only on the next admission. Runtimes still in use are never
 // evicted; the pool may stay temporarily over cap until they are released.
 func (m *ProjectRuntimeManager) SetMaxActive(n int) {
