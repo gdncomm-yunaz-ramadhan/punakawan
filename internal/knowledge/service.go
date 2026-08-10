@@ -30,7 +30,7 @@ func (s *Store) Put(rec protocol.KnowledgeRecord) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC().Format(timeLayout)
+	now := time.Now().UTC().Format(TimeLayout)
 
 	err = s.db.Write(ctx, key, "put knowledge "+rec.Id, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `

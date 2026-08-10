@@ -84,7 +84,7 @@ func (s *Store) AllWithUpdatedAt() ([]RecordWithUpdatedAt, error) {
 		if err := rows.Scan(&data, &updatedAt); err != nil {
 			return nil, fmt.Errorf("knowledge: export scan record: %w", err)
 		}
-		ts, err := time.Parse(timeLayout, updatedAt)
+		ts, err := time.Parse(TimeLayout, updatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge: parse updated_at: %w", err)
 		}

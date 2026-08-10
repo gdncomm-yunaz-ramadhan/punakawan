@@ -131,7 +131,7 @@ func (s *Store) ListRecords(ctx context.Context, q KnowledgeListQuery) (records 
 }
 
 // encodeKnowledgeCursor packs a row's keyset position (updated_at, id) into an
-// opaque, URL-safe token. updatedAt is the fixed-width timeLayout text already
+// opaque, URL-safe token. updatedAt is the fixed-width TimeLayout text already
 // stored on the row, so the seek comparison a follow-up page runs against it
 // is exact.
 func encodeKnowledgeCursor(updatedAt, id string) string {

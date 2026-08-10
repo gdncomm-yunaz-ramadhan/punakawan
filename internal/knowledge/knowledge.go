@@ -26,16 +26,19 @@ import (
 // ErrNotFound is returned by Get when no record exists for the given id.
 var ErrNotFound = errors.New("knowledge: record not found")
 
-// timeLayout is the fixed-width, UTC RFC3339 form (always 9 fractional digits,
-// always a "Z" zone) used for every updated_at value the store writes. The
-// fixed width is what makes SQLite's default byte-wise text comparison agree
-// with chronological order, which the keyset pagination in ListRecords relies
-// on for its (updated_at DESC, id ASC) seek predicate.
-const timeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+// TimeLayout is the fixed-width, UTC RFC3339 form (always 9 fractional
+// digits, always a "Z" zone) used for every updated_at value the store
+// writes. The fixed width is what makes SQLite's default byte-wise text
+// comparison agree with chronological order, which the keyset pagination in
+// ListRecords relies on for its (updated_at DESC, id ASC) seek predicate.
+// Exported so other writers of this same column (e.g. internal/doltimport's
+// one-way Dolt import) format timestamps identically rather than
+// duplicating the layout string.
+const TimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
 
 // Store is a SQLite-backed durable knowledge store, scoped to one project
 // within the shared storage kernel. Schema migration happens once, centrally,
-// when the kernel opens (internal/storage/migrations/0004_knowledge.sql) - a
+// when the kernel opens (internal/storage/migrations/0008_knowledge.sql) - a
 // Store never creates its own tables.
 type Store struct {
 	db        *storage.DB
