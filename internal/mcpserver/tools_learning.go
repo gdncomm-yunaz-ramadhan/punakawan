@@ -28,6 +28,15 @@ type ProposeProjectLearningInput struct {
 	SourceRunIds []string       `json:"source_run_ids,omitempty"`
 	Subject      string         `json:"subject,omitempty" jsonschema:"knowledge fingerprint subject; defaults to target_id"`
 	Title        string         `json:"title,omitempty"`
+	// Classification declares how this proposal was produced: one of
+	// detected_fact|user_correction|inferred (see learning.Classification*).
+	// Left unset, it defaults to inferred — the safe, reviewable-only choice;
+	// this tool never auto-accepts on the caller's say-so regardless of the
+	// value given here.
+	Classification string `json:"classification,omitempty" jsonschema:"one of detected_fact|user_correction|inferred; unset defaults to inferred (reviewable-only)"`
+	// Confidence is the proposer's best-effort estimate in [0.0, 1.0] of how
+	// sure it is; optional.
+	Confidence float64 `json:"confidence,omitempty" jsonschema:"best-effort confidence 0.0-1.0; optional"`
 }
 
 // ProposeProjectLearningOutput reports the resulting (or deduplicated)
@@ -49,6 +58,19 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 		}
 		if in.TargetId == "" {
 			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target_id is required")
+		}
+		// classification defaults to inferred (reviewable-only) when unset -
+		// the safe choice per punokawan-14yn.9 AC4; a caller cannot get
+		// auto-accept just by leaving this field out.
+		classification := in.Classification
+		if classification == "" {
+			classification = learning.ClassificationInferred
+		}
+		if !learning.ValidClassification(classification) {
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: classification must be one of detected_fact|user_correction|inferred")
+		}
+		if in.Confidence < 0 || in.Confidence > 1 {
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: confidence must be between 0.0 and 1.0")
 		}
 
 		adapter, err := learningAdapterFor(a, in.ArtifactType)
@@ -157,20 +179,28 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, ProposeProjectLearningOutput{}, err
 		}
 
+		// ProfileRevision is intentionally left at its zero value here: it
+		// records the project.Project.Revision a proposal was ACCEPTED
+		// against (see learning.Proposal), and this path only ever creates a
+		// pending proposal - status is overlaid live from the review at read
+		// time (ContextImprovementsHandler) rather than written back here, so
+		// there is no acceptance event in this codepath to record it against.
 		lp := learning.Proposal{
-			Id:           randomLocalID("learn"),
-			ArtifactType: in.ArtifactType,
-			TargetId:     in.TargetId,
-			Fingerprint:  fp,
-			Rationale:    in.Rationale,
-			EvidenceIds:  in.EvidenceIds,
-			SourceRunIds: in.SourceRunIds,
-			SupportCount: 1,
-			ReviewId:     reviewID,
-			Status:       learning.StatusPending,
-			CreatedBy:    "agent",
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			Id:             randomLocalID("learn"),
+			ArtifactType:   in.ArtifactType,
+			TargetId:       in.TargetId,
+			Fingerprint:    fp,
+			Rationale:      in.Rationale,
+			EvidenceIds:    in.EvidenceIds,
+			SourceRunIds:   in.SourceRunIds,
+			SupportCount:   1,
+			ReviewId:       reviewID,
+			Status:         learning.StatusPending,
+			Classification: classification,
+			Confidence:     in.Confidence,
+			CreatedBy:      "agent",
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
 		if err := store.Append(lp); err != nil {
 			return nil, ProposeProjectLearningOutput{}, err

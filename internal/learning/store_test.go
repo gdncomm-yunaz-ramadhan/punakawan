@@ -2,7 +2,9 @@ package learning
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +79,140 @@ func TestStoreDedupAnchor(t *testing.T) {
 	all, err := s.List()
 	if err != nil || len(all) != 1 {
 		t.Fatalf("List folded = %d rows (err %v), want 1", len(all), err)
+	}
+}
+
+// TestProposalClassificationValues confirms a proposal round-trips each
+// recognized Classification value, and that the validation/auto-accept
+// helpers treat an inferred or unset classification as reviewable-only
+// (punokawan-14yn.9 AC4) while a detected fact or explicit user correction
+// may auto-accept.
+func TestProposalClassificationValues(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now()
+	for i, c := range []string{ClassificationDetectedFact, ClassificationUserCorrection, ClassificationInferred} {
+		id := fmt.Sprintf("learn-c-%d", i)
+		p := Proposal{
+			Id: id, ArtifactType: TypeMetadata, TargetId: "k", Fingerprint: fmt.Sprintf("fp-c-%d", i),
+			SupportCount: 1, Status: StatusPending, Classification: c, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := s.Append(p); err != nil {
+			t.Fatalf("append classification %q: %v", c, err)
+		}
+		got, ok, err := s.Get(id)
+		if err != nil || !ok {
+			t.Fatalf("Get(%s): ok=%v err=%v", id, ok, err)
+		}
+		if got.Classification != c {
+			t.Fatalf("Classification = %q, want %q", got.Classification, c)
+		}
+	}
+
+	if !ValidClassification(ClassificationDetectedFact) || !ValidClassification(ClassificationUserCorrection) || !ValidClassification(ClassificationInferred) {
+		t.Fatal("all three classification constants must be valid")
+	}
+	if ValidClassification("") || ValidClassification("bogus") {
+		t.Fatal("empty/unrecognized classification must not be valid")
+	}
+	if !AutoAcceptable(ClassificationDetectedFact) || !AutoAcceptable(ClassificationUserCorrection) {
+		t.Fatal("a detected fact or an explicit user correction must be auto-acceptable")
+	}
+	if AutoAcceptable(ClassificationInferred) || AutoAcceptable("") || AutoAcceptable("bogus") {
+		t.Fatal("inferred, unset, and unrecognized classifications must never be auto-acceptable")
+	}
+}
+
+// TestAcceptedProposalRecordsProfileRevision confirms ProfileRevision
+// round-trips through Append/Get, so an acceptance can be tied to the
+// project-profile revision it was accepted against.
+func TestAcceptedProposalRecordsProfileRevision(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now()
+	p := Proposal{
+		Id: "learn-pr", ArtifactType: TypeMetadata, TargetId: "k", Fingerprint: "fp-pr",
+		SupportCount: 1, Status: StatusAccepted, Classification: ClassificationDetectedFact,
+		ProfileRevision: 7, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.Append(p); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.Get("learn-pr")
+	if err != nil || !ok {
+		t.Fatalf("Get: ok=%v err=%v", ok, err)
+	}
+	if got.Status != StatusAccepted || got.ProfileRevision != 7 {
+		t.Fatalf("got %+v, want status accepted with profile_revision 7", got)
+	}
+}
+
+// TestRollbackAppendsRolledBackRowPreservingHistory confirms Rollback follows
+// this store's append-only idiom: it appends a fresh row rather than editing
+// history, so List folds to the new rolled_back state while the raw table
+// still holds the prior accepted row underneath it (mirroring
+// TestImportLegacyImportsAndRenames' later-line-wins fold check).
+func TestRollbackAppendsRolledBackRowPreservingHistory(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now()
+	p := Proposal{
+		Id: "learn-rb", ArtifactType: TypeMetadata, TargetId: "k", Fingerprint: "fp-rb",
+		SupportCount: 1, Status: StatusAccepted, ProfileRevision: 3, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.Append(p); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Rollback("learn-rb", "learn-restored"); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	got, ok, err := s.Get("learn-rb")
+	if err != nil || !ok {
+		t.Fatalf("Get after rollback: ok=%v err=%v", ok, err)
+	}
+	if got.Status != StatusRolledBack {
+		t.Fatalf("Status = %q, want %q", got.Status, StatusRolledBack)
+	}
+	if got.SupersededBy == nil || *got.SupersededBy != "learn-restored" {
+		t.Fatalf("SupersededBy = %v, want *\"learn-restored\"", got.SupersededBy)
+	}
+
+	all, err := s.List()
+	if err != nil || len(all) != 1 {
+		t.Fatalf("List folded = %d rows (err %v), want 1", len(all), err)
+	}
+
+	// The prior accepted row must still be physically present in the
+	// append-only history underneath the fold - Rollback appends, it never
+	// edits.
+	rows, err := s.db.Reader().Query(
+		`SELECT data FROM learning_proposals WHERE project_id = ? AND id = ? ORDER BY seq ASC`, s.projectID, "learn-rb")
+	if err != nil {
+		t.Fatalf("raw history query: %v", err)
+	}
+	defer rows.Close()
+	var raw []string
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			t.Fatal(err)
+		}
+		raw = append(raw, data)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 2 {
+		t.Fatalf("raw history rows = %d, want 2 (accepted then rolled_back)", len(raw))
+	}
+	if !strings.Contains(raw[0], `"status":"accepted"`) {
+		t.Fatalf("first row lost its accepted status: %s", raw[0])
+	}
+	if !strings.Contains(raw[1], `"status":"rolled_back"`) {
+		t.Fatalf("second row is not rolled_back: %s", raw[1])
+	}
+
+	if err := s.Rollback("does-not-exist", ""); err == nil {
+		t.Fatal("Rollback of an unknown id must error")
 	}
 }
 

@@ -32,11 +32,15 @@ import (
 // Status values mirror the coarse lifecycle a reviewer drives a proposal
 // through; acceptance/rejection is recorded here when the underlying artifact
 // review is accepted/rejected so the inbox can reflect it without re-reading
-// every review.
+// every review. StatusRolledBack marks a previously-accepted proposal whose
+// effect has since been undone (Rollback below) — the accepted row itself is
+// never edited, so the rolled-back state is a fresh append that folds on top
+// of it while the prior row stays in List()'s full history.
 const (
-	StatusPending  = "pending"
-	StatusAccepted = "accepted"
-	StatusRejected = "rejected"
+	StatusPending    = "pending"
+	StatusAccepted   = "accepted"
+	StatusRejected   = "rejected"
+	StatusRolledBack = "rolled_back"
 )
 
 // Artifact-type identifiers for the three learning pillars (match the artifact
@@ -46,6 +50,40 @@ const (
 	TypeMetadata  = "project_metadata"
 	TypeKnowledge = "knowledge"
 )
+
+// Classification values distinguish how a proposal was produced and gate
+// whether it may be accepted automatically or must go through review
+// (punokawan-14yn.9 AC4). A detected fact backed by direct evidence, or an
+// explicit user correction, may auto-accept. Anything inferred — a
+// convention, command, routing rule, or policy the proposer derived rather
+// than directly observed or was told — is reviewable-only and stays dormant
+// until a reviewer approves it. An empty or unrecognized value is treated the
+// same as ClassificationInferred: the safe default is always reviewable,
+// never auto-accept.
+const (
+	ClassificationDetectedFact   = "detected_fact"
+	ClassificationUserCorrection = "user_correction"
+	ClassificationInferred       = "inferred"
+)
+
+// ValidClassification reports whether c is one of the recognized
+// Classification values.
+func ValidClassification(c string) bool {
+	switch c {
+	case ClassificationDetectedFact, ClassificationUserCorrection, ClassificationInferred:
+		return true
+	default:
+		return false
+	}
+}
+
+// AutoAcceptable reports whether a proposal classified c is safe to accept
+// without review. Only a directly-observed fact or an explicit user
+// correction qualify; an inferred proposal, and any unset or unrecognized
+// value, is reviewable-only.
+func AutoAcceptable(c string) bool {
+	return c == ClassificationDetectedFact || c == ClassificationUserCorrection
+}
 
 // Proposal is one reviewed-learning proposal envelope (plan §6.3).
 type Proposal struct {
@@ -59,9 +97,35 @@ type Proposal struct {
 	SupportCount int       `json:"support_count"`
 	ReviewId     string    `json:"review_id,omitempty"`
 	Status       string    `json:"status"`
-	CreatedBy    string    `json:"created_by,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+
+	// Classification gates auto-accept vs reviewable-only (see the
+	// Classification* constants above); Confidence is the proposer's
+	// best-effort estimate in [0.0, 1.0] of how sure it is. Both are
+	// optional/best-effort: a caller that does not set them gets the zero
+	// value, and an unset Classification is treated as ClassificationInferred
+	// (reviewable-only) everywhere it is consulted.
+	Classification string  `json:"classification,omitempty"`
+	Confidence     float64 `json:"confidence,omitempty"`
+
+	// ProfileRevision records the project.Project.Revision (internal/project)
+	// this proposal was accepted against, so a later profile change can be
+	// detected as having potentially invalidated or superseded it. Recording
+	// happens at acceptance time; detecting that a later revision invalidated
+	// an accepted proposal is not built here.
+	ProfileRevision int `json:"profile_revision,omitempty"`
+
+	// Supersedes/SupersededBy form the same forward-pointer supersession
+	// chain as KnowledgeAdapter.head (adapters.go): SupersededBy on a
+	// rolled-back or replaced proposal names the proposal that replaces it;
+	// Supersedes on that replacement names the one it replaced, restoring a
+	// prior accepted value. Neither is set by Append itself — callers (e.g.
+	// Rollback) populate them explicitly.
+	Supersedes   *string `json:"supersedes,omitempty"`
+	SupersededBy *string `json:"superseded_by,omitempty"`
+
+	CreatedBy string    `json:"created_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Store appends and reads learning proposals for one project within the shared
@@ -169,6 +233,31 @@ func (s *Store) Get(id string) (Proposal, bool, error) {
 		}
 	}
 	return Proposal{}, false, nil
+}
+
+// Rollback marks proposal id as rolled back, appending a fresh history row
+// carrying the same id (per this store's append-only idiom — never an
+// in-place update) so List continues to fold to this new row while the prior
+// accepted row it replaces stays intact in the full history. supersededBy
+// optionally names the proposal that replaces the rolled-back one (e.g. one
+// that restores an earlier accepted value); pass "" when there is none yet.
+func (s *Store) Rollback(id, supersededBy string) error {
+	cur, ok, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("learning: rollback %s: not found", id)
+	}
+	cur.Status = StatusRolledBack
+	if supersededBy != "" {
+		cur.SupersededBy = &supersededBy
+	}
+	cur.UpdatedAt = time.Now().UTC()
+	if err := s.Append(cur); err != nil {
+		return fmt.Errorf("learning: rollback %s: %w", id, err)
+	}
+	return nil
 }
 
 // FindPendingByFingerprint returns the pending proposal with the given
