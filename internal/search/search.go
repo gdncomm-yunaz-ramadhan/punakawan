@@ -1,13 +1,11 @@
 package search
 
 import (
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/blevesearch/bleve/v2"
-	"github.com/blevesearch/bleve/v2/search/query"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -87,6 +85,7 @@ const (
 	relationMaxDepth    = 1
 	relationMaxItems    = 10
 	fuzzyMinTokenLength = 4
+	fuzzyMaxDistance    = 2
 
 	// relationSeedTopK bounds how many of the highest-scoring hits are used as
 	// seeds for one-hop relation expansion, and relationExpandedTotalMax caps
@@ -97,12 +96,32 @@ const (
 	relationSeedTopK         = 20
 	relationExpandedTotalMax = 50
 
-	// minFetchCap / fetchCapMultiplier size the Bleve fetch page as a multiple
-	// of req.Limit (punokawan-rye) rather than a fixed 200, so a large Limit is
+	// minFetchCap / fetchCapMultiplier size the fetch page as a multiple of
+	// req.Limit (punokawan-rye) rather than a fixed 200, so a large Limit is
 	// not silently truncated before scoring reorders the candidates.
 	minFetchCap        = 200
 	fetchCapMultiplier = 5
 )
+
+// rowCols is the stored-field projection every query reads back to reconstruct
+// a hit's storedDoc (for scoring) and its per-field tokenized content (for
+// §11.13 explainability), without a per-hit touch of internal/knowledge.
+const rowCols = `s.type, s.project, s.repository, s.module, s.path, s.trust_level, ` +
+	`s.title, s.summary, s.content, s.aliases, s.tags, s.paths, s.symbols, s.identifiers`
+
+// bm25Expr is FTS5's built-in weighted BM25 ranking function with §11.5's
+// per-field weights, one per knowledge_fts column in declared order. FTS5's
+// bm25() is lower-is-better; runQuery negates it so higher wins, matching the
+// rest of this codebase's convention.
+var bm25Expr = buildBM25Expr()
+
+func buildBM25Expr() string {
+	parts := make([]string, len(ftsWeightArgs))
+	for i, w := range ftsWeightArgs {
+		parts[i] = fmt.Sprintf("%g", w.(float64))
+	}
+	return "bm25(knowledge_fts, " + strings.Join(parts, ", ") + ")"
+}
 
 // Search implements §11.2's pipeline: normalize the query, detect
 // structured identifiers, run the BM25F search (falling back to fuzzy
@@ -124,9 +143,9 @@ func Search(store *knowledge.Store, ix *Index, req Request) ([]Result, error) {
 	}
 
 	// Scoring reads every field it needs (scope, aliases, identifiers,
-	// symbols, trust) straight from the fields Bleve stored at index time, so
-	// it no longer re-fetches each candidate from the store (punokawan-co7)
-	// nor re-runs DetectIdentifiers per hit (punokawan-god). The full
+	// symbols, trust) straight from the fields stored at index time, so it no
+	// longer re-fetches each candidate from the store (punokawan-co7) nor
+	// re-runs DetectIdentifiers per hit (punokawan-god). The full
 	// protocol.KnowledgeRecord is hydrated later, only for the results that
 	// actually survive ranking (see finalize).
 	results := make(map[string]*Result, len(hits))
@@ -141,11 +160,11 @@ func Search(store *knowledge.Store, ix *Index, req Request) ([]Result, error) {
 	return finalize(store, results, req.Limit), nil
 }
 
-// hitInfo is one Bleve hit's score plus which fields/terms actually matched
-// (from SearchRequest.IncludeLocations), carried through to Result.Match
-// for §11.13's explain-match. doc holds the fields Bleve stored at index time,
-// read back so scoring needs neither a per-hit store.Get nor a per-hit
-// DetectIdentifiers pass.
+// hitInfo is one hit's score plus which fields/terms actually matched
+// (computed in Go from the hit's stored text, since FTS5 exposes no term
+// locations), carried through to Result.Match for §11.13's explain-match. doc
+// holds the fields stored at index time, read back so scoring needs neither a
+// per-hit store.Get nor a per-hit DetectIdentifiers pass.
 type hitInfo struct {
 	score  float64
 	fields []string
@@ -153,10 +172,10 @@ type hitInfo struct {
 	doc    storedDoc
 }
 
-// storedDoc is the subset of IndexedDocument that scoring consumes, read back
-// from a hit's stored Bleve fields. Because DetectIdentifiers already ran at
-// index-build time (see BuildDocument), Identifiers/Symbols come back verbatim
-// rather than being recomputed from the record text at query time.
+// storedDoc is the subset of the stored row that scoring consumes. Because
+// DetectIdentifiers already ran at index-build time (see BuildDocument),
+// Identifiers/Symbols come back verbatim rather than being recomputed from the
+// record text at query time.
 type storedDoc struct {
 	Title       string
 	Summary     string
@@ -171,80 +190,82 @@ type storedDoc struct {
 	TrustLevel  string
 }
 
-// storedFields is the set of stored fields runSearchRequest asks Bleve to
-// return on each hit so newStoredDoc can reconstruct a storedDoc.
-var storedFields = []string{
-	"title", "summary", "type", "project", "repository", "module", "path",
-	"aliases", "identifiers", "symbols", "trustLevel",
+// indexedRow is one knowledge_search row's stored fields, holding the raw
+// (un-tokenized) text so scoring can exact-match aliases/identifiers and
+// explainability can re-tokenize each field independently.
+type indexedRow struct {
+	typ         string
+	project     string
+	repository  string
+	module      string
+	path        string
+	trustLevel  string
+	title       string
+	summary     string
+	content     string
+	aliases     []string
+	tags        []string
+	paths       []string
+	symbols     []string
+	identifiers []string
 }
 
-func newStoredDoc(fields map[string]interface{}) storedDoc {
+// scanHitRow scans one query row: id, score, then rowCols in declared order.
+func scanHitRow(rows *sql.Rows) (id string, score float64, row indexedRow, err error) {
+	var aliasesJSON, tagsJSON, pathsJSON, symbolsJSON, identifiersJSON string
+	err = rows.Scan(&id, &score,
+		&row.typ, &row.project, &row.repository, &row.module, &row.path, &row.trustLevel,
+		&row.title, &row.summary, &row.content,
+		&aliasesJSON, &tagsJSON, &pathsJSON, &symbolsJSON, &identifiersJSON)
+	if err != nil {
+		return "", 0, indexedRow{}, err
+	}
+	row.aliases = parseJSONArray(aliasesJSON)
+	row.tags = parseJSONArray(tagsJSON)
+	row.paths = parseJSONArray(pathsJSON)
+	row.symbols = parseJSONArray(symbolsJSON)
+	row.identifiers = parseJSONArray(identifiersJSON)
+	return id, score, row, nil
+}
+
+func (r indexedRow) stored() storedDoc {
 	return storedDoc{
-		Title:       stringField(fields, "title"),
-		Summary:     stringField(fields, "summary"),
-		Type:        stringField(fields, "type"),
-		Project:     stringField(fields, "project"),
-		Repository:  stringField(fields, "repository"),
-		Module:      stringField(fields, "module"),
-		Path:        stringField(fields, "path"),
-		Aliases:     stringSliceField(fields, "aliases"),
-		Identifiers: stringSliceField(fields, "identifiers"),
-		Symbols:     stringSliceField(fields, "symbols"),
-		TrustLevel:  stringField(fields, "trustLevel"),
+		Title:       r.title,
+		Summary:     r.summary,
+		Type:        r.typ,
+		Project:     r.project,
+		Repository:  r.repository,
+		Module:      r.module,
+		Path:        r.path,
+		Aliases:     r.aliases,
+		Identifiers: r.identifiers,
+		Symbols:     r.symbols,
+		TrustLevel:  r.trustLevel,
 	}
 }
 
-func stringField(fields map[string]interface{}, key string) string {
-	if v, ok := fields[key].(string); ok {
-		return v
-	}
-	return ""
-}
-
-// stringSliceField normalizes a stored multi-value Bleve field, which comes
-// back as a bare string when it held a single value and as []interface{} when
-// it held several.
-func stringSliceField(fields map[string]interface{}, key string) []string {
-	switch v := fields[key].(type) {
-	case string:
-		return []string{v}
-	case []interface{}:
-		out := make([]string, 0, len(v))
-		for _, e := range v {
-			if s, ok := e.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-// runQuery executes §11.2's "exact identifier search -> alias search ->
-// BM25F search -> optional fuzzy fallback" stages. BM25F is the primary pass;
-// a cheap identifier/alias term query is unioned on top so a record carrying
-// the query's exact identifier still enters the candidate set even when it
-// ranks below the BM25F fetch cap (punokawan-rye). Fuzzy matching fires only
-// when the combined set is empty.
+// runQuery executes §11.2's "BM25F search -> optional fuzzy fallback" stages.
+// BM25F is the primary pass; a cheap exact identifier/alias/symbol recall query
+// is unioned on top so a record carrying the query's exact identifier still
+// enters the candidate set even when it ranks below the BM25F fetch cap
+// (punokawan-rye). Fuzzy matching fires only when the combined set is empty.
 func runQuery(ix *Index, text string, identifiers []Identifier, req Request) (map[string]hitInfo, MatchKind, error) {
 	fetchCap := fetchLimit(req.Limit)
 
-	bm25Query := buildBM25FQuery(text)
-	hits, err := runSearchRequest(ix, applyFilters(bm25Query, req), fetchCap)
+	hits, err := executeBM25(ix, text, identifiers, req, fetchCap)
 	if err != nil {
 		return nil, "", err
 	}
 
 	// Union in any record holding one of the query's exact identifiers/aliases
-	// (punokawan-rye). BM25F only surfaces the fetchCap top-scoring hits, so a
-	// record that carries the exact identifier but ranks below that cut never
-	// enters the candidate set and never receives scoreResult's +identifier /
-	// +alias bonus. A cheap term query over the identifiers/symbols/aliases
-	// fields pulls those docs in directly; merge keeps any existing BM25 hit's
-	// richer score/locations rather than overwriting them.
-	if idQuery := buildIdentifierQuery(identifiers); idQuery != nil {
-		idHits, err := runSearchRequest(ix, applyFilters(idQuery, req), fetchCap)
+	// (punokawan-rye). The BM25F pass only surfaces the fetchCap top-scoring
+	// hits, so a record that carries the exact identifier but ranks below that
+	// cut never enters the candidate set and never receives scoreResult's
+	// +identifier / +alias bonus. An exact match against the identifiers/
+	// symbols/aliases JSON columns pulls those docs in directly; merge keeps any
+	// existing BM25 hit's richer score rather than overwriting it.
+	if values := buildIdentifierQuery(identifiers); values != nil {
+		idHits, err := executeIdentifierRecall(ix, values, text, identifiers, req, fetchCap)
 		if err != nil {
 			return nil, "", err
 		}
@@ -255,19 +276,18 @@ func runQuery(ix *Index, text string, identifiers []Identifier, req Request) (ma
 		return hits, MatchKindBM25, nil
 	}
 
-	fuzzyQuery := buildFuzzyQuery(text)
-	if fuzzyQuery == nil {
-		return hits, MatchKindBM25, nil
-	}
-	hits, err = runSearchRequest(ix, applyFilters(fuzzyQuery, req), fetchCap)
+	fuzzyHits, ran, err := fuzzyScan(ix, text, identifiers, req)
 	if err != nil {
 		return nil, "", err
 	}
-	return hits, MatchKindFuzzy, nil
+	if !ran {
+		return hits, MatchKindBM25, nil
+	}
+	return fuzzyHits, MatchKindFuzzy, nil
 }
 
-// fetchLimit sizes the Bleve fetch page as a multiple of the caller's limit,
-// floored at minFetchCap so small limits still gather enough candidates for
+// fetchLimit sizes the fetch page as a multiple of the caller's limit, floored
+// at minFetchCap so small limits still gather enough candidates for
 // scoreResult's bonuses to reorder them meaningfully.
 func fetchLimit(limit int) int {
 	if limit <= 0 {
@@ -281,8 +301,8 @@ func fetchLimit(limit int) int {
 }
 
 // mergeHits adds every entry of src to dst that dst does not already hold,
-// preserving dst's existing hitInfo (its BM25 score and match locations) on
-// collision.
+// preserving dst's existing hitInfo (its BM25 score and matched fields/terms)
+// on collision.
 func mergeHits(dst, src map[string]hitInfo) {
 	for id, h := range src {
 		if _, exists := dst[id]; !exists {
@@ -291,124 +311,271 @@ func mergeHits(dst, src map[string]hitInfo) {
 	}
 }
 
-func runSearchRequest(ix *Index, q query.Query, fetchCap int) (map[string]hitInfo, error) {
-	sr := bleve.NewSearchRequestOptions(q, fetchCap, 0, false)
-	sr.IncludeLocations = true
-	sr.Fields = storedFields
-	res, err := ix.bleve.Search(sr)
+// executeBM25 runs the weighted BM25F pass: a single MATCH over knowledge_fts
+// with OR semantics across the tokenized query terms, ranked by the per-field
+// bm25() weights. A bare MATCH matches when ANY column contains ANY term, which
+// replaces Bleve's per-field boosted DisjunctionQuery; the weighting now lives
+// entirely in the bm25() ORDER BY expression.
+func executeBM25(ix *Index, text string, identifiers []Identifier, req Request, fetchCap int) (map[string]hitInfo, error) {
+	matchExpr, ok := buildMatchExpr(text)
+	if !ok {
+		return map[string]hitInfo{}, nil
+	}
+
+	clauses := []string{"knowledge_fts MATCH ?"}
+	args := []interface{}{matchExpr}
+	fc, fa := buildFilters(req)
+	clauses = append(clauses, fc...)
+	args = append(args, fa...)
+	args = append(args, fetchCap)
+
+	q := `SELECT s.id, -` + bm25Expr + ` AS score, ` + rowCols + `
+		FROM knowledge_fts
+		JOIN knowledge_search s ON s.rowid = knowledge_fts.rowid
+		WHERE ` + strings.Join(clauses, " AND ") + `
+		ORDER BY score DESC
+		LIMIT ?`
+
+	return queryHits(ix, q, args, text, identifiers)
+}
+
+// executeIdentifierRecall implements punokawan-rye's exact-recall pass as a
+// plain SQL query over the identifiers/symbols/aliases JSON columns, restricted
+// to exactly the fields scoreResult bonuses on, so a hit it surfaces always
+// earns its +identifier or +alias boost. These hits carry no BM25 score (0);
+// scoreResult adds the bonuses on top.
+func executeIdentifierRecall(ix *Index, values []string, text string, identifiers []Identifier, req Request, fetchCap int) (map[string]hitInfo, error) {
+	in := placeholders(len(values))
+	idClause := "(" +
+		"EXISTS (SELECT 1 FROM json_each(s.identifiers) WHERE value IN (" + in + ")) OR " +
+		"EXISTS (SELECT 1 FROM json_each(s.symbols) WHERE value IN (" + in + ")) OR " +
+		"EXISTS (SELECT 1 FROM json_each(s.aliases) WHERE value IN (" + in + ")))"
+
+	args := make([]interface{}, 0, len(values)*3+len(req.Types)+len(req.Tags)+1)
+	for i := 0; i < 3; i++ {
+		for _, v := range values {
+			args = append(args, v)
+		}
+	}
+	clauses := []string{idClause}
+	fc, fa := buildFilters(req)
+	clauses = append(clauses, fc...)
+	args = append(args, fa...)
+	args = append(args, fetchCap)
+
+	q := `SELECT s.id, 0.0 AS score, ` + rowCols + `
+		FROM knowledge_search s
+		WHERE ` + strings.Join(clauses, " AND ") + `
+		LIMIT ?`
+
+	return queryHits(ix, q, args, text, identifiers)
+}
+
+// queryHits runs q and turns each row into a hitInfo, computing the matched
+// fields/terms in Go from the hit's stored text.
+func queryHits(ix *Index, q string, args []interface{}, text string, identifiers []Identifier) (map[string]hitInfo, error) {
+	rows, err := ix.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
-	hits := make(map[string]hitInfo, len(res.Hits))
-	for _, hit := range res.Hits {
-		fieldSet := map[string]bool{}
-		termSet := map[string]bool{}
-		for field, terms := range hit.Locations {
-			fieldSet[field] = true
-			for term := range terms {
-				termSet[term] = true
-			}
+	defer rows.Close()
+
+	hits := map[string]hitInfo{}
+	for rows.Next() {
+		id, score, row, err := scanHitRow(rows)
+		if err != nil {
+			return nil, err
 		}
-		hits[hit.ID] = hitInfo{
-			score:  hit.Score,
-			fields: sortedKeys(fieldSet),
-			terms:  sortedKeys(termSet),
-			doc:    newStoredDoc(hit.Fields),
-		}
+		fields, terms := matchFieldsTerms(row, text, identifiers)
+		hits[id] = hitInfo{score: score, fields: fields, terms: terms, doc: row.stored()}
 	}
-	return hits, nil
+	return hits, rows.Err()
 }
 
-// buildBM25FQuery combines a per-field MatchQuery for every §11.5-weighted
-// field into one DisjunctionQuery, boosted per FieldWeights - Bleve's BM25F
-// equivalent, since the mapping itself carries no static field weight.
-func buildBM25FQuery(text string) query.Query {
-	disjuncts := make([]query.Query, 0, len(FieldWeights))
-	for field, weight := range FieldWeights {
-		mq := bleve.NewMatchQuery(text)
-		mq.SetField(field)
-		mq.SetBoost(weight)
-		disjuncts = append(disjuncts, mq)
-	}
-	return bleve.NewDisjunctionQuery(disjuncts...)
-}
-
-// buildFuzzyQuery is §11.8's fallback-only fuzzy matching: it only fires
-// (via runQuery) when BM25F returns nothing, and only considers tokens long
-// enough that a small edit distance is meaningful.
-func buildFuzzyQuery(text string) query.Query {
-	var disjuncts []query.Query
+// fuzzyScan is §11.8's fallback-only fuzzy matching, run in Go since FTS5 has
+// no edit-distance operator. It fires (via runQuery) only when the BM25F +
+// identifier-recall set is empty, and considers only tokens long enough that a
+// small edit distance is meaningful. It scans every stored row for this index -
+// bounded, since this is a per-project local cache and the fallback was already
+// an unindexed correctness-over-speed path - and keeps a row when any qualifying
+// query token is within fuzzyMaxDistance of a token in title/summary/content/
+// aliases/tags/symbols (the same field set Bleve's fuzzy query used). ran is
+// false when the query yielded no fuzzy-eligible tokens, mirroring the old
+// "buildFuzzyQuery returned nil" short-circuit.
+func fuzzyScan(ix *Index, text string, identifiers []Identifier, req Request) (map[string]hitInfo, bool, error) {
+	var queryTokens []string
 	for _, tok := range Tokenize(text) {
-		if len(tok) < fuzzyMinTokenLength {
+		if len(tok) >= fuzzyMinTokenLength {
+			queryTokens = append(queryTokens, toLowerASCII(tok))
+		}
+	}
+	if len(queryTokens) == 0 {
+		return map[string]hitInfo{}, false, nil
+	}
+
+	clauses, args := buildFilters(req)
+	q := `SELECT s.id, 0.0 AS score, ` + rowCols + ` FROM knowledge_search s`
+	if len(clauses) > 0 {
+		q += " WHERE " + strings.Join(clauses, " AND ")
+	}
+
+	rows, err := ix.db.Query(q, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	hits := map[string]hitInfo{}
+	for rows.Next() {
+		id, score, row, err := scanHitRow(rows)
+		if err != nil {
+			return nil, false, err
+		}
+		if !fuzzyRowMatches(row, queryTokens) {
 			continue
 		}
-		for _, field := range []string{"title", "summary", "content", "aliases", "tags", "symbols"} {
-			fq := bleve.NewFuzzyQuery(tok)
-			fq.SetField(field)
-			fq.SetFuzziness(2)
-			disjuncts = append(disjuncts, fq)
-		}
+		fields, terms := matchFieldsTerms(row, text, identifiers)
+		hits[id] = hitInfo{score: score, fields: fields, terms: terms, doc: row.stored()}
 	}
-	if len(disjuncts) == 0 {
-		return nil
-	}
-	return bleve.NewDisjunctionQuery(disjuncts...)
+	return hits, true, rows.Err()
 }
 
-// buildIdentifierQuery builds a disjunction that matches any record carrying
-// one of the detected identifiers in its identifiers/symbols/aliases fields
-// (punokawan-rye's candidate-recall pass). It is deliberately restricted to
-// exactly the fields scoreResult bonuses on, so a hit it surfaces always earns
-// its +identifier or +alias boost; broader fields would surface docs that then
-// score no differently from a plain BM25 hit. Returns nil when the query
-// carried no structured identifiers.
-func buildIdentifierQuery(identifiers []Identifier) query.Query {
+// fuzzyRowMatches reports whether any fuzzy-eligible query token is within
+// fuzzyMaxDistance of a token in the row's fuzzy field set.
+func fuzzyRowMatches(row indexedRow, queryTokens []string) bool {
+	fieldTexts := []string{
+		row.title, row.summary, row.content,
+		strings.Join(row.aliases, " "), strings.Join(row.tags, " "), strings.Join(row.symbols, " "),
+	}
+	for _, ft := range fieldTexts {
+		for _, docTok := range Tokenize(ft) {
+			dt := toLowerASCII(docTok)
+			for _, qt := range queryTokens {
+				if levenshteinWithin(qt, dt, fuzzyMaxDistance) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// buildMatchExpr turns the query into an FTS5 MATCH expression: each §11.6
+// token is quoted (so structural characters cannot be read as FTS operators)
+// and the tokens are OR-ed, giving the "match if any column holds any term"
+// semantics of the old per-field disjunction. ok is false when the query
+// tokenizes to nothing.
+func buildMatchExpr(text string) (string, bool) {
+	tokens := Tokenize(text)
+	if len(tokens) == 0 {
+		return "", false
+	}
+	quoted := make([]string, 0, len(tokens))
+	for _, tok := range tokens {
+		quoted = append(quoted, `"`+strings.ReplaceAll(tok, `"`, `""`)+`"`)
+	}
+	return strings.Join(quoted, " OR "), true
+}
+
+// buildIdentifierQuery returns the distinct identifier values to look up in the
+// exact-recall pass (punokawan-rye), or nil when the query carried no
+// structured identifiers.
+func buildIdentifierQuery(identifiers []Identifier) []string {
 	if len(identifiers) == 0 {
 		return nil
 	}
-	var disjuncts []query.Query
+	seen := map[string]bool{}
+	var values []string
 	for _, id := range identifiers {
-		for _, field := range []string{"identifiers", "symbols", "aliases"} {
-			mq := bleve.NewMatchQuery(id.Value)
-			mq.SetField(field)
-			disjuncts = append(disjuncts, mq)
+		if id.Value == "" || seen[id.Value] {
+			continue
+		}
+		seen[id.Value] = true
+		values = append(values, id.Value)
+	}
+	return values
+}
+
+// buildFilters ANDs req.Types/req.Tags onto a query as hard filters (§11.12's
+// KnowledgeSearchRequest.types/tags) - unlike Scope, these narrow the candidate
+// set before the fetch cap rather than merely ranking it. It returns the SQL
+// clauses (against the knowledge_search alias s) and their bound args.
+func buildFilters(req Request) ([]string, []interface{}) {
+	var clauses []string
+	var args []interface{}
+	if len(req.Types) > 0 {
+		clauses = append(clauses, "s.type IN ("+placeholders(len(req.Types))+")")
+		for _, t := range req.Types {
+			args = append(args, t)
 		}
 	}
-	if len(disjuncts) == 0 {
-		return nil
-	}
-	return bleve.NewDisjunctionQuery(disjuncts...)
-}
-
-// applyFilters ANDs req.Types/req.Tags onto q as hard filters (§11.12's
-// KnowledgeSearchRequest.types/tags) - unlike Scope, these narrow the
-// result set rather than merely ranking it.
-func applyFilters(q query.Query, req Request) query.Query {
-	musts := []query.Query{q}
-	if len(req.Types) > 0 {
-		musts = append(musts, termsDisjunction("type", req.Types))
-	}
 	if len(req.Tags) > 0 {
-		musts = append(musts, termsDisjunction("tags", req.Tags))
+		clauses = append(clauses, "EXISTS (SELECT 1 FROM json_each(s.tags) WHERE value IN ("+placeholders(len(req.Tags))+"))")
+		for _, t := range req.Tags {
+			args = append(args, t)
+		}
 	}
-	if len(musts) == 1 {
-		return q
-	}
-	return bleve.NewConjunctionQuery(musts...)
+	return clauses, args
 }
 
-func termsDisjunction(field string, values []string) query.Query {
-	disjuncts := make([]query.Query, 0, len(values))
-	for _, v := range values {
-		tq := bleve.NewTermQuery(v)
-		tq.SetField(field)
-		disjuncts = append(disjuncts, tq)
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
 	}
-	return bleve.NewDisjunctionQuery(disjuncts...)
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// matchFieldsTerms computes §11.13's explainability - which fields matched and
+// which terms - in Go, since FTS5 exposes no term locations. For each §11.6
+// query token and each detected identifier value, it checks case-insensitive
+// membership against the tokenized content of each field (the same eight field
+// names the Bleve locations reported). This is a reasonable-fidelity stand-in:
+// it reports exact token membership, so it cannot reproduce a stemmed/partial
+// match Bleve might have surfaced, but the pipeline never asserts on these
+// beyond §11.13's display.
+func matchFieldsTerms(row indexedRow, text string, identifiers []Identifier) ([]string, []string) {
+	fieldTokens := map[string]map[string]bool{
+		"title":       lowerTokenSet(row.title),
+		"summary":     lowerTokenSet(row.summary),
+		"content":     lowerTokenSet(row.content),
+		"aliases":     lowerTokenSet(strings.Join(row.aliases, " ")),
+		"tags":        lowerTokenSet(strings.Join(row.tags, " ")),
+		"paths":       lowerTokenSet(strings.Join(row.paths, " ")),
+		"symbols":     lowerTokenSet(strings.Join(row.symbols, " ")),
+		"identifiers": lowerTokenSet(strings.Join(row.identifiers, " ")),
+	}
+
+	candidates := map[string]bool{}
+	for _, tok := range Tokenize(text) {
+		candidates[toLowerASCII(tok)] = true
+	}
+	for _, id := range identifiers {
+		candidates[toLowerASCII(id.Value)] = true
+	}
+
+	fieldSet := map[string]bool{}
+	termSet := map[string]bool{}
+	for cand := range candidates {
+		for field, toks := range fieldTokens {
+			if toks[cand] {
+				fieldSet[field] = true
+				termSet[cand] = true
+			}
+		}
+	}
+	return sortedKeys(fieldSet), sortedKeys(termSet)
+}
+
+func lowerTokenSet(text string) map[string]bool {
+	set := map[string]bool{}
+	for _, tok := range Tokenize(text) {
+		set[toLowerASCII(tok)] = true
+	}
+	return set
 }
 
 // scoreResult applies §11.10's ranking formula on top of the hit's raw BM25F
-// (or fuzzy) score, using the fields Bleve stored at index time rather than
+// (or fuzzy) score, using the fields stored at index time rather than
 // re-fetching or re-deriving anything. Result.Record is left unset here and is
 // hydrated later for the surviving results (see finalize).
 func scoreResult(id string, hit hitInfo, kind MatchKind, queryText string, identifiers []Identifier, scope Scope) *Result {
@@ -619,4 +786,49 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// levenshteinWithin reports whether the Levenshtein edit distance between a and
+// b is at most max. It uses a rolling two-row DP and an early exit when the row
+// minimum exceeds max, so the common no-match case stays cheap.
+func levenshteinWithin(a, b string, max int) bool {
+	ra, rb := []rune(a), []rune(b)
+	if d := len(ra) - len(rb); d > max || -d > max {
+		return false
+	}
+	prev := make([]int, len(rb)+1)
+	curr := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		curr[0] = i
+		rowMin := curr[0]
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			curr[j] = min3(prev[j]+1, curr[j-1]+1, prev[j-1]+cost)
+			if curr[j] < rowMin {
+				rowMin = curr[j]
+			}
+		}
+		if rowMin > max {
+			return false
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(rb)] <= max
+}
+
+func min3(a, b, c int) int {
+	m := a
+	if b < m {
+		m = b
+	}
+	if c < m {
+		m = c
+	}
+	return m
 }
