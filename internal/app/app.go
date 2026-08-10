@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"time"
@@ -344,7 +345,15 @@ func (a *App) OpenApprovals() (*approvals.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.approvalsStore = approvals.New(db, a.Workspace.ID)
+	store := approvals.New(db, a.Workspace.ID)
+	// One-time import of any pre-kernel JSONL approvals file this workspace
+	// still has on disk. A failure is non-fatal: the store must still open,
+	// so the warning is logged rather than returned (losing old data beats a
+	// store that will not open). Runs once - OpenApprovals memoizes the store.
+	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
+		slog.Warn("approvals: legacy import failed; opening without imported data", "error", warn)
+	}
+	a.approvalsStore = store
 	return a.approvalsStore, nil
 }
 
@@ -371,7 +380,14 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.learningStore = learning.New(db, a.Workspace.ID)
+	store := learning.New(db, a.Workspace.ID)
+	// One-time import of any pre-kernel JSONL proposals file this workspace
+	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
+	// OpenLearning memoizes the store.
+	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
+		slog.Warn("learning: legacy import failed; opening without imported data", "error", warn)
+	}
+	a.learningStore = store
 	return a.learningStore, nil
 }
 
@@ -400,7 +416,14 @@ func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.syncQueue = syncqueue.New(db, a.Workspace.ID)
+	queue := syncqueue.New(db, a.Workspace.ID)
+	// One-time import of any pre-kernel JSONL sync-queue file this workspace
+	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
+	// OpenSyncQueue memoizes the queue.
+	if warn := queue.ImportLegacy(a.Workspace.Root); warn != nil {
+		slog.Warn("syncqueue: legacy import failed; opening without imported data", "error", warn)
+	}
+	a.syncQueue = queue
 	return a.syncQueue, nil
 }
 

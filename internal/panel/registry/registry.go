@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -71,7 +72,19 @@ func Open() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	s := &Store{db: db}
+	// One-time, lazy legacy import on first open. A failure here is non-fatal:
+	// the registry must still open and work, so it is logged as a warning
+	// rather than returned - losing old data is far better than a registry
+	// that will not open. New(db) callers (which share a caller-owned db and
+	// have no notion of a machine-global legacy path) deliberately skip this;
+	// Open is the one place that owns the machine-global registry.
+	if legacyPath, perr := legacyRegistryPath(); perr != nil {
+		slog.Warn("registry: could not resolve legacy registry path for import", "error", perr)
+	} else if warn := s.importLegacy(legacyPath); warn != nil {
+		slog.Warn("registry: legacy workspace import failed; opening without imported data", "error", warn)
+	}
+	return s, nil
 }
 
 // Close releases the underlying storage connection. It is a no-op-safe

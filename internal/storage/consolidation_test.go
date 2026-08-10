@@ -66,6 +66,17 @@ func TestMigratedPackagesHaveNoFileBasedStore(t *testing.T) {
 			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 				continue
 			}
+			// legacy_import.go is the one-time, read-and-rename migration facet
+			// that pulls any pre-kernel JSONL/YAML file a workspace still has on
+			// disk into the SQLite kernel on first open, then leaves it renamed
+			// as a backup. It legitimately references the old file paths and (for
+			// registry) the YAML decoder to read them once - it is not a
+			// persistence path, so it is excluded here, mirroring how the whole
+			// knowledge/search packages are excluded for their file-based
+			// import/export and audit facets above.
+			if name == "legacy_import.go" {
+				continue
+			}
 			path := filepath.Join(dir, name)
 			data, err := os.ReadFile(path)
 			if err != nil {
