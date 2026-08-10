@@ -114,10 +114,11 @@ func newTestApp(t *testing.T) *app.App {
 func startTestServer(t *testing.T) (*Server, *app.App) {
 	t.Helper()
 	a := newTestApp(t)
-	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	reg, err := registry.Open()
 	if err != nil {
-		t.Fatalf("registry.OpenAt: %v", err)
+		t.Fatalf("registry.Open: %v", err)
 	}
+	t.Cleanup(func() { _ = reg.Close() })
 
 	s := New(a, reg, Options{Port: "0"})
 	if err := s.Start(); err != nil {
@@ -703,10 +704,11 @@ func TestLoggingMiddlewareLabelsStreamingResponsesSeparately(t *testing.T) {
 
 func TestServerGracefulShutdown(t *testing.T) {
 	a := newTestApp(t)
-	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	reg, err := registry.Open()
 	if err != nil {
-		t.Fatalf("registry.OpenAt: %v", err)
+		t.Fatalf("registry.Open: %v", err)
 	}
+	t.Cleanup(func() { _ = reg.Close() })
 	s := New(a, reg, Options{Port: "0"})
 	if err := s.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -823,10 +825,11 @@ func TestServerRejectsFailReviewWithNoSessionCookie(t *testing.T) {
 
 func TestServerSessionIsInvalidatedOnShutdown(t *testing.T) {
 	a := newTestApp(t)
-	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	reg, err := registry.Open()
 	if err != nil {
-		t.Fatalf("registry.OpenAt: %v", err)
+		t.Fatalf("registry.Open: %v", err)
 	}
+	t.Cleanup(func() { _ = reg.Close() })
 	s := New(a, reg, Options{Port: "0"})
 	if err := s.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -971,10 +974,11 @@ func TestTimingMiddlewareAbsentWhenDisabled(t *testing.T) {
 // header through the real middleware chain (security -> timing -> logging).
 func TestServerServerTimingEndToEnd(t *testing.T) {
 	a := newTestApp(t)
-	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	reg, err := registry.Open()
 	if err != nil {
-		t.Fatalf("registry.OpenAt: %v", err)
+		t.Fatalf("registry.Open: %v", err)
 	}
+	t.Cleanup(func() { _ = reg.Close() })
 	s := New(a, reg, Options{Port: "0", ServerTiming: true})
 	if err := s.Start(); err != nil {
 		t.Fatalf("Start: %v", err)

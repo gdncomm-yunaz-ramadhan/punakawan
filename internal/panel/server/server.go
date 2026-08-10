@@ -70,7 +70,7 @@ type Server struct {
 
 // New builds a Server for a, without starting it. reg is the global
 // workspace registry (New requires a caller to have already opened one,
-// per registry.Open/OpenAt).
+// per registry.Open).
 func New(a *app.App, reg *registry.Store, opts Options) *Server {
 	if opts.Host == "" {
 		opts.Host = "127.0.0.1"

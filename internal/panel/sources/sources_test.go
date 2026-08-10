@@ -16,6 +16,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/search"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -150,11 +151,15 @@ func newTestRun(a *app.App, id string) protocol.WorkflowRun {
 
 func openTestRegistry(t *testing.T) *registry.Store {
 	t.Helper()
-	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	// A dedicated, isolated storage kernel per call, so tests that do not
+	// otherwise set PUNAKAWAN_DATA_DIR never share (and leak entries through)
+	// this machine's real registry.
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "registry.db"))
 	if err != nil {
-		t.Fatalf("registry.OpenAt: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	return reg
+	t.Cleanup(func() { _ = db.Close() })
+	return registry.New(db)
 }
 
 func TestWorkspaceSourceListWithRegistryDescribesAllEntries(t *testing.T) {

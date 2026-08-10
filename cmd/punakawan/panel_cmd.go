@@ -48,6 +48,7 @@ func newPanelCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("panel: open workspace registry: %w", err)
 			}
+			defer reg.Close()
 
 			// Auto-register the current workspace, per §7: "Punakawan
 			// automatically registers a workspace when it successfully
