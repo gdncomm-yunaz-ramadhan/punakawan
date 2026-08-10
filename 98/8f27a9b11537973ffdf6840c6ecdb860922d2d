@@ -1,0 +1,84 @@
+internal/mcpserver/tools_jiraclarify_test.go
+  7bf9711812567778 67
+internal/panel/sources/approval_source.go
+  7bf9711812567778 24-28
+internal/app/app.go
+  7bf9711812567778 60-62,143,153-166,322-349,446-449
+internal/mcpserver/tools_createpr_test.go
+  7bf9711812567778 68
+internal/approvals/approvals.go
+  7bf9711812567778 1-5,9-12,14,19,51-56,58-59,62-74,76,81,83,86-89,91-100,105-106,108-109,111,113,116-119,122,127-128
+cmd/punakawan/approvals_cmd.go
+  7bf9711812567778 53-57,128-132,136
+internal/mcpserver/tools_adapter_approvals_test.go
+  7bf9711812567778 4-5,10,16,18,20-21
+cmd/punakawan/main_test.go
+  7bf9711812567778 181-185,212,244-248,251
+internal/mcpserver/testhelper_approvals_test.go
+  7bf9711812567778 1-23
+internal/execution/execution_test.go
+  7bf9711812567778 13,43,45,47-49
+internal/mcpserver/tools_jirasync_test.go
+  7bf9711812567778 161
+internal/panel/server/server_test.go
+  7bf9711812567778 586-590
+internal/storage/migrations/0009_approvals.sql
+  7bf9711812567778 1-18
+internal/adapters/gate_test.go
+  7bf9711812567778 7,12,70,72,74-75,201,203,205-206,266,268,270-271
+internal/gitops/worktree.go
+  7bf9711812567778 47-51,55-57,76-80,100,118,122,138,146-150
+internal/adapters/registry.go
+  7bf9711812567778 42-46,55-59,148-154
+internal/app/app_test.go
+  7bf9711812567778 19
+internal/adapters/registry_test.go
+  7bf9711812567778 6,11,22,24,26-27,31
+internal/mcpserver/tools_adapter_approvals.go
+  7bf9711812567778 33-37
+internal/mcpserver/tools_requirement_test.go
+  7bf9711812567778 41
+internal/mcpserver/tools_syncqueue_test.go
+  7bf9711812567778 72
+internal/gitops/worktree_test.go
+  7bf9711812567778 11,39,41,43-45
+internal/panel/sources/sources_test.go
+  7bf9711812567778 843-847
+internal/approvals/approvals_test.go
+  7bf9711812567778 4-5,9,13-17,19,21-26,85,119,126,147,183,192-243
+internal/mcpserver/tools_list_pending_approvals.go
+  7bf9711812567778 43-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "988f27a9b11537973ffdf6840c6ecdb860922d2d",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 364,
+      "total_deletions": 150,
+      "accepted_lines": 364,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
