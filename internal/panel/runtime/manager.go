@@ -240,6 +240,24 @@ func (m *ProjectRuntimeManager) Acquire(ctx context.Context, projectID, path str
 	return rt, m.releaseFunc(projectID), nil
 }
 
+// ActiveNonPrimaryIDs returns the project ids currently pooled (loaded),
+// excluding the primary. It never Acquires or loads anything - it is a
+// cheap snapshot for callers that want to piggyback on whichever projects
+// are already warm (e.g. the tier-1 reconciler polling non-primary
+// approvals, punokawan-pqoy) without forcing a cold project into the pool
+// or evicting another one just to poll it.
+func (m *ProjectRuntimeManager) ActiveNonPrimaryIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ids := make([]string, 0, len(m.pool))
+	for id, rt := range m.pool {
+		if !rt.primary {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // MaxActive returns the current pool cap (including the primary).
 func (m *ProjectRuntimeManager) MaxActive() int {
 	m.mu.Lock()

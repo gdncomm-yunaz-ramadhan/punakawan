@@ -58,8 +58,11 @@ type Reconciler struct {
 	// DefaultSubsystemInterval.
 	SubsystemInterval time.Duration
 
-	prevSessions   map[string]protocol.PanelSessionSummary
-	prevApprovals  map[string]protocol.ApprovalRecordStatus
+	prevSessions map[string]protocol.PanelSessionSummary
+	// prevApprovals is keyed by project id, then approval id, so polling more
+	// than one project (see reconcileFast) cannot collide two projects'
+	// approval ids in one shared map.
+	prevApprovals  map[string]map[string]protocol.ApprovalRecordStatus
 	prevWorkspaces map[string]protocol.PanelSourceHealthAvailability
 
 	// Tier-3 (subsystem) prev-state maps, one per project-scoped subsystem.
@@ -120,7 +123,7 @@ func (r *Reconciler) Run(ctx context.Context) {
 // maps.
 func (r *Reconciler) initState() {
 	r.prevSessions = map[string]protocol.PanelSessionSummary{}
-	r.prevApprovals = map[string]protocol.ApprovalRecordStatus{}
+	r.prevApprovals = map[string]map[string]protocol.ApprovalRecordStatus{}
 	r.prevWorkspaces = map[string]protocol.PanelSourceHealthAvailability{}
 	r.prevContradictions = map[string]protocol.ContradictionStatus{}
 	r.prevDossiers = map[string]protocol.ChangeDossierStatus{}
@@ -162,24 +165,54 @@ func (r *Reconciler) reconcileFast(ctx context.Context) {
 		}
 	}
 
-	if pending, err := r.Readers.Approval.List(ctx, r.WorkspaceID, contract.ApprovalFilter{}); err == nil {
-		seen := make(map[string]bool, len(pending))
-		for _, a := range pending {
-			seen[a.Id] = true
-			prevStatus, existed := r.prevApprovals[a.Id]
-			if !existed && a.Status == protocol.ApprovalRecordStatusPending {
-				r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalRequested, OccurredAt: now, WorkspaceId: strPtr(r.WorkspaceID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
-			} else if existed && prevStatus != a.Status && a.Status != protocol.ApprovalRecordStatusPending {
-				r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalResolved, OccurredAt: now, WorkspaceId: strPtr(r.WorkspaceID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
-			}
-			r.prevApprovals[a.Id] = a.Status
+	// Poll the primary plus whichever non-primary projects are already warm
+	// in the runtime pool (punokawan-pqoy): a non-primary project's own CLI
+	// approval resolution previously only reached the panel UI via an
+	// unrelated ambient event, since this tier only ever polled the primary.
+	// Piggybacking on already-loaded runtimes (rather than force-Acquiring
+	// every registered project every tick) keeps the bounded-pool design
+	// intact - a project nobody has opened in the panel recently still gets
+	// no targeted push, but that also means nothing is rendering its
+	// approvals list right now to need one.
+	projects := []string{r.WorkspaceID}
+	if r.Readers.Runtime != nil {
+		projects = append(projects, r.Readers.Runtime.ActiveNonPrimaryIDs()...)
+	}
+	for _, projectID := range projects {
+		r.reconcileApprovalsForProject(ctx, now, projectID)
+	}
+}
+
+// reconcileApprovalsForProject polls one project's approvals and publishes
+// approval.requested/approval.resolved for whatever changed since the last
+// poll of that project, tracked in r.prevApprovals[projectID].
+func (r *Reconciler) reconcileApprovalsForProject(ctx context.Context, now time.Time, projectID string) {
+	pending, err := r.Readers.Approval.List(ctx, projectID, contract.ApprovalFilter{})
+	if err != nil {
+		return
+	}
+	prev, ok := r.prevApprovals[projectID]
+	if !ok {
+		prev = map[string]protocol.ApprovalRecordStatus{}
+	}
+
+	seen := make(map[string]bool, len(pending))
+	for _, a := range pending {
+		seen[a.Id] = true
+		prevStatus, existed := prev[a.Id]
+		if !existed && a.Status == protocol.ApprovalRecordStatusPending {
+			r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalRequested, OccurredAt: now, WorkspaceId: strPtr(projectID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
+		} else if existed && prevStatus != a.Status && a.Status != protocol.ApprovalRecordStatusPending {
+			r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalResolved, OccurredAt: now, WorkspaceId: strPtr(projectID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
 		}
-		for id := range r.prevApprovals {
-			if !seen[id] {
-				delete(r.prevApprovals, id)
-			}
+		prev[a.Id] = a.Status
+	}
+	for id := range prev {
+		if !seen[id] {
+			delete(prev, id)
 		}
 	}
+	r.prevApprovals[projectID] = prev
 }
 
 // reconcileAvailability is tier 2: workspace availability change
