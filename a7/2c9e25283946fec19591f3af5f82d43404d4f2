@@ -1,0 +1,40 @@
+internal/panel/settings/settings.go
+  7bf9711812567778 4-5,19-20
+internal/panel/deps.go
+  7bf9711812567778 66-67
+internal/panel/runtime/manager.go
+  7bf9711812567778 252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "a72c9e25283946fec19591f3af5f82d43404d4f2",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 9,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
