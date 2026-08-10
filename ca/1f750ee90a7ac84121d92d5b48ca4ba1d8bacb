@@ -1,0 +1,56 @@
+internal/storage/migrations/0010_learning.sql
+  7bf9711812567778 1-19
+internal/learning/store.go
+  7bf9711812567778 9-13,17-18,20,23,28-29,67-72,74-75,78-80,83-91,93,98,102-106,108-118,125-126,128,130,133-136,139,142-143,146-150
+internal/app/app.go
+  7bf9711812567778 20,67-69,354-380,481-484
+internal/panel/api/project_artifacts.go
+  7bf9711812567778 10,44,64-65,86,111
+internal/panel/api/project_artifacts_test.go
+  7bf9711812567778 42,81,107,204
+internal/learning/store_test.go
+  7bf9711812567778 4-5,8-9,12-22,49,68-132
+internal/panel/api/artifact_stores.go
+  7bf9711812567778 44-51
+internal/mcpserver/tools_workflowdef_save.go
+  7bf9711812567778 145
+internal/mcpserver/tools_learning.go
+  7bf9711812567778 68
+internal/panel/api/context_improvements.go
+  7bf9711812567778 38,40-44
+internal/panel/server/server.go
+  7bf9711812567778 179,397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ca1f750ee90a7ac84121d92d5b48ca4ba1d8bacb",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 233,
+      "total_deletions": 56,
+      "accepted_lines": 232,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
