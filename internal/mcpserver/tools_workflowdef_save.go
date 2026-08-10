@@ -142,7 +142,7 @@ func recordWorkflowJudgment(a *app.App, def workflowdef.Definition, judgment Wor
 	}
 	fp := learning.WorkflowFingerprint(a.Workspace.ID, graph)
 
-	store, err := learning.Open(a.Workspace.Root)
+	store, err := a.OpenLearning()
 	if err != nil {
 		return "", 0, fmt.Errorf("mcpserver: save_workflow_definition: open learning store: %w", err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
@@ -62,6 +63,9 @@ type App struct {
 
 	taskStoreMu sync.Mutex
 	taskStore   *taskstore.Store
+
+	learningMu    sync.Mutex
+	learningStore *learning.Store
 
 	searchIndexMu sync.Mutex
 	searchIndex   *search.Index
@@ -347,6 +351,33 @@ func (a *App) OpenApprovals() (*approvals.Store, error) {
 	return a.approvalsStore, nil
 }
 
+// OpenLearning lazily opens the learning-proposal side-store, memoizing the
+// result, scoped to this workspace's id within the shared storage kernel
+// (punokawan-14yn.16). Like OpenApprovals, it is a thin scope over the one
+// shared *storage.DB rather than a per-project server, so it starts nothing:
+// the deferral simply avoids opening the kernel for commands that never touch
+// a learning proposal.
+func (a *App) OpenLearning() (*learning.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.learningMu.Lock()
+	defer a.learningMu.Unlock()
+
+	if a.learningStore != nil {
+		return a.learningStore, nil
+	}
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	a.learningStore = learning.New(db, a.Workspace.ID)
+	return a.learningStore, nil
+}
+
 // JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
 // config (.punakawan/jira-workflow.yaml). Safe to call even if the file
 // does not exist: jiraworkflow.Load returns a safe empty default in that
@@ -446,6 +477,10 @@ func (a *App) Close() error {
 	a.approvalsMu.Lock()
 	a.approvalsStore = nil
 	a.approvalsMu.Unlock()
+
+	a.learningMu.Lock()
+	a.learningStore = nil
+	a.learningMu.Unlock()
 
 	if adapterErr != nil {
 		return adapterErr

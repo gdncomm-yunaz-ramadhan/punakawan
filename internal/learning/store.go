@@ -6,20 +6,27 @@
 // the accept/reject/apply mechanics. It is deliberately NOT a second review
 // engine (plan §13): canonical mutation still happens only through the
 // artifact review acceptance path and its typed adapters.
+//
+// Proposals persist in the shared SQLite storage kernel (internal/storage,
+// punokawan-14yn.16), scoped to one project. History stays append-only: each
+// state change appends a new row with the same id rather than mutating the
+// original, so List folds to the latest row per id.
 package learning
 
 import (
-	"bufio"
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/ygrip/punakawan/internal/storage"
 )
 
 // Status values mirror the coarse lifecycle a reviewer drives a proposal
@@ -57,33 +64,57 @@ type Proposal struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// Store persists learning proposals as append-only JSONL, folding to the
-// latest record per id (same shape as the workflow-run store).
+// Store appends and reads learning proposals for one project within the shared
+// storage kernel. Schema migration happens once, centrally, when the kernel
+// opens (internal/storage/migrations/0010_learning.sql) - a Store never creates
+// its own tables. History is append-only: each state change appends a new row
+// with the same id rather than mutating the original, so List folds to the
+// latest row per id.
 type Store struct {
-	path string
-	mu   sync.Mutex
+	db        *storage.DB
+	projectID string
 }
 
-// Open ensures .punakawan/learning/ exists under workspaceRoot.
-func Open(workspaceRoot string) (*Store, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "learning")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("learning: create %s: %w", dir, err)
+// New wraps db, scoping every read and write to projectID.
+func New(db *storage.DB, projectID string) *Store {
+	return &Store{db: db, projectID: projectID}
+}
+
+// writeKey returns a fresh random idempotency key. Append is a genuine append -
+// the same proposal id is written more than once over its lifecycle (created,
+// then dedup-reinforced, then accepted/rejected) and every such write must take
+// effect - so each call wants a unique key rather than the kernel's replay
+// dedup collapsing them.
+func writeKey() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("learning: generate write key: %w", err)
 	}
-	return &Store{path: filepath.Join(dir, "proposals.jsonl")}, nil
+	return hex.EncodeToString(b[:]), nil
 }
 
 // Append writes a proposal's current state as a new entry.
 func (s *Store) Append(p Proposal) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	data, err := json.Marshal(p)
 	if err != nil {
-		return fmt.Errorf("learning: open %s: %w", s.path, err)
-	}
-	defer f.Close()
-	if err := json.NewEncoder(f).Encode(p); err != nil {
 		return fmt.Errorf("learning: encode proposal: %w", err)
+	}
+
+	ctx := context.Background()
+	key, err := writeKey()
+	if err != nil {
+		return err
+	}
+	err = s.db.Write(ctx, key, "append learning proposal "+p.Id, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO learning_proposals (project_id, id, data) VALUES (?, ?, ?)`,
+			s.projectID, p.Id, string(data)); err != nil {
+			return fmt.Errorf("learning: append %s: %w", p.Id, err)
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return err
 	}
 	return nil
 }
@@ -91,33 +122,32 @@ func (s *Store) Append(p Proposal) error {
 // List folds the append-only history to the latest state per proposal id,
 // newest-updated first.
 func (s *Store) List() ([]Proposal, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	f, err := os.Open(s.path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	rows, err := s.db.Reader().Query(
+		`SELECT data FROM learning_proposals WHERE project_id = ? ORDER BY seq ASC`, s.projectID)
 	if err != nil {
-		return nil, fmt.Errorf("learning: open %s: %w", s.path, err)
+		return nil, fmt.Errorf("learning: list: %w", err)
 	}
-	defer f.Close()
+	defer rows.Close()
 
 	latest := map[string]Proposal{}
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, fmt.Errorf("learning: scan proposal: %w", err)
 		}
 		var p Proposal
-		if err := json.Unmarshal(line, &p); err != nil {
+		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("learning: decode proposal: %w", err)
 		}
+		// Later seq wins: a proposal re-appended with the same id overwrites
+		// its earlier state, folding the history to the current record.
 		latest[p.Id] = p
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("learning: scan %s: %w", s.path, err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("learning: iterate proposals: %w", err)
+	}
+	if len(latest) == 0 {
+		return nil, nil
 	}
 	out := make([]Proposal, 0, len(latest))
 	for _, p := range latest {

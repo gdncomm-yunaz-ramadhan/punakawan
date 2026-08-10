@@ -176,6 +176,7 @@ func (s *Server) Start() error {
 		},
 		Root:      s.app.Workspace.Root,
 		Knowledge: s.app.OpenKnowledge,
+		Learning:  s.app.OpenLearning,
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
@@ -393,6 +394,7 @@ func (s *Server) Start() error {
 		projectStores,
 		recipesFactory,
 		s.app.OpenKnowledge,
+		s.app.OpenLearning,
 		func(projectID string) revision.Dispatcher {
 			root, _ := s.resolveRoot(projectID)
 			return &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: root}

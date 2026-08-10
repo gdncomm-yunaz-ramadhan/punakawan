@@ -7,6 +7,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/revision"
 )
@@ -40,6 +41,7 @@ type ProjectArtifactStores struct {
 	projects   *artifact.ProjectStores
 	recipes    func() (*recipe.RecipeStore, error)
 	knowledge  func() (*knowledge.Store, error)
+	learning   func() (*learning.Store, error)
 	dispatcher ProjectDispatcherFunc
 	logger     *slog.Logger
 }
@@ -59,8 +61,8 @@ type ProjectDispatcherFunc func(projectID string) revision.Dispatcher
 // nil, degrading only retrieval_recipe requests), the per-project
 // dispatcher factory (may be nil, degrading only Submit/RequestChanges),
 // and an optional logger for Fail (nil -> slog.Default()).
-func NewProjectArtifactStores(projects *artifact.ProjectStores, recipes func() (*recipe.RecipeStore, error), knowledge func() (*knowledge.Store, error), dispatcher ProjectDispatcherFunc, logger *slog.Logger) *ProjectArtifactStores {
-	return &ProjectArtifactStores{projects: projects, recipes: recipes, knowledge: knowledge, dispatcher: dispatcher, logger: logger}
+func NewProjectArtifactStores(projects *artifact.ProjectStores, recipes func() (*recipe.RecipeStore, error), knowledge func() (*knowledge.Store, error), learning func() (*learning.Store, error), dispatcher ProjectDispatcherFunc, logger *slog.Logger) *ProjectArtifactStores {
+	return &ProjectArtifactStores{projects: projects, recipes: recipes, knowledge: knowledge, learning: learning, dispatcher: dispatcher, logger: logger}
 }
 
 // forProject resolves the ArtifactStores + ReviewStore rooted at
@@ -81,7 +83,7 @@ func (p *ProjectArtifactStores) forProject(projectID string) (ArtifactStores, *a
 	if err != nil {
 		return ArtifactStores{}, nil, err
 	}
-	return ArtifactStores{Plans: plans, Recipes: p.recipes, Root: plans.WorkspaceRoot, Knowledge: p.knowledge}, reviews, nil
+	return ArtifactStores{Plans: plans, Recipes: p.recipes, Root: plans.WorkspaceRoot, Knowledge: p.knowledge, Learning: p.learning}, reviews, nil
 }
 
 // resolved is the shared shell for every project-scoped variant that does
@@ -106,7 +108,7 @@ func (p *ProjectArtifactStores) resolved(fn func(projectID string, stores Artifa
 // live review status.
 func (p *ProjectArtifactStores) ContextImprovements() http.HandlerFunc {
 	return p.resolved(func(_ string, stores ArtifactStores, reviews *artifact.ReviewStore) http.HandlerFunc {
-		return ContextImprovementsHandler(stores.Root, reviews)
+		return ContextImprovementsHandler(stores.Learning, reviews)
 	})
 }
 

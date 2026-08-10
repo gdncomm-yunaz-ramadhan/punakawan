@@ -65,7 +65,7 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, ProposeProjectLearningOutput{}, err
 		}
 
-		store, err := learning.Open(a.Workspace.Root)
+		store, err := a.OpenLearning()
 		if err != nil {
 			return nil, ProposeProjectLearningOutput{}, err
 		}

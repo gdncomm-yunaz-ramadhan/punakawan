@@ -39,7 +39,7 @@ func TestProjectArtifactStoresCreateReviewLandsInThatProject(t *testing.T) {
 	plansA := &artifact.PlanStore{WorkspaceRoot: rootA}
 	ref := seedPlan(t, plansA, "plan-x", "# Plan\n\nBody.\n")
 
-	res := NewProjectArtifactStores(projects, nil, nil, nil, nil)
+	res := NewProjectArtifactStores(projects, nil, nil, nil, nil, nil)
 
 	body, _ := json.Marshal(createReviewRequest{Title: "Project A review"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/proj-a/artifacts/plan/plan-x/reviews", bytes.NewReader(body))
@@ -78,7 +78,7 @@ func TestProjectArtifactStoresCreateReviewLandsInThatProject(t *testing.T) {
 
 func TestProjectArtifactStoresUnknownProjectIs404(t *testing.T) {
 	projects, _, _ := twoProjectResolver(t)
-	res := NewProjectArtifactStores(projects, nil, nil, nil, nil)
+	res := NewProjectArtifactStores(projects, nil, nil, nil, nil, nil)
 
 	body, _ := json.Marshal(createReviewRequest{Title: "x"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/nope/artifacts/plan/plan-x/reviews", bytes.NewReader(body))
@@ -104,7 +104,7 @@ func TestProjectArtifactStoresAcceptWritesToProjectTree(t *testing.T) {
 	seedPlan(t, plansA, "plan-x", proposalBasePlanContent)
 
 	dispatcher := &stubDispatcher{}
-	res := NewProjectArtifactStores(projects, nil, nil, func(projectID string) revision.Dispatcher {
+	res := NewProjectArtifactStores(projects, nil, nil, nil, func(projectID string) revision.Dispatcher {
 		if projectID != "proj-a" {
 			t.Fatalf("dispatcher factory called for unexpected project %q", projectID)
 		}
@@ -201,7 +201,7 @@ func TestProjectArtifactStoresSubmitRequiresDispatcher(t *testing.T) {
 
 	// nil dispatcher factory: submit degrades to 500, but resolution of a
 	// valid project still happens first (so this is a 500, not a 404).
-	res := NewProjectArtifactStores(projects, nil, nil, nil, nil)
+	res := NewProjectArtifactStores(projects, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/proj-a/reviews/review-1/submit", nil)
 	req.SetPathValue("projectId", "proj-a")
 	req.SetPathValue("reviewId", "review-1")
