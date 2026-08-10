@@ -1,0 +1,38 @@
+internal/roleconfig/resolver.go
+  7bf9711812567778 8,152-159,189-193,197-235
+internal/roleconfig/resolver_test.go
+  7bf9711812567778 4,6,9,11-12,184,225,239,245-315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "011fe85ea5055a62f58a036b70f28134ca59a6f9",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 440,
+      "total_deletions": 6,
+      "accepted_lines": 437,
+      "overriden_lines": 3
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 33,
+      "overriden_lines": 0
+    }
+  }
+}
