@@ -1,0 +1,52 @@
+cmd/punakawan/workspace_cmd.go
+  7bf9711812567778 49,70,106,122,138
+internal/panel/server/server_test.go
+  7bf9711812567778 117,119,121,707,709,711,828,830,832,977,979,981
+cmd/punakawan/panel_cmd.go
+  7bf9711812567778 51
+internal/panel/registry/registry_test.go
+  7bf9711812567778 4,9-10,13-14,17,19,21-22,25,48-49,59-67,118-131,133-135,174-177,179,181,183-184,188-191
+internal/storage/migrations/0012_panel_registry.sql
+  7bf9711812567778 1-22
+internal/panel/registry/registry.go
+  7bf9711812567778 2-4,8-13,17-20,27,31-33,35-36,40-41,44-47,49,52-55,57-63,65,67-70,74,77-95,98-100,103-106,108,110-116,118,120,123-131,134,136,139-146,149,151,153-161,163,165-167,169,173-182,189-190,195,197-199,201-202,204-209,212,214-219,230-240,246,248-249,252-255,258,260-268,270-272,276-295,297
+internal/panel/sources/cached_workspace_test.go
+  7bf9711812567778 35-39,51-53,237-240,244,260-262,267-272
+internal/panel/sources/sources_test.go
+  7bf9711812567778 19,154-157,159,161-162
+internal/panel/server/server.go
+  7bf9711812567778 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "1e147dd89192c79c842852ae9484a7bb436d3b43",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 330,
+      "total_deletions": 376,
+      "accepted_lines": 327,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 33,
+      "overriden_lines": 0
+    }
+  }
+}
