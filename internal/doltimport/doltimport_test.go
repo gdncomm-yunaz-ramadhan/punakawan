@@ -2,14 +2,19 @@ package doltimport
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/hub"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // requireDolt skips a test when the dolt binary is not on PATH. This tool's
@@ -159,11 +164,178 @@ func TestDiscoverHubTakesPrecedenceOverLegacy(t *testing.T) {
 	}
 }
 
-// --- Real-dolt end-to-end ---
+// --- Fake-querier fixtures (no dolt binary required) ---
+//
+// These drive runWithQuerier directly through the same fake-Querier
+// injection point the real dolt querier is wired through in Run, so they
+// exercise the exact decode/apply/verify path without needing a dolt binary.
 
 func legacySource(dir string) Source {
 	return Source{Kind: KindLegacy, Dir: dir, SourceDB: "knowledge"}
 }
+
+// fakeQuerier returns a Querier that answers the knowledge_relations count
+// query with relCount and any other query with rows, regardless of the exact
+// SQL text.
+func fakeQuerier(rows []map[string]json.RawMessage, relCount int) Querier {
+	return func(ctx context.Context, sqlStr string) ([]map[string]json.RawMessage, error) {
+		if strings.Contains(sqlStr, "COUNT(*)") {
+			return []map[string]json.RawMessage{{"n": json.RawMessage(fmt.Sprintf("%d", relCount))}}, nil
+		}
+		return rows, nil
+	}
+}
+
+// fakeKnowledgeRow builds one row shaped like the dolt querier's
+// "SELECT id, type, status, validity_state, data, updated_at FROM
+// knowledge_records" result: dataJSON must already be valid JSON text (the
+// record's data blob), the rest are plain strings the fake JSON-encodes.
+func fakeKnowledgeRow(id, dataJSON, updatedAt string) map[string]json.RawMessage {
+	quotedID, _ := json.Marshal(id)
+	quotedUpdatedAt, _ := json.Marshal(updatedAt)
+	return map[string]json.RawMessage{
+		"id":             json.RawMessage(quotedID),
+		"type":           json.RawMessage(`"requirement"`),
+		"status":         json.RawMessage(`"active"`),
+		"validity_state": json.RawMessage(`"observed"`),
+		"data":           json.RawMessage(dataJSON),
+		"updated_at":     json.RawMessage(quotedUpdatedAt),
+	}
+}
+
+// TestRunMissingTableFixture pins the behavior when the source Dolt store is
+// missing an expected table (e.g. an unmigrated or corrupted legacy repo):
+// runWithQuerier's very first read is the knowledge_relations count, so a
+// "no such table" failure there must surface as a clear error - not a panic,
+// and not a silent zero-count "success" that would let an empty import look
+// like a real one - and must mutate nothing.
+func TestRunMissingTableFixture(t *testing.T) {
+	db := openKernel(t)
+	q := func(ctx context.Context, sqlStr string) ([]map[string]json.RawMessage, error) {
+		return nil, fmt.Errorf("no such table: knowledge_relations")
+	}
+	_, err := runWithQuerier(context.Background(), db, proj, legacySource(t.TempDir()), true, q)
+	if err == nil {
+		t.Fatal("expected an error when a source table is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "no such table") {
+		t.Fatalf("expected the error to surface the missing-table cause, got: %v", err)
+	}
+	if n := countKernel(t, db); n != 0 {
+		t.Fatalf("a failed inventory read must mutate nothing, got %d rows", n)
+	}
+}
+
+// TestRunDuplicateIDFixture pins the current, deliberately-unchanged behavior
+// when the source returns two rows sharing the same id: the destination
+// table's own (project_id, id) primary key means the second row's
+// INSERT...ON CONFLICT DO UPDATE overwrites the first, so exactly one row
+// lands and it holds the last row's data (last one wins). The per-record
+// upsert loop, however, increments RecordsImported once per row it processes
+// regardless of whether that row's id collided with another id in the same
+// batch, so RecordsImported reports 2, not the 1 distinct row actually
+// stored. This is today's real behavior, not a design goal - the test exists
+// to catch a silent change to it, not to bless it.
+func TestRunDuplicateIDFixture(t *testing.T) {
+	db := openKernel(t)
+	rows := []map[string]json.RawMessage{
+		fakeKnowledgeRow("pkw:req/demo/DUP-1", validRecordJSON("pkw:req/demo/DUP-1", "First"), "2024-03-04 05:06:07"),
+		fakeKnowledgeRow("pkw:req/demo/DUP-1", validRecordJSON("pkw:req/demo/DUP-1", "Second"), "2024-03-05 06:07:08"),
+	}
+	rep, err := runWithQuerier(context.Background(), db, proj, legacySource(t.TempDir()), true, fakeQuerier(rows, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.RecordsImported != 2 {
+		t.Fatalf("want RecordsImported=2 (current non-deduplicating count), got %d", rep.RecordsImported)
+	}
+	if n := countKernel(t, db); n != 1 {
+		t.Fatalf("want exactly 1 stored row for the duplicated id, got %d", n)
+	}
+	store := knowledge.New(db, proj)
+	got, err := store.Get("pkw:req/demo/DUP-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "Second" {
+		t.Fatalf("want last-one-wins (title %q from the second row), got %q", "Second", got.Title)
+	}
+}
+
+// TestVerifyImportedDetectsMissingRowAndRollsBack directly exercises the
+// tx-scoped verifyImported function that the rollback fix introduced: given a
+// transaction where one expected id was deliberately never inserted (modeling
+// a mid-import failure that a post-commit-only check could not have caught in
+// time), it must return an error naming that id rather than silently
+// succeeding. Because this call happens from inside applyRecords' db.Write
+// callback, returning that error makes db.Write roll back the entire
+// transaction - so even the sibling row that WAS successfully inserted must
+// not survive. That is the core of the fix: nothing partial or unverified is
+// ever committed to the live kernel.
+func TestVerifyImportedDetectsMissingRowAndRollsBack(t *testing.T) {
+	db := openKernel(t)
+	ctx := context.Background()
+	expected := []decoded{
+		{rec: protocol.KnowledgeRecord{Id: "pkw:req/demo/PRESENT"}},
+		{rec: protocol.KnowledgeRecord{Id: "pkw:req/demo/MISSING"}},
+	}
+
+	err := db.Write(ctx, "verify-missing-row-test", "test: verify catches a missing row", func(tx *sql.Tx) error {
+		// Insert only the first expected id, deliberately leaving the second
+		// missing - so verifyImported must catch it.
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO knowledge_records (project_id, id, type, status, validity_state, data, updated_at)
+VALUES (?, ?, 'requirement', 'active', 'observed', '{}', '2024-01-01T00:00:00.000000000Z')`,
+			proj, "pkw:req/demo/PRESENT"); err != nil {
+			return err
+		}
+		return verifyImported(ctx, tx, proj, expected)
+	})
+	if err == nil {
+		t.Fatal("expected verifyImported to fail for an id that was never inserted")
+	}
+	if !strings.Contains(err.Error(), "MISSING") {
+		t.Fatalf("expected the error to name the missing id, got: %v", err)
+	}
+	if n := countKernel(t, db); n != 0 {
+		t.Fatalf("a failed verify must roll back everything in its transaction (including PRESENT), got %d rows", n)
+	}
+}
+
+// TestRunInterruptedImportRollsBackWholeBatch pins the transactional
+// all-or-nothing guarantee applyRecords documents: a mid-batch failure must
+// roll back every record in that apply, not just the one that failed. The
+// failure is forced by a genuine SQL error rather than a test-only hook -
+// the third record embeds the same relation twice, and the knowledge_relations
+// insert has no ON CONFLICT clause, so its second identical relation row
+// violates that table's own primary key. knowledge.Validate does not check
+// for duplicate embedded relations, so this record decodes and validates
+// cleanly and only fails once applyRecords tries to index it.
+func TestRunInterruptedImportRollsBackWholeBatch(t *testing.T) {
+	db := openKernel(t)
+	badRecordJSON := `{"id":"pkw:req/demo/BAD-1","type":"requirement","status":"active","title":"Bad",` +
+		`"source":{"provider":"dolt","retrieved_at":"2024-01-02T03:04:05Z"},` +
+		`"extraction":{"method":"manual"},` +
+		`"validity":{"state":"observed"},` +
+		`"relations":[{"type":"depends-on","target":"pkw:req/demo/X"},{"type":"depends-on","target":"pkw:req/demo/X"}]}`
+	rows := []map[string]json.RawMessage{
+		fakeKnowledgeRow("pkw:req/demo/OK-1", validRecordJSON("pkw:req/demo/OK-1", "First"), "2024-03-04 05:06:07"),
+		fakeKnowledgeRow("pkw:req/demo/OK-2", validRecordJSON("pkw:req/demo/OK-2", "Second"), "2024-03-04 05:06:08"),
+		fakeKnowledgeRow("pkw:req/demo/BAD-1", badRecordJSON, "2024-03-04 05:06:09"),
+	}
+	_, err := runWithQuerier(context.Background(), db, proj, legacySource(t.TempDir()), true, fakeQuerier(rows, 0))
+	if err == nil {
+		t.Fatal("expected an error from the duplicate-relation insert, got nil")
+	}
+	// The two good records precede the bad one in the same apply/transaction;
+	// asserting the kernel holds zero rows (not 2) proves the whole batch
+	// rolled back, not just the failing record.
+	if n := countKernel(t, db); n != 0 {
+		t.Fatalf("a mid-batch failure must roll back the whole batch, got %d rows", n)
+	}
+}
+
+// --- Real-dolt end-to-end ---
 
 func TestImportEmptySource(t *testing.T) {
 	requireDolt(t)
@@ -379,6 +551,46 @@ func TestImportHubBacked(t *testing.T) {
 	store := knowledge.New(db, proj)
 	if _, err := store.Get("pkw:req/demo/H-1"); err != nil {
 		t.Fatalf("hub record should have imported: %v", err)
+	}
+}
+
+// TestApplyWritesManifest confirms a successful apply persists the report as
+// a manifest file next to the kernel database, and that a dry run writes no
+// such file.
+func TestApplyWritesManifest(t *testing.T) {
+	requireDolt(t)
+	dir := filepath.Join(t.TempDir(), "knowledge")
+	newDoltStore(t, dir, "")
+	insertRecord(t, dir, "", "pkw:req/demo/R-1", validRecordJSON("pkw:req/demo/R-1", "First"), "2024-03-04 05:06:07")
+	db := openKernel(t)
+	ctx := context.Background()
+
+	// A dry run must not write a manifest.
+	if _, err := Run(ctx, db, proj, legacySource(dir), false); err != nil {
+		t.Fatal(err)
+	}
+	path := manifestPath(db, proj)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("dry run should not write a manifest, stat err: %v", err)
+	}
+
+	rep, err := Run(ctx, db, proj, legacySource(dir), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("manifest not written at %s: %v", path, err)
+	}
+	var got Report
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("manifest did not unmarshal as Report: %v", err)
+	}
+	if got.RecordsImported != rep.RecordsImported || got.RecordsImported != 1 {
+		t.Fatalf("manifest RecordsImported mismatch: got %d, want 1", got.RecordsImported)
+	}
+	if got.DestProjectID != proj {
+		t.Fatalf("manifest DestProjectID mismatch: got %q, want %q", got.DestProjectID, proj)
 	}
 }
 

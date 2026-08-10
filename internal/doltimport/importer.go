@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
@@ -153,18 +155,44 @@ func runWithQuerier(ctx context.Context, db *storage.DB, destProjectID string, s
 	rep.RecordsImported = imported
 	rep.RelationsImported = relations
 
-	// Validate the commit landed: the destination now holds at least every id
-	// we imported (a superset is fine - other records may predate this run),
-	// and the kernel passes an integrity check.
-	if err := verifyImported(ctx, db, destProjectID, valid); err != nil {
-		return nil, err
-	}
+	// applyRecords already proved every imported id reads back correctly
+	// before its transaction committed (see verifyImported), so getting here
+	// means that already passed. What is left to check post-commit is general
+	// database-file health, which the integrity check's own separate
+	// connection cannot see mid-transaction anyway.
 	if err := storage.IntegrityCheck(ctx, db.Path()); err != nil {
 		return nil, fmt.Errorf("doltimport: post-import integrity check failed: %w", err)
 	}
 	rep.IntegrityOK = true
 	rep.CompletedAt = time.Now().UTC()
+
+	if err := writeManifest(db, destProjectID, rep); err != nil {
+		return nil, err
+	}
 	return rep, nil
+}
+
+// writeManifest persists rep as the import manifest for destProjectID,
+// overwriting any prior manifest for that project - a re-run's manifest
+// reflects only the latest run, since the import itself is already
+// idempotent and auditable via git-tracked backups elsewhere. Only called
+// after a successful apply, never on a dry run.
+func writeManifest(db *storage.DB, destProjectID string, rep *Report) error {
+	path := manifestPath(db, destProjectID)
+	data, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return fmt.Errorf("doltimport: encode manifest: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("doltimport: write manifest %s: %w", path, err)
+	}
+	return nil
+}
+
+// manifestPath is the on-disk location of a project's import manifest: next
+// to the kernel database file itself.
+func manifestPath(db *storage.DB, destProjectID string) string {
+	return filepath.Join(filepath.Dir(db.Path()), fmt.Sprintf("doltimport-manifest-%s.json", destProjectID))
 }
 
 // applyRecords upserts every decoded record and rebuilds its relation edges in
@@ -174,6 +202,12 @@ func runWithQuerier(ctx context.Context, db *storage.DB, destProjectID string, s
 // (Store.Put) indexes from - rather than copied from Dolt's derived
 // knowledge_relations table, so the destination's relation index stays exactly
 // consistent with the records actually imported.
+//
+// Before the callback returns, it reads every imported id back through the
+// same *sql.Tx (verifyImported) - not through a separate connection - so a
+// read-back failure returns an error from inside db.Write's callback. That
+// makes db.Write roll back the entire transaction: nothing partial or
+// unverified is ever committed to the live kernel.
 func applyRecords(ctx context.Context, db *storage.DB, projectID string, valid []decoded) (records, relations int, err error) {
 	key, err := writeKey()
 	if err != nil {
@@ -204,6 +238,13 @@ ON CONFLICT(project_id, id) DO UPDATE SET
 			}
 			records++
 		}
+		// Read every imported id back through this same transaction, before
+		// it commits. If any is missing, return the error here so db.Write
+		// rolls back the whole transaction instead of committing a partial
+		// or unverified import.
+		if err := verifyImported(ctx, tx, projectID, valid); err != nil {
+			return err
+		}
 		return nil
 	})
 	if werr != nil && !errors.Is(werr, storage.ErrDuplicateWrite) {
@@ -231,9 +272,34 @@ func existingIDs(ctx context.Context, db *storage.DB, projectID string) (map[str
 	return set, rows.Err()
 }
 
-// verifyImported confirms every id we imported is now readable in the kernel.
-func verifyImported(ctx context.Context, db *storage.DB, projectID string, valid []decoded) error {
-	after, err := existingIDs(ctx, db, projectID)
+// existingIDsTx is existingIDs' transaction-scoped counterpart: it reads
+// through tx rather than db.Reader()'s separate connection, so it sees
+// uncommitted writes made earlier in the same transaction.
+func existingIDsTx(ctx context.Context, tx *sql.Tx, projectID string) (map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM knowledge_records WHERE project_id = ?`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("doltimport: read existing ids: %w", err)
+	}
+	defer rows.Close()
+	set := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("doltimport: scan existing id: %w", err)
+		}
+		set[id] = true
+	}
+	return set, rows.Err()
+}
+
+// verifyImported confirms every id we imported is now readable, by querying
+// through the same in-flight transaction that wrote it (tx), not a separate
+// connection: a separate connection cannot see this transaction's uncommitted
+// writes, and querying after commit would be too late to prevent a bad commit
+// from landing. Called from inside applyRecords' db.Write callback, so a
+// failure here still rolls back the whole transaction.
+func verifyImported(ctx context.Context, tx *sql.Tx, projectID string, valid []decoded) error {
+	after, err := existingIDsTx(ctx, tx, projectID)
 	if err != nil {
 		return err
 	}
