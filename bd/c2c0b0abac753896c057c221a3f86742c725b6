@@ -1,0 +1,42 @@
+internal/search/audit_test.go
+  7bf9711812567778 43-48,50-51,53-54,56-57,61,79-83
+internal/search/search.go
+  7bf9711812567778 4,88,99-100,106-124,146-148,163-167,175-178,193-210,213-228,231,233-243,247-251,255,261-268,279,283-284,286,289-290,304-305,314-357,360-371,374-377,381-387,389-390,392,395-410,412-413,416-432,434-435,437-438,440-458,460,463-477,480-483,487-488,490-491,493-494,496,499-505,507-510,513-537,546-550,552-564,566,570-572,574,790-833
+internal/search/index.go
+  7bf9711812567778 4-5,7-10,14,19-22,34-42,45-78,80-81,83-85,87,101-103,105-108,110-111,115-124,127,129,132-134,136-147,152-314,318-319,321-322,324-330,355-358,361-364,368-370,373-374,396,398,402-409,411
+internal/search/tokenize.go
+  7bf9711812567778 3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "bdc2c0b0abac753896c057c221a3f86742c725b6",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 710,
+      "total_deletions": 294,
+      "accepted_lines": 689,
+      "overriden_lines": 7
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
