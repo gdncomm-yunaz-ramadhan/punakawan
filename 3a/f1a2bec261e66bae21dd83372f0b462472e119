@@ -1,0 +1,60 @@
+internal/mcpserver/tools_createpr_test.go
+  7bf9711812567778 11-12,205-238
+internal/mcpserver/tools_workflowsteps.go
+  7bf9711812567778 12,194-211
+internal/mcpserver/tools_jiraprogress_test.go
+  7bf9711812567778 6,200-206,208-243
+internal/panel/sources/sources_test.go
+  7bf9711812567778 18,21,369-426
+internal/testrun/testrun.go
+  7bf9711812567778 157-200
+internal/mcpserver/tools_jiraprogress.go
+  7bf9711812567778 14,45-50,100-101,110-112,158-161,164
+internal/gitops/inspect.go
+  7bf9711812567778 144-157,159
+internal/deliverysummary/summary.go
+  7bf9711812567778 1,6-16
+internal/mcpserver/tools_createpr.go
+  7bf9711812567778 13,77-78,85,90,99,131,193-201,232-234
+internal/mcpserver/tools_workflowsteps_test.go
+  7bf9711812567778 5,7,9-10,142-198
+internal/panel/sources/session_source.go
+  7bf9711812567778 9,30,32-41,50-55,58-66
+internal/prreview/prreview.go
+  7bf9711812567778 98-116
+internal/mcpserver/tools_deliverysummary.go
+  7bf9711812567778 1-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "3af1a2bec261e66bae21dd83372f0b462472e119",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 264,
+      "total_deletions": 12,
+      "accepted_lines": 422,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 33,
+      "overriden_lines": 0
+    }
+  }
+}
