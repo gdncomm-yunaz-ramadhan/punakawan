@@ -17,6 +17,7 @@ import (
 // repository at <dir>/repo-a and returns dir.
 func newSmokeWorkspace(t *testing.T) string {
 	t.Helper()
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 	dir := t.TempDir()
 
 	repoDir := filepath.Join(dir, "repo-a")

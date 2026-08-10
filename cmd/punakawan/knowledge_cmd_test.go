@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -9,13 +8,6 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
-
-func requireDolt(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-}
 
 func seedRecipe(t *testing.T, dir, id string, state protocol.KnowledgeRecordValidityState) protocol.KnowledgeRecord {
 	t.Helper()
@@ -79,7 +71,6 @@ func opPtrLocal(o protocol.KnowledgeRecordRetrievalRecipeSelectorAllElemOperator
 }
 
 func TestRecipeListAndShow(t *testing.T) {
-	requireDolt(t)
 	dir := newSmokeWorkspace(t)
 	rec := seedRecipe(t, dir, "pkw:recipe/smoke/next-sprint", protocol.KnowledgeRecordValidityStateVerified)
 
@@ -101,7 +92,6 @@ func TestRecipeListAndShow(t *testing.T) {
 }
 
 func TestRecipeExplainAndValidate(t *testing.T) {
-	requireDolt(t)
 	dir := newSmokeWorkspace(t)
 	rec := seedRecipe(t, dir, "pkw:recipe/smoke/next-sprint", protocol.KnowledgeRecordValidityStateVerified)
 
@@ -123,7 +113,6 @@ func TestRecipeExplainAndValidate(t *testing.T) {
 }
 
 func TestRecipeDisputeExcludesFromReuse(t *testing.T) {
-	requireDolt(t)
 	dir := newSmokeWorkspace(t)
 	rec := seedRecipe(t, dir, "pkw:recipe/smoke/next-sprint", protocol.KnowledgeRecordValidityStateVerified)
 
@@ -141,7 +130,6 @@ func TestRecipeDisputeExcludesFromReuse(t *testing.T) {
 }
 
 func TestRecipeSupersede(t *testing.T) {
-	requireDolt(t)
 	dir := newSmokeWorkspace(t)
 	old := seedRecipe(t, dir, "pkw:recipe/smoke/old", protocol.KnowledgeRecordValidityStateVerified)
 	replacement := seedRecipe(t, dir, "pkw:recipe/smoke/replacement", protocol.KnowledgeRecordValidityStateVerified)
@@ -164,7 +152,6 @@ func TestRecipeSupersede(t *testing.T) {
 }
 
 func TestRecipeUpdateMovesToValidating(t *testing.T) {
-	requireDolt(t)
 	dir := newSmokeWorkspace(t)
 	rec := seedRecipe(t, dir, "pkw:recipe/smoke/next-sprint", protocol.KnowledgeRecordValidityStateVerified)
 
