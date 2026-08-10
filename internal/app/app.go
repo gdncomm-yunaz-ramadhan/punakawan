@@ -36,7 +36,6 @@ type App struct {
 	Workspace       *workspace.Workspace
 	Policy          *policy.Policy
 	Supervisor      *tools.Supervisor
-	Approvals       *approvals.Store
 	Inspector       *gitops.Inspector
 	Worktrees       *gitops.WorktreeManager
 	Workflow        *workflow.Store
@@ -57,6 +56,9 @@ type App struct {
 
 	storageMu sync.Mutex
 	storageDB *storage.DB
+
+	approvalsMu    sync.Mutex
+	approvalsStore *approvals.Store
 
 	taskStoreMu sync.Mutex
 	taskStore   *taskstore.Store
@@ -101,11 +103,6 @@ func Load(startDir string) (*App, error) {
 	}
 	sup := tools.New(roots...)
 
-	store, err := approvals.Open(ws.Root)
-	if err != nil {
-		return nil, err
-	}
-
 	wf, err := workflow.Open(ws.Root)
 	if err != nil {
 		return nil, err
@@ -141,26 +138,32 @@ func Load(startDir string) (*App, error) {
 		return nil, err
 	}
 
-	registry := adapters.NewRegistry(specs, store)
-	registry.SetApprovalScope(pol.Approvals.Scope)
-	registry.SetSyncQueue(syncQueue)
-
 	roleResolver := newRoleResolver(ws)
 
-	return &App{
+	a := &App{
 		Workspace:       ws,
 		Policy:          pol,
 		Supervisor:      sup,
-		Approvals:       store,
 		Inspector:       gitops.NewInspector(sup),
-		Worktrees:       gitops.NewWorktreeManager(sup, store, pol),
 		Workflow:        wf,
-		AdapterRegistry: registry,
 		SyncQueue:       syncQueue,
 		PrReviews:       prReviews,
 		ContextRequests: contextRequests,
 		RoleConfig:      roleResolver,
-	}, nil
+	}
+
+	// The approval store now lives in the shared SQLite kernel, opened lazily
+	// so a command that never touches an approval never pays to open the
+	// kernel. The registry and worktree manager therefore take a provider
+	// (a.OpenApprovals) rather than an already-opened store, deferring the
+	// open to the first approval-gated operation.
+	registry := adapters.NewRegistry(specs, a.OpenApprovals)
+	registry.SetApprovalScope(pol.Approvals.Scope)
+	registry.SetSyncQueue(syncQueue)
+	a.AdapterRegistry = registry
+	a.Worktrees = gitops.NewWorktreeManager(sup, a.OpenApprovals, pol)
+
+	return a, nil
 }
 
 // newRoleResolver builds the shared §47 role-configuration resolver for a
@@ -316,6 +319,34 @@ func (a *App) OpenTaskStore() (*taskstore.Store, error) {
 	return a.taskStore, nil
 }
 
+// OpenApprovals lazily opens the approval store, memoizing the result, scoped
+// to this workspace's id within the shared storage kernel (punokawan-14yn.16).
+// Like OpenTaskStore, it is a thin scope over the one shared *storage.DB rather
+// than a per-project server, so it starts nothing: the deferral simply avoids
+// opening the kernel for commands that never touch an approval. The adapter
+// registry and worktree manager hold this method as a provider, so the kernel
+// opens on the first approval-gated operation, not at Load.
+func (a *App) OpenApprovals() (*approvals.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.approvalsMu.Lock()
+	defer a.approvalsMu.Unlock()
+
+	if a.approvalsStore != nil {
+		return a.approvalsStore, nil
+	}
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	a.approvalsStore = approvals.New(db, a.Workspace.ID)
+	return a.approvalsStore, nil
+}
+
 // JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
 // config (.punakawan/jira-workflow.yaml). Safe to call even if the file
 // does not exist: jiraworkflow.Load returns a safe empty default in that
@@ -411,6 +442,10 @@ func (a *App) Close() error {
 	a.knowledgeMu.Lock()
 	a.knowledgeStore = nil
 	a.knowledgeMu.Unlock()
+
+	a.approvalsMu.Lock()
+	a.approvalsStore = nil
+	a.approvalsMu.Unlock()
 
 	if adapterErr != nil {
 		return adapterErr

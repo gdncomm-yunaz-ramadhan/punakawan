@@ -1,19 +1,24 @@
 package mcpserver
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 func pendingAdapterApproval(t *testing.T) (*approvals.Store, protocol.ApprovalRecord) {
 	t.Helper()
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	rec := protocol.ApprovalRecord{
 		Id:          "approval-adapter-run-run-1",
 		RunId:       "run-1",

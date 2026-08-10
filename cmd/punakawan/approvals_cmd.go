@@ -50,7 +50,11 @@ func newApprovalsListCmd() *cobra.Command {
 			}
 			defer a.Close()
 
-			pending, err := a.Approvals.Pending()
+			store, err := a.OpenApprovals()
+			if err != nil {
+				return err
+			}
+			pending, err := store.Pending()
 			if err != nil {
 				return err
 			}
@@ -121,10 +125,15 @@ func resolveApprovals(cmd *cobra.Command, ids []string, status protocol.Approval
 	}
 	defer a.Close()
 
+	store, err := a.OpenApprovals()
+	if err != nil {
+		return err
+	}
+
 	out := cmd.OutOrStdout()
 	var firstErr error
 	for _, id := range ids {
-		if err := a.Approvals.Resolve(id, status, approvedBy); err != nil {
+		if err := store.Resolve(id, status, approvedBy); err != nil {
 			fmt.Fprintf(out, "%s: error: %v\n", id, err)
 			if firstErr == nil {
 				firstErr = err

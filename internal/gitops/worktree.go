@@ -44,12 +44,17 @@ func WorktreePath(workspaceRoot, repoID, taskID string) string {
 type WorktreeManager struct {
 	sup       *tools.Supervisor
 	inspector *Inspector
-	approvals *approvals.Store
+	// approvals lazily resolves the shared approval store on first use, so a
+	// manager built at app.Load never forces the SQLite kernel open until a
+	// worktree operation actually needs to read or record an approval
+	// (punokawan-14yn.16).
+	approvals func() (*approvals.Store, error)
 	policy    *policy.Policy
 }
 
-// NewWorktreeManager constructs a WorktreeManager.
-func NewWorktreeManager(sup *tools.Supervisor, store *approvals.Store, pol *policy.Policy) *WorktreeManager {
+// NewWorktreeManager constructs a WorktreeManager. store is a provider resolved
+// lazily the first time an approval is read or recorded, not at construction.
+func NewWorktreeManager(sup *tools.Supervisor, store func() (*approvals.Store, error), pol *policy.Policy) *WorktreeManager {
 	return &WorktreeManager{
 		sup:       sup,
 		inspector: NewInspector(sup),
@@ -68,7 +73,11 @@ func approvalID(repoID, taskID string) string {
 func (m *WorktreeManager) RequestApproval(runID, repoID, taskID string, requestedBy protocol.ApprovalRecordRequestedBy) (protocol.ApprovalRecord, error) {
 	id := approvalID(repoID, taskID)
 
-	current, err := m.approvals.Current()
+	store, err := m.approvals()
+	if err != nil {
+		return protocol.ApprovalRecord{}, err
+	}
+	current, err := store.Current()
 	if err != nil {
 		return protocol.ApprovalRecord{}, err
 	}
@@ -88,7 +97,7 @@ func (m *WorktreeManager) RequestApproval(runID, repoID, taskID string, requeste
 		Status:      protocol.ApprovalRecordStatusPending,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := m.approvals.Append(rec); err != nil {
+	if err := store.Append(rec); err != nil {
 		return protocol.ApprovalRecord{}, err
 	}
 	return rec, nil
@@ -106,7 +115,11 @@ func (m *WorktreeManager) Deny(repoID, taskID, approvedBy string) error {
 
 func (m *WorktreeManager) resolve(repoID, taskID string, status protocol.ApprovalRecordStatus, approvedBy string) error {
 	id := approvalID(repoID, taskID)
-	current, err := m.approvals.Current()
+	store, err := m.approvals()
+	if err != nil {
+		return err
+	}
+	current, err := store.Current()
 	if err != nil {
 		return err
 	}
@@ -122,7 +135,7 @@ func (m *WorktreeManager) resolve(repoID, taskID string, status protocol.Approva
 	rec.Status = status
 	rec.ApprovedBy = &approvedBy
 	rec.ResolvedAt = &now
-	return m.approvals.Append(rec)
+	return store.Append(rec)
 }
 
 // Create creates an isolated worktree and task branch for repoID/taskID.
@@ -130,7 +143,11 @@ func (m *WorktreeManager) resolve(repoID, taskID string, status protocol.Approva
 // acquires a per-repository lock, and refuses to proceed if the base
 // repository has uncommitted changes.
 func (m *WorktreeManager) Create(ctx context.Context, workspaceRoot, repoPath, repoID, taskID string) (*Worktree, error) {
-	current, err := m.approvals.Current()
+	store, err := m.approvals()
+	if err != nil {
+		return nil, err
+	}
+	current, err := store.Current()
 	if err != nil {
 		return nil, err
 	}

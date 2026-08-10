@@ -8,6 +8,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/policy"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -35,11 +36,13 @@ func newCleanRepo(t *testing.T) string {
 func newWorktreeManager(t *testing.T, repoRoot, workspaceRoot string) *WorktreeManager {
 	t.Helper()
 	sup := tools.New(repoRoot, workspaceRoot)
-	store, err := approvals.Open(workspaceRoot)
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	return NewWorktreeManager(sup, store, policy.Default())
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
+	return NewWorktreeManager(sup, func() (*approvals.Store, error) { return store, nil }, policy.Default())
 }
 
 func TestWorktreeCreateWithoutApprovalFails(t *testing.T) {

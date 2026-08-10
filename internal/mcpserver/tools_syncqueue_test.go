@@ -69,7 +69,7 @@ func TestRetryJiraSyncEntryHandlerResolvesOnSuccess(t *testing.T) {
 	a := newTestApp(t)
 	registry := adapters.NewRegistry(map[string]adapters.AdapterSpec{
 		"prototype": {Command: "node", Args: []string{prototypeAdapterTestPath}},
-	}, a.Approvals)
+	}, a.OpenApprovals)
 	registry.SetSyncQueue(a.SyncQueue)
 	a.AdapterRegistry = registry
 

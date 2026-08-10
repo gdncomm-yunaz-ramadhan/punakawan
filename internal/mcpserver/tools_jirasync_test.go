@@ -8,7 +8,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -159,10 +158,7 @@ func syncSubtaskManifest() protocol.AdapterManifest {
 // different operation than request_jira_clarification does.
 func newJiraClarifyTestGateWithManifest(t *testing.T, manifest protocol.AdapterManifest) (*adapters.Gate, *fakeAtlassianCaller) {
 	t.Helper()
-	store, err := approvals.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
-	}
+	store := newTestApprovalStore(t)
 	fc := &fakeAtlassianCaller{}
 	return adapters.NewGate("atlassian", manifest, fc, store), fc
 }

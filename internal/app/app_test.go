@@ -16,7 +16,7 @@ func TestLoadWiresServices(t *testing.T) {
 	if a.Policy == nil {
 		t.Fatal("expected a default policy to be loaded when no policy.yaml exists")
 	}
-	if a.Supervisor == nil || a.Approvals == nil || a.Inspector == nil || a.Worktrees == nil {
+	if a.Supervisor == nil || a.AdapterRegistry == nil || a.Inspector == nil || a.Worktrees == nil {
 		t.Fatalf("expected all services to be wired, got %+v", a)
 	}
 

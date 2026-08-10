@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -65,10 +67,12 @@ func testManifest() protocol.AdapterManifest {
 
 func newTestGate(t *testing.T) (*Gate, *fakeCaller) {
 	t.Helper()
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	fc := &fakeCaller{}
 	return NewGate("atlassian", testManifest(), fc, store), fc
 }
@@ -194,10 +198,12 @@ func TestGateApprovalCoversEveryWriteInRun(t *testing.T) {
 }
 
 func TestGateApprovalCoversDifferentAdaptersInSameRun(t *testing.T) {
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	firstCaller := &fakeCaller{}
 	secondCaller := &fakeCaller{}
 	first := NewGate("atlassian", testManifest(), firstCaller, store)
@@ -257,10 +263,12 @@ func TestGateRunScopeIsTheDefaultAndDoesNotShareAcrossRunIDs(t *testing.T) {
 }
 
 func TestCallEnqueuesFailureWhenSyncQueueIsSet(t *testing.T) {
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	fc := &fakeCaller{failOps: map[string]bool{"atlassian.getJiraIssue": true}}
 	g := NewGate("atlassian", testManifest(), fc, store)
 

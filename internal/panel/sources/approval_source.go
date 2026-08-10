@@ -21,7 +21,11 @@ func (a *ApprovalSource) List(ctx context.Context, workspaceID string, filter co
 		return nil, fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, a.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
 	}
 
-	recs, err := a.App.Approvals.List()
+	store, err := a.App.OpenApprovals()
+	if err != nil {
+		return nil, fmt.Errorf("sources: open approvals: %w", err)
+	}
+	recs, err := store.List()
 	if err != nil {
 		return nil, fmt.Errorf("sources: list approvals: %w", err)
 	}

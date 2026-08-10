@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -66,10 +65,7 @@ func (f *fakeGateProvider) Gate(ctx context.Context, adapterID string) (*adapter
 
 func newCreatePrTestGate(t *testing.T) (*adapters.Gate, *fakeGitHubCaller) {
 	t.Helper()
-	store, err := approvals.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
-	}
+	store := newTestApprovalStore(t)
 	fc := &fakeGitHubCaller{responses: map[string]string{
 		"github.createPullRequest": `{"normalized":{"number":43,"url":"https://github.com/acme/widgets/pull/43"}}`,
 	}}

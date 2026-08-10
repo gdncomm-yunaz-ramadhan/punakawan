@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -39,10 +38,7 @@ const getJiraIssueResponseJSON = `{
 
 func newIngestRequirementTestGate(t *testing.T, responses map[string]string) *adapters.Gate {
 	t.Helper()
-	store, err := approvals.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
-	}
+	store := newTestApprovalStore(t)
 	manifest := protocol.AdapterManifest{
 		Id:       "atlassian",
 		Name:     "atlassian",

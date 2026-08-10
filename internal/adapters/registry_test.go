@@ -3,10 +3,12 @@ package adapters
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 )
 
@@ -17,14 +19,16 @@ func newTestRegistry(t *testing.T) *Registry {
 	if _, err := os.Stat(prototypeAdapterPath); err != nil {
 		t.Skipf("prototype adapter not built (%s): %v; run `pnpm --filter @punakawan/adapter-sdk build` first", prototypeAdapterPath, err)
 	}
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	specs := map[string]AdapterSpec{
 		"prototype": {Command: "node", Args: []string{prototypeAdapterPath}},
 	}
-	return NewRegistry(specs, store)
+	return NewRegistry(specs, func() (*approvals.Store, error) { return store, nil })
 }
 
 func TestRegistryGateStartsAndFetchesManifest(t *testing.T) {

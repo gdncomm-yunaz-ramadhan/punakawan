@@ -583,7 +583,11 @@ func TestServerApprovalsEndpoint(t *testing.T) {
 		Status:      protocol.ApprovalRecordStatusPending,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := a.Approvals.Append(rec); err != nil {
+	store, err := a.OpenApprovals()
+	if err != nil {
+		t.Fatalf("OpenApprovals: %v", err)
+	}
+	if err := store.Append(rec); err != nil {
 		t.Fatalf("Approvals.Append: %v", err)
 	}
 

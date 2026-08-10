@@ -39,8 +39,11 @@ type AdapterSpec struct {
 // hardcoded on the Go side, so Go and the TypeScript adapter's declared
 // capabilities cannot silently drift apart.
 type Registry struct {
-	specs     map[string]AdapterSpec
-	approvals *approvals.Store
+	specs map[string]AdapterSpec
+	// approvals lazily resolves the shared approval store on first use, so a
+	// Registry built at app.Load never forces the SQLite kernel open until an
+	// adapter operation actually needs to gate on an approval (punokawan-14yn.16).
+	approvals func() (*approvals.Store, error)
 
 	mu            sync.Mutex
 	clients       map[string]*Client
@@ -49,10 +52,11 @@ type Registry struct {
 	syncQueue     *syncqueue.Queue
 }
 
-// NewRegistry constructs a Registry for the given adapter specs. Every Gate
-// it creates defaults to per-run_id approval scope; call SetApprovalScope
-// to widen it for every adapter this Registry serves.
-func NewRegistry(specs map[string]AdapterSpec, store *approvals.Store) *Registry {
+// NewRegistry constructs a Registry for the given adapter specs. store is a
+// provider resolved lazily the first time a Gate is created, not at
+// construction. Every Gate it creates defaults to per-run_id approval scope;
+// call SetApprovalScope to widen it for every adapter this Registry serves.
+func NewRegistry(specs map[string]AdapterSpec, store func() (*approvals.Store, error)) *Registry {
 	return &Registry{
 		specs:     specs,
 		approvals: store,
@@ -141,7 +145,13 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 		return nil, fmt.Errorf("adapters: initialize %q: %w", adapterID, err)
 	}
 
-	gate := NewGate(adapterID, manifest, client, r.approvals)
+	store, err := r.approvals()
+	if err != nil {
+		_ = client.Kill()
+		return nil, fmt.Errorf("adapters: open approval store for %q: %w", adapterID, err)
+	}
+
+	gate := NewGate(adapterID, manifest, client, store)
 	gate.SetApprovalScope(r.approvalScope)
 	gate.SetSyncQueue(r.syncQueue)
 	r.clients[adapterID] = client
