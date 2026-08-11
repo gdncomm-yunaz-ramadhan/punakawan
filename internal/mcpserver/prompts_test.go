@@ -4,9 +4,11 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/prompts"
 )
 
@@ -115,5 +117,69 @@ func TestRolePromptsHaveDistinctOutputContracts(t *testing.T) {
 				t.Errorf("%s prompt should not contain %s's principle %q", role, other, ow.principle)
 			}
 		}
+	}
+}
+
+// TestRolePromptsIncludeAcceptedLearningProposal is punokawan-o6z9's proof
+// that a real role invocation - a connected MCP client calling GetPrompt, not
+// roleconfig.PromptBlock's own unit test - actually surfaces an accepted
+// learning proposal (punokawan-14yn.9 AC4: "An inferred convention... appears
+// in Petruk and Bagong context"). It appends a proposal straight to the
+// learning store (bypassing the review/accept workflow, which is exercised
+// elsewhere) because only the resulting Status is relevant to this handler.
+func TestRolePromptsIncludeAcceptedLearningProposal(t *testing.T) {
+	a := newTestApp(t)
+	store, err := a.OpenLearning()
+	if err != nil {
+		t.Fatalf("OpenLearning: %v", err)
+	}
+	now := time.Now()
+	prop := learning.Proposal{
+		Id:             "prop-commit-style",
+		ArtifactType:   learning.TypeMetadata,
+		TargetId:       "commit-message-style",
+		Rationale:      "the last five merged PRs all used imperative-mood commit subjects",
+		Status:         learning.StatusAccepted,
+		Classification: learning.ClassificationInferred,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := store.Append(prop); err != nil {
+		t.Fatalf("append accepted proposal: %v", err)
+	}
+
+	cs := connect(t, a)
+
+	for _, role := range []string{"petruk", "bagong"} {
+		text := servedPrompt(t, cs, role)
+		if !strings.Contains(text, "Learned project facts") {
+			t.Errorf("%s served prompt missing the Learned project facts section", role)
+		}
+		if !strings.Contains(text, prop.Rationale) {
+			t.Errorf("%s served prompt missing the accepted proposal's rationale %q", role, prop.Rationale)
+		}
+	}
+
+	// A pending (not yet accepted) proposal must stay invisible (AC4's other
+	// half): reusing the same served-prompt path for semar confirms the block
+	// only ever renders accepted proposals, never all of them. Its rationale
+	// (rather than id, which LearnedFactsBlock never prints) is the distinct
+	// marker to look for.
+	pending := learning.Proposal{
+		Id:             "prop-pending",
+		ArtifactType:   learning.TypeMetadata,
+		TargetId:       "pending-target",
+		Rationale:      "pending-marker-should-not-appear",
+		Status:         learning.StatusPending,
+		Classification: learning.ClassificationInferred,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := store.Append(pending); err != nil {
+		t.Fatalf("append pending proposal: %v", err)
+	}
+	text := servedPrompt(t, cs, "semar")
+	if strings.Contains(text, pending.Rationale) {
+		t.Errorf("semar served prompt leaked a pending proposal's rationale")
 	}
 }

@@ -62,7 +62,7 @@ func newServer(a *app.App) (*mcp.Server, error) {
 		Instructions: serverInstructions,
 	})
 
-	if err := registerPrompts(server); err != nil {
+	if err := registerPrompts(server, a); err != nil {
 		return nil, err
 	}
 	registerTools(server, a, capability.NewRegistry())
