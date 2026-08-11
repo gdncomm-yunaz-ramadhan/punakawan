@@ -16,8 +16,8 @@ func sampleInput() Input {
 			{
 				AllPassed: false,
 				Results: []testrun.CommandResult{
-					{Command: testrun.Command{Name: "go", Args: []string{"build", "./..."}}, ExitCode: 0},
-					{Command: testrun.Command{Name: "go", Args: []string{"test", "./..."}}, ExitCode: 1},
+					{Command: testrun.Command{Name: "go", Args: []string{"build", "./..."}}, ExitCode: 0, DurationMs: 3_600_000},
+					{Command: testrun.Command{Name: "go", Args: []string{"test", "./..."}}, ExitCode: 1, DurationMs: 1_800_000},
 				},
 			},
 		},
@@ -48,6 +48,12 @@ func TestBuildProducesSameCountsAcrossRenderers(t *testing.T) {
 
 	if summary.CommandsRun != 2 || summary.CommandsPassed != 1 || summary.CommandsFailed != 1 {
 		t.Fatalf("summary = %+v, want CommandsRun=2 CommandsPassed=1 CommandsFailed=1", summary)
+	}
+	if summary.TotalDurationMs != 5_400_000 {
+		t.Fatalf("TotalDurationMs = %d, want 5400000 (sum of both commands, passed and failed alike)", summary.TotalDurationMs)
+	}
+	if got, want := summary.VerifiedHours(), 1.5; got != want {
+		t.Fatalf("VerifiedHours() = %v, want %v", got, want)
 	}
 	if summary.EvidenceCount != 2 {
 		t.Fatalf("EvidenceCount = %d, want 2", summary.EvidenceCount)

@@ -507,6 +507,27 @@ func reduceApprovalManifest(orchestrationID, manifestID string, events []protoco
 	m.ExpectsCommits, _ = own[0].Payload["expects_commits"].(bool)
 	m.ExpectsPushes, _ = own[0].Payload["expects_pushes"].(bool)
 	m.ExpectsPrs, _ = own[0].Payload["expects_prs"].(bool)
+	if totalHours := numberField(own[0].Payload, "proposed_worklog_total_hours"); totalHours != 0 {
+		m.ProposedWorklogTotalHours = &totalHours
+	}
+	if unmapped := numberField(own[0].Payload, "proposed_worklog_unmapped_hours"); unmapped != 0 {
+		m.ProposedWorklogUnmappedHours = &unmapped
+	}
+	if raw, ok := own[0].Payload["proposed_worklog"].([]interface{}); ok {
+		for _, v := range raw {
+			if wm, ok := v.(map[string]interface{}); ok {
+				elem := protocol.ApprovalManifestProposedWorklogElem{
+					Bucket:     protocol.ApprovalManifestProposedWorklogElemBucket(stringField(wm, "bucket")),
+					SubtaskKey: stringField(wm, "subtask_key"),
+					Hours:      numberField(wm, "hours"),
+				}
+				if name := stringField(wm, "subtask_name"); name != "" {
+					elem.SubtaskName = &name
+				}
+				m.ProposedWorklog = append(m.ProposedWorklog, elem)
+			}
+		}
+	}
 	if raw, ok := own[0].Payload["checks"].([]interface{}); ok {
 		for _, v := range raw {
 			if cm, ok := v.(map[string]interface{}); ok {

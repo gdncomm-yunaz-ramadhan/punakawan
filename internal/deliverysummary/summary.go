@@ -75,6 +75,16 @@ type Summary struct {
 	CommandsPassed int
 	CommandsFailed int
 
+	// TotalDurationMs sums every recorded command's DurationMs, passed or
+	// failed - all of it is time actually spent running verification, per
+	// internal/worklogalloc's proposed-worklog derivation (punokawan-14yn.9
+	// AC2), which needs a single honest "verified work" duration rather
+	// than a fabricated per-stage breakdown testrun's data does not
+	// support (see internal/testrun's own doc: a command is the smallest
+	// unit it can honestly attribute time to, with no build/test/review
+	// distinction).
+	TotalDurationMs int64
+
 	Commits       []CommitLine
 	EvidenceCount int
 	Risks         []RiskLine
@@ -124,6 +134,7 @@ func Build(in Input) Summary {
 			} else {
 				s.CommandsFailed++
 			}
+			s.TotalDurationMs += res.DurationMs
 		}
 	}
 
@@ -153,6 +164,16 @@ func shortSHA(sha string) string {
 		return sha[:12]
 	}
 	return sha
+}
+
+// VerifiedHours converts TotalDurationMs to hours - the single input
+// internal/worklogalloc.Allocate derives a proposed dev/test/review
+// worklog split from (punokawan-14yn.9 AC2). It is deliberately named
+// "verified" rather than e.g. "worked" hours: it measures time spent
+// running commands whose outcome is recorded (pass or fail), not a
+// human's actual time-on-task, which nothing in this data captures.
+func (s Summary) VerifiedHours() float64 {
+	return float64(s.TotalDurationMs) / 1000 / 3600
 }
 
 // HasContent reports whether s carries anything worth rendering: an empty

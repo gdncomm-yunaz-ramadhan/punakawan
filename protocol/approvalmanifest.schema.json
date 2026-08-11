@@ -36,6 +36,23 @@
     "approved_by": { "type": "string", "description": "Never one of the agent role identifiers (semar/gareng/petruk/bagong) - an agent may not approve its own manifest." },
     "decided_at": { "type": "string", "format": "date-time" },
     "created_at": { "type": "string", "format": "date-time" },
-    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." }
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." },
+    "proposed_worklog_total_hours": { "type": "number", "description": "Total verified-work hours (internal/worklogalloc), computed from this project's completed test-run command durations, that the proposed worklog below is derived from. Zero when no test-run evidence has accumulated yet for this manifest's parent tasks (punokawan-14yn.9 AC2: proposed worklogs visible before project approval)." },
+    "proposed_worklog": {
+      "type": "array",
+      "description": "The dev/test/review split of proposed_worklog_total_hours that could be matched to one of this project's configured Jira subtasks by name (internal/worklogalloc.Allocate) - a proposal for update_jira_task_progress to post post-approval, not something this manifest itself writes to Jira. Coarse by construction: internal/testrun records only that a command ran and how long it took, with no dev/test/review distinction, so the total is split evenly across whichever buckets have a matching subtask, never a fabricated precise breakdown.",
+      "items": {
+        "type": "object",
+        "required": ["bucket", "subtask_key", "hours"],
+        "additionalProperties": false,
+        "properties": {
+          "bucket": { "type": "string", "enum": ["dev", "test", "review"] },
+          "subtask_key": { "type": "string", "description": "The configured Jira subtask (from list_jira_subtasks) this bucket's hours would be logged against." },
+          "subtask_name": { "type": "string" },
+          "hours": { "type": "number" }
+        }
+      }
+    },
+    "proposed_worklog_unmapped_hours": { "type": "number", "description": "Hours from proposed_worklog_total_hours that could not be matched to any configured subtask (no subtask name contained a recognized dev/test/review keyword) - left unmapped rather than guessed onto an arbitrary subtask." }
   }
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/internal/worklogalloc"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -30,6 +31,20 @@ type ManifestPlan struct {
 	ExpectsPushes     bool
 	ExpectsPRs        bool
 	Checks            []protocol.PreflightCheck
+
+	// ProposedWorklog is the caller's already-computed worklogalloc.Allocate
+	// result for this manifest's parent tasks (punokawan-14yn.9 AC2:
+	// "proposed worklogs map to configured Jira subtasks and are visible
+	// before project approval"). CreateApprovalManifest does not compute
+	// this itself - it has no access to a project's test-run evidence or
+	// its configured Jira subtasks, both of which live outside this
+	// package - it only persists whatever allocation the caller already
+	// derived (typically via deliverysummary.Summary.VerifiedHours feeding
+	// worklogalloc.Allocate). A zero-value Allocation (TotalHours == 0)
+	// means no proposed worklog for this manifest, which is a normal state
+	// for a project with no accumulated test-run evidence yet, not an
+	// error.
+	ProposedWorklog worklogalloc.Allocation
 }
 
 // CreateApprovalManifest builds one approval manifest covering
@@ -67,12 +82,22 @@ func (s *Store) CreateApprovalManifest(ctx context.Context, idempotencyKey, id, 
 			}
 			checks = append(checks, entry)
 		}
+		worklogs := make([]map[string]interface{}, 0, len(plan.ProposedWorklog.Worklogs))
+		for _, w := range plan.ProposedWorklog.Worklogs {
+			worklogs = append(worklogs, map[string]interface{}{
+				"bucket": string(w.Bucket), "subtask_key": w.SubtaskKey,
+				"subtask_name": w.SubtaskName, "hours": w.Hours,
+			})
+		}
 		payload, err := json.Marshal(map[string]interface{}{
 			"project_id": projectID, "parent_task_ids": parentTaskIDs,
 			"planned_base_ref": plan.PlannedBaseRef, "planned_branches": nonNil(plan.PlannedBranches),
 			"expects_jira_writes": plan.ExpectsJiraWrites, "expects_commits": plan.ExpectsCommits,
 			"expects_pushes": plan.ExpectsPushes, "expects_prs": plan.ExpectsPRs,
-			"checks": checks,
+			"checks":                          checks,
+			"proposed_worklog_total_hours":    plan.ProposedWorklog.TotalHours,
+			"proposed_worklog":                worklogs,
+			"proposed_worklog_unmapped_hours": plan.ProposedWorklog.UnmappedHours,
 		})
 		if err != nil {
 			return err

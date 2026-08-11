@@ -294,6 +294,28 @@ type ApprovalManifest struct {
 	// ProjectId corresponds to the JSON schema field "project_id".
 	ProjectId string `json:"project_id" yaml:"project_id" mapstructure:"project_id"`
 
+	// The dev/test/review split of proposed_worklog_total_hours that could be matched
+	// to one of this project's configured Jira subtasks by name
+	// (internal/worklogalloc.Allocate) - a proposal for update_jira_task_progress to
+	// post post-approval, not something this manifest itself writes to Jira. Coarse
+	// by construction: internal/testrun records only that a command ran and how long
+	// it took, with no dev/test/review distinction, so the total is split evenly
+	// across whichever buckets have a matching subtask, never a fabricated precise
+	// breakdown.
+	ProposedWorklog []ApprovalManifestProposedWorklogElem `json:"proposed_worklog,omitempty,omitzero" yaml:"proposed_worklog,omitempty" mapstructure:"proposed_worklog,omitempty"`
+
+	// Total verified-work hours (internal/worklogalloc), computed from this project's
+	// completed test-run command durations, that the proposed worklog below is
+	// derived from. Zero when no test-run evidence has accumulated yet for this
+	// manifest's parent tasks (punokawan-14yn.9 AC2: proposed worklogs visible before
+	// project approval).
+	ProposedWorklogTotalHours *float64 `json:"proposed_worklog_total_hours,omitempty,omitzero" yaml:"proposed_worklog_total_hours,omitempty" mapstructure:"proposed_worklog_total_hours,omitempty"`
+
+	// Hours from proposed_worklog_total_hours that could not be matched to any
+	// configured subtask (no subtask name contained a recognized dev/test/review
+	// keyword) - left unmapped rather than guessed onto an arbitrary subtask.
+	ProposedWorklogUnmappedHours *float64 `json:"proposed_worklog_unmapped_hours,omitempty,omitzero" yaml:"proposed_worklog_unmapped_hours,omitempty" mapstructure:"proposed_worklog_unmapped_hours,omitempty"`
+
 	// Optimistic-concurrency counter; incremented on every applied event.
 	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
 
@@ -400,6 +422,77 @@ func (j *ApprovalManifestChecksElem) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	*j = ApprovalManifestChecksElem(plain)
+	return nil
+}
+
+type ApprovalManifestProposedWorklogElem struct {
+	// Bucket corresponds to the JSON schema field "bucket".
+	Bucket ApprovalManifestProposedWorklogElemBucket `json:"bucket" yaml:"bucket" mapstructure:"bucket"`
+
+	// Hours corresponds to the JSON schema field "hours".
+	Hours float64 `json:"hours" yaml:"hours" mapstructure:"hours"`
+
+	// The configured Jira subtask (from list_jira_subtasks) this bucket's hours would
+	// be logged against.
+	SubtaskKey string `json:"subtask_key" yaml:"subtask_key" mapstructure:"subtask_key"`
+
+	// SubtaskName corresponds to the JSON schema field "subtask_name".
+	SubtaskName *string `json:"subtask_name,omitempty,omitzero" yaml:"subtask_name,omitempty" mapstructure:"subtask_name,omitempty"`
+}
+
+type ApprovalManifestProposedWorklogElemBucket string
+
+const ApprovalManifestProposedWorklogElemBucketDev ApprovalManifestProposedWorklogElemBucket = "dev"
+const ApprovalManifestProposedWorklogElemBucketReview ApprovalManifestProposedWorklogElemBucket = "review"
+const ApprovalManifestProposedWorklogElemBucketTest ApprovalManifestProposedWorklogElemBucket = "test"
+
+var enumValues_ApprovalManifestProposedWorklogElemBucket = []interface{}{
+	"dev",
+	"test",
+	"review",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ApprovalManifestProposedWorklogElemBucket) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ApprovalManifestProposedWorklogElemBucket {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ApprovalManifestProposedWorklogElemBucket, v)
+	}
+	*j = ApprovalManifestProposedWorklogElemBucket(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ApprovalManifestProposedWorklogElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["bucket"]; raw != nil && !ok {
+		return fmt.Errorf("field bucket in ApprovalManifestProposedWorklogElem: required")
+	}
+	if _, ok := raw["hours"]; raw != nil && !ok {
+		return fmt.Errorf("field hours in ApprovalManifestProposedWorklogElem: required")
+	}
+	if _, ok := raw["subtask_key"]; raw != nil && !ok {
+		return fmt.Errorf("field subtask_key in ApprovalManifestProposedWorklogElem: required")
+	}
+	type Plain ApprovalManifestProposedWorklogElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ApprovalManifestProposedWorklogElem(plain)
 	return nil
 }
 
