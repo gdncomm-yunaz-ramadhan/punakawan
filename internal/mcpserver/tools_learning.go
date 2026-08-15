@@ -20,7 +20,7 @@ import (
 // content for the target artifact; it becomes a reviewed proposal, never a
 // direct canonical write.
 type ProposeProjectLearningInput struct {
-	ArtifactType string         `json:"artifact_type" jsonschema:"one of workflow|project_metadata|knowledge"`
+	ArtifactType string         `json:"artifact_type" jsonschema:"one of workflow|project_metadata|knowledge|convention"`
 	TargetId     string         `json:"target_id" jsonschema:"the workflow id, metadata key, or knowledge record id being improved"`
 	Candidate    map[string]any `json:"candidate" jsonschema:"proposed canonical content for the target artifact"`
 	Rationale    string         `json:"rationale,omitempty"`
@@ -53,8 +53,8 @@ type ProposeProjectLearningOutput struct {
 
 func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ProposeProjectLearningInput) (*mcp.CallToolResult, ProposeProjectLearningOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in ProposeProjectLearningInput) (*mcp.CallToolResult, ProposeProjectLearningOutput, error) {
-		if in.ArtifactType != learning.TypeWorkflow && in.ArtifactType != learning.TypeMetadata && in.ArtifactType != learning.TypeKnowledge {
-			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: artifact_type must be one of workflow|project_metadata|knowledge")
+		if in.ArtifactType != learning.TypeWorkflow && in.ArtifactType != learning.TypeMetadata && in.ArtifactType != learning.TypeKnowledge && in.ArtifactType != learning.TypeConvention {
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: artifact_type must be one of workflow|project_metadata|knowledge|convention")
 		}
 		if in.TargetId == "" {
 			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target_id is required")
@@ -131,7 +131,7 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			Artifact: protocol.ArtifactReviewArtifact{
 				Id:           in.TargetId,
 				RevisionHash: baseRef.RevisionHash,
-				Type:         protocol.ArtifactReviewArtifactType(in.ArtifactType),
+				Type:         reviewArtifactType(in.ArtifactType),
 				Version:      baseRef.Version,
 			},
 			Metadata: protocol.ArtifactReviewMetadata{
@@ -222,6 +222,8 @@ func createPathHint(artifactType string) string {
 		return "propose_project_learning only improves an existing workflow definition - to create a new one use save_workflow_definition, then propose improvements against its id here"
 	case learning.TypeMetadata:
 		return "propose_project_learning only improves an existing metadata entry - to create one use set_project_metadata, then propose improvements against its key here"
+	case learning.TypeConvention:
+		return "propose_project_learning only improves an existing convention proposal - a detector (e.g. detect_no_ternary_convention) creates the first pending proposal for a new convention id"
 	default:
 		return "propose_project_learning only improves an artifact that already exists; create it with its dedicated tool first"
 	}
@@ -242,9 +244,28 @@ func learningAdapterFor(a *app.App, artifactType string) (artifact.Store, error)
 			return nil, fmt.Errorf("propose_project_learning: open knowledge store: %w", err)
 		}
 		return &learning.KnowledgeAdapter{Store: ks}, nil
+	case learning.TypeConvention:
+		return &learning.ConventionAdapter{Root: a.Workspace.Root}, nil
 	default:
 		return nil, fmt.Errorf("propose_project_learning: unknown artifact_type %q", artifactType)
 	}
+}
+
+// reviewArtifactType maps a learning pillar's ArtifactType onto the protocol
+// enum protocol.ArtifactReviewArtifactType tags a review's underlying
+// artifact kind with. This is a real mapping, not a passthrough cast: the
+// three original pillars' ArtifactType strings happen to equal their protocol
+// enum's value verbatim, but TypeConvention does not have (and, per this
+// vertical slice's deliberately minimal scope, does not get) its own protocol
+// enum value or review-artifact type - ConventionAdapter physically persists
+// an accepted convention as a project metadata entry (adapters.go), so its
+// review is tagged project_metadata, matching what CreateVersion actually
+// writes.
+func reviewArtifactType(artifactType string) protocol.ArtifactReviewArtifactType {
+	if artifactType == learning.TypeConvention {
+		return protocol.ArtifactReviewArtifactTypeProjectMetadata
+	}
+	return protocol.ArtifactReviewArtifactType(artifactType)
 }
 
 // learningFingerprint computes the deterministic dedup fingerprint for the
@@ -263,6 +284,8 @@ func learningFingerprint(projectID string, in ProposeProjectLearningInput, candi
 		return learning.WorkflowFingerprint(projectID, graph), nil
 	case learning.TypeMetadata:
 		return learning.MetadataFingerprint(projectID, in.TargetId), nil
+	case learning.TypeConvention:
+		return learning.ConventionFingerprint(projectID, in.TargetId), nil
 	case learning.TypeKnowledge:
 		var rec protocol.KnowledgeRecord
 		_ = json.Unmarshal(candidateBytes, &rec)

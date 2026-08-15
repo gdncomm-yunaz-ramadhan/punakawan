@@ -3,11 +3,13 @@ package roleconfig
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/convention"
 	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -313,6 +315,91 @@ func TestPromptBlockLearnedFactsGatedByAcceptance(t *testing.T) {
 	}
 	if !strings.Contains(block, pending.Rationale) {
 		t.Fatalf("accepted proposal content missing, got:\n%s", block)
+	}
+}
+
+// TestPromptBlockNoTernaryConventionDetectorEndToEnd is AC4's literal test
+// case run against the real detector rather than a hand-built proposal
+// fixture (punokawan-14yn.9, punokawan-0qr4): a repository containing the
+// ternary-emulation idiom enough times crosses convention.DetectNoTernary
+// Convention's threshold and produces a pending, inferred proposal that stays
+// invisible in both Petruk's and Bagong's rendered role context (both named
+// explicitly in the AC); once that same proposal is transitioned to accepted
+// at the Store level - the same "no real approval UI exists yet" simulation
+// TestPromptBlockLearnedFactsGatedByAcceptance above uses - it appears in
+// both roles' rendered context.
+func TestPromptBlockNoTernaryConventionDetectorEndToEnd(t *testing.T) {
+	const projectID = "test-project"
+	store := newTestLearningStore(t)
+
+	// Fixture repo: one Go file using the ternary-emulation helper idiom
+	// three times (Ternary/Ternary/IIf), meeting the detector's threshold.
+	repoDir := t.TempDir()
+	fixture := `package fixture
+
+func demo() int {
+	a := Ternary(true, 1, 2)
+	b := Ternary(false, 3, 4)
+	c := IIf(true, 5, 6)
+	return a + b + c
+}
+`
+	if err := os.WriteFile(filepath.Join(repoDir, "demo.go"), []byte(fixture), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	proposal, found, err := convention.RecordNoTernaryConvention(store, repoDir, projectID)
+	if err != nil {
+		t.Fatalf("RecordNoTernaryConvention: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected the fixture's 3 ternary-helper call sites to cross the detection threshold")
+	}
+	if proposal.Status != learning.StatusPending {
+		t.Fatalf("newly detected convention proposal Status = %q, want %q", proposal.Status, learning.StatusPending)
+	}
+	if proposal.Classification != learning.ClassificationInferred {
+		t.Fatalf("newly detected convention proposal Classification = %q, want %q", proposal.Classification, learning.ClassificationInferred)
+	}
+	if proposal.ArtifactType != learning.TypeConvention {
+		t.Fatalf("newly detected convention proposal ArtifactType = %q, want %q", proposal.ArtifactType, learning.TypeConvention)
+	}
+
+	eff := EffectiveRoleConfig{Enabled: true, Style: protocol.RoleConfigStyleBalanced, Mode: protocol.RoleConfigModePropose}
+
+	proposals, err := store.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, role := range []Role{Petruk, Bagong} {
+		block := PromptBlock(role, eff, proposals)
+		if strings.Contains(block, "Learned project facts:") || strings.Contains(block, proposal.Rationale) {
+			t.Fatalf("%s: pending inferred convention must stay inactive until approved (AC4), got:\n%s", role, block)
+		}
+	}
+
+	// Simulate approval: no review/accept UI exists yet, so - exactly like
+	// TestPromptBlockLearnedFactsGatedByAcceptance above - transition the
+	// proposal directly at the Store level.
+	accepted := proposal
+	accepted.Status = learning.StatusAccepted
+	accepted.UpdatedAt = proposal.UpdatedAt.Add(time.Minute)
+	if err := store.Append(accepted); err != nil {
+		t.Fatalf("append accepted: %v", err)
+	}
+
+	proposals, err = store.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, role := range []Role{Petruk, Bagong} {
+		block := PromptBlock(role, eff, proposals)
+		if !strings.Contains(block, "Learned project facts:") {
+			t.Fatalf("%s: accepted convention missing heading, got:\n%s", role, block)
+		}
+		if !strings.Contains(block, proposal.Rationale) {
+			t.Fatalf("%s: accepted convention content missing, got:\n%s", role, block)
+		}
 	}
 }
 

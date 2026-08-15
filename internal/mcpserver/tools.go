@@ -103,8 +103,13 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "propose_project_learning",
-		Description: "Open (or reinforce) a reviewed learning proposal for a workflow, project_metadata, or knowledge improvement (agent-context plan §6.2/§6.3). Supply the target_id and the proposed candidate content; it becomes a proposal in the existing artifact-review flow - NEVER a direct canonical write. A human accepts/rejects it in the panel. Deterministic dedup (plan §6.4): an equivalent pending proposal absorbs your evidence_ids/source_run_ids and increments support_count instead of opening a duplicate. Proposals must reference the structured outcome/evidence, not mined chat. Acceptance writes a new immutable revision; for workflows, acceptance never enables the new revision (activation is separate).",
+		Description: "Open (or reinforce) a reviewed learning proposal for a workflow, project_metadata, knowledge, or convention improvement (agent-context plan §6.2/§6.3). Supply the target_id and the proposed candidate content; it becomes a proposal in the existing artifact-review flow - NEVER a direct canonical write. A human accepts/rejects it in the panel. Deterministic dedup (plan §6.4): an equivalent pending proposal absorbs your evidence_ids/source_run_ids and increments support_count instead of opening a duplicate. Proposals must reference the structured outcome/evidence, not mined chat. Acceptance writes a new immutable revision; for workflows, acceptance never enables the new revision (activation is separate).",
 	}, proposeProjectLearningHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "detect_no_ternary_convention",
+		Description: "Scan a repository for a small, fixed ternary-emulation-helper idiom (calls to Ternary(...) or IIf(...)) and, if it appears often enough, open or reinforce a pending, inferred learning proposal recommending a project convention of avoiding it (agent-context plan §6.4, punokawan-14yn.9 AC4). This is a narrow, honestly-scoped textual heuristic, not a linter - see internal/convention.DetectNoTernaryConvention's doc comment for its exact limits. The resulting proposal is never auto-accepted: it stays invisible to every role's rendered context until a human approves it in the panel.",
+	}, detectNoTernaryConventionHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "record_work_outcome",

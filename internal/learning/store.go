@@ -44,12 +44,20 @@ const (
 	StatusRolledBack = "rolled_back"
 )
 
-// Artifact-type identifiers for the three learning pillars (match the artifact
-// review type enum values added in this phase).
+// Artifact-type identifiers for the learning pillars. TypeWorkflow,
+// TypeMetadata, and TypeKnowledge match the artifact review type enum values
+// added in the original phase. TypeConvention (punokawan-14yn.9 AC4) is a
+// fourth pillar for a proposed project convention (e.g. a coding-style
+// convention like "no ternary-emulation helpers") - unlike the other three,
+// it has no artifact review type of its own; its adapter (ConventionAdapter,
+// adapters.go) persists an accepted convention as a namespaced project
+// metadata entry, reusing MetadataAdapter's storage rather than inventing a
+// new canonical store.
 const (
-	TypeWorkflow  = "workflow"
-	TypeMetadata  = "project_metadata"
-	TypeKnowledge = "knowledge"
+	TypeWorkflow   = "workflow"
+	TypeMetadata   = "project_metadata"
+	TypeKnowledge  = "knowledge"
+	TypeConvention = "convention"
 )
 
 // Classification values distinguish how a proposal was produced and gate
@@ -310,6 +318,16 @@ func WorkflowFingerprint(projectID string, stepCapabilityIntents []string) strin
 // MetadataFingerprint = project scope + case-normalized key (plan §6.4).
 func MetadataFingerprint(projectID, key string) string {
 	return hash("metadata|" + projectID + "|" + NormalizeKey(key))
+}
+
+// ConventionFingerprint = project scope + normalized convention id (mirrors
+// MetadataFingerprint: a convention proposal dedups by scope+id like a
+// metadata entry does, not by content hash like a knowledge record - there is
+// exactly one pending proposal per convention id at a time, and a repeated
+// detection reinforces it via FindPendingByFingerprint rather than opening a
+// second one).
+func ConventionFingerprint(projectID, id string) string {
+	return hash("convention|" + projectID + "|" + NormalizeKey(id))
 }
 
 // KnowledgeFingerprint = project scope + record type + normalized subject +
