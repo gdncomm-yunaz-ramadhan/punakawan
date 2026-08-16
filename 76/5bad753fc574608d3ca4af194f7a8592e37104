@@ -1,0 +1,47 @@
+internal/panel/server/server.go
+  f9605b8f4acd1e01 15,19,49-57,72-73,97-100,104,205-215,388-400,454-462
+internal/panel/api/deliveries_handler_test.go
+  f9605b8f4acd1e01 1-218
+internal/panel/deps.go
+  f9605b8f4acd1e01 51-57
+internal/panel/events/delivery_watcher.go
+  f9605b8f4acd1e01 1-147
+internal/panel/api/deliveries_handler.go
+  f9605b8f4acd1e01 1-175
+internal/panel/deliverysource/source.go
+  f9605b8f4acd1e01 1-54
+internal/panel/events/delivery_watcher_test.go
+  f9605b8f4acd1e01 1-166
+internal/daemon/delivery_test.go
+  f9605b8f4acd1e01 7,429-467
+internal/panel/contract/readers.go
+  f9605b8f4acd1e01 17-18,405-429
+protocol/panelevent.schema.json
+  f9605b8f4acd1e01 26-27
+cmd/punakawan/panel_cmd.go
+  f9605b8f4acd1e01 16,63-73
+internal/daemon/delivery.go
+  f9605b8f4acd1e01 454-461,468-486
+internal/panel/deliverysource/source_test.go
+  f9605b8f4acd1e01 1-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "765bad753fc574608d3ca4af194f7a8592e37104",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1012,
+      "total_deletions": 9,
+      "accepted_lines": 1007,
+      "overriden_lines": 0
+    }
+  }
+}
