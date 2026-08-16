@@ -18,7 +18,7 @@ import (
 func wfTestHandlers(t *testing.T) (*WorkflowDefHandlers, string, *fakeRunCreator) {
 	t.Helper()
 	root := t.TempDir()
-	caps := workflowdef.NewCapabilitySet(workflowdef.KnownMCPCapabilities(), []string{"knowledge.search", "jira.issue.search"})
+	caps := workflowdef.NewCapabilitySet([]string{"create_pr", "search_knowledge", "build_task_context"}, []string{"knowledge.search", "jira.issue.search"})
 	frc := &fakeRunCreator{runID: "run-xyz"}
 	resolve := func(projectID string) (string, error) {
 		if projectID != "proj" {

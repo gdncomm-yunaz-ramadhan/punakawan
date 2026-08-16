@@ -5,8 +5,12 @@ import (
 	"testing"
 )
 
+// testMCPNames stands in for the live MCP tool registry in tests - just
+// enough distinct names to exercise membership/Len, not a full mirror.
+var testMCPNames = []string{"create_pr", "search_knowledge", "build_task_context"}
+
 func testCaps() CapabilitySet {
-	return NewCapabilitySet(KnownMCPCapabilities(), []string{"knowledge.search", "jira.issue.search"})
+	return NewCapabilitySet(testMCPNames, []string{"knowledge.search", "jira.issue.search"})
 }
 
 func validDef() Definition {
@@ -121,7 +125,7 @@ func TestCapabilitySet(t *testing.T) {
 	if caps.Has("nope") {
 		t.Fatalf("unexpected membership")
 	}
-	if caps.Len() != len(KnownMCPCapabilities())+2 {
+	if caps.Len() != len(testMCPNames)+2 {
 		t.Fatalf("Len mismatch: %d", caps.Len())
 	}
 }
