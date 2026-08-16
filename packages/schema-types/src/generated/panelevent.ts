@@ -41,7 +41,8 @@ export interface PanelEvent {
     | "dossier.finalized"
     | "handoff.created"
     | "handoff.validated"
-    | "handoff.superseded";
+    | "handoff.superseded"
+    | "delivery.updated";
   occurred_at: string;
   workspace_id?: string;
   session_id?: string;
