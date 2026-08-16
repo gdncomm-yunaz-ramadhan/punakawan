@@ -4,14 +4,16 @@
     listWorkflows,
     enableWorkflow,
     disableWorkflow,
-    invokeWorkflow,
+    createWorkflow,
     ApiError,
     type WorkflowDefinition,
+    type WorkflowErrorCode,
   } from "../../lib/api/client";
   import { roleLabel, stepRole, ROLE_STEP_VERB } from "../../lib/roles";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import Button from "../../lib/components/Button.svelte";
   import Icon from "../../lib/components/Icon.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
 
@@ -24,21 +26,18 @@
   let loading = $state(true);
   let error: string | null = $state(null);
 
-  // Expanded row (only one detail open at a time).
+  // Workflow whose detail modal is open (only one at a time).
   let selectedId: string | null = $state(null);
+  let selectedWf = $derived(workflows.find((w) => w.id === selectedId) ?? null);
 
   // Per-workflow enable/disable in-flight guard + error, keyed by id.
   let toggling: Record<string, boolean> = $state({});
   let toggleError: Record<string, string> = $state({});
 
-  // Invoke form state for the currently-selected workflow.
-  let invokeInputs: Record<string, string> = $state({});
-  let invoking = $state(false);
-  // The invoke outcome: either a queued run_id, or the surfaced backend
-  // message (e.g. the "not connected to the run engine" not-yet-wired
-  // state, or a 409 "workflow disabled").
-  let invokeRunId: string | null = $state(null);
-  let invokeError: string | null = $state(null);
+  // Definition editor state for the workflow currently open in the modal.
+  let definitionText = $state("");
+  let saving = $state(false);
+  let saveError: string | null = $state(null);
 
   async function load() {
     loading = true;
@@ -61,14 +60,12 @@
       return;
     }
     selectedId = wf.id;
-    // Seed the invoke form with each input's default (as text) and reset
-    // the last invoke result.
-    invokeInputs = {};
-    for (const inp of wf.inputs ?? []) {
-      invokeInputs[inp.name] = inp.default === undefined ? "" : String(inp.default);
-    }
-    invokeRunId = null;
-    invokeError = null;
+    definitionText = JSON.stringify(wf, null, 2);
+    saveError = null;
+  }
+
+  function closeDetail() {
+    selectedId = null;
   }
 
   function replaceInList(updated: WorkflowDefinition) {
@@ -96,39 +93,42 @@
     }
   }
 
-  // Parse a text input into a value: valid JSON becomes its parsed form,
-  // anything else stays a plain string (mirrors ProjectMetadata).
-  function parseValue(text: string): unknown {
-    const trimmed = text.trim();
-    if (trimmed === "") return "";
+  // Whole-definition editor: unlike the old per-input parseValue helper,
+  // invalid JSON here is a validation error shown to the user, not a
+  // silent fallback to a plain string - there's no sensible non-JSON form
+  // of an entire workflow definition.
+  async function saveDefinition(wf: WorkflowDefinition) {
+    let parsed: unknown;
     try {
-      return JSON.parse(trimmed);
-    } catch {
-      return text;
-    }
-  }
-
-  async function invoke(wf: WorkflowDefinition) {
-    invoking = true;
-    invokeRunId = null;
-    invokeError = null;
-    const inputs: Record<string, unknown> = {};
-    for (const inp of wf.inputs ?? []) {
-      inputs[inp.name] = parseValue(invokeInputs[inp.name] ?? "");
-    }
-    try {
-      const res = await invokeWorkflow(projectId, wf.id, inputs);
-      invokeRunId = res.run_id;
+      parsed = JSON.parse(definitionText);
     } catch (e) {
-      if (e instanceof ApiError && e.code === "disabled") {
-        invokeError = "This workflow is disabled — enable it before invoking.";
+      saveError = `Invalid JSON: ${e instanceof Error ? e.message : String(e)}`;
+      return;
+    }
+    saving = true;
+    saveError = null;
+    try {
+      const updated = await createWorkflow(projectId, parsed);
+      replaceInList(updated);
+      // Reflect the saved (and possibly server-normalized) definition and
+      // its bumped revision back into the modal.
+      definitionText = JSON.stringify(updated, null, 2);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        const code = e.code as WorkflowErrorCode | undefined;
+        if (code === "revision_conflict") {
+          saveError =
+            "Someone else changed this workflow since you opened it. Close and reopen it to reload the latest version, then try saving again.";
+        } else if (code === "unknown_capability" || code === "command_not_allowed" || code === "invalid") {
+          saveError = `This definition is invalid: ${e.message}`;
+        } else {
+          saveError = e.message;
+        }
       } else {
-        // Includes the not-yet-wired "not connected to the run engine"
-        // message: surface it verbatim rather than hiding the action.
-        invokeError = e instanceof Error ? e.message : String(e);
+        saveError = e instanceof Error ? e.message : String(e);
       }
     } finally {
-      invoking = false;
+      saving = false;
     }
   }
 </script>
@@ -214,151 +214,135 @@
       {/if}
     {/each}
 
-    {#if selectedId}
-      {@const wf = workflows.find((w) => w.id === selectedId)}
-      {#if wf}
-        <div class="detail" data-testid="workflow-detail">
-          <header class="detail-head">
-            <div class="detail-title">
-              <span class="workflow-mark large"><Icon name="git-branch" size={20} /></span>
-              <div>
-                <span class="eyebrow">Workflow canvas</span>
-                <h3>{wf.name || wf.id}</h3>
-              </div>
-            </div>
-            <div class="detail-actions">
-              {#if wf.enabled}
-                <StatusBadge variant="success" label="Enabled" />
-              {:else}
-                <StatusBadge variant="neutral" label="Disabled" />
-              {/if}
-              <span class="version">v{wf.version}</span>
-            </div>
-          </header>
-          {#if wf.description}<p class="description">{wf.description}</p>{/if}
-
-          <div class="workflow-canvas" aria-label={`${wf.name || wf.id} workflow steps`}>
-            <div class="canvas-label">
-              <span><Icon name="activity" size={14} /> Execution path</span>
-              <span>{wf.steps.length} steps</span>
-            </div>
-            <ol class="stepper" data-testid="workflow-stepper">
-              <li class="step trigger">
-                <div class="step-rail">
-                  <span class="step-marker"><Icon name="activity" size={15} /></span>
-                  <span class="step-line" aria-hidden="true"></span>
-                </div>
-                <div class="step-content">
-                  <small>TRIGGER</small>
-                  <strong>Invoke</strong>
-                </div>
-              </li>
-              {#each wf.steps as step, index (step.id)}
-                {@const kind = stepKind(step.capability)}
-                <li class="step" class:approval={kind === "approval"} class:code={kind === "code"}>
-                  <div class="step-rail">
-                    <span class="step-marker">
-                      <Icon
-                        name={kind === "approval" ? "approval" : kind === "code" ? "code" : "settings"}
-                        size={15}
-                      />
-                    </span>
-                    <span class="step-line" aria-hidden="true"></span>
-                  </div>
-                  <div class="step-content">
-                    <small>STEP {index + 1}</small>
-                    <strong>{step.intent || step.id}</strong>
-                    <code>{step.capability}</code>
-                    {#if stepRole(step.capability)}
-                      {@const owner = stepRole(step.capability)!}
-                      <span class="step-role">{ROLE_STEP_VERB[owner]} {roleLabel(owner)}</span>
-                    {/if}
-                  </div>
-                </li>
-              {/each}
-              <li class="step finish">
-                <div class="step-rail">
-                  <span class="step-marker"><Icon name="check" size={15} /></span>
-                </div>
-                <div class="step-content">
-                  <small>OUTPUT</small>
-                  <strong>{wf.output?.type || "Complete"}</strong>
-                </div>
-              </li>
-            </ol>
-          </div>
-
-          <dl class="meta-list">
-            <dt>Workflow ID</dt>
-            <dd><code>{wf.id}</code></dd>
-            {#if wf.output?.type}
-              <dt>Output</dt>
-              <dd>{wf.output.type}</dd>
-            {/if}
-            {#if wf.required_metadata?.length}
-              <dt>Required metadata</dt>
-              <dd>{wf.required_metadata.join(", ")}</dd>
-            {/if}
-            {#if wf.allowed_capabilities?.length}
-              <dt>Allowed capabilities</dt>
-              <dd>{wf.allowed_capabilities.join(", ")}</dd>
-            {/if}
-            {#if wf.approval?.required_for?.length}
-              <dt>Approval required for</dt>
-              <dd>{wf.approval.required_for.join(", ")}</dd>
-            {/if}
-          </dl>
-
-          <div class="invoke-panel">
-            <div>
-              <span class="eyebrow">Manual trigger</span>
-              <h4>Run this workflow</h4>
-              <p>Provide the execution inputs, then send the workflow to the run engine.</p>
-            </div>
-            <form
-              class="invoke-form"
-              onsubmit={(e) => {
-                e.preventDefault();
-                invoke(wf);
-              }}
-            >
-              {#if wf.inputs?.length}
-                <div class="fields">
-                  {#each wf.inputs as inp (inp.name)}
-                    <label>
-                      <span>{inp.name}{inp.required ? " *" : ""} <em>({inp.type})</em></span>
-                      <input
-                        type="text"
-                        bind:value={invokeInputs[inp.name]}
-                        aria-label={`Workflow input ${inp.name}`}
-                      />
-                    </label>
-                  {/each}
-                </div>
-              {:else}
-                <p class="no-inputs">This workflow takes no inputs.</p>
-              {/if}
-              <span data-testid="invoke-btn">
-                <Button type="submit" variant="primary" icon="activity" disabled={invoking}>
-                  {invoking ? "Invoking…" : "Execute workflow"}
-                </Button>
-              </span>
-            </form>
-          </div>
-
-          {#if invokeRunId}
-            <p class="invoke-ok" role="status" data-testid="invoke-run-id">
-              Run queued: <code>{invokeRunId}</code>
-            </p>
-          {/if}
-          {#if invokeError}
-            <p class="invoke-warn" role="alert" data-testid="invoke-error">{invokeError}</p>
-          {/if}
-        </div>
-      {/if}
-    {/if}
   {/if}
 </section>
+
+<Dialog
+  open={selectedWf !== null}
+  title={selectedWf ? selectedWf.name || selectedWf.id : undefined}
+  onclose={closeDetail}
+>
+  {#if selectedWf}
+    {@const wf = selectedWf}
+    <div class="detail" data-testid="workflow-detail">
+      <div class="detail-meta">
+        <code>{wf.id}</code>
+        {#if wf.enabled}
+          <StatusBadge variant="success" label="Enabled" />
+        {:else}
+          <StatusBadge variant="neutral" label="Disabled" />
+        {/if}
+        <span class="version">v{wf.version}</span>
+      </div>
+      {#if wf.description}<p class="description">{wf.description}</p>{/if}
+
+      <div class="workflow-canvas" aria-label={`${wf.name || wf.id} workflow steps`}>
+        <div class="canvas-label">
+          <span><Icon name="activity" size={14} /> Execution path</span>
+          <span>{wf.steps.length} steps</span>
+        </div>
+        <ol class="stepper" data-testid="workflow-stepper">
+          <li class="step trigger">
+            <div class="step-rail">
+              <span class="step-marker"><Icon name="activity" size={15} /></span>
+              <span class="step-line" aria-hidden="true"></span>
+            </div>
+            <div class="step-content">
+              <small>TRIGGER</small>
+              <strong>Invoke</strong>
+            </div>
+          </li>
+          {#each wf.steps as step, index (step.id)}
+            {@const kind = stepKind(step.capability)}
+            <li class="step" class:approval={kind === "approval"} class:code={kind === "code"}>
+              <div class="step-rail">
+                <span class="step-marker">
+                  <Icon
+                    name={kind === "approval" ? "approval" : kind === "code" ? "code" : "settings"}
+                    size={15}
+                  />
+                </span>
+                <span class="step-line" aria-hidden="true"></span>
+              </div>
+              <div class="step-content">
+                <small>STEP {index + 1}</small>
+                <strong>{step.intent || step.id}</strong>
+                <code>{step.capability}</code>
+                {#if stepRole(step.capability)}
+                  {@const owner = stepRole(step.capability)!}
+                  <span class="step-role">{ROLE_STEP_VERB[owner]} {roleLabel(owner)}</span>
+                {/if}
+              </div>
+            </li>
+          {/each}
+          <li class="step finish">
+            <div class="step-rail">
+              <span class="step-marker"><Icon name="check" size={15} /></span>
+            </div>
+            <div class="step-content">
+              <small>OUTPUT</small>
+              <strong>{wf.output?.type || "Complete"}</strong>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <dl class="meta-list">
+        <dt>Workflow ID</dt>
+        <dd><code>{wf.id}</code></dd>
+        {#if wf.output?.type}
+          <dt>Output</dt>
+          <dd>{wf.output.type}</dd>
+        {/if}
+        {#if wf.required_metadata?.length}
+          <dt>Required metadata</dt>
+          <dd>{wf.required_metadata.join(", ")}</dd>
+        {/if}
+        {#if wf.allowed_capabilities?.length}
+          <dt>Allowed capabilities</dt>
+          <dd>{wf.allowed_capabilities.join(", ")}</dd>
+        {/if}
+        {#if wf.approval?.required_for?.length}
+          <dt>Approval required for</dt>
+          <dd>{wf.approval.required_for.join(", ")}</dd>
+        {/if}
+      </dl>
+
+      <div class="editor-panel">
+        <div>
+          <span class="eyebrow">Definition</span>
+          <h4>Edit workflow definition</h4>
+          <p>Edit the raw JSON below, then save to update this workflow in place.</p>
+        </div>
+        <form
+          class="editor-form"
+          onsubmit={(e) => {
+            e.preventDefault();
+            saveDefinition(wf);
+          }}
+        >
+          <textarea
+            class="definition-input"
+            bind:value={definitionText}
+            aria-label={`${wf.name || wf.id} definition JSON`}
+            data-testid="definition-textarea"
+            rows="14"
+            wrap="off"
+            spellcheck="false"
+          ></textarea>
+          <span data-testid="save-definition-btn">
+            <Button type="submit" variant="primary" icon="check" disabled={saving}>
+              {saving ? "Saving…" : "Save definition"}
+            </Button>
+          </span>
+        </form>
+        {#if saveError}
+          <p class="save-error" role="alert" data-testid="save-definition-error">{saveError}</p>
+        {/if}
+      </div>
+    </div>
+  {/if}
+</Dialog>
 
 <style>
   section {
@@ -446,10 +430,6 @@
     background: color-mix(in srgb, #ff6d2e 14%, var(--color-surface));
     border: 1px solid color-mix(in srgb, #ff6d2e 30%, var(--color-border));
   }
-  .workflow-mark.large {
-    width: 40px;
-    height: 40px;
-  }
   .workflow-title {
     min-width: 0;
     display: grid;
@@ -504,29 +484,11 @@
     font-size: 0.85rem;
     margin: 0;
   }
-  .detail {
-    padding: 1rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
-  }
-  .detail-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-  .detail-title,
-  .detail-actions {
+  .detail-meta {
     display: flex;
     align-items: center;
     gap: 0.65rem;
-  }
-  .detail-head h3 {
-    margin: 0.12rem 0 0;
-    font-size: 1.05rem;
+    flex-wrap: wrap;
   }
   .version {
     color: var(--color-text-muted);
@@ -670,87 +632,54 @@
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  .invoke-panel {
+  .editor-panel {
     display: grid;
-    grid-template-columns: minmax(180px, 0.65fr) minmax(280px, 1.35fr);
-    gap: 1rem;
+    gap: 0.6rem;
     margin-top: 0.8rem;
     padding: 0.85rem;
     border: 1px solid var(--color-border);
     border-radius: 10px;
     background: linear-gradient(135deg, var(--color-surface-subtle), var(--color-surface));
   }
-  .invoke-panel h4 {
+  .editor-panel h4 {
     margin: 0.12rem 0 0;
     font-size: 0.9rem;
   }
-  .invoke-panel > div > p {
+  .editor-panel > div > p {
     margin: 0.25rem 0 0;
     color: var(--color-text-muted);
     font-size: 0.75rem;
     line-height: 1.45;
   }
-  .invoke-form {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-  .fields {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    flex: 1;
-  }
-  label {
+  .editor-form {
     display: grid;
-    gap: 0.2rem;
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-    flex: 1 1 10rem;
+    gap: 0.6rem;
   }
-  label em {
-    font-style: normal;
-    opacity: 0.7;
-  }
-  input {
-    font: inherit;
-    padding: 0.4rem 0.55rem;
+  .definition-input {
+    font: 0.78rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 0.6rem 0.7rem;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius-sm);
     background: var(--color-surface);
     color: var(--color-text);
-    min-height: 40px;
     width: 100%;
     box-sizing: border-box;
+    resize: vertical;
+    overflow-x: auto;
   }
-  input:focus-visible {
+  .definition-input:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 1px;
   }
-  .no-inputs {
-    color: var(--color-text-muted);
+  .save-error {
+    color: var(--color-danger);
     font-size: 0.85rem;
     margin: 0;
   }
-  .invoke-ok {
-    color: var(--color-success);
-    font-size: 0.85rem;
-    margin: 0.6rem 0 0;
-  }
-  .invoke-warn {
-    color: var(--color-warning);
-    font-size: 0.85rem;
-    margin: 0.6rem 0 0;
-  }
 
   @media (max-width: 760px) {
-    .workflow-toolbar,
-    .detail-head {
+    .workflow-toolbar {
       align-items: flex-start;
-    }
-    .invoke-panel {
-      grid-template-columns: 1fr;
     }
   }
 
