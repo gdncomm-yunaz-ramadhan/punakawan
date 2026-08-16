@@ -1,0 +1,45 @@
+web/panel/src/routes/projects/ProjectKnowledge.svelte
+  f9605b8f4acd1e01 17-18,51-53,77-157,336-531,538-545,811-848
+internal/panel/server/server_test.go
+  f9605b8f4acd1e01 240,249,278,287,295,303,316,394,403,411,446,487
+web/panel/src/lib/components/EvidenceItem.svelte
+  f9605b8f4acd1e01 3,5,11,14,28,54
+web/panel/src/lib/api/client.ts
+  f9605b8f4acd1e01 563-564,571-577,579,583-584,587-589,591-594,600,603-604,613
+docs/panel/workspace-to-project-migration.md
+  f9605b8f4acd1e01 20-45
+web/panel/src/routes/projects/ProjectSessions.svelte
+  f9605b8f4acd1e01 6,10,17,35,54,59,63-68,150-160,247-253
+web/panel/src/routes/projects/ProjectTasks.svelte
+  f9605b8f4acd1e01 11,24,33-36,41-44,85-86,94,102-104,112-134,145-147,197-210
+web/panel/tests/ProjectTasks.test.ts
+  f9605b8f4acd1e01 1-82
+internal/panel/sources/project_aware.go
+  f9605b8f4acd1e01 119-151
+web/panel/tests/ProjectKnowledge.test.ts
+  f9605b8f4acd1e01 1-131
+internal/panel/server/server.go
+  f9605b8f4acd1e01 308-314,325,332-334
+web/panel/src/routes/tasks/TaskDetailDrawer.svelte
+  f9605b8f4acd1e01 3,9,11,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "7ee6d9146fe06463f817ff008b5cb0f01f4518ee",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 758,
+      "total_deletions": 283,
+      "accepted_lines": 744,
+      "overriden_lines": 0
+    }
+  }
+}
