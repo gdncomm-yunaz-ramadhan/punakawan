@@ -13,10 +13,6 @@
   import ProjectRoles from "./ProjectRoles.svelte";
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
-  import ProjectContradictions from "./ProjectContradictions.svelte";
-  import ProjectImpact from "./ProjectImpact.svelte";
-  import ProjectDossiers from "./ProjectDossiers.svelte";
-  import ProjectHandoffs from "./ProjectHandoffs.svelte";
   import ProjectHealth from "./ProjectHealth.svelte";
   import ProjectTasks from "./ProjectTasks.svelte";
   import ProjectSessions from "./ProjectSessions.svelte";
@@ -43,10 +39,6 @@
     "knowledge",
     "tasks",
     "plans",
-    "contradictions",
-    "impact",
-    "dossiers",
-    "handoffs",
     "sessions",
     "approvals",
     "health",
@@ -59,10 +51,6 @@
     { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
     { id: "tasks", label: "Tasks", icon: "list" as IconName },
     { id: "plans", label: "Plans", icon: "file" as IconName },
-    { id: "contradictions", label: "Contradictions", icon: "alert" as IconName },
-    { id: "impact", label: "Impact", icon: "git-branch" as IconName },
-    { id: "dossiers", label: "Change Dossiers", icon: "file" as IconName },
-    { id: "handoffs", label: "Handoffs", icon: "comment" as IconName },
     { id: "sessions", label: "Sessions", icon: "activity" as IconName },
     { id: "approvals", label: "Approvals", icon: "approval" as IconName },
     { id: "health", label: "Health", icon: "heart" as IconName },
@@ -191,22 +179,6 @@
   {:else if activeId === "plans"}
     <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">
       <ProjectPlans {projectId} />
-    </div>
-  {:else if activeId === "contradictions"}
-    <div id="tabpanel-contradictions" role="tabpanel" aria-labelledby="tab-contradictions">
-      <ProjectContradictions {projectId} />
-    </div>
-  {:else if activeId === "impact"}
-    <div id="tabpanel-impact" role="tabpanel" aria-labelledby="tab-impact">
-      <ProjectImpact {projectId} />
-    </div>
-  {:else if activeId === "dossiers"}
-    <div id="tabpanel-dossiers" role="tabpanel" aria-labelledby="tab-dossiers">
-      <ProjectDossiers {projectId} />
-    </div>
-  {:else if activeId === "handoffs"}
-    <div id="tabpanel-handoffs" role="tabpanel" aria-labelledby="tab-handoffs">
-      <ProjectHandoffs {projectId} />
     </div>
   {:else if activeId === "approvals"}
     <div id="tabpanel-approvals" role="tabpanel" aria-labelledby="tab-approvals">

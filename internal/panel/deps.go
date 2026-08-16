@@ -39,6 +39,11 @@ type Readers struct {
 	GlobalSearch  contract.GlobalSearchReader
 	Project       contract.ProjectReader
 	Roles         contract.RolesReader
+	// Contradiction/Impact/Dossier deliberately have no live implementation
+	// now that the ceremony surfaces backing them are gone; they stay
+	// declared only because internal/panel/events/reconciler.go still
+	// null-checks and polls them, degrading those three SSE event kinds to a
+	// silent no-op rather than a nil-pointer panic.
 	Contradiction contract.ContradictionReader
 	Impact        contract.ImpactReader
 	Dossier       contract.DossierReader
@@ -101,14 +106,7 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		// already performs (plan §8's "one snapshot, reused everywhere").
 		Project: projectSource,
 		Roles:   projectSource,
-		// The same shared ProjectSource also serves the three project-scoped
-		// subsystems (Contradiction Ledger, Impact Graph, Change Dossiers);
-		// they all reuse its id->root resolution and per-project .punakawan
-		// tree.
-		Contradiction: projectSource,
-		Impact:        projectSource,
-		Dossier:       projectSource,
-		Runtime:       runtimeMgr,
+		Runtime: runtimeMgr,
 	}
 }
 

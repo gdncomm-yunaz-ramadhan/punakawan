@@ -6,7 +6,6 @@
   import Overview from "./routes/overview/Overview.svelte";
   import ProjectsList from "./routes/projects/ProjectsList.svelte";
   import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
-  import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
   import SessionsList from "./routes/sessions/SessionsList.svelte";
   import SessionDetail from "./routes/sessions/SessionDetail.svelte";
   import TasksPage from "./routes/tasks/TasksPage.svelte";
@@ -15,8 +14,6 @@
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import ContextImprovements from "./routes/improvements/ContextImprovements.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
-  import StartReview from "./routes/review/StartReview.svelte";
-  import ReviewMode from "./routes/review/ReviewMode.svelte";
 
   let system: SystemInfo | null = $state(null);
   let systemError: string | null = $state(null);
@@ -30,15 +27,12 @@
   });
 
   const projectDetailPath = /^\/projects\/([^/]+)$/;
-  const workspaceDetailPath = /^\/workspaces\/([^/]+)$/;
   const sessionsListPath = /^\/workspaces\/([^/]+)\/sessions$/;
   const sessionDetailPath = /^\/workspaces\/([^/]+)\/sessions\/([^/]+)$/;
   const tasksPath = /^\/workspaces\/([^/]+)\/tasks$/;
   const knowledgeListPath = /^\/workspaces\/([^/]+)\/knowledge$/;
   const knowledgeDetailPath = /^\/workspaces\/([^/]+)\/knowledge\/([^/]+)$/;
   const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
-  const reviewModePath = /^\/reviews\/([^/]+)$/;
-  const startReviewPath = /^\/artifacts\/(plan|retrieval_recipe)\/review\/new$/;
 </script>
 
 <AppShell {system}>
@@ -54,12 +48,6 @@
     <ContextImprovements />
   {:else if getPath() === "/system"}
     <SystemPage />
-  {:else if startReviewPath.exec(getPath())}
-    {@const match = startReviewPath.exec(getPath())}
-    <StartReview artifactType={(match?.[1] as "plan" | "retrieval_recipe") ?? "plan"} />
-  {:else if reviewModePath.exec(getPath())}
-    {@const match = reviewModePath.exec(getPath())}
-    <ReviewMode reviewId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if approvalsPath.exec(getPath())}
     {@const match = approvalsPath.exec(getPath())}
     <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
@@ -87,9 +75,6 @@
   {:else if projectDetailPath.exec(getPath())}
     {@const match = projectDetailPath.exec(getPath())}
     <ProjectDetail projectId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if workspaceDetailPath.exec(getPath())}
-    {@const match = workspaceDetailPath.exec(getPath())}
-    <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />
   {:else}
     <p>Not found.</p>
   {/if}

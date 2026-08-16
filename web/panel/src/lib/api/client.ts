@@ -43,10 +43,6 @@ export interface SourceHealth {
   checked_at: string;
 }
 
-export interface WorkspaceDetail extends WorkspaceSummary {
-  health: SourceHealth[];
-}
-
 export interface PanelSessionSummary {
   id: string;
   workspace_id: string;
@@ -208,14 +204,6 @@ export function updatePanelSettings(patch: Partial<PanelSettings>): Promise<Pane
     method: "PATCH",
     body: JSON.stringify(patch),
   });
-}
-
-export function listWorkspaces(): Promise<{ items: WorkspaceSummary[] }> {
-  return getJSON<{ items: WorkspaceSummary[] }>("/workspaces");
-}
-
-export function getWorkspace(id: string): Promise<WorkspaceDetail> {
-  return getJSON<WorkspaceDetail>(`/workspaces/${encodeURIComponent(id)}`);
 }
 
 export function getOverview(): Promise<Overview> {

@@ -3,9 +3,9 @@
   import Icon, { type IconName } from "./Icon.svelte";
 
   // Generic semantic variants for callers that aren't rendering a
-  // workspace Availability (e.g. DataTable status cells, ReviewCard).
-  // Kept distinct from Availability's own five states so existing call
-  // sites (WorkspacesList, WorkspaceSummary, Overview) are untouched.
+  // workspace Availability (e.g. DataTable status cells). Kept distinct
+  // from Availability's own five states so existing call sites (Overview)
+  // are untouched.
   export type BadgeVariant = "success" | "warning" | "danger" | "info" | "neutral";
 
   interface AvailabilityProps {

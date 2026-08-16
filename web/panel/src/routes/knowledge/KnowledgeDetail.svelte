@@ -8,7 +8,6 @@
     type KnowledgeRecord,
   } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
-  import Button from "../../lib/components/Button.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import VersionLineageGraphView from "../../lib/components/graphs/VersionLineageGraphView.svelte";
   import type { GraphNode, GraphEdge } from "../../lib/components/graphs/types";
@@ -65,10 +64,6 @@
     if (value === undefined || value === null) return "";
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
-  }
-
-  function startRecipeReview() {
-    navigate(`/artifacts/retrieval_recipe/review/new?id=${encodeURIComponent(knowledgeId)}`);
   }
 
   // Best-effort one-hop lineage: there is no dedicated recipe
@@ -180,9 +175,6 @@
     <section aria-labelledby="recipe-identity-heading" class="recipe-block">
       <div class="recipe-block-head">
         <h2 id="recipe-identity-heading">Recipe identity</h2>
-        <span data-testid="start-recipe-review">
-          <Button variant="primary" size="sm" onclick={startRecipeReview}>Request a correction to this recipe</Button>
-        </span>
       </div>
       <dl>
         <dt>Capability</dt>

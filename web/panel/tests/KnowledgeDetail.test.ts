@@ -86,7 +86,6 @@ describe("KnowledgeDetail", () => {
     expect(screen.getByText("jira.issue.search")).toBeTruthy();
     expect(screen.getByText("project.next-sprint.issues")).toBeTruthy();
     expect(screen.getByText("Verified")).toBeTruthy();
-    expect(screen.getByTestId("start-recipe-review")).toBeTruthy();
     // Selector clause rendering (capability/intent are the identity; the
     // selector is the compiled condition it resolves to).
     expect(screen.getByText("project")).toBeTruthy();

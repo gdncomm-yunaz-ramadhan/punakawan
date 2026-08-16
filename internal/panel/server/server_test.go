@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/timing"
@@ -172,44 +171,6 @@ func TestServerSystemEndpoint(t *testing.T) {
 	}
 	if body["panel_version"] == "" || body["panel_version"] == nil {
 		t.Fatalf("panel_version missing: %+v", body)
-	}
-}
-
-func TestServerWorkspacesEndpoint(t *testing.T) {
-	s, a := startTestServer(t)
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want 1", items)
-	}
-	first, _ := items[0].(map[string]any)
-	if first["id"] != a.Workspace.ID {
-		t.Fatalf("items[0].id = %v, want %q", first["id"], a.Workspace.ID)
-	}
-}
-
-func TestServerWorkspaceDetailEndpoint(t *testing.T) {
-	s, a := startTestServer(t)
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID)
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if body["id"] != a.Workspace.ID {
-		t.Fatalf("id = %v, want %q", body["id"], a.Workspace.ID)
-	}
-	if _, ok := body["health"]; !ok {
-		t.Fatalf("expected a health field: %+v", body)
-	}
-}
-
-func TestServerWorkspaceDetailUnknownIDReturns404(t *testing.T) {
-	s, _ := startTestServer(t)
-	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/no-such-workspace")
-	if status != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", status)
 	}
 }
 
@@ -763,66 +724,6 @@ func exchangeSession(t *testing.T, s *Server) (*http.Client, string) {
 	return client, out.CSRFToken
 }
 
-func TestServerSessionExchangeGrantsAWorkingSession(t *testing.T) {
-	s, a := startTestServer(t)
-	plans := &artifact.PlanStore{WorkspaceRoot: a.Workspace.Root}
-	if _, err := plans.CreateVersion("plan-panel", a.Workspace.ID, []byte("# Plan\n\nBody.\n"), time.Now()); err != nil {
-		t.Fatalf("CreateVersion: %v", err)
-	}
-	client, csrfToken := exchangeSession(t, s)
-
-	createBody, _ := json.Marshal(map[string]string{"title": "Panel review"})
-	resp, err := client.Post(fmt.Sprintf("http://%s/api/v1/artifacts/plan/plan-panel/reviews", s.Addr()), "application/json", bytes.NewReader(createBody))
-	if err != nil {
-		t.Fatalf("create review: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("status without CSRF header = %d, want 403", resp.StatusCode)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/api/v1/artifacts/plan/plan-panel/reviews", s.Addr()), bytes.NewReader(createBody))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("X-Csrf-Token", csrfToken)
-	req.Header.Set("Content-Type", "application/json")
-	resp2, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("create review with CSRF: %v", err)
-	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp2.Body)
-		t.Fatalf("status with CSRF header = %d, want 201: %s", resp2.StatusCode, body)
-	}
-}
-
-func TestServerRejectsMutationWithNoSessionCookie(t *testing.T) {
-	s, _ := startTestServer(t)
-	body, _ := json.Marshal(map[string]string{"title": "x"})
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/artifacts/plan/plan-panel/reviews", s.Addr()), "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", resp.StatusCode)
-	}
-}
-
-func TestServerRejectsFailReviewWithNoSessionCookie(t *testing.T) {
-	s, _ := startTestServer(t)
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/reviews/no-such-review/fail", s.Addr()), "application/json", bytes.NewReader(nil))
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", resp.StatusCode)
-	}
-}
-
 func TestServerSessionIsInvalidatedOnShutdown(t *testing.T) {
 	a := newTestApp(t)
 	reg, err := registry.Open()
@@ -856,68 +757,6 @@ func TestServerSessionIsInvalidatedOnShutdown(t *testing.T) {
 	}
 	if s.sessions.ValidSession(sessionID) {
 		t.Fatal("ValidSession = true after Shutdown, want the session invalidated")
-	}
-}
-
-func TestServerSubmitDispatchesABDTaskGraph(t *testing.T) {
-	requireBd(t)
-	requireDolt(t)
-
-	s, a := startTestServer(t)
-	initBd(t, a)
-
-	plans := &artifact.PlanStore{WorkspaceRoot: a.Workspace.Root}
-	if _, err := plans.CreateVersion("plan-panel", a.Workspace.ID, []byte("# Plan\n\nBody.\n"), time.Now()); err != nil {
-		t.Fatalf("CreateVersion: %v", err)
-	}
-	client, csrfToken := exchangeSession(t, s)
-	doWithCSRF := func(method, path string, body []byte) *http.Response {
-		req, err := http.NewRequest(method, fmt.Sprintf("http://%s%s", s.Addr(), path), bytes.NewReader(body))
-		if err != nil {
-			t.Fatalf("NewRequest: %v", err)
-		}
-		req.Header.Set("X-Csrf-Token", csrfToken)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatalf("%s %s: %v", method, path, err)
-		}
-		return resp
-	}
-
-	createBody, _ := json.Marshal(map[string]string{"title": "Panel review"})
-	createResp := doWithCSRF(http.MethodPost, "/api/v1/artifacts/plan/plan-panel/reviews", createBody)
-	defer createResp.Body.Close()
-	if createResp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(createResp.Body)
-		t.Fatalf("create review status = %d: %s", createResp.StatusCode, body)
-	}
-	var review protocol.ArtifactReview
-	if err := json.NewDecoder(createResp.Body).Decode(&review); err != nil {
-		t.Fatalf("decode review: %v", err)
-	}
-
-	submitResp := doWithCSRF(http.MethodPost, "/api/v1/reviews/"+review.Metadata.Id+"/submit", nil)
-	defer submitResp.Body.Close()
-	if submitResp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(submitResp.Body)
-		t.Fatalf("submit status = %d, want 201: %s", submitResp.StatusCode, body)
-	}
-	var submitted struct {
-		Run struct {
-			RunID string `json:"run_id"`
-		} `json:"run"`
-	}
-	if err := json.NewDecoder(submitResp.Body).Decode(&submitted); err != nil {
-		t.Fatalf("decode submit response: %v", err)
-	}
-	if submitted.Run.RunID == "" {
-		t.Fatal("submit response has no run_id")
-	}
-
-	res, err := a.Supervisor.Run(context.Background(), tools.Spec{Name: "bd", Args: []string{"show", submitted.Run.RunID}, Dir: a.Workspace.Root})
-	if err != nil || res.ExitCode != 0 {
-		t.Fatalf("bd show %s: err=%v exit=%d stderr=%s", submitted.Run.RunID, err, res.ExitCode, res.Stderr)
 	}
 }
 
