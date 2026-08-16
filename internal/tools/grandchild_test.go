@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// TestKillProcessTreeCatchesGrandchild covers punokawan-14yn.18 AC3: a
-// fixture that forks a grandchild must be completely contained, not
-// just its direct child. sh backgrounds a grandchild sleep (inheriting
+// TestKillProcessTreeCatchesGrandchild proves that a fixture forking a
+// grandchild must be completely contained, not just its direct child.
+// sh backgrounds a grandchild sleep (inheriting
 // sh's process group, since plain `&` does not call setsid) and writes
 // its pid to a file so the test can verify that pid is dead too, not
 // just the direct child sh.

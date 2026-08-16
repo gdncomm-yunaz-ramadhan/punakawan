@@ -5,7 +5,7 @@
  */
 
 /**
- * A registered project binding in the canonical multi-project delivery control plane (punokawan-14yn.1). One row per project the orchestrator is allowed to route work to; unknown project ids are never inferred from ambient working-directory scope. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * A registered project binding in the canonical multi-project delivery control plane. One row per project the orchestrator is allowed to route work to; unknown project ids are never inferred from ambient working-directory scope.
  */
 export interface DeliveryProject {
   /**

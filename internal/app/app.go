@@ -241,8 +241,8 @@ func (a *App) isClosed() bool {
 }
 
 // OpenKnowledge lazily opens the durable knowledge store, memoizing the
-// result, scoped to this workspace's id within the shared storage kernel
-// (punokawan-14yn.15). Like OpenTaskStore, it is a thin scope over the one
+// result, scoped to this workspace's id within the shared storage kernel.
+// Like OpenTaskStore, it is a thin scope over the one
 // shared *storage.DB rather than a per-project server, so it starts nothing:
 // the deferral simply avoids opening the kernel for commands that never touch
 // durable knowledge.
@@ -270,8 +270,8 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	return a.knowledgeStore, nil
 }
 
-// OpenStorage lazily opens the shared SQLite storage kernel (punokawan-14yn.14),
-// memoizing the result. Unlike the per-project Dolt connections OpenKnowledge
+// OpenStorage lazily opens the shared SQLite storage kernel, memoizing the
+// result. Unlike the per-project Dolt connections OpenKnowledge
 // opens, this is one database shared by every local project checkout on this
 // machine; callers scope their own rows by project id.
 func (a *App) OpenStorage(ctx context.Context) (*storage.DB, error) {
@@ -322,8 +322,8 @@ func (a *App) OpenTaskStore() (*taskstore.Store, error) {
 }
 
 // OpenApprovals lazily opens the approval store, memoizing the result, scoped
-// to this workspace's id within the shared storage kernel (punokawan-14yn.16).
-// Like OpenTaskStore, it is a thin scope over the one shared *storage.DB rather
+// to this workspace's id within the shared storage kernel. Like OpenTaskStore,
+// it is a thin scope over the one shared *storage.DB rather
 // than a per-project server, so it starts nothing: the deferral simply avoids
 // opening the kernel for commands that never touch an approval. The adapter
 // registry and worktree manager hold this method as a provider, so the kernel
@@ -358,8 +358,8 @@ func (a *App) OpenApprovals() (*approvals.Store, error) {
 }
 
 // OpenLearning lazily opens the learning-proposal side-store, memoizing the
-// result, scoped to this workspace's id within the shared storage kernel
-// (punokawan-14yn.16). Like OpenApprovals, it is a thin scope over the one
+// result, scoped to this workspace's id within the shared storage kernel.
+// Like OpenApprovals, it is a thin scope over the one
 // shared *storage.DB rather than a per-project server, so it starts nothing:
 // the deferral simply avoids opening the kernel for commands that never touch
 // a learning proposal.
@@ -392,8 +392,8 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 }
 
 // OpenSyncQueue lazily opens the outbound-adapter-write sync queue, memoizing
-// the result, scoped to this workspace's id within the shared storage kernel
-// (punokawan-14yn.16). Like OpenApprovals, it is a thin scope over the one
+// the result, scoped to this workspace's id within the shared storage kernel.
+// Like OpenApprovals, it is a thin scope over the one
 // shared *storage.DB rather than a per-project server, so it starts nothing:
 // the deferral simply avoids opening the kernel for commands that never record
 // or inspect a failed adapter write. The adapter registry holds this method as

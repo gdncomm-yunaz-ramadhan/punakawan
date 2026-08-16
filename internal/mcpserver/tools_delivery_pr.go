@@ -1,6 +1,6 @@
-// tools_delivery_pr.go adds the MCP tools for punokawan-14yn.8 phase 2: turning
-// a verified lane into a published pull request, running a bounded repair
-// loop when review/CI comes back lacking, and checking merge-readiness
+// tools_delivery_pr.go adds the MCP tools for turning a verified lane into
+// a published pull request, running a bounded repair loop when review/CI
+// comes back lacking, and checking merge-readiness
 // against a project's required verification gates. Kept separate from
 // tools_delivery.go, which already covers lease/worktree/role-stage tools.
 //

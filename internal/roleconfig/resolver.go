@@ -151,9 +151,9 @@ func Authorize(eff EffectiveRoleConfig, capability string, needed protocol.RoleC
 // role's prompt (§48). It lists style, mode, enabled and disabled capabilities
 // (sorted for determinism), and a one-line mode reminder, followed by a
 // "Learned project facts" section rendering proposals - detected facts, user
-// corrections, or reviewer-approved conventions - that are currently accepted
-// (punokawan-14yn.9 AC3/AC4). proposals is typically a project's
-// learning.Store.List() output; it is filtered and gated internally (see
+// corrections, or reviewer-approved conventions - that are currently
+// accepted. proposals is typically a project's learning.Store.List()
+// output; it is filtered and gated internally (see
 // LearnedFactsBlock), so callers may pass the store's raw, unfiltered list.
 // This is guidance for the model; Authorize is the enforcement.
 func PromptBlock(role Role, eff EffectiveRoleConfig, proposals []learning.Proposal) string {

@@ -11,8 +11,8 @@ import (
 )
 
 // validateHost rejects a request whose Host header does not name a
-// loopback address, per §17.1 and §29's DNS-rebinding defense. See
-// internal/loopback, shared with the punokawan-14yn.17 daemon transport.
+// loopback address, defending against DNS rebinding. See internal/loopback,
+// shared with the daemon transport.
 func validateHost(host string) error { return loopback.ValidateHost(host) }
 
 // validateOrigin rejects a cross-origin request, per §17.1: a page

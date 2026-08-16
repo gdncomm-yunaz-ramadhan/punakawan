@@ -5,7 +5,7 @@
  */
 
 /**
- * One immutable approval request/decision for a single project within a DeliveryOrchestration (punokawan-14yn.4): the parent tasks it covers, the planned base ref/branches/writes, and the preflight checks it was computed against. Approving one manifest never authorizes a newly discovered project or a write category beyond what this manifest declares - a changed scope requires a new manifest, not an edit to this one. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * One immutable approval request/decision for a single project within a DeliveryOrchestration: the parent tasks it covers, the planned base ref/branches/writes, and the preflight checks it was computed against. Approving one manifest never authorizes a newly discovered project or a write category beyond what this manifest declares - a changed scope requires a new manifest, not an edit to this one.
  */
 export interface ApprovalManifest {
   /**
@@ -44,4 +44,24 @@ export interface ApprovalManifest {
    * Optimistic-concurrency counter; incremented on every applied event.
    */
   revision: number;
+  /**
+   * Total verified-work hours (internal/worklogalloc), computed from this project's completed test-run command durations, that the proposed worklog below is derived from. Zero when no test-run evidence has accumulated yet for this manifest's parent tasks - proposed worklogs must be visible before project approval.
+   */
+  proposed_worklog_total_hours?: number;
+  /**
+   * The dev/test/review split of proposed_worklog_total_hours that could be matched to one of this project's configured Jira subtasks by name (internal/worklogalloc.Allocate) - a proposal for update_jira_task_progress to post post-approval, not something this manifest itself writes to Jira. Coarse by construction: internal/testrun records only that a command ran and how long it took, with no dev/test/review distinction, so the total is split evenly across whichever buckets have a matching subtask, never a fabricated precise breakdown.
+   */
+  proposed_worklog?: {
+    bucket: "dev" | "test" | "review";
+    /**
+     * The configured Jira subtask (from list_jira_subtasks) this bucket's hours would be logged against.
+     */
+    subtask_key: string;
+    subtask_name?: string;
+    hours: number;
+  }[];
+  /**
+   * Hours from proposed_worklog_total_hours that could not be matched to any configured subtask (no subtask name contained a recognized dev/test/review keyword) - left unmapped rather than guessed onto an arbitrary subtask.
+   */
+  proposed_worklog_unmapped_hours?: number;
 }

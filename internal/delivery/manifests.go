@@ -33,10 +33,10 @@ type ManifestPlan struct {
 	Checks            []protocol.PreflightCheck
 
 	// ProposedWorklog is the caller's already-computed worklogalloc.Allocate
-	// result for this manifest's parent tasks (punokawan-14yn.9 AC2:
-	// "proposed worklogs map to configured Jira subtasks and are visible
-	// before project approval"). CreateApprovalManifest does not compute
-	// this itself - it has no access to a project's test-run evidence or
+	// result for this manifest's parent tasks, so a proposed worklog is
+	// visible to a human before they approve project delivery.
+	// CreateApprovalManifest does not compute this itself - it has no
+	// access to a project's test-run evidence or
 	// its configured Jira subtasks, both of which live outside this
 	// package - it only persists whatever allocation the caller already
 	// derived (typically via deliverysummary.Summary.VerifiedHours feeding

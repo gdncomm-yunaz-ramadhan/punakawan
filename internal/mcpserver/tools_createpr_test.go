@@ -203,10 +203,10 @@ func TestBuildPrBodyOmitsJiraSectionWhenEmpty(t *testing.T) {
 	}
 }
 
-// TestBuildPrBodyRendersCanonicalSummaryWithoutCallerRestatingCounts is
-// punokawan-xu7m's AC1 for create_pr: when a run has canonical test/commit/
-// risk data, the PR body carries it verbatim from deliverysummary, not from
-// anything the caller typed into Verification/KnownRisks.
+// TestBuildPrBodyRendersCanonicalSummaryWithoutCallerRestatingCounts proves
+// that when a run has canonical test/commit/risk data, the PR body carries
+// it verbatim from deliverysummary, not from anything the caller typed into
+// Verification/KnownRisks.
 func TestBuildPrBodyRendersCanonicalSummaryWithoutCallerRestatingCounts(t *testing.T) {
 	summary := deliverysummary.Build(deliverysummary.Input{
 		RunId: "run-1",

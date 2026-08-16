@@ -193,7 +193,7 @@ func unavailableReason(caps protocol.GitCapabilities) string {
 // PR body structure. It performs no reasoning of its own - every narrative
 // section's content is either verbatim caller input or a mechanical listing
 // of ids the caller already supplied. summary supplements that narrative
-// with punokawan-xu7m's canonical block (test counts, commits, risks) so
+// with a canonical block (test counts, commits, risks) so
 // those facts come from this run's actual records rather than the calling
 // agent restating them; it renders nothing when summary carries no content
 // (deliverysummary.Summary.HasContent is false), leaving the body identical

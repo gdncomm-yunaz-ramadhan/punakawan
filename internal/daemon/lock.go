@@ -1,11 +1,11 @@
-// Package daemon implements punokawan-14yn.17's first-use singleton
-// Punakawan daemon: one process per machine owns the storage kernel and
-// serves an authenticated loopback transport that every CLI, MCP, and
-// Panel client connects to instead of opening the database itself.
+// Package daemon implements Punakawan's first-use singleton daemon: one
+// process per machine owns the storage kernel and serves an authenticated
+// loopback transport that every CLI, MCP, and Panel client connects to
+// instead of opening the database itself.
 //
 // Process-tree containment (cgroups/Job Objects/death-pipe guardians,
-// PID-reuse-proof ownership tokens) is punokawan-14yn.18's scope, not
-// this package's - the singleton lock here is a best-effort liveness
+// PID-reuse-proof ownership tokens) is out of this package's scope -
+// the singleton lock here is a best-effort liveness
 // check sufficient to prevent two daemons racing to open the same
 // database, not a hardened process-identity system.
 package daemon

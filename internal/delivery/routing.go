@@ -10,9 +10,9 @@ import "github.com/ygrip/punakawan/pkg/protocol"
 // project-location question instead.
 //
 // Only RepositoryURL and Slug are implemented against real
-// DeliveryProject fields today (punokawan-14yn.1 does not yet persist a
-// separate multi-signal ProjectBinding table for Jira project keys,
-// Confluence spaces, or URL patterns beyond a project's own repository
+// DeliveryProject fields today (there is no separate multi-signal
+// ProjectBinding table yet for Jira project keys, Confluence spaces, or
+// URL patterns beyond a project's own repository
 // url/slug) - those richer binding sources are deferred rather than
 // guessed at here.
 type RouteEvidence struct {

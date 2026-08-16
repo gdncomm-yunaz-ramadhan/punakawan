@@ -42,9 +42,9 @@ type ArtifactStores struct {
 	Root      string
 	Knowledge func() (*knowledge.Store, error)
 
-	// Learning yields the project's learning-proposal side-store (agent-context
-	// plan §6.3), now backed by the shared SQLite kernel scoped to the project
-	// id rather than a per-workspace JSONL file (punokawan-14yn.16). It is the
+	// Learning yields the project's learning-proposal side-store, backed by
+	// the shared SQLite kernel scoped to the project id rather than a
+	// per-workspace JSONL file. It is the
 	// Context Improvements inbox's read source. Lazy like Knowledge/Recipes so a
 	// request that never opens the inbox never opens the kernel; a nil factory
 	// degrades only that inbox.

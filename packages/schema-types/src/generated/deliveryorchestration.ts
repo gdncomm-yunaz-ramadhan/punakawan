@@ -5,7 +5,7 @@
  */
 
 /**
- * One continuous multi-project delivery run (punokawan-14yn.1). Owns zero or more DeliveryLanes and a list of not-yet-routed requirement inputs. State is derived by replaying its DeliveryEvent log, never written directly. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * One continuous multi-project delivery run. Owns zero or more DeliveryLanes and a list of not-yet-routed requirement inputs. State is derived by replaying its DeliveryEvent log, never written directly.
  */
 export interface DeliveryOrchestration {
   /**
@@ -14,7 +14,7 @@ export interface DeliveryOrchestration {
   id: string;
   status: "pending" | "active" | "cancelled" | "completed";
   /**
-   * Requirement sources (Jira/Confluence/GitHub/URL/free-text) not yet routed to a project. Routing and normalization is punokawan-14yn.2's concern; this task only persists the raw reference.
+   * Requirement sources (Jira/Confluence/GitHub/URL/free-text) not yet routed to a project. Routing and normalization happens elsewhere; this record only persists the raw reference.
    */
   unresolved_inputs: {
     reference: string;

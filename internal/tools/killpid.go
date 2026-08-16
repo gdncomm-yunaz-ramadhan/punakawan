@@ -24,10 +24,10 @@ func checkPid(pid int) error {
 // descendants (SIGTERM on unix, a non-forceful taskkill /T on
 // Windows), reusing the same per-OS logic Supervisor.Run and
 // BackgroundProcess.Stop use internally. Exported so callers that only
-// have a bare pid on hand - e.g. punokawan-14yn.18's restart-time
-// reconciliation, which reads pids back out of a durable process
-// registry rather than holding an *exec.Cmd - don't have to
-// reimplement process-tree termination.
+// have a bare pid on hand - e.g. a restart-time reconciliation that
+// reads pids back out of a durable process registry rather than
+// holding an *exec.Cmd - don't have to reimplement process-tree
+// termination.
 func TerminateProcessTree(pid int) error {
 	if err := checkPid(pid); err != nil {
 		return err

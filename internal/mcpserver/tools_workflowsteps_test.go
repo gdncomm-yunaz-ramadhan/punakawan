@@ -140,8 +140,8 @@ func TestCompleteStepRejectsAdHocRun(t *testing.T) {
 	}
 }
 
-// TestRecordWorkOutcomeAppendsCanonicalSummary is punokawan-xu7m's AC1 for
-// record_work_outcome: the persisted outcome summary carries this run's
+// TestRecordWorkOutcomeAppendsCanonicalSummary proves that for
+// record_work_outcome, the persisted outcome summary carries this run's
 // canonical test counts and PR URL (recovered from output_refs), appended
 // to the caller's own narrative summary rather than restated by the caller.
 func TestRecordWorkOutcomeAppendsCanonicalSummary(t *testing.T) {

@@ -35,8 +35,8 @@ func saveWorkflowDefWithCapability(t *testing.T, cs *mcp.ClientSession, id, cap 
 	return res
 }
 
-// TestSaveWorkflowDefinitionAcceptsCreateJiraIssueCapability is the regression
-// guard for bd punokawan-kf1p. The dedicated create_jira_issue MCP tool is
+// TestSaveWorkflowDefinitionAcceptsCreateJiraIssueCapability guards against
+// a regression: the dedicated create_jira_issue MCP tool is
 // registered into the capability registry via addTool (tools.go), so a workflow
 // step may reference it directly - it is NOT rejected as an unknown capability.
 // The original report ("workflow save rejected with 'unknown capability' on

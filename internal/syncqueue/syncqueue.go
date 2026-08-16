@@ -12,9 +12,9 @@
 // queue, so recording a failure here changes nothing about whether that
 // task can be marked done.
 //
-// Entries now live in the shared SQLite storage kernel (internal/storage,
-// punokawan-14yn.16), scoped to one project, rather than a per-workspace
-// JSONL file. History stays append-only: resolving an entry appends a new
+// Entries now live in the shared SQLite storage kernel (internal/storage),
+// scoped to one project, rather than a per-workspace JSONL file. History
+// stays append-only: resolving an entry appends a new
 // record with the same Id rather than mutating the original, so Current
 // folds to the latest record per id while List returns full history.
 package syncqueue

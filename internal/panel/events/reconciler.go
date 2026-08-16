@@ -166,7 +166,7 @@ func (r *Reconciler) reconcileFast(ctx context.Context) {
 	}
 
 	// Poll the primary plus whichever non-primary projects are already warm
-	// in the runtime pool (punokawan-pqoy): a non-primary project's own CLI
+	// in the runtime pool: a non-primary project's own CLI
 	// approval resolution previously only reached the panel UI via an
 	// unrelated ambient event, since this tier only ever polled the primary.
 	// Piggybacking on already-loaded runtimes (rather than force-Acquiring

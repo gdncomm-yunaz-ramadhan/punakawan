@@ -60,8 +60,8 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target_id is required")
 		}
 		// classification defaults to inferred (reviewable-only) when unset -
-		// the safe choice per punokawan-14yn.9 AC4; a caller cannot get
-		// auto-accept just by leaving this field out.
+		// the safe choice; a caller cannot get auto-accept just by leaving
+		// this field out.
 		classification := in.Classification
 		if classification == "" {
 			classification = learning.ClassificationInferred
@@ -213,7 +213,7 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 // create-from-scratch path lives, since propose_project_learning only ever
 // proposes an improvement to an artifact that already exists - it is never the
 // tool that mints a brand-new one (that confusion was reported against the
-// knowledge pillar specifically: bd punokawan-h5by).
+// knowledge pillar specifically).
 func createPathHint(artifactType string) string {
 	switch artifactType {
 	case learning.TypeKnowledge:

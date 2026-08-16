@@ -1,8 +1,8 @@
 // Package registry implements the global Punakawan Panel workspace
 // registry: panel discovery metadata ("which local workspace checkouts
 // does this machine's panel know about"), persisted in the shared SQLite
-// storage kernel (internal/storage, punokawan-14yn.16). Canonical
-// workspace configuration always remains in each workspace's own
+// storage kernel (internal/storage). Canonical workspace configuration
+// always remains in each workspace's own
 // .punakawan/workspace.yaml, and a path is never treated as valid solely
 // because it appears here.
 //

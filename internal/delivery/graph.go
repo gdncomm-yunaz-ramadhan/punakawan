@@ -11,9 +11,9 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// blockingEdgeTypes are the only edge types that gate execution
-// (punokawan-14yn.2 design); serializes-with and informational edges
-// are recorded but never block the runnable frontier.
+// blockingEdgeTypes are the only edge types that gate execution;
+// serializes-with and informational edges are recorded but never block
+// the runnable frontier.
 var blockingEdgeTypes = map[protocol.DependencyEdgeType]bool{
 	protocol.DependencyEdgeTypeRequires:         true,
 	protocol.DependencyEdgeTypeProducesInputFor: true,
@@ -82,7 +82,7 @@ func (s *Store) GetDependencyEdge(ctx context.Context, orchestrationID, edgeID s
 
 // RemoveDependencyEdge marks edgeID removed. Once the edge's from-task
 // has been routed (routing stands in for "execution about to start" at
-// this layer; actual worker execution is punokawan-14yn.3's concern),
+// this layer; actual worker execution belongs to a different layer),
 // removal requires non-empty removalEvidence; before routing,
 // reorganization is free.
 func (s *Store) RemoveDependencyEdge(ctx context.Context, idempotencyKey, orchestrationID, edgeID, removalEvidence string) (*protocol.DependencyEdge, error) {
@@ -193,9 +193,8 @@ func reachable(edges map[string]*protocol.DependencyEdge, from, to string) bool 
 
 // Frontier returns the ids of every non-cancelled, not-yet-resolved
 // task with no unresolved blocking predecessor, and, for every blocked
-// task, the ids of every predecessor still keeping it blocked
-// (punokawan-14yn.2 acceptance criterion 5). resolved marks which task
-// ids are already considered done; callers (punokawan-14yn.3's
+// task, the ids of every predecessor still keeping it blocked. resolved
+// marks which task ids are already considered done; callers (the
 // scheduler) own what "resolved" means at execution time.
 func Frontier(tasks []*protocol.ParentTask, edges []*protocol.DependencyEdge, resolved map[string]bool) (frontier []string, blocked map[string][]string) {
 	predecessors := map[string][]string{}

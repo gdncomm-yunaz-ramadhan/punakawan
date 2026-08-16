@@ -9,10 +9,9 @@ import (
 )
 
 // Conflict records one case where the repo-owned layer's explicit value for
-// a key overrides an accepted learning proposal that targeted the same key
-// (punokawan-14yn.9 AC6). It carries enough for a caller (e.g. Panel, per
-// the epic's later .11 task) to explain the override without re-deriving it
-// from the two layers itself.
+// a key overrides an accepted learning proposal that targeted the same key.
+// It carries enough for a caller (e.g. Panel) to explain the override
+// without re-deriving it from the two layers itself.
 type Conflict struct {
 	Key            string `json:"key"`
 	RepoOwnedValue any    `json:"repo_owned_value"`

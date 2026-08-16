@@ -193,8 +193,8 @@ func recordWorkOutcomeHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		outcome := protocol.WorkflowRunOutcome{Status: status, EvidenceIds: in.EvidenceIds, OutputRefs: in.OutputRefs}
 		// The canonical block is appended to (not instead of) the caller's own
 		// summary prose, so test counts/commits/risks/links come from this
-		// run's actual records rather than the caller restating them
-		// (punokawan-xu7m). prURL/jiraURL are recovered from OutputRefs
+		// run's actual records rather than the caller restating them.
+		// prURL/jiraURL are recovered from OutputRefs
 		// rather than a new field: a caller recording an outcome already
 		// names its PR/Jira URLs there for an unrelated reason.
 		prURL, jiraURL := deliverysummary.URLsFromRefs(in.OutputRefs)

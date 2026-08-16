@@ -331,7 +331,7 @@ func TestSessionSourceListFiltersByStatus(t *testing.T) {
 // return zero counts anyway: a real evidence record is written for the run,
 // so a non-SkipCounts call must see it, and a SkipCounts call must not
 // (Overview's whole reason for this flag - it never renders these counts,
-// so paying for the scan was pure waste, punokawan-z7no).
+// so paying for the scan was pure waste).
 func TestSessionSourceListSkipCountsOmitsEvidenceCounts(t *testing.T) {
 	a := newTestApp(t)
 	run := newTestRun(a, "run-test-1")
@@ -366,11 +366,11 @@ func TestSessionSourceListSkipCountsOmitsEvidenceCounts(t *testing.T) {
 	}
 }
 
-// TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks is
-// punokawan-xu7m's AC1 for the panel: a run's session summary reports the
-// same failing-command and risk-finding counts a PR body or Jira comment
-// would render for that same run, because both read the same
-// deliverysummary.Build output rather than each deriving their own answer.
+// TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks proves a run's
+// session summary reports the same failing-command and risk-finding counts a
+// PR body or Jira comment would render for that same run, because both read
+// the same deliverysummary.Build output rather than each deriving their own
+// answer.
 func TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks(t *testing.T) {
 	a := newTestApp(t)
 	run := newTestRun(a, "run-test-1")
@@ -1003,8 +1003,9 @@ func TestWorkspaceSourceListSkipsGitHealth(t *testing.T) {
 	}
 }
 
-// TestGitHealthCoversEveryRepoInDeterministicOrder guards punokawan-jvww:
-// gitHealth now runs one `git status` per repository concurrently (a bounded
+// TestGitHealthCoversEveryRepoInDeterministicOrder guards against a
+// regression now that gitHealth runs one `git status` per repository
+// concurrently (a bounded
 // worker pool, mirroring List's), so this proves the parallel fan-out still
 // reassembles results in the workspace's declared repository order, not
 // whatever order the goroutines happened to finish in - repeated across

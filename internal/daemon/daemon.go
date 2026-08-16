@@ -123,9 +123,8 @@ func (d *Daemon) Addr() string { return d.transport.Addr() }
 // HTTP transport.
 func (d *Daemon) DB() *storage.DB { return d.db }
 
-// Processes is the durable process-ownership registry (punokawan-14yn.18)
-// that future worker/agent process launches (.3/.5) register with
-// before exposing their work as running.
+// Processes is the durable process-ownership registry that worker/agent
+// process launches register with before exposing their work as running.
 func (d *Daemon) Processes() *procreg.Registry { return d.processes }
 
 // Reconciled reports what Run's startup reconciliation did with any

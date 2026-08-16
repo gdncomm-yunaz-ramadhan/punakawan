@@ -41,8 +41,8 @@ const sharedPromptPath = "shared/communication.md"
 // by a per-request role-configuration block (roleconfig.PromptBlock) rendered
 // fresh on every GetPrompt call from a's live role config and accepted
 // learning proposals. That block is what actually varies per invocation: it is
-// how an accepted learning proposal (punokawan-14yn.9 AC4) reaches a live
-// Petruk/Bagong/Gareng/Semar role, since this GetPrompt handler - not
+// how an accepted learning proposal reaches a live Petruk/Bagong/Gareng/
+// Semar role, since this GetPrompt handler - not
 // roleconfig.PromptBlock's own (previously callerless) unit test - is the real
 // prompt a connected MCP client fetches before reasoning as a role.
 func registerPrompts(server *mcp.Server, a *app.App) error {

@@ -395,8 +395,8 @@ func jiraAssignIssue(ctx context.Context, req *mcp.CallToolRequest, gate *adapte
 // its board(s) first via atlassian.listJiraBoards (scrum boards only - Jira's
 // sprint endpoint 400s for kanban boards, which never have sprints). This
 // replaces the raw JQL "board in (X) and sprint in openSprints()" workaround a
-// caller previously had to resort to (punokawan-wij9) just to find a sprint id
-// without already knowing it.
+// caller previously had to resort to just to find a sprint id without
+// already knowing it.
 type JiraFindSprintInput struct {
 	RunId       string `json:"run_id,omitempty" jsonschema:"optional; omit for a lightweight one-off session. This is a read, so no approval is needed either way."`
 	BoardId     int    `json:"board_id,omitempty" jsonschema:"numeric Jira Agile board id to list sprints for; takes priority over project_key when both are set"`

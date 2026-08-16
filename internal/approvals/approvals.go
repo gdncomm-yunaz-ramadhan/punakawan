@@ -1,6 +1,6 @@
 // Package approvals persists approval records in the shared SQLite storage
-// kernel (internal/storage, punokawan-14yn.16), scoped to one project. History
-// is append-only: resolving a request appends a new record with the same Id
+// kernel (internal/storage), scoped to one project. History is append-only:
+// resolving a request appends a new record with the same Id
 // rather than mutating the original, so Current folds to the latest record per
 // id while List returns the full history.
 package approvals

@@ -10,8 +10,7 @@ import (
 // reduceOrchestration derives an orchestration's current state by
 // replaying its event log in sequence order. It is a pure function of
 // events: the same ordered log always produces the same state, which is
-// what makes replay deterministic (punokawan-14yn.1 acceptance
-// criterion 4).
+// what makes replay deterministic.
 func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.DeliveryOrchestration, error) {
 	if len(events) == 0 {
 		return nil, ErrNotFound

@@ -80,8 +80,8 @@ func pushTaskBranchHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 
 // recordDetectedGitCapabilities appends (or reinforces) an auto-accepted,
 // detected_fact learning proposal capturing repoID's currently-detected git
-// remote/base/tool facts (punokawan-14yn.9 AC3), mirroring
-// recordWorkflowJudgment's already-accepted/no-review-id shape: detection
+// remote/base/tool facts, mirroring recordWorkflowJudgment's
+// already-accepted/no-review-id shape: detection
 // already happened here, so there is nothing left for a panel review to
 // accept - AutoAcceptable(ClassificationDetectedFact) is true precisely
 // because a directly-observed fact needs no human review before it can be

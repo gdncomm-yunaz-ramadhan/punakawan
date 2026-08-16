@@ -1,6 +1,6 @@
-// Package delivery is the canonical multi-project delivery control plane
-// (punokawan-14yn.1): project registry, orchestrations, and delivery
-// lanes, persisted through the SQLite storage kernel (internal/storage).
+// Package delivery is the canonical multi-project delivery control plane:
+// project registry, orchestrations, and delivery lanes, persisted through
+// the SQLite storage kernel (internal/storage).
 // Orchestration and lane state is never written directly — it is derived
 // by replaying an append-only, idempotent event log (see reduce.go).
 package delivery
@@ -202,7 +202,7 @@ func (s *Store) RegisterInput(ctx context.Context, idempotencyKey, orchestration
 }
 
 // ResolveInput appends input.resolved, removing a requirement reference
-// once punokawan-14yn.2 has routed it to a project.
+// once routing has assigned it to a project.
 func (s *Store) ResolveInput(ctx context.Context, idempotencyKey, orchestrationID string, expectedRevision int, reference string) (*protocol.DeliveryOrchestration, error) {
 	return s.appendOrchestrationEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeInputResolved, map[string]interface{}{"reference": reference})
 }

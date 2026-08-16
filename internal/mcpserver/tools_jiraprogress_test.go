@@ -197,10 +197,10 @@ func TestUpdateJiraTaskProgressWorklogAndComment(t *testing.T) {
 	}
 }
 
-// TestUpdateJiraTaskProgressCommentCarriesCanonicalSummary is
-// punokawan-xu7m's AC1 for update_jira_task_progress: when a run has
-// canonical evidence/commit/risk data, the posted comment carries it
-// verbatim from deliverysummary, appended to (not replacing) the caller's
+// TestUpdateJiraTaskProgressCommentCarriesCanonicalSummary proves that
+// when a run has canonical evidence/commit/risk data, the posted comment
+// carries it verbatim from deliverysummary, appended to (not replacing) the
+// caller's
 // own narrative comment.
 func TestUpdateJiraTaskProgressCommentCarriesCanonicalSummary(t *testing.T) {
 	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())

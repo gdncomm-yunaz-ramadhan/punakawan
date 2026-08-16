@@ -26,9 +26,9 @@ func findGitCapabilitiesProposals(t *testing.T, store *learning.Store, repoID st
 	return out
 }
 
-// TestRecordDetectedGitCapabilitiesAutoAcceptsAndIsIdempotent proves
-// punokawan-14yn.9 AC3's git-detection slice: a detected fact lands in
-// learning.Store already accepted (no pending review needed) and classified
+// TestRecordDetectedGitCapabilitiesAutoAcceptsAndIsIdempotent proves that a
+// detected fact lands in learning.Store already accepted (no pending
+// review needed) and classified
 // detected_fact, and re-detecting the exact same remote/base/tool facts on a
 // later run does not spam a second accepted proposal - it reinforces the
 // existing one instead. A genuine change in the detected facts, in contrast,

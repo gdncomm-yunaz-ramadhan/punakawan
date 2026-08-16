@@ -1,5 +1,5 @@
-// tools_startdelivery.go implements the six delivery-facade MCP tools
-// (punokawan-14yn.10 phase 1): start_delivery, get_delivery,
+// tools_startdelivery.go implements the six delivery-facade MCP tools:
+// start_delivery, get_delivery,
 // resume_delivery, answer_delivery_question, approve_project_delivery,
 // and cancel_delivery. Each one wraps the already-built, already-tested
 // internal/delivery Store API (deliveryview.go's DeliveryView and

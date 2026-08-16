@@ -23,8 +23,8 @@ const (
 
 // Client talks to a running daemon over its authenticated loopback
 // transport. It never opens storage itself - every CLI, MCP, and Panel
-// call site should reach data through a Client rather than
-// storage.Open, per punokawan-14yn.17 AC7.
+// call site should reach data through a Client rather than storage.Open
+// directly, so every access goes through the one daemon-owned connection.
 type Client struct {
 	addr  string
 	token string
@@ -79,9 +79,9 @@ func (c *Client) get(ctx context.Context, path string, authed bool) error {
 // already running it connects to it, otherwise it spawns punakawand as
 // a detached background process and waits for it to become healthy.
 //
-// This is the interim "first use" path (punokawan-14yn.17 AC2/AC5):
-// spawning a plain background process, not yet installing a persistent
-// OS-managed service (LaunchAgent/systemd/Windows Scheduled Task) that
+// This is the interim "first use" path: spawning a plain background
+// process, not yet installing a persistent OS-managed service
+// (LaunchAgent/systemd/Windows Scheduled Task) that
 // survives a reboot - that registration is tracked separately in the
 // issue's notes, since it cannot be verified end-to-end for every
 // platform from a single development machine.

@@ -1,7 +1,7 @@
 // Command punakawand is the Punakawan daemon: the one process per
 // install that owns the SQLite storage kernel and serves the
 // authenticated loopback transport every CLI, MCP, and Panel client
-// connects through (punokawan-14yn.17).
+// connects through.
 package main
 
 import (

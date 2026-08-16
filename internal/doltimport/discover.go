@@ -1,8 +1,8 @@
 // Package doltimport performs the one-way migration of a project's durable
 // knowledge from its legacy Dolt store into the live shared SQLite kernel
 // (internal/storage). Knowledge is the only subsystem that ever lived in Dolt;
-// every other store was migrated straight from a file into the kernel
-// (punokawan-14yn.14-.18), so this is the last real data migration.
+// every other store was migrated straight from a file into the kernel,
+// so this is the last real data migration.
 //
 // Dolt is invoked only as a short-lived supervised import tool: each query is
 // a single `dolt sql -q "..." -r json` process, never a long-running

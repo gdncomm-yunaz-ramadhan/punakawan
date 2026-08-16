@@ -85,8 +85,7 @@ func TestStoreDedupAnchor(t *testing.T) {
 // TestProposalClassificationValues confirms a proposal round-trips each
 // recognized Classification value, and that the validation/auto-accept
 // helpers treat an inferred or unset classification as reviewable-only
-// (punokawan-14yn.9 AC4) while a detected fact or explicit user correction
-// may auto-accept.
+// while a detected fact or explicit user correction may auto-accept.
 func TestProposalClassificationValues(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now()

@@ -2,9 +2,8 @@
 // process currently running as this pid start? That value is stable
 // for the life of a process and never reused the way pids are, so
 // comparing a previously recorded start time against a freshly queried
-// one is how punokawan-14yn.18's reconciliation tells a genuine
-// surviving child apart from an unrelated process that happens to have
-// been assigned the same pid later.
+// one tells a genuine surviving child apart from an unrelated process
+// that happens to have been assigned the same pid later.
 package procident
 
 import "time"

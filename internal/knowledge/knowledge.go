@@ -1,10 +1,9 @@
 // Package knowledge implements the durable, provenance-backed knowledge
-// store on top of the shared SQLite kernel (internal/storage,
-// punokawan-14yn.15), per punakawan-go-typescript-detailed-plan.md §7.
+// store on top of the shared SQLite kernel (internal/storage).
 //
 // The kernel is one database shared by every local project checkout, so every
 // row is scoped by an explicit projectID (see internal/storage/migrations/
-// 0004_knowledge.sql): two projects can mint the identical record id without
+// 0008_knowledge.sql): two projects can mint the identical record id without
 // colliding or leaking into each other's Get/List/Related results. Writes go
 // through the kernel's idempotent, audited Write helper (one domain mutation
 // plus one audit_log row per transaction); reads use the kernel's WAL-

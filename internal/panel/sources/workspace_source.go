@@ -384,9 +384,9 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 //
 // One `git status` subprocess per repository is independent of every other
 // repository's, so - mirroring List's and describe's own bounded worker
-// pool (punokawan-jvww) - they run concurrently instead of one after
-// another; a workspace with several repositories previously paid their
-// sum, not their max, purely from this loop being sequential.
+// pool - they run concurrently instead of one after another; a workspace
+// with several repositories previously paid their sum, not their max,
+// purely from this loop being sequential.
 func gitHealth(ctx context.Context, a *app.App, now time.Time) []protocol.PanelSourceHealth {
 	repos := a.Workspace.Repositories
 	health := make([]protocol.PanelSourceHealth, len(repos))

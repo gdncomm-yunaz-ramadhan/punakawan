@@ -46,8 +46,7 @@ type WorktreeManager struct {
 	inspector *Inspector
 	// approvals lazily resolves the shared approval store on first use, so a
 	// manager built at app.Load never forces the SQLite kernel open until a
-	// worktree operation actually needs to read or record an approval
-	// (punokawan-14yn.16).
+	// worktree operation actually needs to read or record an approval.
 	approvals func() (*approvals.Store, error)
 	policy    *policy.Policy
 }

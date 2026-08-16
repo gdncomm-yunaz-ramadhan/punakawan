@@ -244,8 +244,8 @@ func (m *ProjectRuntimeManager) Acquire(ctx context.Context, projectID, path str
 // excluding the primary. It never Acquires or loads anything - it is a
 // cheap snapshot for callers that want to piggyback on whichever projects
 // are already warm (e.g. the tier-1 reconciler polling non-primary
-// approvals, punokawan-pqoy) without forcing a cold project into the pool
-// or evicting another one just to poll it.
+// approvals) without forcing a cold project into the pool or evicting
+// another one just to poll it.
 func (m *ProjectRuntimeManager) ActiveNonPrimaryIDs() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()

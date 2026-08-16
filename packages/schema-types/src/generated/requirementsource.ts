@@ -5,7 +5,7 @@
  */
 
 /**
- * An immutable, canonicalized snapshot of one requirement input (Jira, Confluence, GitHub, a document URL, or free text) captured into a DeliveryOrchestration (punokawan-14yn.2). canonical_key is an exact, provider-specific identifier (never a fuzzy/similar-wording match), so a pinned requirement can never be silently replaced by a similar retrieved result. Grouped into a ParentTask once routing/decomposition decides which task it belongs to. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * An immutable, canonicalized snapshot of one requirement input (Jira, Confluence, GitHub, a document URL, or free text) captured into a DeliveryOrchestration. canonical_key is an exact, provider-specific identifier (never a fuzzy/similar-wording match), so a pinned requirement can never be silently replaced by a similar retrieved result. Grouped into a ParentTask once routing/decomposition decides which task it belongs to.
  */
 export interface RequirementSource {
   /**

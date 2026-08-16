@@ -68,8 +68,8 @@ func TestStoreGetNotFound(t *testing.T) {
 }
 
 // TestStoreIncrementalReadPicksUpAppendsAcrossCalls exercises the
-// offset-tracked cache (punokawan-g3iv): each call must see exactly what
-// has been appended so far, decoding only the new bytes, not the whole
+// offset-tracked cache: each call must see exactly what has been appended
+// so far, decoding only the new bytes, not the whole
 // file - Current/List correctness must not depend on how many times they
 // were called in between.
 func TestStoreIncrementalReadPicksUpAppendsAcrossCalls(t *testing.T) {

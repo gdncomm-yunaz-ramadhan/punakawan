@@ -258,10 +258,10 @@ func newTestLearningStore(t *testing.T) *learning.Store {
 	return learning.New(db, "test-project")
 }
 
-// TestPromptBlockLearnedFactsGatedByAcceptance proves the literal AC4
-// scenario (punokawan-14yn.9): a proposal sitting in pending must not appear
-// in a rendered PromptBlock, and the same proposal id, once transitioned to
-// accepted at the Store level, must appear.
+// TestPromptBlockLearnedFactsGatedByAcceptance proves an inferred proposal
+// stays dormant until approved: a proposal sitting in pending must not
+// appear in a rendered PromptBlock, and the same proposal id, once
+// transitioned to accepted at the Store level, must appear.
 func TestPromptBlockLearnedFactsGatedByAcceptance(t *testing.T) {
 	store := newTestLearningStore(t)
 	now := time.Now().UTC()
@@ -318,14 +318,14 @@ func TestPromptBlockLearnedFactsGatedByAcceptance(t *testing.T) {
 	}
 }
 
-// TestPromptBlockNoTernaryConventionDetectorEndToEnd is AC4's literal test
-// case run against the real detector rather than a hand-built proposal
-// fixture (punokawan-14yn.9, punokawan-0qr4): a repository containing the
+// TestPromptBlockNoTernaryConventionDetectorEndToEnd proves the dormant-to-
+// approved pipeline end to end, run against the real detector rather than a
+// hand-built proposal fixture: a repository containing the
 // ternary-emulation idiom enough times crosses convention.DetectNoTernary
 // Convention's threshold and produces a pending, inferred proposal that stays
-// invisible in both Petruk's and Bagong's rendered role context (both named
-// explicitly in the AC); once that same proposal is transitioned to accepted
-// at the Store level - the same "no real approval UI exists yet" simulation
+// invisible in both Petruk's and Bagong's rendered role context; once that
+// same proposal is transitioned to accepted at the Store level - the same
+// "no real approval UI exists yet" simulation
 // TestPromptBlockLearnedFactsGatedByAcceptance above uses - it appears in
 // both roles' rendered context.
 func TestPromptBlockNoTernaryConventionDetectorEndToEnd(t *testing.T) {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "/schema/protocol/deliveryorchestration.schema.json",
   "title": "DeliveryOrchestration",
-  "description": "One continuous multi-project delivery run (punokawan-14yn.1). Owns zero or more DeliveryLanes and a list of not-yet-routed requirement inputs. State is derived by replaying its DeliveryEvent log, never written directly. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "description": "One continuous multi-project delivery run. Owns zero or more DeliveryLanes and a list of not-yet-routed requirement inputs. State is derived by replaying its DeliveryEvent log, never written directly.",
   "type": "object",
   "required": ["id", "status", "unresolved_inputs", "created_at", "updated_at", "revision"],
   "additionalProperties": false,
@@ -11,7 +11,7 @@
     "status": { "type": "string", "enum": ["pending", "active", "cancelled", "completed"] },
     "unresolved_inputs": {
       "type": "array",
-      "description": "Requirement sources (Jira/Confluence/GitHub/URL/free-text) not yet routed to a project. Routing and normalization is punokawan-14yn.2's concern; this task only persists the raw reference.",
+      "description": "Requirement sources (Jira/Confluence/GitHub/URL/free-text) not yet routed to a project. Routing and normalization happens elsewhere; this record only persists the raw reference.",
       "items": {
         "type": "object",
         "required": ["reference"],

@@ -5,7 +5,7 @@
  */
 
 /**
- * One immutable invocation record (punokawan-14yn.7): a test, diff, API check, command, screenshot, or review produced exactly this content-addressed blob. Bytes are addressed by sha256 (never overwritten, never trusted from a caller - always server-computed); this record's own id is a ULID and is what gets referenced elsewhere, never a mutable path. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * One immutable invocation record: a test, diff, API check, command, screenshot, or review produced exactly this content-addressed blob. Bytes are addressed by sha256 (never overwritten, never trusted from a caller - always server-computed); this record's own id is a ULID and is what gets referenced elsewhere, never a mutable path.
  */
 export interface EvidenceArtifact {
   /**

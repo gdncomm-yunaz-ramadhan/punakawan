@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "/schema/protocol/requirementsource.schema.json",
   "title": "RequirementSource",
-  "description": "An immutable, canonicalized snapshot of one requirement input (Jira, Confluence, GitHub, a document URL, or free text) captured into a DeliveryOrchestration (punokawan-14yn.2). canonical_key is an exact, provider-specific identifier (never a fuzzy/similar-wording match), so a pinned requirement can never be silently replaced by a similar retrieved result. Grouped into a ParentTask once routing/decomposition decides which task it belongs to. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "description": "An immutable, canonicalized snapshot of one requirement input (Jira, Confluence, GitHub, a document URL, or free text) captured into a DeliveryOrchestration. canonical_key is an exact, provider-specific identifier (never a fuzzy/similar-wording match), so a pinned requirement can never be silently replaced by a similar retrieved result. Grouped into a ParentTask once routing/decomposition decides which task it belongs to.",
   "type": "object",
   "required": ["id", "orchestration_id", "provider", "canonical_key", "content_hash", "title", "captured_at", "revision"],
   "additionalProperties": false,

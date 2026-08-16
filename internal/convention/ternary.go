@@ -16,8 +16,8 @@ import (
 
 // ternaryOccurrenceThreshold is the minimum number of ternary-emulation-helper
 // call sites DetectNoTernaryConvention requires before it proposes a
-// no-ternary convention (punokawan-14yn.9 AC4's literal test case). Three is
-// not derived from any formula - it exists so a single stray match (a
+// no-ternary convention. Three is not derived from any formula - it exists
+// so a single stray match (a
 // coincidentally-named unrelated function, a match inside a comment or string
 // literal that the regex below cannot distinguish from real code) cannot
 // alone trigger a proposal, while keeping the bar low enough that this stays

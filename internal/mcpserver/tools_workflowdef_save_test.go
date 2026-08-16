@@ -107,10 +107,10 @@ func TestSaveWorkflowDefinitionRejectsUnknownCapability(t *testing.T) {
 	}
 }
 
-// TestSaveWorkflowDefinitionIsImmediatelySelectorResolvable is the
-// acceptance criterion for punokawan-lair end to end: a saved definition
-// with a selector is resolvable by the very next prepare_work_context call,
-// with no separate publish/reload/panel-accept step.
+// TestSaveWorkflowDefinitionIsImmediatelySelectorResolvable proves end to
+// end that a saved definition with a selector is resolvable by the very
+// next prepare_work_context call, with no separate publish/reload/
+// panel-accept step.
 func TestSaveWorkflowDefinitionIsImmediatelySelectorResolvable(t *testing.T) {
 	a := newTestApp(t)
 	saveHandler := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
@@ -172,10 +172,9 @@ func TestSaveWorkflowDefinitionRejectsJudgmentWithoutRationale(t *testing.T) {
 	}
 }
 
-// TestSaveWorkflowDefinitionRecordsAgentJudgmentAsAcceptedProposal is the
-// acceptance criterion for punokawan-82a1: an agent-judgment save applies
-// immediately (no panel click) while still recording a fingerprinted,
-// already-accepted learning proposal.
+// TestSaveWorkflowDefinitionRecordsAgentJudgmentAsAcceptedProposal proves
+// an agent-judgment save applies immediately (no panel click) while still
+// recording a fingerprinted, already-accepted learning proposal.
 func TestSaveWorkflowDefinitionRecordsAgentJudgmentAsAcceptedProposal(t *testing.T) {
 	a := newTestApp(t)
 	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))

@@ -111,9 +111,9 @@ func TestOverviewHandlerOrdersNeedsAttentionByPriority(t *testing.T) {
 	}
 }
 
-// TestOverviewHandlerSkipsSessionCounts guards punokawan-z7no: the overview
-// page never renders a session's evidence/warning/error counts (only
-// status/objective/workflow/active_role), so the handler must ask the
+// TestOverviewHandlerSkipsSessionCounts guards against a regression: the
+// overview page never renders a session's evidence/warning/error counts
+// (only status/objective/workflow/active_role), so the handler must ask the
 // session reader to skip computing them - each one otherwise costs a
 // ledger+journal file scan per run in the whole workspace's history.
 func TestOverviewHandlerSkipsSessionCounts(t *testing.T) {

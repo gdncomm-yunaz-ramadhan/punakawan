@@ -120,11 +120,10 @@ func TestRolePromptsHaveDistinctOutputContracts(t *testing.T) {
 	}
 }
 
-// TestRolePromptsIncludeAcceptedLearningProposal is punokawan-o6z9's proof
-// that a real role invocation - a connected MCP client calling GetPrompt, not
+// TestRolePromptsIncludeAcceptedLearningProposal proves that a real role
+// invocation - a connected MCP client calling GetPrompt, not
 // roleconfig.PromptBlock's own unit test - actually surfaces an accepted
-// learning proposal (punokawan-14yn.9 AC4: "An inferred convention... appears
-// in Petruk and Bagong context"). It appends a proposal straight to the
+// learning proposal. It appends a proposal straight to the
 // learning store (bypassing the review/accept workflow, which is exercised
 // elsewhere) because only the resulting Status is relevant to this handler.
 func TestRolePromptsIncludeAcceptedLearningProposal(t *testing.T) {

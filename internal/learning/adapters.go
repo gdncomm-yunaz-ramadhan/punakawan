@@ -375,9 +375,9 @@ func (a *KnowledgeAdapter) CreateVersion(id, workspaceID string, content []byte,
 // same short name.
 func conventionMetadataKey(id string) string { return "convention:" + id }
 
-// ConventionAdapter reviews a single proposed project convention (e.g.
-// punokawan-14yn.9 AC4's "no-ternary" example), keyed by a short convention
-// id. It is deliberately the thinnest adapter in this file: rather than
+// ConventionAdapter reviews a single proposed project convention (e.g. a
+// "no-ternary" example), keyed by a short convention id. It is deliberately
+// the thinnest adapter in this file: rather than
 // inventing a new canonical store, review type, and protocol enum value for
 // conventions, it delegates every call to a MetadataAdapter over the
 // namespaced key conventionMetadataKey(id) and simply presents the caller's

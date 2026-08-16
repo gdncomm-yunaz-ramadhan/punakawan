@@ -1,10 +1,8 @@
 // Package worklogalloc derives a proposed development/test/review Jira
 // worklog hour allocation from a run's verified command time and maps it
 // onto a project's already-configured Jira subtasks, so the proposal is
-// visible before a human approves project delivery (punokawan-14yn.9
-// AC2's "proposed worklogs map to configured Jira subtasks and are
-// visible before project approval"), without fabricating a stage-level
-// breakdown the underlying data does not actually support.
+// visible before a human approves project delivery, without fabricating a
+// stage-level breakdown the underlying data does not actually support.
 //
 // Honesty note: internal/testrun records only that a command ran for N
 // milliseconds and exited 0 or non-zero (see that package's own doc: it

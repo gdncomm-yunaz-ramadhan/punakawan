@@ -5,7 +5,7 @@
  */
 
 /**
- * One typed edge in an orchestration's task dependency graph (punokawan-14yn.2), from_task_id -> to_task_id meaning from_task_id depends on to_task_id. Only "requires" and "produces-input-for" block execution; "serializes-with" and "informational" are non-blocking. Explicit source/user origins outrank repository-fact, which outranks model-inference. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * One typed edge in an orchestration's task dependency graph, from_task_id -> to_task_id meaning from_task_id depends on to_task_id. Only "requires" and "produces-input-for" block execution; "serializes-with" and "informational" are non-blocking. Explicit source/user origins outrank repository-fact, which outranks model-inference.
  */
 export interface DependencyEdge {
   /**

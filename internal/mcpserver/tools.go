@@ -108,7 +108,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "detect_no_ternary_convention",
-		Description: "Scan a repository for a small, fixed ternary-emulation-helper idiom (calls to Ternary(...) or IIf(...)) and, if it appears often enough, open or reinforce a pending, inferred learning proposal recommending a project convention of avoiding it (agent-context plan §6.4, punokawan-14yn.9 AC4). This is a narrow, honestly-scoped textual heuristic, not a linter - see internal/convention.DetectNoTernaryConvention's doc comment for its exact limits. The resulting proposal is never auto-accepted: it stays invisible to every role's rendered context until a human approves it in the panel.",
+		Description: "Scan a repository for a small, fixed ternary-emulation-helper idiom (calls to Ternary(...) or IIf(...)) and, if it appears often enough, open or reinforce a pending, inferred learning proposal recommending a project convention of avoiding it. This is a narrow, honestly-scoped textual heuristic, not a linter - see internal/convention.DetectNoTernaryConvention's doc comment for its exact limits. The resulting proposal is never auto-accepted: it stays invisible to every role's rendered context until a human approves it in the panel.",
 	}, detectNoTernaryConventionHandler(a))
 
 	addTool(server, reg, &mcp.Tool{

@@ -11,9 +11,9 @@ import (
 	"github.com/ygrip/punakawan/internal/workflowdef"
 )
 
-// TestSetProjectMetadataClosesPrepareWorkContextGap is the acceptance
-// criterion for punokawan-kw1c end to end: a workflow with a required
-// metadata key an agent can auto-detect resolves without a human editing
+// TestSetProjectMetadataClosesPrepareWorkContextGap proves end to end that
+// a workflow with a required metadata key an agent can auto-detect resolves
+// without a human editing
 // project.yaml, and re-running prepare_work_context after set_project_metadata
 // no longer reports that key as missing.
 func TestSetProjectMetadataClosesPrepareWorkContextGap(t *testing.T) {

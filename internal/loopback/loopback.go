@@ -1,7 +1,7 @@
 // Package loopback holds the request and bind-address validation shared
 // by every loopback-only HTTP server in Punakawan (the Panel, and the
-// punokawan-14yn.17 daemon transport): reject unexpected Host/Origin
-// headers and refuse to bind anywhere but a loopback address. Extracted
+// daemon transport): reject unexpected Host/Origin headers and refuse to
+// bind anywhere but a loopback address. Extracted
 // from internal/panel/server so the daemon transport does not
 // reimplement the same DNS-rebinding and cross-origin defenses.
 package loopback

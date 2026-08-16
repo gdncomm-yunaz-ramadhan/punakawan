@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "/schema/protocol/testreportsummary.schema.json",
   "title": "TestReportSummary",
-  "description": "A bounded, causal-first projection of one test invocation's output (punokawan-14yn.7), concise enough for a continuous agent loop while the full stdout/stderr remains available, unmodified, as the referenced EvidenceArtifact. Never returned instead of the full log - only alongside it.",
+  "description": "A bounded, causal-first projection of one test invocation's output, concise enough for a continuous agent loop while the full stdout/stderr remains available, unmodified, as the referenced EvidenceArtifact. Never returned instead of the full log - only alongside it.",
   "type": "object",
   "required": ["command", "exit_code", "duration_ms", "tail", "truncated", "artifact_id"],
   "additionalProperties": false,

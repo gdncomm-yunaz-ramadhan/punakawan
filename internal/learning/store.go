@@ -7,8 +7,8 @@
 // engine (plan §13): canonical mutation still happens only through the
 // artifact review acceptance path and its typed adapters.
 //
-// Proposals persist in the shared SQLite storage kernel (internal/storage,
-// punokawan-14yn.16), scoped to one project. History stays append-only: each
+// Proposals persist in the shared SQLite storage kernel (internal/storage),
+// scoped to one project. History stays append-only: each
 // state change appends a new row with the same id rather than mutating the
 // original, so List folds to the latest row per id.
 package learning
@@ -46,9 +46,9 @@ const (
 
 // Artifact-type identifiers for the learning pillars. TypeWorkflow,
 // TypeMetadata, and TypeKnowledge match the artifact review type enum values
-// added in the original phase. TypeConvention (punokawan-14yn.9 AC4) is a
-// fourth pillar for a proposed project convention (e.g. a coding-style
-// convention like "no ternary-emulation helpers") - unlike the other three,
+// added in the original phase. TypeConvention is a fourth pillar for a
+// proposed project convention (e.g. a coding-style convention like "no
+// ternary-emulation helpers") - unlike the other three,
 // it has no artifact review type of its own; its adapter (ConventionAdapter,
 // adapters.go) persists an accepted convention as a namespaced project
 // metadata entry, reusing MetadataAdapter's storage rather than inventing a
@@ -61,8 +61,8 @@ const (
 )
 
 // Classification values distinguish how a proposal was produced and gate
-// whether it may be accepted automatically or must go through review
-// (punokawan-14yn.9 AC4). A detected fact backed by direct evidence, or an
+// whether it may be accepted automatically or must go through review. A
+// detected fact backed by direct evidence, or an
 // explicit user correction, may auto-accept. Anything inferred — a
 // convention, command, routing rule, or policy the proposer derived rather
 // than directly observed or was told — is reviewable-only and stays dormant
@@ -96,16 +96,16 @@ func AutoAcceptable(c string) bool {
 
 // Proposal is one reviewed-learning proposal envelope (plan §6.3).
 type Proposal struct {
-	Id           string    `json:"id"`
-	ArtifactType string    `json:"artifact_type"`
-	TargetId     string    `json:"target_id"`
-	Fingerprint  string    `json:"fingerprint"`
-	Rationale    string    `json:"rationale,omitempty"`
-	EvidenceIds  []string  `json:"evidence_ids,omitempty"`
-	SourceRunIds []string  `json:"source_run_ids,omitempty"`
-	SupportCount int       `json:"support_count"`
-	ReviewId     string    `json:"review_id,omitempty"`
-	Status       string    `json:"status"`
+	Id           string   `json:"id"`
+	ArtifactType string   `json:"artifact_type"`
+	TargetId     string   `json:"target_id"`
+	Fingerprint  string   `json:"fingerprint"`
+	Rationale    string   `json:"rationale,omitempty"`
+	EvidenceIds  []string `json:"evidence_ids,omitempty"`
+	SourceRunIds []string `json:"source_run_ids,omitempty"`
+	SupportCount int      `json:"support_count"`
+	ReviewId     string   `json:"review_id,omitempty"`
+	Status       string   `json:"status"`
 
 	// Classification gates auto-accept vs reviewable-only (see the
 	// Classification* constants above); Confidence is the proposer's
@@ -336,11 +336,10 @@ func KnowledgeFingerprint(projectID, recordType, subject, contentHash string) st
 	return hash("knowledge|" + projectID + "|" + recordType + "|" + NormalizeKey(subject) + "|" + contentHash)
 }
 
-// GitCapabilitiesTargetId scopes a detected-git-capabilities proposal
-// (punokawan-14yn.9 AC3) to one repository within the project, so a
-// multi-repo workspace records one fact per repository rather than one
-// clobbering another. repoID defaults to "default" for a call site with no
-// repo id to give.
+// GitCapabilitiesTargetId scopes a detected-git-capabilities proposal to one
+// repository within the project, so a multi-repo workspace records one fact
+// per repository rather than one clobbering another. repoID defaults to
+// "default" for a call site with no repo id to give.
 func GitCapabilitiesTargetId(repoID string) string {
 	if repoID == "" {
 		repoID = "default"
@@ -361,14 +360,15 @@ func GitCapabilitiesTargetId(repoID string) string {
 type gitCapabilitiesDigest struct {
 	Remotes          []protocol.GitCapabilitiesRemotesElem `json:"remotes"`
 	Provider         *protocol.GitCapabilitiesProvider     `json:"provider,omitempty"`
-	DefaultBranch    *string                                `json:"default_branch,omitempty"`
-	IsBareRepository *bool                                  `json:"is_bare_repository,omitempty"`
+	DefaultBranch    *string                               `json:"default_branch,omitempty"`
+	IsBareRepository *bool                                 `json:"is_bare_repository,omitempty"`
 	Capabilities     protocol.GitCapabilitiesCapabilities  `json:"capabilities"`
 }
 
 // GitCapabilitiesFingerprint = project scope + repo scope + the stable
-// remote/base/tool digest above (plan §6.4's per-pillar fingerprint idiom,
-// extended to gitops-detected git capability facts, punokawan-14yn.9 AC3).
+// remote/base/tool digest above (the same per-pillar fingerprint idiom the
+// other Fingerprint functions in this file use, extended to gitops-detected
+// git capability facts).
 func GitCapabilitiesFingerprint(projectID, repoID string, caps protocol.GitCapabilities) string {
 	digest := gitCapabilitiesDigest{
 		Remotes:          caps.Remotes,

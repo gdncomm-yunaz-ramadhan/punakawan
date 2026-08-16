@@ -5,7 +5,7 @@
  */
 
 /**
- * One node in an orchestration's task dependency graph (punokawan-14yn.2): a group of one or more RequirementSources routed, or awaiting routing, to a single project. A DeliveryLane (punokawan-14yn.1) is created once a ParentTask is routed and its DAG position allows execution to begin - lane/worker execution status is not duplicated here. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * One node in an orchestration's task dependency graph: a group of one or more RequirementSources routed, or awaiting routing, to a single project. A DeliveryLane is created once a ParentTask is routed and its DAG position allows execution to begin - lane/worker execution status is not duplicated here.
  */
 export interface ParentTask {
   /**

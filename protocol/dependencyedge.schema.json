@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "/schema/protocol/dependencyedge.schema.json",
   "title": "DependencyEdge",
-  "description": "One typed edge in an orchestration's task dependency graph (punokawan-14yn.2), from_task_id -> to_task_id meaning from_task_id depends on to_task_id. Only \"requires\" and \"produces-input-for\" block execution; \"serializes-with\" and \"informational\" are non-blocking. Explicit source/user origins outrank repository-fact, which outranks model-inference. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "description": "One typed edge in an orchestration's task dependency graph, from_task_id -> to_task_id meaning from_task_id depends on to_task_id. Only \"requires\" and \"produces-input-for\" block execution; \"serializes-with\" and \"informational\" are non-blocking. Explicit source/user origins outrank repository-fact, which outranks model-inference.",
   "type": "object",
   "required": ["id", "orchestration_id", "from_task_id", "to_task_id", "type", "origin", "confidence", "status", "created_at", "revision"],
   "additionalProperties": false,

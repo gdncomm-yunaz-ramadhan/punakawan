@@ -649,10 +649,10 @@ func TestServerEventsEndpointStreamsSystemReadyOnConnect(t *testing.T) {
 	}
 }
 
-// TestLoggingMiddlewareLabelsStreamingResponsesSeparately guards
-// punokawan-0l1y: an SSE handler blocks until the client disconnects, so
-// logging it under the same duration_ms field as ordinary requests made a
-// multi-minute idle connection read as a multi-minute processing stall.
+// TestLoggingMiddlewareLabelsStreamingResponsesSeparately guards against an
+// SSE handler blocking until the client disconnects: logging it under the
+// same duration_ms field as ordinary requests made a multi-minute idle
+// connection read as a multi-minute processing stall.
 func TestLoggingMiddlewareLabelsStreamingResponsesSeparately(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))

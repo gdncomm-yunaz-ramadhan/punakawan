@@ -28,8 +28,8 @@ type Store struct {
 	mu   sync.Mutex
 
 	// cachedRuns/latestByID/readOffset make List/Current/Get incremental
-	// (punokawan-g3iv) instead of re-decoding runs.jsonl from scratch on
-	// every call: Append is the file's only writer and always adds complete
+	// instead of re-decoding runs.jsonl from scratch on every call: Append
+	// is the file's only writer and always adds complete
 	// new lines, never rewriting or truncating existing ones, so replaying
 	// only the bytes appended since the last read - and folding just the
 	// newly-decoded runs into the running latestByID table - stays correct

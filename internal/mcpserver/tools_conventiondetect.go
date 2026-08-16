@@ -31,10 +31,9 @@ type DetectNoTernaryConventionOutput struct {
 
 // detectNoTernaryConventionHandler runs internal/convention's honestly-scoped
 // ternary-emulation-helper heuristic over one repository and records any
-// resulting candidate as a pending, inferred learning proposal
-// (punokawan-14yn.9 AC4's literal test case). This is intentionally a
-// manually-triggered tool, not something wired onto every request or
-// preflight: detection over a whole repository tree is not free, and this
+// resulting candidate as a pending, inferred learning proposal. This is
+// intentionally a manually-triggered tool, not something wired onto every
+// request or preflight: detection over a whole repository tree is not free, and this
 // vertical slice's scope is proving the dormant-proposal-to-approved-
 // visibility pipeline works for one concrete example, not building an
 // always-on convention scanner.

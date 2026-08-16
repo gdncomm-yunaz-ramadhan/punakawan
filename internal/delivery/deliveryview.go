@@ -1,7 +1,7 @@
 // deliveryview.go assembles DeliveryView, the one read model the six
-// start-delivery facade tools (punokawan-14yn.10 phase 1) share instead
-// of each hand-rolling its own aggregation over lanes, tasks, edges,
-// and manifests. It never mutates anything - every field is derived by
+// start-delivery facade tools share instead of each hand-rolling its own
+// aggregation over lanes, tasks, edges, and manifests. It never mutates
+// anything - every field is derived by
 // replaying the orchestration's own event log, exactly like every
 // other Get*/List* method in this package.
 package delivery

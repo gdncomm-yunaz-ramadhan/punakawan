@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "/schema/protocol/evidenceartifact.schema.json",
   "title": "EvidenceArtifact",
-  "description": "One immutable invocation record (punokawan-14yn.7): a test, diff, API check, command, screenshot, or review produced exactly this content-addressed blob. Bytes are addressed by sha256 (never overwritten, never trusted from a caller - always server-computed); this record's own id is a ULID and is what gets referenced elsewhere, never a mutable path. See affiliate-platform-delivery-feedback-2026-08-07.md.",
+  "description": "One immutable invocation record: a test, diff, API check, command, screenshot, or review produced exactly this content-addressed blob. Bytes are addressed by sha256 (never overwritten, never trusted from a caller - always server-computed); this record's own id is a ULID and is what gets referenced elsewhere, never a mutable path.",
   "type": "object",
   "required": ["id", "orchestration_id", "project_id", "kind", "content_hash", "media_type", "byte_size", "created_at"],
   "additionalProperties": false,

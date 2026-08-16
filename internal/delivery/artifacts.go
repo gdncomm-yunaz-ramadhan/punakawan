@@ -1,6 +1,6 @@
-// artifacts.go implements punokawan-14yn.7's content-addressed evidence
-// store: bytes are addressed by server-computed sha256 and never
-// overwritten; invocation records are addressed by ULID and reference
+// artifacts.go implements a content-addressed evidence store: bytes are
+// addressed by server-computed sha256 and never overwritten; invocation
+// records are addressed by ULID and reference
 // those bytes rather than a mutable path. Both tables are insert-only -
 // there is no event log here, unlike the mutable entities in store.go.
 package delivery
@@ -201,9 +201,8 @@ type ArtifactFilter struct {
 	ParentTaskID    string
 }
 
-// ListArtifacts enumerates artifacts matching filter, satisfying
-// punokawan-14yn.7 acceptance criterion 5 (enumerable by orchestration,
-// project, lane, parent, and invocation).
+// ListArtifacts enumerates artifacts matching filter: enumerable by
+// orchestration, project, lane, parent, and invocation.
 func (s *Store) ListArtifacts(ctx context.Context, filter ArtifactFilter) ([]*protocol.EvidenceArtifact, error) {
 	query := `
 		SELECT a.id, a.orchestration_id, a.project_id, a.lane_id, a.parent_task_id, a.kind, a.content_hash, b.media_type, b.byte_size, a.producer, a.created_at

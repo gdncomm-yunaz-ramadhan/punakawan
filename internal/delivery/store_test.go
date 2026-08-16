@@ -35,9 +35,8 @@ func newTestStore(t *testing.T) *Store {
 }
 
 // disableProjectForTest bypasses the public API: project lifecycle
-// management (activate/disable) is punokawan-14yn.4's scope, not this
-// task's. It exists only to exercise CreateLane's ErrProjectInactive
-// path ahead of that task landing.
+// management (activate/disable) has no public API yet. It exists only to
+// exercise CreateLane's ErrProjectInactive path ahead of that landing.
 func (s *Store) disableProjectForTest(ctx context.Context, id string) error {
 	return s.db.Write(ctx, "disable-"+id, "disable project "+id, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `UPDATE delivery_projects SET status = 'disabled' WHERE id = ?`, id)
@@ -171,7 +170,7 @@ func TestUnknownAndMismatchedIdentifiersFailClosed(t *testing.T) {
 
 	disabled := registerProject(t, s, "disabled-proj")
 	// Disable directly at the storage layer; Store has no public
-	// disable method yet (project lifecycle is punokawan-14yn.4's scope).
+	// disable method yet.
 	if err := s.disableProjectForTest(ctx, disabled.Id); err != nil {
 		t.Fatalf("disable project: %v", err)
 	}

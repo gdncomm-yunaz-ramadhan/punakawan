@@ -10,7 +10,7 @@ import (
 
 // buildDeliverySummary assembles a run's canonical deliverysummary.Summary
 // from its evidence ledger, its PR review findings, and (when a
-// repository/branch range is known) its commit history, per punokawan-xu7m.
+// repository/branch range is known) its commit history.
 // repoPath/baseBranch/headBranch may be "" when a call site has no single
 // repository in view (e.g. update_jira_task_progress, record_work_outcome);
 // Gather leaves Commits empty in that case rather than guessing one.

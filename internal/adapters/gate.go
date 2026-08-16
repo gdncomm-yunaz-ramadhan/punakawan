@@ -100,7 +100,7 @@ type Gate struct {
 	// SetSyncQueue (every existing test does) keeps the original behavior of
 	// simply returning the error. It is a provider rather than a resolved
 	// store so a Gate never forces the shared storage kernel open until a
-	// write actually fails (punokawan-14yn.16).
+	// write actually fails.
 	syncQueue func() (*syncqueue.Queue, error)
 }
 

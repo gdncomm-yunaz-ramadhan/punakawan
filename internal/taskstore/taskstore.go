@@ -1,6 +1,6 @@
 // Package taskstore is Punakawan's Beads-less fallback task graph: a
-// SQLite-backed store (internal/storage, punokawan-14yn.15) for projects that
-// have no .beads directory. When a project does not use Beads, the panel's
+// SQLite-backed store (internal/storage) for projects that have no .beads
+// directory. When a project does not use Beads, the panel's
 // task board and submit_task_graph persist to and read from here instead, so
 // tasks and their dependency graph are still tracked - without mutating the
 // project (no git init, no CLAUDE.md, no hooks that `bd init` would write).

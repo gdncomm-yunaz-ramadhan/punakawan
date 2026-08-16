@@ -1,7 +1,7 @@
 // Package profile loads the repo-owned profile
-// (<workspaceRoot>/.punakawan/repo-profile.yaml) that punokawan-14yn.9 AC6
-// requires: "Repository-owned configuration wins over conflicting learned
-// state and the conflict is visible."
+// (<workspaceRoot>/.punakawan/repo-profile.yaml): repository-owned
+// configuration wins over conflicting learned state, and the conflict is
+// visible.
 //
 // This package deliberately holds only the read-only repo-owned layer and
 // (in merge.go) the two-layer merge/conflict logic between it and the

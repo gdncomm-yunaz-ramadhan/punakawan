@@ -42,7 +42,7 @@ type Registry struct {
 	specs map[string]AdapterSpec
 	// approvals lazily resolves the shared approval store on first use, so a
 	// Registry built at app.Load never forces the SQLite kernel open until an
-	// adapter operation actually needs to gate on an approval (punokawan-14yn.16).
+	// adapter operation actually needs to gate on an approval.
 	approvals func() (*approvals.Store, error)
 
 	mu            sync.Mutex
@@ -51,7 +51,7 @@ type Registry struct {
 	approvalScope string
 	// syncQueue lazily resolves the shared sync queue on first use, so a
 	// Registry built at app.Load never forces the SQLite kernel open until an
-	// adapter write actually fails and needs recording (punokawan-14yn.16).
+	// adapter write actually fails and needs recording.
 	// nil (the default) leaves every Gate without a queue, unchanged from
 	// before SetSyncQueue is called.
 	syncQueue func() (*syncqueue.Queue, error)

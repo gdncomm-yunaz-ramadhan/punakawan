@@ -5,7 +5,7 @@
  */
 
 /**
- * Versioned, per-project delivery configuration (punokawan-14yn.4): local path, canonical remote, branch policy, build/test commands, required services, and CI/worker policy. Explicit repository configuration takes precedence over global detected or learned defaults; this record only stores the merged, effective values a preflight run and approval manifest are computed against. See affiliate-platform-delivery-feedback-2026-08-07.md.
+ * Versioned, per-project delivery configuration: local path, canonical remote, branch policy, build/test commands, required services, and CI/worker policy. Explicit repository configuration takes precedence over global detected or learned defaults; this record only stores the merged, effective values a preflight run and approval manifest are computed against.
  */
 export interface ProjectDeliveryProfile {
   /**

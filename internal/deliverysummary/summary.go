@@ -1,12 +1,11 @@
 // Package deliverysummary computes Summary: the deterministic, factual
 // block (test counts, commits, evidence, risks, links) a PR body, a Jira
 // comment, a record_work_outcome summary, and a panel session summary all
-// render identically, without any caller restating those facts in prose
-// (punokawan-xu7m, a child of punokawan-14yn).
+// render identically, without any caller restating those facts in prose.
 //
 // This is deliberately not internal/delivery: that package is the
-// DeliveryLane-based orchestration control plane (punokawan-14yn.1 and
-// later), with its own leases, idempotency keys, and event-sourced
+// DeliveryLane-based orchestration control plane, with its own leases,
+// idempotency keys, and event-sourced
 // VerificationMatrix/ReviewConclusion/TestReportSummary builders for
 // lanes it owns end to end. This package instead serves the older,
 // still-live ad hoc MCP surface (create_pr, update_jira_task_progress,
@@ -17,7 +16,7 @@
 //
 // Unlike internal/dossier's ChangeDossier, nothing here is populated by a
 // caller filling in an MCP "ceremony" tool (add_dossier_claim,
-// set_dossier_impact, ...) - punokawan-14yn.10 is removing that surface
+// set_dossier_impact, ...) - that ceremony surface is being removed
 // precisely because it asks a caller to restate facts a store already
 // holds. Every field here is instead read straight from records ordinary
 // tool use already produced: internal/testrun's evidence bundle,
@@ -77,12 +76,11 @@ type Summary struct {
 
 	// TotalDurationMs sums every recorded command's DurationMs, passed or
 	// failed - all of it is time actually spent running verification, per
-	// internal/worklogalloc's proposed-worklog derivation (punokawan-14yn.9
-	// AC2), which needs a single honest "verified work" duration rather
-	// than a fabricated per-stage breakdown testrun's data does not
-	// support (see internal/testrun's own doc: a command is the smallest
-	// unit it can honestly attribute time to, with no build/test/review
-	// distinction).
+	// internal/worklogalloc's proposed-worklog derivation, which needs a
+	// single honest "verified work" duration rather than a fabricated
+	// per-stage breakdown testrun's data does not support (see
+	// internal/testrun's own doc: a command is the smallest unit it can
+	// honestly attribute time to, with no build/test/review distinction).
 	TotalDurationMs int64
 
 	Commits       []CommitLine
@@ -168,8 +166,8 @@ func shortSHA(sha string) string {
 
 // VerifiedHours converts TotalDurationMs to hours - the single input
 // internal/worklogalloc.Allocate derives a proposed dev/test/review
-// worklog split from (punokawan-14yn.9 AC2). It is deliberately named
-// "verified" rather than e.g. "worked" hours: it measures time spent
+// worklog split from. It is deliberately named "verified" rather than
+// e.g. "worked" hours: it measures time spent
 // running commands whose outcome is recorded (pass or fail), not a
 // human's actual time-on-task, which nothing in this data captures.
 func (s Summary) VerifiedHours() float64 {

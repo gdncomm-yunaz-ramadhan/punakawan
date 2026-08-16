@@ -10,9 +10,9 @@ import (
 	"testing"
 )
 
-// These benchmarks are the reproducible baseline required by
-// punokawan-14yn.14 acceptance criterion 7: cold-open latency, write
-// latency, query latency, database file size, and incremental RSS.
+// These benchmarks are the reproducible baseline for the storage kernel's
+// resource SLOs: cold-open latency, write latency, query latency, database
+// file size, and incremental RSS.
 // Run with: go test ./internal/storage/... -bench=. -benchmem -run=^$
 
 func BenchmarkColdOpen(b *testing.B) {

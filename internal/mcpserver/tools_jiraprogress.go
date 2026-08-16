@@ -107,7 +107,7 @@ func updateJiraTaskProgressHandler(a *app.App) func(context.Context, *mcp.CallTo
 // split out so it can be tested against a Gate built from a fake caller
 // (mirroring internal/adapters/gate_test.go's pattern) instead of a real
 // spawned adapter process, which would require live Jira credentials.
-// summary is punokawan-xu7m's canonical test/commit/risk/link block, folded
+// summary is the canonical test/commit/risk/link block, folded
 // into the posted comment (if any) rather than restated in caller prose.
 func updateJiraTaskProgress(ctx context.Context, req *mcp.CallToolRequest, gate *adapters.Gate, cfg *jiraworkflow.Config, summary deliverysummary.Summary, in UpdateJiraTaskProgressInput) (UpdateJiraTaskProgressOutput, error) {
 	var out UpdateJiraTaskProgressOutput

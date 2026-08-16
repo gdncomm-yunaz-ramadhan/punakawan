@@ -5,7 +5,7 @@
  */
 
 /**
- * A bounded, causal-first projection of one test invocation's output (punokawan-14yn.7), concise enough for a continuous agent loop while the full stdout/stderr remains available, unmodified, as the referenced EvidenceArtifact. Never returned instead of the full log - only alongside it.
+ * A bounded, causal-first projection of one test invocation's output, concise enough for a continuous agent loop while the full stdout/stderr remains available, unmodified, as the referenced EvidenceArtifact. Never returned instead of the full log - only alongside it.
  */
 export interface TestReportSummary {
   command: string;

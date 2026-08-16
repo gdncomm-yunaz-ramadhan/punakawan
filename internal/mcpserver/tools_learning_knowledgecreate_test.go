@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// TestProposeProjectLearningKnowledgeNotFoundGuidesToCreatePath is the
-// regression guard for bd punokawan-h5by. propose_project_learning is an
+// TestProposeProjectLearningKnowledgeNotFoundGuidesToCreatePath guards
+// against a regression. propose_project_learning is an
 // improve-an-existing-artifact tool: for the knowledge pillar it needs an
 // existing record id and cannot mint one from scratch (correct by design). The
 // reported confusion was that this looked like a dead end. The not-found error
@@ -36,10 +36,9 @@ func TestProposeProjectLearningKnowledgeNotFoundGuidesToCreatePath(t *testing.T)
 	}
 }
 
-// TestCreateKnowledgeRecordNeedsNoTrackedRun is the end-to-end regression for
-// the actual gap in bd punokawan-h5by: an agent can persist reusable knowledge
-// without inventing a run id, creating a capsule, or pretending the knowledge
-// is a context dossier.
+// TestCreateKnowledgeRecordNeedsNoTrackedRun is the end-to-end regression
+// proving an agent can persist reusable knowledge without inventing a run
+// id, creating a capsule, or pretending the knowledge is a context dossier.
 func TestCreateKnowledgeRecordNeedsNoTrackedRun(t *testing.T) {
 	requireDolt(t)
 	a := newTestApp(t)

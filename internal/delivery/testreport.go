@@ -1,5 +1,5 @@
-// testreport.go implements punokawan-14yn.7's causal-first test report
-// summarizer: a bounded, retry-noise-deduplicated projection of one
+// testreport.go implements a causal-first test report summarizer: a
+// bounded, retry-noise-deduplicated projection of one
 // invocation's combined stdout+stderr, returned alongside (never
 // instead of) the full log stored as an EvidenceArtifact.
 package delivery
@@ -22,9 +22,9 @@ const maxTailBytes = 8192
 var causedByPattern = regexp.MustCompile(`(?m)^(?:Caused by|caused by):\s*(.+)$`)
 
 // knownFailureSignatures catches frameworks that don't use a "Caused
-// by:" chain but still print a single, recognizable root-cause line -
-// per punokawan-14yn.7 AC4, this must include GCP Application Default
-// Credentials, MongoDB driver, and ByteBuddy errors.
+// by:" chain but still print a single, recognizable root-cause line,
+// including GCP Application Default Credentials, MongoDB driver, and
+// ByteBuddy errors.
 var knownFailureSignatures = []*regexp.Regexp{
 	regexp.MustCompile(`(?m)^.*(?:com\.google\.auth\.oauth2\.DefaultCredentialsProvider|Application Default Credentials).*$`),
 	regexp.MustCompile(`(?m)^.*com\.mongodb\.MongoException.*$`),
@@ -147,8 +147,8 @@ type junitFailure struct {
 // ParseJUnitXML extracts pass/fail/skip counts and the first failure
 // message from a JUnit/Surefire/Gradle-style XML report. It is a pure
 // function operating on already-read bytes; it does not touch storage
-// or discover report files on disk (report-file discovery is out of
-// scope for punokawan-14yn.7, tracked separately).
+// or discover report files on disk (report-file discovery is a separate
+// concern, tracked elsewhere).
 func ParseJUnitXML(data []byte) (protocol.TestReportSummary, error) {
 	var suite junitTestSuite
 	if err := xml.Unmarshal(data, &suite); err != nil {

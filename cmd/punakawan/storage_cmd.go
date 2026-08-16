@@ -14,7 +14,7 @@ import (
 // newStorageCmd is the `punakawan storage ...` surface for kernel-level data
 // operations. Its one subcommand today, `migrate --to sqlite`, performs the
 // final one-way import of a project's legacy Dolt knowledge into the live
-// shared SQLite kernel (punokawan-14yn.19).
+// shared SQLite kernel.
 func newStorageCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "storage",

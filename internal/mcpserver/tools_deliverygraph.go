@@ -1,5 +1,5 @@
 // tools_deliverygraph.go implements the four delivery graph-authoring
-// MCP tools (punokawan-jrfa): register_project, create_parent_task,
+// MCP tools: register_project, create_parent_task,
 // create_lane, and add_dependency_edge. Each one wraps an
 // already-built, already-tested internal/delivery Store method
 // (store.go, parenttasks.go, and graph.go) - none of the underlying

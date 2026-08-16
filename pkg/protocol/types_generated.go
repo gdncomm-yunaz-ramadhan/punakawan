@@ -239,12 +239,11 @@ func (j *AdapterManifest) UnmarshalJSON(value []byte) error {
 }
 
 // One immutable approval request/decision for a single project within a
-// DeliveryOrchestration (punokawan-14yn.4): the parent tasks it covers, the
-// planned base ref/branches/writes, and the preflight checks it was computed
-// against. Approving one manifest never authorizes a newly discovered project or a
-// write category beyond what this manifest declares - a changed scope requires a
-// new manifest, not an edit to this one. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// DeliveryOrchestration: the parent tasks it covers, the planned base
+// ref/branches/writes, and the preflight checks it was computed against. Approving
+// one manifest never authorizes a newly discovered project or a write category
+// beyond what this manifest declares - a changed scope requires a new manifest,
+// not an edit to this one.
 type ApprovalManifest struct {
 	// Never one of the agent role identifiers (semar/gareng/petruk/bagong) - an agent
 	// may not approve its own manifest.
@@ -307,8 +306,8 @@ type ApprovalManifest struct {
 	// Total verified-work hours (internal/worklogalloc), computed from this project's
 	// completed test-run command durations, that the proposed worklog below is
 	// derived from. Zero when no test-run evidence has accumulated yet for this
-	// manifest's parent tasks (punokawan-14yn.9 AC2: proposed worklogs visible before
-	// project approval).
+	// manifest's parent tasks - proposed worklogs must be visible before project
+	// approval.
 	ProposedWorklogTotalHours *float64 `json:"proposed_worklog_total_hours,omitempty,omitzero" yaml:"proposed_worklog_total_hours,omitempty" mapstructure:"proposed_worklog_total_hours,omitempty"`
 
 	// Hours from proposed_worklog_total_hours that could not be matched to any
@@ -3823,10 +3822,9 @@ func (j *DeliveryLane) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// One continuous multi-project delivery run (punokawan-14yn.1). Owns zero or more
-// DeliveryLanes and a list of not-yet-routed requirement inputs. State is derived
-// by replaying its DeliveryEvent log, never written directly. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// One continuous multi-project delivery run. Owns zero or more DeliveryLanes and a
+// list of not-yet-routed requirement inputs. State is derived by replaying its
+// DeliveryEvent log, never written directly.
 type DeliveryOrchestration struct {
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
@@ -3841,8 +3839,8 @@ type DeliveryOrchestration struct {
 	Status DeliveryOrchestrationStatus `json:"status" yaml:"status" mapstructure:"status"`
 
 	// Requirement sources (Jira/Confluence/GitHub/URL/free-text) not yet routed to a
-	// project. Routing and normalization is punokawan-14yn.2's concern; this task
-	// only persists the raw reference.
+	// project. Routing and normalization happens elsewhere; this record only persists
+	// the raw reference.
 	UnresolvedInputs []DeliveryOrchestrationUnresolvedInputsElem `json:"unresolved_inputs" yaml:"unresolved_inputs" mapstructure:"unresolved_inputs"`
 
 	// UpdatedAt corresponds to the JSON schema field "updated_at".
@@ -3952,9 +3950,8 @@ func (j *DeliveryOrchestration) UnmarshalJSON(value []byte) error {
 }
 
 // A registered project binding in the canonical multi-project delivery control
-// plane (punokawan-14yn.1). One row per project the orchestrator is allowed to
-// route work to; unknown project ids are never inferred from ambient
-// working-directory scope. See affiliate-platform-delivery-feedback-2026-08-07.md.
+// plane. One row per project the orchestrator is allowed to route work to; unknown
+// project ids are never inferred from ambient working-directory scope.
 type DeliveryProject struct {
 	// DefaultBranch corresponds to the JSON schema field "default_branch".
 	DefaultBranch *string `json:"default_branch,omitempty,omitzero" yaml:"default_branch,omitempty" mapstructure:"default_branch,omitempty"`
@@ -4045,12 +4042,11 @@ func (j *DeliveryProject) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// One typed edge in an orchestration's task dependency graph (punokawan-14yn.2),
-// from_task_id -> to_task_id meaning from_task_id depends on to_task_id. Only
-// "requires" and "produces-input-for" block execution; "serializes-with" and
-// "informational" are non-blocking. Explicit source/user origins outrank
-// repository-fact, which outranks model-inference. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// One typed edge in an orchestration's task dependency graph, from_task_id ->
+// to_task_id meaning from_task_id depends on to_task_id. Only "requires" and
+// "produces-input-for" block execution; "serializes-with" and "informational" are
+// non-blocking. Explicit source/user origins outrank repository-fact, which
+// outranks model-inference.
 type DependencyEdge struct {
 	// Confidence corresponds to the JSON schema field "confidence".
 	Confidence float64 `json:"confidence" yaml:"confidence" mapstructure:"confidence"`
@@ -4814,12 +4810,11 @@ func (j *Event) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// One immutable invocation record (punokawan-14yn.7): a test, diff, API check,
-// command, screenshot, or review produced exactly this content-addressed blob.
-// Bytes are addressed by sha256 (never overwritten, never trusted from a caller -
-// always server-computed); this record's own id is a ULID and is what gets
-// referenced elsewhere, never a mutable path. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// One immutable invocation record: a test, diff, API check, command, screenshot,
+// or review produced exactly this content-addressed blob. Bytes are addressed by
+// sha256 (never overwritten, never trusted from a caller - always
+// server-computed); this record's own id is a ULID and is what gets referenced
+// elsewhere, never a mutable path.
 type EvidenceArtifact struct {
 	// ByteSize corresponds to the JSON schema field "byte_size".
 	ByteSize int `json:"byte_size" yaml:"byte_size" mapstructure:"byte_size"`
@@ -8180,12 +8175,10 @@ func (j *PanelWorkspaceRegistryEntry) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// One node in an orchestration's task dependency graph (punokawan-14yn.2): a group
-// of one or more RequirementSources routed, or awaiting routing, to a single
-// project. A DeliveryLane (punokawan-14yn.1) is created once a ParentTask is
-// routed and its DAG position allows execution to begin - lane/worker execution
-// status is not duplicated here. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// One node in an orchestration's task dependency graph: a group of one or more
+// RequirementSources routed, or awaiting routing, to a single project. A
+// DeliveryLane is created once a ParentTask is routed and its DAG position allows
+// execution to begin - lane/worker execution status is not duplicated here.
 type ParentTask struct {
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
@@ -8290,10 +8283,9 @@ func (j *ParentTask) UnmarshalJSON(value []byte) error {
 }
 
 // One capability check result computed for a ProjectDeliveryProfile before code
-// mutation is allowed (punokawan-14yn.4). status=skipped means the check was not
-// actually evaluated (e.g. no adapter yet implements it) - it is never reported as
-// passed without being run. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// mutation is allowed. status=skipped means the check was not actually evaluated
+// (e.g. no adapter yet implements it) - it is never reported as passed without
+// being run.
 type PreflightCheck struct {
 	// Classification corresponds to the JSON schema field "classification".
 	Classification PreflightCheckClassification `json:"classification" yaml:"classification" mapstructure:"classification"`
@@ -8396,12 +8388,11 @@ func (j *PreflightCheck) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// Versioned, per-project delivery configuration (punokawan-14yn.4): local path,
-// canonical remote, branch policy, build/test commands, required services, and
-// CI/worker policy. Explicit repository configuration takes precedence over global
-// detected or learned defaults; this record only stores the merged, effective
-// values a preflight run and approval manifest are computed against. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// Versioned, per-project delivery configuration: local path, canonical remote,
+// branch policy, build/test commands, required services, and CI/worker policy.
+// Explicit repository configuration takes precedence over global detected or
+// learned defaults; this record only stores the merged, effective values a
+// preflight run and approval manifest are computed against.
 type ProjectDeliveryProfile struct {
 	// BaseBranch corresponds to the JSON schema field "base_branch".
 	BaseBranch string `json:"base_branch" yaml:"base_branch" mapstructure:"base_branch"`
@@ -8521,12 +8512,11 @@ func (j *ProjectDeliveryProfile) UnmarshalJSON(value []byte) error {
 }
 
 // An immutable, canonicalized snapshot of one requirement input (Jira, Confluence,
-// GitHub, a document URL, or free text) captured into a DeliveryOrchestration
-// (punokawan-14yn.2). canonical_key is an exact, provider-specific identifier
-// (never a fuzzy/similar-wording match), so a pinned requirement can never be
-// silently replaced by a similar retrieved result. Grouped into a ParentTask once
-// routing/decomposition decides which task it belongs to. See
-// affiliate-platform-delivery-feedback-2026-08-07.md.
+// GitHub, a document URL, or free text) captured into a DeliveryOrchestration.
+// canonical_key is an exact, provider-specific identifier (never a
+// fuzzy/similar-wording match), so a pinned requirement can never be silently
+// replaced by a similar retrieved result. Grouped into a ParentTask once
+// routing/decomposition decides which task it belongs to.
 type RequirementSource struct {
 	// Exact dedup/pin key, e.g. "jira:PAY-1842" or "url:https://example.com/doc".
 	// Never derived from fuzzy text similarity.
@@ -9370,10 +9360,10 @@ func (j *TaskContract) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// A bounded, causal-first projection of one test invocation's output
-// (punokawan-14yn.7), concise enough for a continuous agent loop while the full
-// stdout/stderr remains available, unmodified, as the referenced EvidenceArtifact.
-// Never returned instead of the full log - only alongside it.
+// A bounded, causal-first projection of one test invocation's output, concise
+// enough for a continuous agent loop while the full stdout/stderr remains
+// available, unmodified, as the referenced EvidenceArtifact. Never returned
+// instead of the full log - only alongside it.
 type TestReportSummary struct {
 	// EvidenceArtifact id of the full, untruncated combined log.
 	ArtifactId string `json:"artifact_id" yaml:"artifact_id" mapstructure:"artifact_id"`

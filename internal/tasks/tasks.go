@@ -384,8 +384,8 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 }
 
 // fallbackTaskStore builds a taskstore over the shared SQLite storage
-// kernel (punokawan-14yn.15), scoped to projectID. Schema migration is
-// handled once, centrally, by the kernel itself when db was opened.
+// kernel, scoped to projectID. Schema migration is handled once, centrally,
+// by the kernel itself when db was opened.
 func fallbackTaskStore(db *storage.DB, projectID string) (*taskstore.Store, error) {
 	if db == nil {
 		return nil, fmt.Errorf("tasks: open fallback task store: no storage kernel available")

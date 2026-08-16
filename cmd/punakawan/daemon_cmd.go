@@ -12,7 +12,7 @@ import (
 func newDaemonCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "daemon",
-		Short: "Manage the Punakawan daemon (punokawan-14yn.17)",
+		Short: "Manage the Punakawan daemon",
 	}
 	root.AddCommand(newDaemonStartCmd())
 	root.AddCommand(newDaemonStatusCmd())

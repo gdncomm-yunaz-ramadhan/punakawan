@@ -1,9 +1,8 @@
-// Package procreg is punokawan-14yn.18's durable process-ownership
-// registry: every process the daemon starts on behalf of delivery work
-// (git, migration, shell, test, and agent invocations - none of which
-// exist as call sites yet, since .3/.5 haven't been built) is recorded
-// here before it is exposed as running, so a restart after an abrupt
-// daemon crash can find and clean up genuine survivors.
+// Package procreg is Punakawan's durable process-ownership registry:
+// every process the daemon starts on behalf of delivery work (git,
+// migration, shell, test, and agent invocations) is recorded here before
+// it is exposed as running, so a restart after an abrupt daemon crash can
+// find and clean up genuine survivors.
 //
 // Process-tree termination itself is not reimplemented here - it
 // reuses internal/tools' per-OS SIGTERM/SIGKILL (or taskkill)

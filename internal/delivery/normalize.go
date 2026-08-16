@@ -26,8 +26,7 @@ type SourceInput struct {
 // CanonicalKey returns the exact, provider-specific identifier used to
 // dedup and pin a requirement source. It is never derived from title or
 // summary text, so a similarly-worded but distinct source can never be
-// mistaken for an already-pinned one (punokawan-14yn.2 acceptance
-// criterion 8).
+// mistaken for an already-pinned one.
 func CanonicalKey(in SourceInput) (string, error) {
 	switch in.Provider {
 	case "jira":

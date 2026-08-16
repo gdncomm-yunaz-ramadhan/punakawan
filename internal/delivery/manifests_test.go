@@ -58,9 +58,9 @@ func TestApprovalManifestLifecycle(t *testing.T) {
 	}
 }
 
-// TestApprovalManifestCarriesProposedWorklog proves punokawan-14yn.9 AC2:
-// a manifest created with a non-empty worklogalloc.Allocation makes that
-// proposed dev/test/review split visible on the manifest itself, before any
+// TestApprovalManifestCarriesProposedWorklog proves a manifest created with
+// a non-empty worklogalloc.Allocation makes that proposed dev/test/review
+// split visible on the manifest itself, before any
 // approval decision - GetApprovalManifest (not just the just-created return
 // value) must also reflect it, since a human reviewing before approving
 // reads the manifest back rather than trusting the creator's local copy.

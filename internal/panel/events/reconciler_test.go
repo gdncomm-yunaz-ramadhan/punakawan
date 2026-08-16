@@ -266,9 +266,10 @@ func (f *perProjectApprovalReader) List(ctx context.Context, workspaceID string,
 	return f.byProject[workspaceID], nil
 }
 
-// TestReconcilerPollsActiveNonPrimaryProjectApprovals guards punokawan-pqoy:
-// a non-primary project's own CLI approval resolution previously never got a
-// targeted approval.resolved push, because tier 1 only ever polled
+// TestReconcilerPollsActiveNonPrimaryProjectApprovals guards against a
+// regression where a non-primary project's own CLI approval resolution
+// never got a targeted approval.resolved push, because tier 1 only ever
+// polled
 // r.WorkspaceID (the primary). It must now also poll whichever non-primary
 // projects are already warm in the runtime pool (Readers.Runtime), without
 // forcing a cold project to load.

@@ -29,9 +29,9 @@ func (s *SessionSource) checkWorkspace(workspaceID string) error {
 // counts derives sessionsummary.Counts for run from its own evidence
 // ledger, PR review findings, and event journal.
 //
-// EvidenceCount/ErrorCount/WarningCount are seeded from
-// deliverysummary.Build (punokawan-xu7m) - the same canonical evidence
-// ledger and PR review reads a PR body, Jira comment, and record_work_outcome
+// EvidenceCount/ErrorCount/WarningCount are seeded from deliverysummary.Build
+// - the same canonical evidence ledger and PR review reads a PR body, Jira
+// comment, and record_work_outcome
 // summary for this run draw from - so a run whose canonical data shows a
 // failing command or an open risk cannot show a clean session summary here
 // while contradicting itself elsewhere. The event journal then adds its own
