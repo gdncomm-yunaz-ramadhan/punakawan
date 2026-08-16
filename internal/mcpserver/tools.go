@@ -8,22 +8,25 @@ import (
 )
 
 // addTool registers one MCP tool on server and, in the same call, records its
-// name in the capability registry. Routing every registration through this
+// name in the capability registry, plus (via reg.record) its description and
+// a closure that can re-register it later - what find_tool uses to reveal a
+// tool the default facade hid. Routing every registration through this
 // wrapper is what makes the registry the single source of truth for "which
 // capabilities exist" (agent-context plan §4.3): the set can no longer drift
 // from what the server actually exposes, because they are populated by the
 // same statements. reg may be nil (the wrapper then behaves like mcp.AddTool).
-func addTool[In, Out any](server *mcp.Server, reg *capability.Registry, tool *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
+func addTool[In, Out any](server *mcp.Server, reg *toolIndex, tool *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
 	mcp.AddTool(server, tool, h)
 	if reg != nil {
 		reg.Add(capability.Descriptor{Name: tool.Name, Source: capability.SourceMCP})
+		reg.record(tool.Name, tool.Description, func() { mcp.AddTool(server, tool, h) })
 	}
 }
 
 // approvalGateNote is appended to every tool description whose handler can
-// trigger a write-approval gate (punokawan-7wv: gate mechanics were only
-// documented in the server's Instructions blob, not on the specific tool
-// that hits the gate). Kept short and shared rather than repeating
+// trigger a write-approval gate - gate mechanics were only documented in
+// the server's Instructions blob, not on the specific tool that hits the
+// gate. Kept short and shared rather than repeating
 // call_adapter_operation's full explanation on each one.
 const approvalGateNote = " Writes elicit one human approval for the whole run (see call_adapter_operation); unsupported clients must show the user Approve/Deny and call respond_to_adapter_approval."
 
@@ -40,7 +43,7 @@ const plainLanguageStyleNote = " Style: clear, concise, plain language - short s
 // not a way to start a run in the first place, and the server cannot
 // function without one, so this is a necessary addition beyond the plan's
 // literal tool list rather than an unstated one.
-func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
+func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{
 		Name:        "build_context_dossier",
 		Description: "Assemble the §9.1 context dossier from workspace, git, and durable knowledge state. No reasoning is performed.",

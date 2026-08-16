@@ -10,7 +10,7 @@ import (
 
 func TestSaveWorkflowDefinitionCreatesNewDefinition(t *testing.T) {
 	a := newTestApp(t)
-	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	h := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	_, out, err := h(context.Background(), nil, SaveWorkflowDefinitionInput{
 		Definition: workflowdef.Definition{
@@ -44,7 +44,7 @@ func TestSaveWorkflowDefinitionCreatesNewDefinition(t *testing.T) {
 
 func TestSaveWorkflowDefinitionUpdatesWithMatchingRevision(t *testing.T) {
 	a := newTestApp(t)
-	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	h := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	def := workflowdef.Definition{
 		ID:      "iterate-flow",
@@ -70,7 +70,7 @@ func TestSaveWorkflowDefinitionUpdatesWithMatchingRevision(t *testing.T) {
 
 func TestSaveWorkflowDefinitionRejectsStaleRevision(t *testing.T) {
 	a := newTestApp(t)
-	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	h := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	def := workflowdef.Definition{
 		ID:      "conflict-flow",
@@ -92,7 +92,7 @@ func TestSaveWorkflowDefinitionRejectsStaleRevision(t *testing.T) {
 
 func TestSaveWorkflowDefinitionRejectsUnknownCapability(t *testing.T) {
 	a := newTestApp(t)
-	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	h := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	_, _, err := h(context.Background(), nil, SaveWorkflowDefinitionInput{
 		Definition: workflowdef.Definition{
@@ -113,7 +113,7 @@ func TestSaveWorkflowDefinitionRejectsUnknownCapability(t *testing.T) {
 // panel-accept step.
 func TestSaveWorkflowDefinitionIsImmediatelySelectorResolvable(t *testing.T) {
 	a := newTestApp(t)
-	saveHandler := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	saveHandler := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	_, _, err := saveHandler(context.Background(), nil, SaveWorkflowDefinitionInput{
 		Definition: workflowdef.Definition{
@@ -148,7 +148,7 @@ func TestSaveWorkflowDefinitionIsImmediatelySelectorResolvable(t *testing.T) {
 
 func TestSaveWorkflowDefinitionRejectsJudgmentWithoutRationale(t *testing.T) {
 	a := newTestApp(t)
-	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	h := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	_, _, err := h(context.Background(), nil, SaveWorkflowDefinitionInput{
 		Definition: workflowdef.Definition{
@@ -177,7 +177,7 @@ func TestSaveWorkflowDefinitionRejectsJudgmentWithoutRationale(t *testing.T) {
 // recording a fingerprinted, already-accepted learning proposal.
 func TestSaveWorkflowDefinitionRecordsAgentJudgmentAsAcceptedProposal(t *testing.T) {
 	a := newTestApp(t)
-	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	h := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	_, out, err := h(context.Background(), nil, SaveWorkflowDefinitionInput{
 		Definition: workflowdef.Definition{
@@ -210,7 +210,7 @@ func TestSaveWorkflowDefinitionRecordsAgentJudgmentAsAcceptedProposal(t *testing
 
 func TestSaveWorkflowDefinitionJudgmentDedupsByFingerprintAndIncrementsSupportCount(t *testing.T) {
 	a := newTestApp(t)
-	h := saveWorkflowDefinitionHandler(a, CapabilityRegistry(a))
+	h := saveWorkflowDefinitionHandler(a, toolIndexFrom(CapabilityRegistry(a)))
 
 	steps := []workflowdef.Step{{ID: "s1", Capability: "build_context_dossier", Intent: "assemble"}}
 	_, first, err := h(context.Background(), nil, SaveWorkflowDefinitionInput{

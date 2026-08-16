@@ -73,8 +73,43 @@ func runGit(t *testing.T, dir string, args ...string) {
 }
 
 // connect builds the server for a and connects a client to it over an
-// in-memory transport, returning the client session.
+// in-memory transport, returning the client session. Deliberately uses
+// assembleServer (every tool live) rather than newServer (hidden down to
+// the default facade) - the vast majority of this package's tests exercise
+// a specific worker tool's behavior, not find_tool's visibility feature
+// itself, and making them all call find_tool first to unhide their target
+// tool would be pure noise. TestFindToolRevealsAndDefaultVisibility below
+// covers newServer's actual hide/reveal behavior directly.
 func connect(t *testing.T, a *app.App) *mcp.ClientSession {
+	t.Helper()
+	ctx := context.Background()
+
+	server, _, err := assembleServer(a)
+	if err != nil {
+		t.Fatalf("assembleServer: %v", err)
+	}
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server.Connect: %v", err)
+	}
+	t.Cleanup(func() { serverSession.Close() })
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.1"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	t.Cleanup(func() { clientSession.Close() })
+
+	return clientSession
+}
+
+// connectHidden is connect, except it goes through newServer's real
+// hide-down-to-the-facade path instead of assembleServer's every-tool-live
+// path - for tests that exercise the visibility feature itself.
+func connectHidden(t *testing.T, a *app.App) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 
@@ -98,6 +133,86 @@ func connect(t *testing.T, a *app.App) *mcp.ClientSession {
 	t.Cleanup(func() { clientSession.Close() })
 
 	return clientSession
+}
+
+// listToolNames returns cs's currently visible tool names.
+func listToolNames(t *testing.T, cs *mcp.ClientSession) map[string]bool {
+	t.Helper()
+	res, err := cs.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	names := make(map[string]bool, len(res.Tools))
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	return names
+}
+
+// TestDefaultToolListIsTheFacade guards find_tool's whole point: a freshly
+// connected client should see only the small default facade, not the full
+// ~100-tool worker-side surface.
+func TestDefaultToolListIsTheFacade(t *testing.T) {
+	a := newTestApp(t)
+	cs := connectHidden(t, a)
+
+	names := listToolNames(t, cs)
+	if len(names) != len(facadeTools) {
+		t.Fatalf("default tools/list = %d tools %v, want exactly the %d-tool facade %v", len(names), names, len(facadeTools), facadeTools)
+	}
+	for name := range facadeTools {
+		if !names[name] {
+			t.Errorf("facade tool %q missing from default tools/list", name)
+		}
+	}
+	if names["search_knowledge"] {
+		t.Error("search_knowledge (a worker-side tool) should not be visible by default")
+	}
+}
+
+// TestFindToolRevealsAndDefaultVisibility checks find_tool actually makes a
+// hidden tool callable, not just listed: search_knowledge is absent from
+// the default facade, becomes visible after a matching find_tool call, and
+// is genuinely callable afterward (not just present in tools/list).
+func TestFindToolRevealsAndDefaultVisibility(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	cs := connectHidden(t, a)
+
+	if names := listToolNames(t, cs); names["search_knowledge"] {
+		t.Fatal("search_knowledge should not be visible before find_tool reveals it")
+	}
+
+	var out FindToolOutput
+	callTool(t, cs, "find_tool", map[string]any{"query": "select:search_knowledge"}, &out)
+	if len(out.Matches) != 1 || out.Matches[0].Name != "search_knowledge" || !out.Matches[0].NewlyLive {
+		t.Fatalf("find_tool(select:search_knowledge) = %+v, want exactly one newly-live match", out.Matches)
+	}
+
+	if names := listToolNames(t, cs); !names["search_knowledge"] {
+		t.Fatal("expected search_knowledge to be listed after find_tool revealed it")
+	}
+
+	var searchOut map[string]any
+	callTool(t, cs, "search_knowledge", map[string]any{"query": "anything"}, &searchOut)
+}
+
+// TestFindToolSelectSyntaxMatchesExactNames checks the select:a,b,c mode
+// matches only those exact names, not a substring search over them.
+func TestFindToolSelectSyntaxMatchesExactNames(t *testing.T) {
+	a := newTestApp(t)
+	cs := connectHidden(t, a)
+
+	var out FindToolOutput
+	callTool(t, cs, "find_tool", map[string]any{"query": "select:search_knowledge,commit_task"}, &out)
+
+	got := make(map[string]bool, len(out.Matches))
+	for _, m := range out.Matches {
+		got[m.Name] = true
+	}
+	if len(got) != 2 || !got["search_knowledge"] || !got["commit_task"] {
+		t.Fatalf("find_tool select: = %+v, want exactly search_knowledge and commit_task", out.Matches)
+	}
 }
 
 // callTool invokes a tool and decodes its structured output into out.

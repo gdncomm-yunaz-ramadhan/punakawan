@@ -38,6 +38,8 @@ func Serve(ctx context.Context, a *app.App) error {
 // the write-approval gate is meant to be satisfied.
 const serverInstructions = `Punakawan never reasons itself (ADR-0016): you, the connected agent, are the reasoning engine. Punakawan validates and persists whatever structured result you submit, and enforces write approvals - it does not call a model on its own.
 
+Only a small default facade is visible at first (delivery, project/lane setup, workflow invocation, and find_tool). The rest of the surface - Jira, knowledge, git/PR, role review, adapters, and more - exists and is fully capable, just not listed yet: call find_tool with a keyword (or select:name1,name2 for exact names) to make any of it callable immediately. If a tool you expect isn't in your list, that's why - search for it rather than assuming it doesn't exist.
+
 Guiding principle: grounded truth over confident performance. Keep the work grounded, honest, practical, cautious, and verifiable. When you act as a role (Semar, Gareng, Petruk, Bagong) the role prompt carries the shared communication rules - lead with the conclusion, reference evidence by id/file/symbol/artifact instead of copying it, include only what changes a decision or verification, distinguish fact from inference, and keep every result concise. They are stated once there; this instruction does not repeat them.
 
 Two independent mechanisms, don't conflate them:
@@ -54,22 +56,64 @@ Bagong's independent review (§8.4): build your own context rather than trusting
 
 Token efficiency (RTK): model context is the scarce resource. Run your own shell and dev commands - git, tests, builds, greps, package managers - through rtk whenever it is available (for example "rtk git status", "rtk go test ./..."), so their output costs 60-90% fewer tokens. Punakawan routes the commands it runs itself (such as run_tests) through rtk when it is present on PATH, and you should do the same for the commands you run; fall back to the raw command only when rtk is not installed.`
 
+// facadeTools is the small, always-visible default discovery surface: the
+// delivery facade a normal caller needs, plus find_tool itself. Every other
+// registered tool (the ~90-tool worker-side surface: Jira, knowledge, git/
+// PR, role review, adapters, ...) still registers exactly as before, so
+// capability.Registry/workflowdef validation and CallTool-by-name (once
+// found) are unaffected - only its default tools/list visibility changes.
+// This is the AC2 gap an earlier design review had reinterpreted narrower
+// rather than actually built: reduce default discovery, not remove
+// capability.
+var facadeTools = map[string]bool{
+	"start_delivery":             true,
+	"get_delivery":               true,
+	"resume_delivery":            true,
+	"answer_delivery_question":   true,
+	"approve_project_delivery":   true,
+	"cancel_delivery":            true,
+	"invoke_workflow_definition": true,
+	"register_project":           true,
+	"create_parent_task":         true,
+	"create_lane":                true,
+	"add_dependency_edge":        true,
+	"find_tool":                  true,
+}
+
 // newServer builds the *mcp.Server with every prompt and tool registered,
-// independent of which transport it will run over. Split out from Serve so
-// tests can connect to it via an in-memory transport instead of stdio.
+// hidden down to the default facade (see facadeTools/find_tool), independent
+// of which transport it will run over. Split out from Serve so tests can
+// connect to it via an in-memory transport instead of stdio.
 func newServer(a *app.App) (*mcp.Server, error) {
+	server, idx, err := assembleServer(a)
+	if err != nil {
+		return nil, err
+	}
+	idx.hideAllExcept(server, facadeTools)
+	return server, nil
+}
+
+// assembleServer builds the *mcp.Server with every prompt and tool
+// registered and live - the shared construction newServer hides down to the
+// default facade afterward, and tests use directly (server_test.go's
+// connect) to exercise tool behavior without the visibility feature itself
+// getting in the way of every other test in this package.
+func assembleServer(a *app.App) (*mcp.Server, *toolIndex, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "punakawan", Version: "0.1.0"}, &mcp.ServerOptions{
 		Instructions: serverInstructions,
 	})
 
 	if err := registerPrompts(server, a); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	registerTools(server, a, capability.NewRegistry())
+	idx := newToolIndex()
+	registerTools(server, a, idx)
+	registerToolFinder(server, idx)
+
 	server.AddReceivingMiddleware(compactStructuredToolResults)
 	server.AddReceivingMiddleware(sanitizeToolListSchemas)
 
-	return server, nil
+	return server, idx, nil
 }
 
 // CapabilityRegistry enumerates the capabilities the MCP server exposes by
@@ -79,15 +123,17 @@ func newServer(a *app.App) (*mcp.Server, error) {
 // enumeration go through the exact same registerTools statements, the set a
 // workflow definition is validated against can never drift from the set the
 // server actually registers. (The old hand-maintained mirror had already
-// drifted — 46 listed names versus ~70 registered tools.)
+// drifted — 46 listed names versus ~70 registered tools.) This always
+// returns every capability regardless of find_tool's live/hidden state -
+// that's a discovery-surface concern, not a validity one.
 //
 // Registration only stores tool metadata and handlers; it never runs a
 // handler or opens a transport, so this is a cheap one-time call at startup.
 func CapabilityRegistry(a *app.App) *capability.Registry {
-	reg := capability.NewRegistry()
+	idx := newToolIndex()
 	server := mcp.NewServer(&mcp.Implementation{Name: "punakawan", Version: "0.1.0"}, nil)
-	registerTools(server, a, reg)
-	return reg
+	registerTools(server, a, idx)
+	return idx.Registry
 }
 
 // sanitizeToolListSchemas rewrites every bare-boolean JSON-Schema subschema

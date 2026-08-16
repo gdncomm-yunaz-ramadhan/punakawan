@@ -9,7 +9,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/capability"
 	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 )
@@ -60,7 +59,7 @@ type SaveWorkflowDefinitionOutput struct {
 // workflowdef.Validate runs against the same capability set the panel API
 // uses, and workflowdef.Store.Save produces an immutable, revertable
 // revision exactly as SetEnabled/the panel editor already do.
-func saveWorkflowDefinitionHandler(a *app.App, reg *capability.Registry) func(context.Context, *mcp.CallToolRequest, SaveWorkflowDefinitionInput) (*mcp.CallToolResult, SaveWorkflowDefinitionOutput, error) {
+func saveWorkflowDefinitionHandler(a *app.App, reg *toolIndex) func(context.Context, *mcp.CallToolRequest, SaveWorkflowDefinitionInput) (*mcp.CallToolResult, SaveWorkflowDefinitionOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SaveWorkflowDefinitionInput) (*mcp.CallToolResult, SaveWorkflowDefinitionOutput, error) {
 		if in.Judgment != nil && in.Judgment.Rationale == "" {
 			return nil, SaveWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: save_workflow_definition: judgment.rationale is required when judgment is set")
