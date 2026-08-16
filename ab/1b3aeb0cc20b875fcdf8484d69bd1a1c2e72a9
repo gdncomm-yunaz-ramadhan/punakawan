@@ -1,0 +1,44 @@
+internal/mcpserver/tools_startdelivery.go
+  7bf9711812567778 63-68,83,95-97
+internal/mcpserver/server_test.go
+  7bf9711812567778 267-280
+internal/delivery/deliveryview.go
+  7bf9711812567778 59-71,103-104,106-126,145-156,241-249,253-289
+internal/mcpserver/server.go
+  7bf9711812567778 11-12,41,61-75
+internal/delivery/deliveryview_test.go
+  7bf9711812567778 193-292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ab1b3aeb0cc20b875fcdf8484d69bd1a1c2e72a9",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 242,
+      "total_deletions": 15,
+      "accepted_lines": 238,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 33,
+      "overriden_lines": 0
+    }
+  }
+}
