@@ -68,12 +68,12 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "save_workflow_definition",
-		Description: "Create or update a reusable workflow definition (mirrors the panel's workflow editor) - use this to capture an explicitly user-dictated flow, or a pattern worth reusing, as a versioned, selector-resolvable definition without waiting on propose_project_learning's panel-review gate. Validated against the same capability rules the panel enforces (unknown/command-like capabilities are rejected); common Jira-create spellings createJiraIssue and atlassian.createJiraIssue normalize to create_jira_issue. Updating an existing id requires its current revision (optimistic locking, like project metadata); a new id ignores any revision passed. The prior version is always snapshotted, never overwritten - see the panel's workflow history. Set judgment (with a required rationale) when the agent's own judgment, not a direct user instruction, motivates capturing this pattern: it records a fingerprinted, deduplicated learning proposal alongside the save, already marked accepted since the save already happened - an audit trail, not an extra gate.",
+		Description: "Create or update a reusable workflow definition (mirrors the panel's editor), skipping propose_project_learning's review gate. Validated against the panel's capability rules; common Jira-create spellings normalize to create_jira_issue. Updating an id requires its current revision (optimistic locking); a new id ignores any revision. Prior versions are snapshotted, never overwritten. Set judgment (with a rationale) when it's the agent's own judgment, not a direct instruction, driving the capture - logged as an accepted, deduplicated proposal, an audit trail not a gate.",
 	}, saveWorkflowDefinitionHandler(a, reg))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "prepare_work_context",
-		Description: "Before substantial project work, call this once to compose the bounded project context for a run (agent-context plan §4.4): it resolves the workflow (by explicit workflow_id or an exact capability/intent selector; ad hoc when neither matches), validates and defaults inputs, resolves required project metadata, selects optional metadata by priority, and — when a retrieval_query is given — retrieves scoped knowledge filtered by lifecycle validity so disputed/stale/superseded/draft records never appear as accepted guidance (inferred goes to a separate caution list). Returns the run_id, the immutable context digest, the selected metadata and knowledge (each with a selection reason and content hash), and any missing required context (which puts the run in awaiting-clarification). Deterministic: the same inputs and store revisions produce the same digest. Pass the returned run_id to run-scoped calls; resume/refresh by passing an existing run_id.",
+		Description: "Before substantial project work, call this once to compose bounded project context for a run: resolves the workflow (by id or capability/intent selector), validates inputs, resolves required and priority-selected project metadata, and - given a retrieval_query - retrieves scoped knowledge filtered by lifecycle validity so disputed/stale/superseded records never appear as accepted guidance. Returns run_id, an immutable context digest, selected metadata/knowledge with reasons, and any missing context. Pass run_id to run-scoped calls; resume by reusing it.",
 	}, prepareWorkContextHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -88,7 +88,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "advance_workflow",
-		Description: "Transition a workflow run to a new state, appending a checkpoint (§18.1). Valid next_state values: created, context-building, awaiting-clarification, planning, awaiting-approval, executing, reviewing, blocked, completed, failed, cancelled. Only §9's transition graph is accepted from the current state (e.g. created cannot jump straight to completed); blocked/failed/cancelled are reachable from any non-terminal state. A context-aware run (one created via prepare_work_context or a definition) cannot enter completed without a recorded outcome (record_work_outcome) and, if definition-backed, all steps completed. Call get_workflow_state first if the valid next states from the current one aren't obvious.",
+		Description: "Transition a workflow run to a new state, appending a checkpoint. Valid next_state values: created, context-building, awaiting-clarification, planning, awaiting-approval, executing, reviewing, blocked, completed, failed, cancelled. Only the defined transition graph is accepted from the current state; blocked/failed/cancelled are reachable from any non-terminal state. A context-aware run cannot enter completed without a recorded outcome (record_work_outcome) and, if definition-backed, all steps completed. Call get_workflow_state first if valid next states aren't obvious.",
 	}, advanceWorkflowHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -103,7 +103,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "propose_project_learning",
-		Description: "Open (or reinforce) a reviewed learning proposal for a workflow, project_metadata, knowledge, or convention improvement (agent-context plan §6.2/§6.3). Supply the target_id and the proposed candidate content; it becomes a proposal in the existing artifact-review flow - NEVER a direct canonical write. A human accepts/rejects it in the panel. Deterministic dedup (plan §6.4): an equivalent pending proposal absorbs your evidence_ids/source_run_ids and increments support_count instead of opening a duplicate. Proposals must reference the structured outcome/evidence, not mined chat. Acceptance writes a new immutable revision; for workflows, acceptance never enables the new revision (activation is separate).",
+		Description: "Open (or reinforce) a reviewed learning proposal for a workflow, project_metadata, knowledge, or convention improvement. Supply target_id and the proposed candidate content; it becomes a proposal in the artifact-review flow - never a direct canonical write. A human accepts/rejects it in the panel. An equivalent pending proposal absorbs your evidence_ids/source_run_ids and increments support_count instead of duplicating. Proposals must reference structured outcome/evidence, not mined chat. Acceptance writes a new immutable revision; for workflows, acceptance never auto-activates it.",
 	}, proposeProjectLearningHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -139,7 +139,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "build_task_context",
-		Description: "Assemble the fresh, bounded per-task execution context (§11.2) and write it as this task's task.yaml evidence (§17.2). Read-only against the knowledge store. requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested. Resuming the same task_id (e.g. impl -> tests -> review): task_scope, task_acceptance_criteria, task_definition_of_done, task_expected_files_or_components, affected_symbols_and_files, and required_tests each default to the value from that task_id's last call when omitted - pass only the fields that actually changed, not the full payload every time.",
+		Description: "Assemble the fresh, bounded per-task execution context and write it as this task's task.yaml evidence. Read-only against the knowledge store. requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any not-yet-ingested Jira requirement. Resuming the same task_id (impl -> tests -> review): task_scope, acceptance_criteria, definition_of_done, expected_files_or_components, affected_symbols_and_files, and required_tests default to the last call's value when omitted - pass only what changed.",
 	}, buildTaskContextHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -184,7 +184,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "commit_task",
-		Description: "Stage and commit a task's pending changes, refusing to do so unless a prior check_diff passed and the worktree is on a task branch (§15.4). Write the message in Conventional Commits form: imperative subject <=72 chars, a body only when the why is not obvious (reason + impact, not a diff restatement), referencing the concrete source touched and leading with what matters most." + plainLanguageStyleNote,
+		Description: "Stage and commit a task's pending changes; refused unless a prior check_diff passed and the worktree is on a task branch. Write the message in Conventional Commits form: imperative subject <=72 chars, a body only when the why isn't obvious, referencing the concrete source touched." + plainLanguageStyleNote,
 	}, commitTaskHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -194,7 +194,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_pr",
-		Description: "Create a pull request for a pushed task branch (AEP-M4 §8.1). Templates the caller-supplied Summary/Requirements/Changes/Verification/etc. sections into the PR body verbatim - punakawan does not write any of that content itself, so write them concise, clear, and easy to scan: lead with the most important change and its impact, use terse bullets, and reference the concrete source touched (path/to/file, symbol, endpoint) with added/changed/removed - no filler. If PR creation is not currently possible (no remote, no push access, unsupported provider, no github adapter configured, ...) returns created=false with the specific reason instead of erroring, per §8.1's failure behavior." + approvalGateNote,
+		Description: "Create a pull request for a pushed task branch. Templates the caller's Summary/Requirements/Changes/Verification sections into the PR body verbatim - write them concise: lead with the key change and impact, terse bullets, reference concrete files/symbols touched. If creation isn't possible (no remote/access/adapter) returns created=false with the reason." + approvalGateNote,
 	}, createPrHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -240,7 +240,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "request_jira_clarification",
-		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup). Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it." + plainLanguageStyleNote + approvalGateNote,
+		Description: "Post a pre-rendered clarification comment on a Jira issue and, if a clarification status is configured, transition the issue to it. Body: Markdown, converted to ADF." + plainLanguageStyleNote + approvalGateNote,
 	}, requestJiraClarificationHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -250,7 +250,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_jira_issue",
-		Description: "Create a new Jira issue (bug, task, or any other issue type the project supports) with a project key, issue type name, and summary; description and parent_key are optional. Returns the new issue's key, status, and URL. issue_type_name is a free-text name, not a fixed enum - it is per-site/per-project, e.g. 'Bug' or 'Task'; discover the real names via call_adapter_operation atlassian.getIssueTypeFieldMeta if unsure. For creating several subtasks under one parent with dedup against existing children, use sync_jira_subtasks instead. run_id is optional for one-off use." + plainLanguageStyleNote + approvalGateNote,
+		Description: "Create a Jira issue with project key, issue type name, and summary. Returns key/status/URL. issue_type_name is free-text (per-site) - use sync_jira_subtasks for subtasks under one parent." + plainLanguageStyleNote + approvalGateNote,
 	}, createJiraIssueHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -260,7 +260,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "update_jira_task_progress",
-		Description: "Comment body format: Markdown, confirmed working (converted to ADF; do NOT use old Jira wiki markup like h3. or {{code}} - it renders literally). Update a Jira issue's original estimate (points-derived unless given explicitly), add a worklog entry, and/or post a comment. Each action is optional and one run approval covers all selected writes. For a decomposed issue, log against the specific subtask, NOT the parent - use list_jira_subtasks first to get the right issue_id_or_key." + plainLanguageStyleNote + approvalGateNote,
+		Description: "Update a Jira issue's estimate, worklog, and/or comment - each optional, one approval covers all. Log against the subtask, not the parent, for decomposed issues." + plainLanguageStyleNote + approvalGateNote,
 	}, updateJiraTaskProgressHandler(a))
 
 	// Native Jira convenience tools (punokawan-t6y): common ops that previously
@@ -309,7 +309,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "add_jira_comment",
-		Description: "Post a standalone comment on a Jira issue, and how you reply too (comments are a flat list, not threaded, so a reply is a new comment referencing the earlier one). This is the bare-comment primitive; request_jira_clarification also posts a comment plus a transition, and update_jira_task_progress bundles a comment with estimate/worklog - reach for those only when you want their extra effects. Body is Markdown, converted to ADF; do NOT use old wiki markup. run_id is optional for one-off use." + plainLanguageStyleNote + approvalGateNote,
+		Description: "Post a standalone Jira comment (flat, not threaded - reply by referencing the earlier comment). Body: Markdown, converted to ADF; not old wiki markup." + plainLanguageStyleNote + approvalGateNote,
 	}, addJiraCommentHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -324,7 +324,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_jira_assessment",
-		Description: "Comment body format: Markdown, confirmed working (converted to ADF; NOT old wiki markup - h3./{{code}} render literally). Post a Jira-formatted comment (headings, bullet lists, a table) covering what exists vs. what needs to change, findings, and open questions for stakeholder decision (important ones flagged), then create subtasks with detailed plans. Each task's Jira original/remaining estimate is set to its AI-assisted implementation time; human-manual time and time saved are narrative only. The calling agent does the assessment and decomposition; this tool only renders, writes, and persists the result." + approvalGateNote,
+		Description: "Comment body format: Markdown (converts to ADF; not old wiki markup). Posts a Jira comment covering current state vs. needed changes, findings, and open questions, then creates subtasks with detailed plans. Each subtask's estimate is the AI-assisted implementation time. The agent does the assessment; this tool renders and persists it." + approvalGateNote,
 	}, submitJiraAssessmentHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -334,7 +334,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "search_knowledge",
-		Description: "Search the durable knowledge store locally (§11): exact structured identifiers (CVE/GHSA/Sonar rule/Jira key/git hash/...) and aliases outrank BM25F keyword matches, which fall back to fuzzy matching only when keyword search finds nothing. project/repository/module/path only bias ranking (§11.10's scope bonus) - they never filter results out; use types/tags for that. Every result carries an explanation (§11.13) of why it matched. No embeddings, no external model calls: this is a local index over knowledge Punakawan already has, not new reasoning. project_id (ADR-0020, distinct from the ranking-bonus project field above) selects which project's knowledge store to search and defaults to the calling project; naming another project's id deliberately searches it instead, via a lower-fidelity substring scan rather than the ranked BM25 index (which cannot span projects), and only works when that project shares this one's hub.",
+		Description: "Search the durable knowledge store locally: exact structured identifiers (CVE/GHSA/Sonar rule/Jira key/git hash) and aliases outrank BM25F keyword matches, which fall back to fuzzy matching only when keyword search finds nothing. project/repository/module/path only bias ranking, never filter - use types/tags for that. Every result explains why it matched. No embeddings or model calls: a local index over knowledge already stored. project_id selects which project's store to search; another project's id searches it via a lower-fidelity scan instead.",
 	}, searchKnowledgeHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -354,17 +354,17 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "find_prune_candidates",
-		Description: "List knowledge records with the signal needed to judge whether they're obsolete: validity_state, superseded_by, source age (source.retrieved_at), and relation_count (how many other records reference this one - the closest real proxy for 'still relied on', since no access/usage telemetry exists). No validity_state is required or assumed eligible for pruning - every state is included unless filtered, and the returned signals are advisory only. Filters/paginates like the underlying store (type/status/validity_state/repository/source/limit/cursor); min_age_days is applied within the fetched page, not globally - use next_cursor to keep scanning. Read-only: pass candidate ids to delete_knowledge to actually remove them.",
+		Description: "List knowledge records with the signal needed to judge whether they're obsolete: validity_state, superseded_by, source age, and relation_count (how many other records reference this one - the closest proxy for 'still relied on'). No validity_state is required or assumed eligible for pruning; every state is included unless filtered. Filters/paginates like the underlying store; min_age_days applies within the fetched page, not globally - use next_cursor to keep scanning. Read-only: pass ids to delete_knowledge to remove them.",
 	}, findPruneCandidatesHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "delete_knowledge",
-		Description: "Bulk-delete specific knowledge records by id, e.g. ones find_prune_candidates or search_knowledge surfaced as stale, superseded, or wrong - so a future search does not keep returning dirty context. Any validity_state may be deleted; naming an id is itself the deliberate act. Not undoable through this tool, but not unrecoverable either: a successful delete is immediately committed to the project's Dolt knowledge store and commit_hash is returned - the deleted records remain fully readable via `SELECT ... FROM knowledge_records AS OF '<commit_hash>~1'` (no checkout needed), or fully restorable with `dolt checkout <commit_hash>~1 -- knowledge_records` in that store's directory. commit_hash is empty when every id was not_found (nothing was actually deleted).",
+		Description: "Bulk-delete specific knowledge records by id, e.g. ones find_prune_candidates or search_knowledge flagged as stale, superseded, or wrong. Any validity_state may be deleted; naming an id is the deliberate act. Not undoable through this tool but not unrecoverable: a delete is committed to the project's Dolt store and commit_hash is returned - deleted records stay readable via `SELECT ... AS OF '<commit_hash>~1'`, or restorable with `dolt checkout <commit_hash>~1`. commit_hash is empty when every id was not_found.",
 	}, deleteKnowledgeHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "reset_project_knowledge",
-		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module (an empty scope would match everything). Defaults to a dry run: returns the matching record ids without deleting anything unless confirm=true. A confirmed delete is immediately committed to the project's Dolt knowledge store and commit_hash is returned - see delete_knowledge's description for how to read or restore the pre-delete state from it.",
+		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module. Defaults to a dry run: returns matching ids without deleting unless confirm=true. A confirmed delete is committed to the project's Dolt store and commit_hash is returned - see delete_knowledge for how to read or restore the pre-delete state.",
 	}, resetProjectKnowledgeHandler(a))
 
 	// Contradiction Ledger (Gareng, §16-22). Deterministic, no reasoning.
