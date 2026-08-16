@@ -502,6 +502,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 		Description: "Check whether a lane is ready to merge against its project's required verification gates and latest review conclusion, reporting which gates are still failing if not. Read-only; never merges or closes anything.",
 	}, checkMergeReadinessHandler(a))
 
+	addTool(server, reg, &mcp.Tool{
+		Name:        "request_project_approval",
+		Description: "Ask whether a project's lanes in this orchestration are all ready to merge, and if so, run preflight and create the one approval manifest that project needs before delivery proceeds. Reports which lanes/gates are still blocking instead of creating a manifest if any lane is not yet ready. Re-calling with the same set of ready parent tasks returns the already-created manifest rather than making a second one.",
+	}, requestProjectApprovalHandler(a))
+
 	// Delivery facades: six higher-level tools over the granular delivery
 	// primitives above, for a caller that wants "start this delivery and
 	// tell me what's going on" without first learning the whole

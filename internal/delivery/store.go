@@ -352,6 +352,28 @@ func (s *Store) GetLane(ctx context.Context, orchestrationID, laneID string) (*p
 	return reduceLane(orchestrationID, laneID, events)
 }
 
+// ListLanes returns every lane orchestrationID has ever created,
+// mirroring ListGraph's shape for tasks/edges - a caller resolving
+// "every lane belonging to project X" has no other exported way to
+// enumerate lanes across an orchestration, since a lane's own
+// project_id is fixed at creation independent of whether it is routed
+// through a parent task.
+func (s *Store) ListLanes(ctx context.Context, orchestrationID string) ([]*protocol.DeliveryLane, error) {
+	events, err := loadEvents(ctx, s.db.Reader(), orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	laneMap, err := allLanes(orchestrationID, events)
+	if err != nil {
+		return nil, err
+	}
+	lanes := make([]*protocol.DeliveryLane, 0, len(laneMap))
+	for _, l := range laneMap {
+		lanes = append(lanes, l)
+	}
+	return lanes, nil
+}
+
 // UpdateLaneStatus appends lane.status_changed after checking
 // expectedRevision against the lane's current derived revision.
 func (s *Store) UpdateLaneStatus(ctx context.Context, idempotencyKey, orchestrationID, laneID string, expectedRevision int, status protocol.DeliveryLaneStatus) (*protocol.DeliveryLane, error) {
