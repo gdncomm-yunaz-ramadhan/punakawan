@@ -15,6 +15,7 @@
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import EvidenceItem from "../../lib/components/EvidenceItem.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import type { Column, RowAction } from "../../lib/components/data/types";
 
   interface Props {
@@ -47,11 +48,15 @@
     }
   }
 
+  function closeDetail() {
+    selectedId = null;
+    detail = null;
+    evidence = [];
+  }
+
   async function open(sessionId: string) {
     if (selectedId === sessionId) {
-      selectedId = null;
-      detail = null;
-      evidence = [];
+      closeDetail();
       return;
     }
     selectedId = sessionId;
@@ -120,8 +125,8 @@
       emptyMessage="No sessions yet."
     />
 
-    {#if selectedId}
-      <div class="detail" data-testid="session-detail">
+    <Dialog open={selectedId !== null} title="Session detail" onclose={closeDetail}>
+      <div data-testid="session-detail">
         {#if detailLoading}
           <p>Loading session…</p>
         {:else if detailError}
@@ -162,31 +167,26 @@
           {#if !detail.Timeline || detail.Timeline.length === 0}
             <p class="muted">No events recorded yet.</p>
           {:else}
-            <ol class="timeline">
-              {#each detail.Timeline as e (e.id)}
-                <li class:failure={isFailure(e)}>
-                  <span class="time">{new Date(e.timestamp).toLocaleTimeString()}</span>
-                  <span class="op">{e.operation}</span>
-                  {#if e.role}<span class="role">{roleLabel(e.role)}</span>{/if}
-                  <span class="result result-{e.result}">{e.result}</span>
-                </li>
-              {/each}
-            </ol>
+            <div class="timeline-scroll">
+              <ol class="timeline">
+                {#each detail.Timeline as e (e.id)}
+                  <li class:failure={isFailure(e)}>
+                    <span class="time">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                    <span class="op">{e.operation}</span>
+                    {#if e.role}<span class="role">{roleLabel(e.role)}</span>{/if}
+                    <span class="result result-{e.result}">{e.result}</span>
+                  </li>
+                {/each}
+              </ol>
+            </div>
           {/if}
         {/if}
       </div>
-    {/if}
+    </Dialog>
   {/if}
 </section>
 
 <style>
-  .detail {
-    margin-top: 1rem;
-    padding: 1rem 1.1rem;
-    background: var(--color-surface-subtle);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-  }
   .detail-head {
     display: flex;
     align-items: center;
@@ -250,6 +250,9 @@
     margin: 0 0 1rem;
     display: grid;
     gap: 0.4rem;
+  }
+  .timeline-scroll {
+    overflow-x: auto;
   }
   ol.timeline {
     list-style: none;
