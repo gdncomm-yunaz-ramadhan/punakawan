@@ -110,7 +110,7 @@ func runWithQuerier(ctx context.Context, db *storage.DB, destProjectID string, s
 		id, _ := jsonString(row["id"])
 		raw := row["data"]
 		var rec protocol.KnowledgeRecord
-		if err := json.Unmarshal(raw, &rec); err != nil {
+		if err := jsonAny(raw, &rec); err != nil {
 			rep.Skipped = append(rep.Skipped, Skipped{ID: fallbackID(id, i), Reason: "malformed data json: " + err.Error()})
 			continue
 		}

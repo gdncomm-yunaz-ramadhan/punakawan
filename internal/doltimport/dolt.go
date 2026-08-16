@@ -98,6 +98,28 @@ func jsonInt(raw json.RawMessage) (int, error) {
 	return n, nil
 }
 
+// jsonAny unmarshals a raw JSON struct/object column value into out,
+// tolerating either shape dolt's `-r json` output has been observed to use
+// for the same JSON-typed column: a bare JSON value (newer dolt) or a JSON
+// string containing that value's JSON text, double-encoded (dolt 2.2.1, at
+// least for a legacy per-project store's `data` column). This is the same
+// version-inconsistency as jsonInt above, just on a struct column instead of
+// a numeric scalar, so any caller reading a JSON-typed column back from dolt
+// should go through this rather than unmarshaling into the target directly.
+func jsonAny(raw json.RawMessage, out any) error {
+	if err := json.Unmarshal(raw, out); err == nil {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return fmt.Errorf("neither a bare JSON value nor a JSON string containing one: %s", string(raw))
+	}
+	if err := json.Unmarshal([]byte(s), out); err != nil {
+		return fmt.Errorf("string-wrapped JSON did not unmarshal: %w", err)
+	}
+	return nil
+}
+
 // countRows runs SELECT COUNT(*) against table and returns the scalar count.
 func countRows(ctx context.Context, q Querier, table string) (int, error) {
 	rows, err := q(ctx, "SELECT COUNT(*) AS n FROM "+table)

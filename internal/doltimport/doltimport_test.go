@@ -488,6 +488,94 @@ func TestImportSkipsMalformedAndInvalid(t *testing.T) {
 	}
 }
 
+// TestImportToleratesDoltDataColumnDoubleEncoding pins the decode-shape fix
+// for the data column - the JSON/struct-typed counterpart to
+// TestCountRowsToleratesDoltNumberShapeDrift's numeric-scalar fix. Confirmed
+// live on a real per-project legacy store (dolt 2.2.1): dolt's own `-r json`
+// output has been observed to double-encode the data column as a JSON string
+// containing the record's escaped JSON text, rather than a bare JSON object.
+// Both shapes must decode and import identically.
+func TestImportToleratesDoltDataColumnDoubleEncoding(t *testing.T) {
+	stringWrapped, err := json.Marshal(validRecordJSON("pkw:req/demo/R-1", "Wrapped"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		dataRaw string
+		title   string
+	}{
+		{"bare JSON object", validRecordJSON("pkw:req/demo/R-1", "Bare"), "Bare"},
+		{"JSON string containing escaped JSON (dolt 2.2.1 double-encoding)", string(stringWrapped), "Wrapped"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openKernel(t)
+			rows := []map[string]json.RawMessage{
+				fakeKnowledgeRow("pkw:req/demo/R-1", tc.dataRaw, "2024-03-04 05:06:07"),
+			}
+			rep, err := runWithQuerier(context.Background(), db, proj, legacySource(t.TempDir()), true, fakeQuerier(rows, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rep.Skipped) != 0 {
+				t.Fatalf("want 0 skipped, got %+v", rep.Skipped)
+			}
+			if rep.RecordsImported != 1 {
+				t.Fatalf("want 1 imported, got %d", rep.RecordsImported)
+			}
+			store := knowledge.New(db, proj)
+			got, err := store.Get("pkw:req/demo/R-1")
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got.Title != tc.title {
+				t.Fatalf("title mismatch: got %q want %q", got.Title, tc.title)
+			}
+		})
+	}
+}
+
+// TestImportSkipsDataColumnThatMatchesNeitherShape pins the fallback: a data
+// value that is neither a bare JSON object nor a JSON string wrapping one is
+// genuinely malformed - not just a shape jsonAny doesn't yet know about - and
+// must still be reported as skipped with a clear reason, not silently
+// dropped and not fatal to the rest of the run.
+func TestImportSkipsDataColumnThatMatchesNeitherShape(t *testing.T) {
+	wrappedGarbage, err := json.Marshal("this is not valid record json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		dataRaw string
+	}{
+		{"not JSON at all", `not-json-at-all`},
+		{"JSON string wrapping non-JSON text", string(wrappedGarbage)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openKernel(t)
+			rows := []map[string]json.RawMessage{
+				fakeKnowledgeRow("pkw:req/demo/BAD-1", tc.dataRaw, "2024-03-04 05:06:07"),
+			}
+			rep, err := runWithQuerier(context.Background(), db, proj, legacySource(t.TempDir()), true, fakeQuerier(rows, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rep.RecordsImported != 0 {
+				t.Fatalf("want 0 imported, got %d", rep.RecordsImported)
+			}
+			if len(rep.Skipped) != 1 {
+				t.Fatalf("want 1 skipped, got %+v", rep.Skipped)
+			}
+			if !strings.Contains(rep.Skipped[0].Reason, "malformed data json") {
+				t.Fatalf("expected a malformed-data reason, got %q", rep.Skipped[0].Reason)
+			}
+		})
+	}
+}
+
 func TestImportIsIdempotent(t *testing.T) {
 	requireDolt(t)
 	dir := filepath.Join(t.TempDir(), "knowledge")
