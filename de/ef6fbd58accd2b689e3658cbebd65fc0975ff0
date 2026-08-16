@@ -1,0 +1,49 @@
+internal/panel/api/deliveries_handler.go
+  f9605b8f4acd1e01 70-93
+internal/panel/server/server.go
+  f9605b8f4acd1e01 212
+internal/daemon/delivery.go
+  f9605b8f4acd1e01 95-123,454-461,466,472,480,483,486,489-490,492-502,504,511-525
+internal/panel/api/deliveries_handler_test.go
+  f9605b8f4acd1e01 29-32,63-67,228-268
+internal/panel/contract/readers.go
+  f9605b8f4acd1e01 429-431
+internal/panel/events/delivery_watcher_test.go
+  f9605b8f4acd1e01 103-104
+internal/daemon/transport.go
+  f9605b8f4acd1e01 57
+web/panel/src/routes/deliveries/DeliveryDetail.svelte
+  f9605b8f4acd1e01 6,106-124,267,289-321,466-491
+web/panel/tests/DeliveryDetail.test.ts
+  f9605b8f4acd1e01 224-263
+internal/delivery/deliveryview.go
+  f9605b8f4acd1e01 14,38-74,206-226,234,248-276,278
+web/panel/src/lib/api/client.ts
+  f9605b8f4acd1e01 1474,1496-1503,1513-1524,1592-1599
+internal/panel/deliverysource/source.go
+  f9605b8f4acd1e01 55-60
+internal/delivery/deliveryview_test.go
+  f9605b8f4acd1e01 7,294-413
+internal/daemon/delivery_test.go
+  f9605b8f4acd1e01 366-471,535-592
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "deef6fbd58accd2b689e3658cbebd65fc0975ff0",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 693,
+      "total_deletions": 25,
+      "accepted_lines": 687,
+      "overriden_lines": 0
+    }
+  }
+}
