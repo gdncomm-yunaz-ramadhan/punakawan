@@ -56,6 +56,19 @@ type DeliveryView struct {
 	PendingApprovals []*protocol.ApprovalManifest    `json:"pending_approvals"`
 	PendingQuestions []string                        `json:"pending_questions"`
 	NextAction       string                          `json:"next_action"`
+
+	// LatestSeq is the highest event sequence number reflected in this
+	// view - pass it back as a later call's SinceSeq to learn what
+	// changed since. Always populated, regardless of whether SinceSeq
+	// was given.
+	LatestSeq int `json:"latest_seq"`
+
+	// NewlyRunnableLaneIDs are lanes now at runnable status whose
+	// dependencies were still unmet as of SinceSeq (or, when SinceSeq is
+	// 0/omitted, every currently runnable lane - there is no prior
+	// baseline to diff against). Only BuildDeliveryViewSince populates
+	// this; BuildDeliveryView always leaves it empty.
+	NewlyRunnableLaneIDs []string `json:"newly_runnable_lane_ids"`
 }
 
 // allApprovalManifests reduces every manifest entity in events into its
@@ -87,8 +100,30 @@ func allApprovalManifests(orchestrationID string, events []protocol.DeliveryEven
 // replaying its event log once and deriving every lane, parent task,
 // dependency edge, and approval manifest from that single pass - the
 // same enumeration approach list_runnable_lanes/report_discovered_dependency
-// already use (allLanes/ListGraph), not a new one.
+// already use (allLanes/ListGraph), not a new one. NewlyRunnableLaneIDs is
+// always left empty; use BuildDeliveryViewSince for that.
 func (s *Store) BuildDeliveryView(ctx context.Context, orchestrationID string) (*DeliveryView, error) {
+	return s.buildDeliveryView(ctx, orchestrationID, -1)
+}
+
+// BuildDeliveryViewSince is BuildDeliveryView, plus NewlyRunnableLaneIDs:
+// lanes at runnable status now that were not as of sinceSeq (every event
+// with Sequence <= sinceSeq). sinceSeq of 0 means "since the beginning" -
+// every currently runnable lane, since there is no prior baseline to diff
+// against - which is exactly what a caller polling for the first time
+// wants. Pass the prior call's returned LatestSeq to see what's changed
+// since then.
+func (s *Store) BuildDeliveryViewSince(ctx context.Context, orchestrationID string, sinceSeq int) (*DeliveryView, error) {
+	return s.buildDeliveryView(ctx, orchestrationID, sinceSeq)
+}
+
+// diffDisabled is buildDeliveryView's sentinel sinceSeq: BuildDeliveryView's
+// existing callers never asked for a diff, and -1 can never equal a real
+// event Sequence (those start at 0), so it cleanly means "skip the diff
+// pass, leave NewlyRunnableLaneIDs empty" without a bool parameter.
+const diffDisabled = -1
+
+func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int) (*DeliveryView, error) {
 	events, err := loadEvents(ctx, s.db.Reader(), orchestrationID)
 	if err != nil {
 		return nil, err
@@ -107,12 +142,18 @@ func (s *Store) BuildDeliveryView(ctx context.Context, orchestrationID string) (
 	}
 
 	view := &DeliveryView{
-		Orchestration:    orch,
-		Projects:         []ProjectSummary{},
-		Lanes:            []LaneSummary{},
-		Blockers:         []BlockerSummary{},
-		PendingApprovals: []*protocol.ApprovalManifest{},
-		PendingQuestions: []string{},
+		Orchestration:        orch,
+		Projects:             []ProjectSummary{},
+		Lanes:                []LaneSummary{},
+		Blockers:             []BlockerSummary{},
+		PendingApprovals:     []*protocol.ApprovalManifest{},
+		PendingQuestions:     []string{},
+		NewlyRunnableLaneIDs: []string{},
+	}
+	for _, ev := range events {
+		if ev.Sequence > view.LatestSeq {
+			view.LatestSeq = ev.Sequence
+		}
 	}
 
 	laneIDs := make([]string, 0, len(laneMap))
@@ -197,7 +238,55 @@ func (s *Store) BuildDeliveryView(ctx context.Context, orchestrationID string) (
 	}
 
 	view.NextAction = computeNextAction(orch, view.Lanes, view.PendingApprovals)
+
+	if sinceSeq != diffDisabled {
+		newly, err := newlyRunnableLaneIDs(orchestrationID, events, laneMap, sinceSeq)
+		if err != nil {
+			return nil, err
+		}
+		view.NewlyRunnableLaneIDs = newly
+	}
+
 	return view, nil
+}
+
+// newlyRunnableLaneIDs diffs current (every lane as of the full events
+// replay) against the same lanes reduced from only the events with
+// Sequence <= sinceSeq, and reports every lane id that is runnable now but
+// was not (or did not exist) at that earlier point. allLanes is pure over
+// whatever events slice it is given, so reducing it twice - once for the
+// full log, once for a Sequence-filtered prefix - is enough to get "state
+// as of sinceSeq" without a second DB read.
+func newlyRunnableLaneIDs(orchestrationID string, events []protocol.DeliveryEvent, current map[string]*protocol.DeliveryLane, sinceSeq int) ([]string, error) {
+	prior := make([]protocol.DeliveryEvent, 0, len(events))
+	for _, ev := range events {
+		if ev.Sequence <= sinceSeq {
+			prior = append(prior, ev)
+		}
+	}
+	priorLanes, err := allLanes(orchestrationID, prior)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, 0, len(current))
+	for id := range current {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	out := []string{}
+	for _, id := range ids {
+		l := current[id]
+		if l.Status != protocol.DeliveryLaneStatusRunnable {
+			continue
+		}
+		p, existed := priorLanes[id]
+		if !existed || p.Status != protocol.DeliveryLaneStatusRunnable {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 // computeNextAction picks the single most useful next step, honestly

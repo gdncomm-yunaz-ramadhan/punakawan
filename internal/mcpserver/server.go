@@ -8,6 +8,8 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -36,7 +38,7 @@ func Serve(ctx context.Context, a *app.App) error {
 // consuming project) - so it's the right place for the two things that
 // actually tripped up real usage: the expected tool call sequence, and how
 // the write-approval gate is meant to be satisfied.
-const serverInstructions = `Punakawan never reasons itself (ADR-0016): you, the connected agent, are the reasoning engine. Punakawan validates and persists whatever structured result you submit, and enforces write approvals - it does not call a model on its own.
+const serverInstructionsBody = `Punakawan never reasons itself (ADR-0016): you, the connected agent, are the reasoning engine. Punakawan validates and persists whatever structured result you submit, and enforces write approvals - it does not call a model on its own.
 
 Only a small default facade is visible at first (delivery, project/lane setup, workflow invocation, and find_tool). The rest of the surface - Jira, knowledge, git/PR, role review, adapters, and more - exists and is fully capable, just not listed yet: call find_tool with a keyword (or select:name1,name2 for exact names) to make any of it callable immediately. If a tool you expect isn't in your list, that's why - search for it rather than assuming it doesn't exist.
 
@@ -55,6 +57,21 @@ When asked to work a Jira ticket end to end, do this before writing any code: re
 Bagong's independent review (§8.4): build your own context rather than trusting Petruk's summary - call build_task_context fresh (it re-pulls the parent requirement, not Petruk's interpretation of it) and read the task's own evidence bundle files directly (diff.patch, tests.json, api-diff.json under .punakawan/evidence/<run>/<task>/). Milestone 7 (Playwright) has not shipped yet, so there is no E2E trace evidence to review - say so explicitly in test_gaps instead of inventing E2E findings or blocking on missing infra. Put a finding in blocking_findings, not the plain findings array, only when it means the delivered work does not satisfy the requirement's acceptance criteria, introduces a regression, or is a security issue. For each blocking finding, take action: call reopen_task if it is a regression in already-completed work, or report_discovered_task if it is new/missing scope - then resubmit a clean submit_lane_bagong_review once resolved. advance_workflow to completed is refused while the run's latest Bagong review still has unresolved blocking_findings.
 
 Token efficiency (RTK): model context is the scarce resource. Run your own shell and dev commands - git, tests, builds, greps, package managers - through rtk whenever it is available (for example "rtk git status", "rtk go test ./..."), so their output costs 60-90% fewer tokens. Punakawan routes the commands it runs itself (such as run_tests) through rtk when it is present on PATH, and you should do the same for the commands you run; fall back to the raw command only when rtk is not installed.`
+
+// serverInstructionsRevision identifies serverInstructionsBody's exact
+// content: a client reconnecting after a punakawan upgrade can compare
+// this against what it saw last session to tell "the guidance changed,
+// re-read it" from "same daemon, nothing to do" - without any dedicated
+// tool or resource, since InitializeResult.Instructions (what this
+// becomes part of) is already fetched exactly once per session by every
+// MCP client, satisfying "fetched once" as a direct consequence of the
+// protocol's own handshake.
+var serverInstructionsRevision = func() string {
+	sum := sha256.Sum256([]byte(serverInstructionsBody))
+	return hex.EncodeToString(sum[:8])
+}()
+
+var serverInstructions = serverInstructionsBody + "\n\nInstructions revision: " + serverInstructionsRevision
 
 // facadeTools is the small, always-visible default discovery surface: the
 // delivery facade a normal caller needs, plus find_tool itself. Every other

@@ -190,6 +190,106 @@ func TestBuildDeliveryViewFailedLaneNeedsHumanReview(t *testing.T) {
 	}
 }
 
+// TestBuildDeliveryViewLeavesNewlyRunnableLaneIDsEmpty covers that plain
+// BuildDeliveryView never populates NewlyRunnableLaneIDs - only
+// BuildDeliveryViewSince opts into that diff.
+func TestBuildDeliveryViewLeavesNewlyRunnableLaneIDsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	orch := createTestOrchestration(t, s)
+	proj := registerProject(t, s, "plain-view")
+	task := createTestTask(t, s, orch.Id, "task")
+	if _, err := s.RouteParentTask(ctx, "route-"+NewID(), orch.Id, task.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask: %v", err)
+	}
+	if _, err := s.CreateLane(ctx, "lane-"+NewID(), NewID(), orch.Id, proj.Id, task.Id); err != nil {
+		t.Fatalf("CreateLane: %v", err)
+	}
+	if _, err := s.SyncFrontier(ctx, "sync-"+NewID(), orch.Id); err != nil {
+		t.Fatalf("SyncFrontier: %v", err)
+	}
+
+	view, err := s.BuildDeliveryView(ctx, orch.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if len(view.NewlyRunnableLaneIDs) != 0 {
+		t.Fatalf("NewlyRunnableLaneIDs = %+v, want empty from plain BuildDeliveryView", view.NewlyRunnableLaneIDs)
+	}
+	if view.LatestSeq <= 0 {
+		t.Fatalf("LatestSeq = %d, want it populated regardless of the diff being requested", view.LatestSeq)
+	}
+}
+
+// TestBuildDeliveryViewSinceReportsLaneUnblockedAfterCheckpoint covers
+// AC7's actual diff: a lane blocked at the sinceSeq checkpoint that later
+// unblocks is reported; a lane already runnable at that checkpoint is not
+// reported again just because it is still runnable.
+func TestBuildDeliveryViewSinceReportsLaneUnblockedAfterCheckpoint(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	orch := createTestOrchestration(t, s)
+	proj := registerProject(t, s, "since-view")
+
+	blocker := createTestTask(t, s, orch.Id, "blocker")
+	dependent := createTestTask(t, s, orch.Id, "dependent")
+	if _, err := s.RouteParentTask(ctx, "route-blocker-"+NewID(), orch.Id, blocker.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask(blocker): %v", err)
+	}
+	if _, err := s.RouteParentTask(ctx, "route-dependent-"+NewID(), orch.Id, dependent.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask(dependent): %v", err)
+	}
+	if _, err := s.AddDependencyEdge(ctx, "edge-"+NewID(), NewID(), orch.Id, dependent.Id, blocker.Id,
+		protocol.DependencyEdgeTypeRequires, protocol.DependencyEdgeOriginUser, 1.0, "test fixture"); err != nil {
+		t.Fatalf("AddDependencyEdge: %v", err)
+	}
+	blockerLane, err := s.CreateLane(ctx, "lane-blocker-"+NewID(), NewID(), orch.Id, proj.Id, blocker.Id)
+	if err != nil {
+		t.Fatalf("CreateLane(blocker): %v", err)
+	}
+	dependentLane, err := s.CreateLane(ctx, "lane-dependent-"+NewID(), NewID(), orch.Id, proj.Id, dependent.Id)
+	if err != nil {
+		t.Fatalf("CreateLane(dependent): %v", err)
+	}
+	syncedLanes, err := s.SyncFrontier(ctx, "sync-1-"+NewID(), orch.Id)
+	if err != nil {
+		t.Fatalf("SyncFrontier: %v", err)
+	}
+	blockerLane = lanesByID(syncedLanes)[blockerLane.Id]
+
+	checkpoint, err := s.BuildDeliveryView(ctx, orch.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView (checkpoint): %v", err)
+	}
+
+	if _, err := s.UpdateLaneStatus(ctx, "accept-"+NewID(), orch.Id, blockerLane.Id, blockerLane.Revision, protocol.DeliveryLaneStatusAccepted); err != nil {
+		t.Fatalf("UpdateLaneStatus(accepted): %v", err)
+	}
+	if _, err := s.SyncFrontier(ctx, "sync-2-"+NewID(), orch.Id); err != nil {
+		t.Fatalf("SyncFrontier (after acceptance): %v", err)
+	}
+
+	view, err := s.BuildDeliveryViewSince(ctx, orch.Id, checkpoint.LatestSeq)
+	if err != nil {
+		t.Fatalf("BuildDeliveryViewSince: %v", err)
+	}
+	if len(view.NewlyRunnableLaneIDs) != 1 || view.NewlyRunnableLaneIDs[0] != dependentLane.Id {
+		t.Fatalf("NewlyRunnableLaneIDs = %+v, want exactly [%s]", view.NewlyRunnableLaneIDs, dependentLane.Id)
+	}
+
+	// Since the very beginning (sinceSeq 0), there is no prior baseline
+	// for the dependent lane either, so it counts as newly runnable here
+	// too - the blocker lane does not, since it is accepted now, not
+	// runnable.
+	fromStart, err := s.BuildDeliveryViewSince(ctx, orch.Id, 0)
+	if err != nil {
+		t.Fatalf("BuildDeliveryViewSince (from start): %v", err)
+	}
+	if len(fromStart.NewlyRunnableLaneIDs) != 1 || fromStart.NewlyRunnableLaneIDs[0] != dependentLane.Id {
+		t.Fatalf("NewlyRunnableLaneIDs (from start) = %+v, want exactly [%s]", fromStart.NewlyRunnableLaneIDs, dependentLane.Id)
+	}
+}
+
 // TestStartDeliveryClassifiesConfidentAndAmbiguousReferencesSeparately
 // covers StartDelivery's own split: a confidently classified reference
 // becomes a captured requirement source, and an unclassifiable one
@@ -198,7 +298,7 @@ func TestStartDeliveryClassifiesConfidentAndAmbiguousReferencesSeparately(t *tes
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	view, err := s.StartDelivery(ctx,"", []string{
+	view, err := s.StartDelivery(ctx, "", []string{
 		"PAY-1842",
 		"https://example.com/spec",
 		"acme/checkout#42",
@@ -242,11 +342,11 @@ func TestStartDeliveryRepeatedIdempotencyKeyReusesSameOrchestration(t *testing.T
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	first, err := s.StartDelivery(ctx,"retry-key", []string{"PAY-1"})
+	first, err := s.StartDelivery(ctx, "retry-key", []string{"PAY-1"})
 	if err != nil {
 		t.Fatalf("StartDelivery (first): %v", err)
 	}
-	second, err := s.StartDelivery(ctx,"retry-key", []string{"PAY-1"})
+	second, err := s.StartDelivery(ctx, "retry-key", []string{"PAY-1"})
 	if err != nil {
 		t.Fatalf("StartDelivery (retry): %v", err)
 	}

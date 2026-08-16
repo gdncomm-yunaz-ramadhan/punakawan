@@ -264,6 +264,20 @@ func TestServerInstructionsCoverApprovalAndPipeline(t *testing.T) {
 	}
 }
 
+// TestServerInstructionsCarryARevisionMarker guards AC3: a client can tell
+// whether the guidance it cached from a prior session still matches this
+// daemon's without any dedicated tool, since InitializeResult.Instructions
+// is already fetched exactly once per session by every MCP client.
+func TestServerInstructionsCarryARevisionMarker(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+	instructions := cs.InitializeResult().Instructions
+
+	if !strings.Contains(instructions, "Instructions revision: "+serverInstructionsRevision) {
+		t.Fatalf("Instructions missing its revision marker %q:\n%s", serverInstructionsRevision, instructions)
+	}
+}
+
 // TestServerInstructionsStateGroundedPrinciple guards the product principle and
 // the pointer to the shared communication rules, and asserts the instructions
 // do NOT re-list those rules (they live once in the role prompts).

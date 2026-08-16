@@ -60,6 +60,12 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 // GetDeliveryInput is get_delivery's (and resume_delivery's) input.
 type GetDeliveryInput struct {
 	OrchestrationId string `json:"orchestration_id"`
+	// SinceSeq is optional: pass a prior response's view.latest_seq to
+	// learn which lanes became runnable since that point, reported back
+	// as view.newly_runnable_lane_ids. Omitted (or 0) reports every lane
+	// currently runnable, since there is then no prior checkpoint to
+	// diff against.
+	SinceSeq int `json:"since_seq,omitempty"`
 }
 
 // DeliveryViewOutput wraps one DeliveryView, used by every tool in this
@@ -74,7 +80,7 @@ func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, 
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
-		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
+		view, err := store.BuildDeliveryViewSince(ctx, in.OrchestrationId, in.SinceSeq)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
@@ -86,8 +92,9 @@ func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, 
 // This domain is event-sourced: current state is always derived fresh
 // by replaying the event log, so there is no separate session or
 // in-memory progress to "resume" - checking current status via
-// BuildDeliveryView already tells a reconnecting caller everything a
-// dedicated resume mechanism could, so resume_delivery does not
+// BuildDeliveryViewSince already tells a reconnecting caller everything a
+// dedicated resume mechanism could (including, via since_seq, exactly
+// what changed while it was away), so resume_delivery does not
 // implement one.
 func resumeDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, GetDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
 	return getDeliveryHandler(a)
