@@ -1,0 +1,25 @@
+web/panel/src/routes/projects/ProjectWorkflows.svelte
+  f9605b8f4acd1e01 240,243,245-255,257-268,277,279-288,543,546,552,564-567,569,571,573,575-577,579,583-584,586,589-604,606-610,614-622,624,628-629,631,633,637-638,640,642-643,646-647
+web/panel/tests/ProjectWorkflows.test.ts
+  f9605b8f4acd1e01 111-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2067d06abd29f7f950676ce247d974e96fe47b00",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 132,
+      "total_deletions": 131,
+      "accepted_lines": 130,
+      "overriden_lines": 0
+    }
+  }
+}
