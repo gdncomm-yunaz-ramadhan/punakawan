@@ -68,7 +68,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "save_workflow_definition",
-		Description: "Create or update a reusable workflow definition (mirrors the panel's workflow editor) - use this to turn an explicitly user-dictated flow, or a pattern the calling agent judges worth capturing, straight into a versioned, selector-resolvable definition without waiting on propose_project_learning's panel-review gate. Validated against the same capability rules the panel enforces (unknown/command-like capabilities are rejected); common Jira-create spellings createJiraIssue and atlassian.createJiraIssue are normalized to the canonical create_jira_issue tool. Updating an existing id requires the current revision (optimistic locking, like project metadata); a brand-new id ignores whatever revision is passed. The prior version is always snapshotted, never overwritten - see the panel's workflow history for any revision. Set judgment (with a required rationale) when the agent's own judgment - not a direct user instruction - is why this pattern is being captured: this records a fingerprinted, deduplicated learning proposal alongside the save (support_count increments if the same step pattern is captured again), already marked accepted since the save already happened - it is an audit trail, not an additional gate.",
+		Description: "Create or update a reusable workflow definition (mirrors the panel's workflow editor) - use this to capture an explicitly user-dictated flow, or a pattern worth reusing, as a versioned, selector-resolvable definition without waiting on propose_project_learning's panel-review gate. Validated against the same capability rules the panel enforces (unknown/command-like capabilities are rejected); common Jira-create spellings createJiraIssue and atlassian.createJiraIssue normalize to create_jira_issue. Updating an existing id requires its current revision (optimistic locking, like project metadata); a new id ignores any revision passed. The prior version is always snapshotted, never overwritten - see the panel's workflow history. Set judgment (with a required rationale) when the agent's own judgment, not a direct user instruction, motivates capturing this pattern: it records a fingerprinted, deduplicated learning proposal alongside the save, already marked accepted since the save already happened - an audit trail, not an extra gate.",
 	}, saveWorkflowDefinitionHandler(a, reg))
 
 	addTool(server, reg, &mcp.Tool{
@@ -398,52 +398,6 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "verify_impact_coverage",
 		Description: "Bagong's coverage check (§30/IMPACT-014): traverse the impact graph from subject_id and report whether every reachable symbol/operation is tested and whether any reachable edge is in dispute. Returns covered=true only when nothing is missing coverage and nothing is disputed, plus the affected repositories, missing-coverage nodes, and related contradictions. Gated to role Bagong's cross_repository_verification capability.",
 	}, verifyImpactCoverageHandler(a))
-
-	// Change Dossier (§32-39): the durable, versioned proof artifact for a change.
-	addTool(server, reg, &mcp.Tool{
-		Name:        "create_change_dossier",
-		Description: "Create a new Change Dossier (§37) - the durable proof artifact tracking a change from objective to completion. Starts at status draft. Gated to role Semar's change_dossier capability.",
-	}, createChangeDossierHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "add_dossier_claim",
-		Description: "Attach a claim (producer role, type, statement, optional evidence ids) to a dossier's append-only claim log (§34). Status defaults to claimed. Gated to role Semar's change_dossier capability.",
-	}, addDossierClaimHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "verify_dossier_claim",
-		Description: "Record an independent verification of a dossier claim (§34). Rejected if by_role equals the claim's producer role - a role cannot verify its own claim. Sets the claim to verified.",
-	}, verifyDossierClaimHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "dispute_dossier_claim",
-		Description: "Record an independent dispute of a dossier claim (§34), setting it to disputed - a blocking finding for finalize_dossier. Rejected if by_role equals the claim's producer role.",
-	}, disputeDossierClaimHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "add_dossier_evidence",
-		Description: "Attach an evidence record (type, artifacts, source, result) to a dossier (§35). The caller supplies any artifact sha256; the store does not compute it. Gated to role Semar's change_dossier capability.",
-	}, addDossierEvidenceHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "set_dossier_contradictions",
-		Description: "Set a dossier's resolved/unresolved contradiction sets (§34). Unresolved contradictions are blocking findings that prevent finalize_dossier. Gated to role Semar's change_dossier capability.",
-	}, setDossierContradictionsHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "set_dossier_impact",
-		Description: "Set a dossier's impact section (§33): affected repositories, deliberately excluded repositories (each with a reason), and areas with missing coverage. Rendered in the markdown/PR-summary exports. Gated to role Semar's change_dossier capability.",
-	}, setDossierImpactHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "finalize_dossier",
-		Description: "Complete a dossier, but only when it is at verified status and free of blocking findings (§36): no unresolved contradictions, no missing plan items or unapproved deviations, and no disputed/rejected claims. Returns a clear error listing every blocker when it cannot complete. Gated to role Semar's change_dossier capability.",
-	}, finalizeDossierHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "export_dossier",
-		Description: "Render a dossier as human-readable markdown (format=md, default) or deterministic JSON (format=json), including the §38 summary indicators. Read-only.",
-	}, exportDossierHandler(a))
 
 	// Delivery scheduling: pull-based lease lifecycle over a multi-project
 	// orchestration's dependency graph. A connected agent lists what it

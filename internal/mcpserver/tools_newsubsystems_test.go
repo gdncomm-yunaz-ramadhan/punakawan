@@ -7,7 +7,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ygrip/punakawan/internal/dossier"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -92,89 +91,6 @@ func TestAnalyzeImpactReturnsResult(t *testing.T) {
 	}
 	if len(res.DirectImpact) == 0 {
 		t.Fatalf("DirectImpact is empty, want the repository node")
-	}
-}
-
-// TestFinalizeDossierBlockedThenClean checks Finalize refuses while a claim is
-// disputed and succeeds once the dispute is cleared by verification.
-func TestFinalizeDossierBlockedThenClean(t *testing.T) {
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	var created ChangeDossierOutput
-	callTool(t, cs, "create_change_dossier", map[string]any{
-		"id":        "d1",
-		"title":     "refund flow change",
-		"objective": map[string]any{"statement": "ship refunds"},
-	}, &created)
-	if created.Dossier.Id != "d1" {
-		t.Fatalf("dossier id = %q, want d1", created.Dossier.Id)
-	}
-
-	// Walk the lifecycle to verified so Finalize is only gated by blocking
-	// findings, not the status edge (there is no Advance MCP tool).
-	for _, to := range []protocol.ChangeDossierStatus{
-		protocol.ChangeDossierStatusContextReady,
-		protocol.ChangeDossierStatusPlanned,
-		protocol.ChangeDossierStatusImplementing,
-		protocol.ChangeDossierStatusAwaitingVerification,
-		protocol.ChangeDossierStatusVerified,
-	} {
-		if err := dossier.Advance(a.Workspace.Root, "d1", to); err != nil {
-			t.Fatalf("Advance to %s: %v", to, err)
-		}
-	}
-
-	var claim DossierClaimOutput
-	callTool(t, cs, "add_dossier_claim", map[string]any{
-		"dossier_id": "d1",
-		"claim": map[string]any{
-			"id":        "c1",
-			"producer":  map[string]any{"role": "gareng"},
-			"type":      "implementation",
-			"statement": "implementation matches the plan",
-		},
-	}, &claim)
-
-	// Dispute by an independent role -> a blocking finding.
-	var disputed DossierClaimOutput
-	callTool(t, cs, "dispute_dossier_claim", map[string]any{
-		"dossier_id": "d1",
-		"claim_id":   "c1",
-		"by_role":    "bagong",
-	}, &disputed)
-	if disputed.Claim.Status != protocol.DossierClaimStatusDisputed {
-		t.Fatalf("claim status = %q, want disputed", disputed.Claim.Status)
-	}
-
-	// Finalize must be blocked while the dispute stands.
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "finalize_dossier",
-		Arguments: map[string]any{"dossier_id": "d1"},
-	})
-	if err != nil {
-		t.Fatalf("CallTool finalize (blocked): %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("finalize should be blocked by the disputed claim")
-	}
-
-	// Clear the dispute with a verification (latest claim line wins).
-	var verified DossierClaimOutput
-	callTool(t, cs, "verify_dossier_claim", map[string]any{
-		"dossier_id": "d1",
-		"claim_id":   "c1",
-		"by_role":    "bagong",
-	}, &verified)
-	if verified.Claim.Status != protocol.DossierClaimStatusVerified {
-		t.Fatalf("claim status = %q, want verified", verified.Claim.Status)
-	}
-
-	// Now finalize cleanly.
-	var final ChangeDossierOutput
-	callTool(t, cs, "finalize_dossier", map[string]any{"dossier_id": "d1"}, &final)
-	if final.Dossier.Status != protocol.ChangeDossierStatusCompleted {
-		t.Fatalf("finalized status = %q, want completed", final.Dossier.Status)
 	}
 }
 

@@ -22,7 +22,7 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 	for _, name := range []string{
 		"submit_contradiction",
 		"analyze_impact",
-		"create_change_dossier",
+		"record_impact_edge",
 		"start_delivery",
 		"jira_assign_issue",
 		"list_pending_approvals",

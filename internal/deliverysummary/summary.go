@@ -16,9 +16,9 @@
 //
 // Unlike internal/dossier's ChangeDossier, nothing here is populated by a
 // caller filling in an MCP "ceremony" tool (add_dossier_claim,
-// set_dossier_impact, ...) - that ceremony surface is being removed
-// precisely because it asks a caller to restate facts a store already
-// holds. Every field here is instead read straight from records ordinary
+// set_dossier_impact, ...) - that MCP ceremony surface has since been
+// removed precisely because it asked a caller to restate facts a store
+// already held. Every field here is instead read straight from records ordinary
 // tool use already produced: internal/testrun's evidence bundle,
 // internal/evidence's per-run ledger, internal/prreview's PR review
 // findings, and git itself via internal/gitops. Build is a pure function

@@ -210,6 +210,37 @@ func TestToolListSchemasHaveNoBareBooleanSubschemas(t *testing.T) {
 	}
 }
 
+// maxToolDescriptionWords is punokawan-14yn.10 AC2's cap: no tool
+// description may exceed 150 words. A long description bloats every
+// client's tools/list context and, per report, gets silently trimmed by
+// at least one MCP client rather than rejected - so the failure mode is
+// quiet degradation, not a loud error, which is exactly what a regression
+// test needs to catch instead of a human happening to notice.
+const maxToolDescriptionWords = 150
+
+// TestToolDescriptionsStayUnderWordCap guards punokawan-14yn.10 AC2: no
+// registered tool's description may exceed 150 words. Walks the live
+// tools/list response rather than re-parsing source, so it catches a
+// regression regardless of which file a tool is registered from.
+func TestToolDescriptionsStayUnderWordCap(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	res, err := cs.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	if len(res.Tools) == 0 {
+		t.Fatal("ListTools returned no tools")
+	}
+
+	for _, tool := range res.Tools {
+		if n := len(strings.Fields(tool.Description)); n > maxToolDescriptionWords {
+			t.Errorf("%s: description is %d words, want <= %d", tool.Name, n, maxToolDescriptionWords)
+		}
+	}
+}
+
 // singleSchemaKeys are JSON Schema keywords whose value is exactly one
 // (sub)schema - Claude Code's client requires an object there, not a bare
 // boolean, even though a bare boolean is spec-legal shorthand for it.
