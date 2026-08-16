@@ -1,0 +1,29 @@
+internal/search/backup_restore_test.go
+  f9605b8f4acd1e01 1-117
+internal/archcheck/legacy_test.go
+  f9605b8f4acd1e01 1-196
+internal/daemon/restart_cycles_test.go
+  f9605b8f4acd1e01 1-98
+internal/procreg/interruption_cycles_test.go
+  f9605b8f4acd1e01 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ca9874d7c3733da0b0c23f7363ccb8a3e306979a",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 486,
+      "total_deletions": 0,
+      "accepted_lines": 486,
+      "overriden_lines": 0
+    }
+  }
+}
