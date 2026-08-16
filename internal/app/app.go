@@ -475,7 +475,7 @@ func (a *App) JiraWorkflow() (*jiraworkflow.Config, error) {
 	return cfg, nil
 }
 
-// OpenSearchIndex lazily opens the Bleve BM25F index rooted at
+// OpenSearchIndex lazily opens the SQLite FTS5 search index rooted at
 // .punakawan/index/bm25 under the workspace (§10.2), memoizing the result.
 // Per §11.11 the index is disposable and always rebuildable from
 // OpenKnowledge's Store, so callers searching it should call search.Rebuild

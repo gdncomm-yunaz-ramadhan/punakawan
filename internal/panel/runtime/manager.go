@@ -5,11 +5,15 @@
 // Motivation: the panel's non-primary workspace reads (WorkspaceSource.Get
 // / summaryFor, GlobalSearchSource.Search) previously did a fresh
 // app.Load(path) + Close() on every request. app.Load discovers the
-// workspace and opens small JSONL stores; a shared, reused App is safe for
-// concurrent reads because the heavy resources (the Dolt-backed knowledge
-// store and the BM25 search index) are lazily memoized on the App behind
-// mutexes (App.OpenKnowledge / App.OpenSearchIndex). Reloading per request
-// throws that memoization away and repays the discovery + store-open cost
+// workspace and wires up its per-project state (policy, git inspector,
+// worktree manager, and the JSONL-backed workflow/PR-review/context-request
+// stores); knowledge, tasks, approvals, learning, and the sync queue are
+// thin scopes over one shared SQLite storage kernel rather than per-project
+// stores, so they do not need this pooling. What genuinely benefits from
+// staying warm across requests is workspace discovery itself and, above
+// all, the per-project SQLite FTS5 search index, which is lazily memoized
+// on the App behind a mutex (App.OpenSearchIndex). Reloading per request
+// throws that memoization (and the discovery work) away and repays the cost
 // every time. ProjectRuntimeManager keeps a bounded set of these Apps warm
 // and hands them out under reference counting so a busy project is loaded
 // once and reused.

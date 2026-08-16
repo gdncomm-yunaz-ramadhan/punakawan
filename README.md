@@ -70,7 +70,7 @@ Use Punakawan when you want an agent to work a real ticket **end to end** and yo
 care that the result is trustworthy:
 
 - **You want durable, multi-session work.** The assessment, plan, task graph,
-  and review findings persist in a local Dolt-backed store and a Beads task
+  and review findings persist in a local SQLite kernel and a Beads task
   graph — a later session or a teammate picks up where you left off instead of
   starting from zero.
 - **You want a safety gate on external writes.** Every Jira/Confluence write
@@ -108,7 +108,7 @@ flowchart LR
 
   PK --- Roles
   PK -->|normalize| ADP[TS adapters] -->|REST v3| Jira[(Jira / Confluence)]
-  PK -->|BM25F| KN[(Knowledge store<br/>Dolt + Bleve)]
+  PK -->|FTS5| KN[(Knowledge store<br/>SQLite kernel)]
   PK -->|task graph| BD[(Beads)]
   PK -->|compress cmd output| RTK[RTK]
   PK -->|embedded| Panel[[Panel UI]]
@@ -173,11 +173,12 @@ is embedded via `go:embed`). Nothing leaves your machine; the listener binds to
 loopback and mutating routes are session- and CSRF-gated.
 
 Each project drills into tabbed surfaces — Summary, Metadata, **Roles**,
-Workflows, Knowledge, Tasks, Plans, **Contradictions**, **Impact**, and **Change
-Dossiers** — so the four Punakawan roles, their open blockers, cross-repository
-impact, and handoff state all read from one place. The Roles tab configures
-Semar, Gareng, Petruk, and Bagong directly — each with its wayang portrait,
-per-role style/mode, and toggleable capabilities:
+Workflows, Knowledge, Tasks, Plans, Sessions, Approvals, and Health — so the
+four Punakawan roles, their open blockers, and run state all read from one
+place. A top-level **Deliveries** view lists and drills into cross-project
+delivery lanes alongside Overview, Projects, Context Improvements, and System.
+The Roles tab configures Semar, Gareng, Petruk, and Bagong directly — each
+with its wayang portrait, per-role style/mode, and toggleable capabilities:
 
 <p align="center">
   <img src="assets/panel-showcase.png" alt="Punakawan Panel — role configuration" width="820" />
@@ -189,41 +190,46 @@ metric tiles, status pills, charts, cards, buttons, and modals that all read fro
 the same tokens, stay responsive down to a single column on mobile, and render in
 both light and dark.
 
-### Runtime pool (Dolt server footprint)
+### Storage: embedded SQLite kernel
 
-Each project's knowledge lives in its own Dolt database inside that project
-(`<project>/.punakawan/knowledge`), colocated with the repo so it stays portable
-and git-syncable per project ([ADR-0005](docs/architecture/ADR-0005-dolt-is-the-canonical-knowledge-store.md),
-[ADR-0008](docs/architecture/ADR-0008-git-tracked-yaml-stores-portable-human-reviewable-project-knowledge.md)).
-A `dolt sql-server` binds one data directory, so there is **one server per
-project** (deduplicated across processes via `.dolt/sql-server.info`), not one
-shared server. As you browse across projects the panel keeps a **bounded pool**
-of live project runtimes — each backing one Dolt server — and shuts the rest
-down:
+Punakawan's durable state — knowledge, tasks, approvals, learning proposals,
+the adapter-write sync queue, and delivery-orchestration data (projects,
+lanes, worker leases, evidence, review conclusions) — lives in one embedded
+SQLite kernel (`internal/storage`), owned by exactly one daemon process per
+OS user. There is no subprocess to boot and no network listener: every access
+is an in-process `database/sql` call over a single WAL-mode database file,
+through one serialized writer and a bounded reader pool. See
+[ADR-0021](docs/architecture/ADR-0021-an-embedded-sqlite-kernel-replaces-the-dolt-hub-as-active-storage.md).
 
-- **LRU cap**, default **4** live runtimes (the primary project is always kept).
-  Exceeding the cap shuts down the least-recently-used idle project's server.
-- **Idle shutdown** of an unused non-primary project after **12 minutes**.
+The panel still keeps a **bounded pool** of per-project `*app.App` runtimes
+warm as you browse across projects — not for the shared kernel, but for the
+state that is genuinely still per-project: workspace discovery and each
+project's own SQLite FTS5 search index (`<project>/.punakawan/index/bm25`).
+
+- **Cap**, default **4** live runtimes (the primary project is always kept).
+  Exceeding the cap shuts down the least-recently-used idle project's runtime.
+- **Idle shutdown** of an unused non-primary project's runtime after **12
+  minutes**.
 - Both are tunable from **System → Runtime pool** (`GET`/`PATCH
   /api/v1/system/settings`, persisted at `.punakawan/panel/settings.json`);
-  lowering the cap frees memory immediately. See
-  [ADR-0019](docs/architecture/ADR-0019-per-project-dolt-servers-are-bounded-by-an-lru-runtime-pool.md).
+  lowering the cap frees memory immediately.
 
-Killing a Dolt server by hand is always safe — the data is on disk and the
-server restarts on demand.
+Closing an idle runtime by hand is always safe — its search index is on disk
+and reopens (or rebuilds from the knowledge store if missing) next time the
+project is browsed.
 
 ## Architecture in one line
 
 Go core (orchestration, persistence, approval gates, MCP surface) + TypeScript
 adapters (Atlassian normalization) + a connected LLM agent (the reasoning
-engine) + Dolt-backed knowledge and Beads task graph (durable state) + an
-embedded Svelte panel (visibility).
+engine) + an embedded SQLite kernel and Beads task graph (durable state,
+owned by a single daemon per OS user) + an embedded Svelte panel (visibility).
 
 - **MCP surface:** `internal/mcpserver` exposes ~46 tools — `call_adapter_operation`
   for Jira/Confluence, the `semar`/`gareng`/`petruk`/`bagong` prompts and their
   `submit_*` tools, `submit_task_graph`, `sync_jira_subtasks`,
   `update_jira_task_progress`, `search_knowledge`, and the workflow pipeline.
-- **Knowledge search:** BM25F over a Bleve index with a technical tokenizer that
+- **Knowledge search:** BM25-ranked SQLite FTS5 with a technical tokenizer that
   preserves identifiers, and first-class indexing of **CVE / GHSA / Sonar-rule**
   identifiers (`internal/search`).
 - **Sync model:** issues live in a local Dolt DB; `bd dolt push/pull` syncs under
@@ -240,7 +246,7 @@ for the full engineering plan, architecture, and milestone roadmap.
 | Core | **Go 1.26+** — MCP server, orchestration, approval gates, panel server |
 | Adapters | **TypeScript / Node 20+** (pnpm workspaces) — Atlassian normalization boundary |
 | Panel UI | **Svelte + Vite + TypeScript**, embedded via `go:embed` |
-| Knowledge store | **Dolt** (versioned SQL); **Bleve** for BM25F search |
+| Knowledge store | **SQLite** (embedded kernel); **FTS5** for BM25-ranked search |
 | Task graph | **Beads (bd)** — durable, syncable issue tracker |
 | Protocol | **MCP (Model Context Protocol)** over STDIO; JSON-Schema-generated Go structs + TS/Zod types |
 | Token efficiency | **RTK (Rust Token Killer)** — compresses command output; installed by default and urged on the agent |
@@ -282,9 +288,13 @@ client, or no client yet.
 On macOS it installs prerequisites through Homebrew. On Linux it uses the
 distro package manager it detects (apt / dnf / yum / pacman / zypper) for git,
 ripgrep, Node, and Go, installs Dolt via its official script, and installs
-Beads (`bd`) via `go install`. `rtk` is optional and left to you on Linux. It
-writes config to `$XDG_CONFIG_HOME/punakawan` (i.e. `~/.config/punakawan`),
-matching `os.UserConfigDir()`.
+Beads (`bd`) via `go install`. Punakawan's own live storage no longer uses
+Dolt (it runs on an embedded SQLite kernel), but the `dolt` CLI is still a
+real prerequisite for the one-way import that reads a legacy Dolt-backed
+install (`internal/doltimport`) — it is not needed for normal operation.
+`rtk` is optional and left to you on Linux. It writes config to
+`$XDG_CONFIG_HOME/punakawan` (i.e. `~/.config/punakawan`), matching
+`os.UserConfigDir()`.
 
 **Windows** — run the PowerShell installer:
 
@@ -327,11 +337,12 @@ global defaults.
 - **macOS** — fully supported via `scripts/install.sh` (Homebrew-based).
 - **Linux** — fully supported via `scripts/install.sh`. It detects the distro
   package manager (apt / dnf / yum / pacman / zypper) for git, ripgrep, Node,
-  and Go, installs Dolt from its official script and Beads via `go install`,
-  and writes config to `~/.config/punakawan` (`os.UserConfigDir()`). `rtk` is
-  optional and not auto-installed; missing tools degrade gracefully (health
-  reports them unavailable). If no supported package manager is found, install
-  the prerequisites manually and rerun.
+  and Go, installs Dolt from its official script (needed only for the
+  one-way legacy-import path, not Punokawan's own SQLite-backed storage) and
+  Beads via `go install`, and writes config to `~/.config/punakawan`
+  (`os.UserConfigDir()`). `rtk` is optional and not auto-installed; missing
+  tools degrade gracefully (health reports them unavailable). If no supported
+  package manager is found, install the prerequisites manually and rerun.
 - **Windows** — supported via `scripts/install.ps1` (PowerShell). The tool
   supervisor has a Windows backend (`internal/tools/supervisor_windows.go`,
   `//go:build windows`) so the binary cross-compiles under `GOOS=windows`; the

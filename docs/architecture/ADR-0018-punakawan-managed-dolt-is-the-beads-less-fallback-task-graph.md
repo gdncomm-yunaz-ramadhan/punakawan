@@ -1,7 +1,7 @@
 # ADR-0018: Punakawan-managed Dolt is the Beads-less fallback task graph
 
 ## Status
-Accepted (qualifies [ADR-0006](./ADR-0006-beads-is-the-execution-task-graph.md))
+Accepted (qualifies [ADR-0006](./ADR-0006-beads-is-the-execution-task-graph.md)); storage backend corrected by [ADR-0021](./ADR-0021-an-embedded-sqlite-kernel-replaces-the-dolt-hub-as-active-storage.md) — the fallback task store (`internal/taskstore`) is backed by the embedded SQLite kernel, not a per-project Dolt database or shared `sql-server` connection. The decision below to use a Punakawan-managed fallback instead of Beads remains current; only the storage engine it runs on has changed.
 
 ## Context
 [ADR-0006](./ADR-0006-beads-is-the-execution-task-graph.md) makes Beads the execution task graph. In practice Beads requires a `.beads/` directory in the project, created by `bd init` — which also runs `git init` on the directory and writes `AGENTS.md`, a `CLAUDE.md`, and Claude Code hooks. Many projects a user points Punakawan at have no `.beads/` (and should not be reconfigured that invasively just to be tracked). Before this change, task reads for such a project errored (the panel's `/tasks` and `/task-graph` returned 500) and `submit_task_graph` could not persist, so tasks and plans were simply unavailable there.

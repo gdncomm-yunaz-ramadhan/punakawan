@@ -1,7 +1,7 @@
 # ADR-0005: Dolt is the canonical knowledge store
 
 ## Status
-Accepted
+Superseded by [ADR-0021](./ADR-0021-an-embedded-sqlite-kernel-replaces-the-dolt-hub-as-active-storage.md)
 
 ## Context
 Punakawan must turn documents, tickets, and observed flows into durable, versioned relational knowledge with strict provenance and validity tracking across many entity types (Requirement, Claim, Decision, APIContract, BrowserFlow, and more) and relations (`DERIVED_FROM`, `IMPLEMENTS`, `SUPERSEDES`, etc.) (§7 Durable Knowledge Model, §7.1 Core entities, §7.2 Core relations).

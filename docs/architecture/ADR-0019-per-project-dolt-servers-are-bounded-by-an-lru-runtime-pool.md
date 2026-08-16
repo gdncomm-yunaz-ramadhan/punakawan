@@ -1,7 +1,7 @@
 # ADR-0019: Per-project Dolt servers are bounded by an LRU runtime pool
 
 ## Status
-Accepted (relates to [ADR-0005](./ADR-0005-dolt-is-the-canonical-knowledge-store.md), [ADR-0008](./ADR-0008-git-tracked-yaml-stores-portable-human-reviewable-project-knowledge.md), [ADR-0018](./ADR-0018-punakawan-managed-dolt-is-the-beads-less-fallback-task-graph.md))
+Superseded by [ADR-0021](./ADR-0021-an-embedded-sqlite-kernel-replaces-the-dolt-hub-as-active-storage.md) (relates to [ADR-0005](./ADR-0005-dolt-is-the-canonical-knowledge-store.md), [ADR-0008](./ADR-0008-git-tracked-yaml-stores-portable-human-reviewable-project-knowledge.md), [ADR-0018](./ADR-0018-punakawan-managed-dolt-is-the-beads-less-fallback-task-graph.md))
 
 ## Context
 Each project's knowledge (and its Beads-less fallback task store, ADR-0018) is a Dolt database stored *inside that project* at `<project>/.punakawan/knowledge`, colocated with the repo so it stays portable and reviewable per project (ADR-0005, ADR-0008). Opening it (`app.OpenKnowledge`) starts a `dolt sql-server` bound to that one data directory and connects over the MySQL wire protocol.
