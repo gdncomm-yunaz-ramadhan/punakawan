@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/beads"
+	"github.com/ygrip/punakawan/internal/daemon"
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/dossier"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/knowledge"
@@ -399,4 +401,29 @@ type DossierReader interface {
 	FinalizeDossier(ctx context.Context, projectID, id string) error
 	ExportDossierMarkdown(ctx context.Context, projectID, id string) (string, error)
 	ExportDossierJSON(ctx context.Context, projectID, id string) ([]byte, error)
+}
+
+// DeliveryReader reads and mutates delivery orchestrations by proxying to
+// the daemon's own delivery.Store (internal/daemon/delivery.go) over its
+// authenticated loopback transport - the daemon, not this panel instance,
+// is the only process allowed to open delivery.Store's storage directly
+// (see internal/daemon.Daemon's own doc comment). The three mutators and
+// GetDeliveryView/WatchDeliveryView mirror daemon.Client's own methods
+// exactly; this interface exists only so HTTP handlers and the events
+// watcher depend on a narrow contract instead of the concrete *daemon.Client,
+// matching every other reader in this package.
+type DeliveryReader interface {
+	ListDeliveries(ctx context.Context) ([]*protocol.DeliveryOrchestration, error)
+	// GetDeliveryView returns orchestrationID's current view immediately.
+	// sinceSeq mirrors delivery.BuildDeliveryViewSince: pass a prior
+	// response's LatestSeq to populate NewlyRunnableLaneIDs.
+	GetDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int) (*delivery.DeliveryView, error)
+	// WatchDeliveryView is GetDeliveryView, except the daemon blocks
+	// server-side for up to waitSeconds waiting for LatestSeq to advance
+	// past sinceSeq - the events package's DeliveryWatcher is this
+	// method's only caller, long-polling it in a loop per orchestration.
+	WatchDeliveryView(ctx context.Context, orchestrationID string, sinceSeq, waitSeconds int) (*delivery.DeliveryView, error)
+	AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in daemon.AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error)
+	ApproveProjectDelivery(ctx context.Context, orchestrationID string, in daemon.ApproveProjectDeliveryRequest) (*delivery.DeliveryView, error)
+	CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error)
 }

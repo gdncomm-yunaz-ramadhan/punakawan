@@ -12,9 +12,11 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/artifact"
+	"github.com/ygrip/punakawan/internal/daemon"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
+	"github.com/ygrip/punakawan/internal/panel/deliverysource"
 	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/session"
@@ -44,6 +46,15 @@ type Options struct {
 	// (OR'd in when Start builds the middleware chain), so a developer can
 	// flip it without a code change.
 	ServerTiming bool
+	// DaemonClient, when set, is this panel instance's connection to the
+	// daemon's delivery data (internal/daemon/delivery.go); nil leaves the
+	// delivery routes wired but answering 503, exactly like a project
+	// missing the Contradiction/Impact/Dossier subsystems already degrades.
+	// Resolving this (daemon.DiscoverDefault or similar) is the caller's
+	// job, not New/Start's: a test building a Server should never risk
+	// spawning or talking to a real system-wide daemon process just by
+	// starting a server under test.
+	DaemonClient *daemon.Client
 }
 
 // Server is the Punakawan Panel's loopback HTTP server.
@@ -58,6 +69,8 @@ type Server struct {
 	hub                *events.Hub
 	stopReconciliation context.CancelFunc
 	reconcileDone      chan struct{}
+	stopDeliveryWatch  context.CancelFunc
+	deliveryWatchDone  chan struct{}
 	stopRuntimeSweep   context.CancelFunc
 
 	sessions     *session.Manager
@@ -81,10 +94,14 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	readers := panel.NewReaders(a, reg)
+	if opts.DaemonClient != nil {
+		readers.Delivery = &deliverysource.Source{Client: opts.DaemonClient}
+	}
 	return &Server{
 		app:      a,
 		registry: reg,
-		readers:  panel.NewReaders(a, reg),
+		readers:  readers,
 		opts:     opts,
 		logger:   logger,
 		hub:      events.NewHub(),
@@ -184,6 +201,17 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(s.readers.Evidence))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(s.readers.Evidence))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/approvals", api.ApprovalsHandler(s.readers.Approval))
+
+	// Delivery orchestrations: served straight from the daemon's own
+	// delivery.Store over its authenticated loopback transport
+	// (internal/daemon/delivery.go), not through storage.Open/*app.App -
+	// s.readers.Delivery is nil when no daemon connection was available at
+	// startup, and every handler here degrades to 503 rather than panicking.
+	mux.HandleFunc("GET /api/v1/deliveries", api.ListDeliveriesHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}", api.DeliveryViewHandler(s.readers.Delivery))
+	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/answer-question", session.RequireSession(s.sessions, api.AnswerDeliveryQuestionHandler(s.readers.Delivery)))
+	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/approve", session.RequireSession(s.sessions, api.ApproveProjectDeliveryHandler(s.readers.Delivery)))
+	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/cancel", session.RequireSession(s.sessions, api.CancelDeliveryHandler(s.readers.Delivery)))
 
 	mux.HandleFunc("GET /api/v1/projects", api.ProjectsHandler(s.readers.Project))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}", api.ProjectHandler(s.readers.Project))
@@ -357,6 +385,19 @@ func (s *Server) Start() error {
 		reconciler.Run(reconcileCtx)
 	}()
 
+	// DeliveryWatcher long-polls the daemon per orchestration instead of
+	// ticking over every entity like Reconciler's tiers do, so it runs as
+	// its own goroutine rather than a fourth Reconciler tier (see its own
+	// doc comment). A nil s.readers.Delivery makes Run an immediate no-op.
+	deliveryCtx, cancelDelivery := context.WithCancel(context.Background())
+	s.stopDeliveryWatch = cancelDelivery
+	s.deliveryWatchDone = make(chan struct{})
+	watcher := &events.DeliveryWatcher{Hub: s.hub, Reader: s.readers.Delivery}
+	go func() {
+		defer close(s.deliveryWatchDone)
+		watcher.Run(deliveryCtx)
+	}()
+
 	// Periodically close project runtimes that have gone idle, so the pool does
 	// not hold Dolt/adapter processes open for workspaces no longer being
 	// browsed (Phase 3, §10.3). The primary and in-use runtimes are never
@@ -407,6 +448,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.reconcileDone != nil {
 		select {
 		case <-s.reconcileDone:
+		case <-ctx.Done():
+		}
+	}
+	if s.stopDeliveryWatch != nil {
+		s.stopDeliveryWatch()
+	}
+	if s.deliveryWatchDone != nil {
+		select {
+		case <-s.deliveryWatchDone:
 		case <-ctx.Done():
 		}
 	}

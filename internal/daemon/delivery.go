@@ -451,10 +451,37 @@ func (c *Client) doJSON(ctx context.Context, hc *http.Client, method, path strin
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("daemon: %s %s: %s: %s", method, path, resp.Status, bytes.TrimSpace(msg))
+		message := string(bytes.TrimSpace(msg))
+		var body struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(msg, &body) == nil && body.Error != "" {
+			message = body.Error
+		}
+		return &StatusError{Method: method, Path: path, Status: resp.StatusCode, Message: message}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// StatusError is doJSON's error for a non-200 daemon response: Status is
+// the daemon's own HTTP status code (already mapped by writeDeliveryError
+// et al. to mean the same thing an equivalent in-process call's sentinel
+// error would - 404 not found, 409 revision conflict/invalid state), and
+// Message is the response body's "error" field when present. A caller that
+// needs to react to a specific status (e.g. a Panel HTTP handler forwarding
+// the same status to its own response instead of collapsing every daemon
+// failure to 500) should errors.As into this rather than parsing Error()'s
+// text.
+type StatusError struct {
+	Method  string
+	Path    string
+	Status  int
+	Message string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("daemon: %s %s: %d: %s", e.Method, e.Path, e.Status, e.Message)
 }

@@ -7773,6 +7773,7 @@ const PanelEventTypeApprovalResolved PanelEventType = "approval.resolved"
 const PanelEventTypeContradictionDetected PanelEventType = "contradiction.detected"
 const PanelEventTypeContradictionResolved PanelEventType = "contradiction.resolved"
 const PanelEventTypeContradictionUpdated PanelEventType = "contradiction.updated"
+const PanelEventTypeDeliveryUpdated PanelEventType = "delivery.updated"
 const PanelEventTypeDossierCreated PanelEventType = "dossier.created"
 const PanelEventTypeDossierFinalized PanelEventType = "dossier.finalized"
 const PanelEventTypeDossierStatusChanged PanelEventType = "dossier.status_changed"
@@ -7833,6 +7834,7 @@ var enumValues_PanelEventType = []interface{}{
 	"handoff.created",
 	"handoff.validated",
 	"handoff.superseded",
+	"delivery.updated",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

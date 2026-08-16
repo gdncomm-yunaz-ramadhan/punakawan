@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -422,6 +423,45 @@ func TestClientDeliveryRoundTrip(t *testing.T) {
 	}
 	if view.Orchestration.Status != protocol.DeliveryOrchestrationStatusCancelled {
 		t.Fatalf("expected cancelled, got %s", view.Orchestration.Status)
+	}
+}
+
+// TestClientMethodErrorIsStatusError proves doJSON's non-200 path surfaces
+// a *StatusError carrying the daemon's own status code and error message,
+// not just an opaque formatted string - a caller (e.g. a Panel HTTP
+// handler) needs the status to react the same way the daemon's own
+// writeDeliveryError already distinguishes 404 vs. 409 vs. 500.
+func TestClientMethodErrorIsStatusError(t *testing.T) {
+	paths := testPaths(t)
+	d, err := Run(context.Background(), "127.0.0.1", "0", paths)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	go d.Serve()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		d.Shutdown(ctx)
+	}()
+
+	client, err := Discover(paths)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+
+	_, err = client.GetDeliveryView(context.Background(), "no-such-orchestration", 0)
+	if err == nil {
+		t.Fatal("expected an error for an unknown orchestration id")
+	}
+	var statusErr *StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error = %v (%T), want *StatusError", err, err)
+	}
+	if statusErr.Status != http.StatusNotFound {
+		t.Fatalf("Status = %d, want 404", statusErr.Status)
+	}
+	if statusErr.Message == "" {
+		t.Fatal("expected a non-empty Message")
 	}
 }
 

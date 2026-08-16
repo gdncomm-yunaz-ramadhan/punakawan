@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/daemon"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/server"
 )
@@ -59,7 +60,17 @@ func newPanelCmd() *cobra.Command {
 				return fmt.Errorf("panel: register workspace: %w", err)
 			}
 
-			s := server.New(a, reg, server.Options{Host: host, Port: port})
+			// The daemon is optional for the panel as a whole - only the
+			// Deliveries tab needs it - so a failure here is logged and
+			// otherwise ignored rather than aborting the panel command;
+			// DaemonClient nil leaves the delivery routes wired but
+			// answering 503, same as any other missing subsystem.
+			daemonClient, err := daemon.DiscoverDefault(cmd.Context())
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "panel: daemon unavailable, delivery data will be disabled: %v\n", err)
+			}
+
+			s := server.New(a, reg, server.Options{Host: host, Port: port, DaemonClient: daemonClient})
 			if err := s.Start(); err != nil {
 				return fmt.Errorf("panel: start server: %w", err)
 			}

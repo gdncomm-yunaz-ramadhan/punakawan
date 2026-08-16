@@ -30,15 +30,15 @@ const Version = "0.1.0"
 // (internal/panel/contract) that every HTTP handler reaches Punakawan's
 // data through.
 type Readers struct {
-	Workspace     contract.WorkspaceReader
-	Session       contract.SessionReader
-	Task          contract.TaskReader
-	Knowledge     contract.KnowledgeReader
-	Evidence      contract.EvidenceReader
-	Approval      contract.ApprovalReader
-	GlobalSearch  contract.GlobalSearchReader
-	Project       contract.ProjectReader
-	Roles         contract.RolesReader
+	Workspace    contract.WorkspaceReader
+	Session      contract.SessionReader
+	Task         contract.TaskReader
+	Knowledge    contract.KnowledgeReader
+	Evidence     contract.EvidenceReader
+	Approval     contract.ApprovalReader
+	GlobalSearch contract.GlobalSearchReader
+	Project      contract.ProjectReader
+	Roles        contract.RolesReader
 	// Contradiction/Impact/Dossier deliberately have no live implementation
 	// now that the ceremony surfaces backing them are gone; they stay
 	// declared only because internal/panel/events/reconciler.go still
@@ -47,6 +47,13 @@ type Readers struct {
 	Contradiction contract.ContradictionReader
 	Impact        contract.ImpactReader
 	Dossier       contract.DossierReader
+
+	// Delivery is nil when this panel instance could not reach the daemon
+	// at startup (e.g. punakawand not installed) - handlers and the events
+	// watcher treat a nil Delivery the same way they already treat a nil
+	// Contradiction/Impact/Dossier: degrade to a 503/no-op instead of a
+	// nil-pointer panic. Server.Start populates it once it has connected.
+	Delivery contract.DeliveryReader
 
 	// Runtime is the bounded *app.App pool (Phase 3). The server owns its
 	// lifecycle: it runs a periodic CloseIdle sweep and Closes all non-primary
