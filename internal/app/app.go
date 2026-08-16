@@ -300,9 +300,9 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 }
 
 // OpenStorage lazily opens the shared SQLite storage kernel, memoizing the
-// result. Unlike the per-project Dolt connections OpenKnowledge
-// opens, this is one database shared by every local project checkout on this
-// machine; callers scope their own rows by project id.
+// result. This is one database shared by every local project checkout on
+// this machine, including the one OpenKnowledge opens through it; callers
+// scope their own rows by project id.
 func (a *App) OpenStorage(ctx context.Context) (*storage.DB, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
