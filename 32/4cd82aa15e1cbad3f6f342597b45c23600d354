@@ -1,0 +1,43 @@
+web/panel/tests/DeliveryDetail.test.ts
+  f9605b8f4acd1e01 1-224
+web/panel/src/App.svelte
+  f9605b8f4acd1e01 17-18,38,54-58
+web/panel/src/lib/components/MobileNavigation.svelte
+  f9605b8f4acd1e01 13
+web/panel/src/routes/deliveries/DeliveryDetail.svelte
+  f9605b8f4acd1e01 1-416
+web/panel/src/lib/events/sse.svelte.ts
+  f9605b8f4acd1e01 23-83,92,95-98
+web/panel/tests/DeliveriesList.test.ts
+  f9605b8f4acd1e01 1-86
+web/panel/src/routes/deliveries/DeliveriesList.svelte
+  f9605b8f4acd1e01 1-233
+web/panel/src/lib/api/client.ts
+  f9605b8f4acd1e01 1467-1627
+web/panel/src/routes/deliveries/DeliveryQuestionForm.svelte
+  f9605b8f4acd1e01 1-159
+web/panel/src/lib/components/Sidebar.svelte
+  f9605b8f4acd1e01 9
+web/panel/src/routes/deliveries/DeliveryApprovalCard.svelte
+  f9605b8f4acd1e01 1-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "324cd82aa15e1cbad3f6f342597b45c23600d354",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1559,
+      "total_deletions": 50,
+      "accepted_lines": 1510,
+      "overriden_lines": 0
+    }
+  }
+}
