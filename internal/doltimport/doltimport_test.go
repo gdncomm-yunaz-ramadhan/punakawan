@@ -203,6 +203,46 @@ func fakeKnowledgeRow(id, dataJSON, updatedAt string) map[string]json.RawMessage
 	}
 }
 
+// TestCountRowsToleratesDoltNumberShapeDrift pins countRows against the two
+// shapes real dolt installs have been observed to emit for the identical
+// `SELECT COUNT(*) AS n ...` query: a bare JSON number (newer dolt) and a JSON
+// string holding the number (dolt 2.2.1). Both must decode to the same count.
+func TestCountRowsToleratesDoltNumberShapeDrift(t *testing.T) {
+	cases := []struct {
+		name string
+		n    json.RawMessage
+	}{
+		{"bare number", json.RawMessage(`13`)},
+		{"quoted number string", json.RawMessage(`"13"`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q := func(ctx context.Context, sqlStr string) ([]map[string]json.RawMessage, error) {
+				return []map[string]json.RawMessage{{"n": tc.n}}, nil
+			}
+			got, err := countRows(context.Background(), q, "knowledge_relations")
+			if err != nil {
+				t.Fatalf("countRows: %v", err)
+			}
+			if got != 13 {
+				t.Fatalf("want 13, got %d", got)
+			}
+		})
+	}
+}
+
+// TestCountRowsRejectsNonNumericValue guards the error path: a value that is
+// neither a JSON number nor a numeric JSON string must still surface as a
+// clear parse error, not a panic or a silently wrong count.
+func TestCountRowsRejectsNonNumericValue(t *testing.T) {
+	q := func(ctx context.Context, sqlStr string) ([]map[string]json.RawMessage, error) {
+		return []map[string]json.RawMessage{{"n": json.RawMessage(`"not-a-number"`)}}, nil
+	}
+	if _, err := countRows(context.Background(), q, "knowledge_relations"); err == nil {
+		t.Fatal("expected an error for a non-numeric count value, got nil")
+	}
+}
+
 // TestRunMissingTableFixture pins the behavior when the source Dolt store is
 // missing an expected table (e.g. an unmigrated or corrupted legacy repo):
 // runWithQuerier's very first read is the knowledge_relations count, so a

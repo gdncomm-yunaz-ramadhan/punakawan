@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ygrip/punakawan/internal/tools"
@@ -74,6 +75,29 @@ func jsonString(raw json.RawMessage) (string, error) {
 	return s, nil
 }
 
+// jsonInt unmarshals a raw JSON numeric column value into a Go int, tolerating
+// either shape dolt's `-r json` output has been observed to use for the same
+// query: a bare JSON number (newer dolt) or a JSON string containing the
+// number (dolt 2.2.1, at least for COUNT(*)). dolt's own serialization of
+// aggregate scalars is not consistent across versions, so any caller reading
+// a numeric column back from dolt should go through this rather than
+// unmarshaling into int directly.
+func jsonInt(raw json.RawMessage) (int, error) {
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return 0, fmt.Errorf("not a number or numeric string: %s", string(raw))
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0, fmt.Errorf("not a number or numeric string: %s", string(raw))
+	}
+	return n, nil
+}
+
 // countRows runs SELECT COUNT(*) against table and returns the scalar count.
 func countRows(ctx context.Context, q Querier, table string) (int, error) {
 	rows, err := q(ctx, "SELECT COUNT(*) AS n FROM "+table)
@@ -83,8 +107,8 @@ func countRows(ctx context.Context, q Querier, table string) (int, error) {
 	if len(rows) == 0 {
 		return 0, nil
 	}
-	var n int
-	if err := json.Unmarshal(rows[0]["n"], &n); err != nil {
+	n, err := jsonInt(rows[0]["n"])
+	if err != nil {
 		return 0, fmt.Errorf("doltimport: parse count for %s: %w", table, err)
 	}
 	return n, nil
