@@ -14,6 +14,8 @@
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import ContextImprovements from "./routes/improvements/ContextImprovements.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
+  import DeliveriesList from "./routes/deliveries/DeliveriesList.svelte";
+  import DeliveryDetail from "./routes/deliveries/DeliveryDetail.svelte";
 
   let system: SystemInfo | null = $state(null);
   let systemError: string | null = $state(null);
@@ -33,6 +35,7 @@
   const knowledgeListPath = /^\/workspaces\/([^/]+)\/knowledge$/;
   const knowledgeDetailPath = /^\/workspaces\/([^/]+)\/knowledge\/([^/]+)$/;
   const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
+  const deliveryDetailPath = /^\/deliveries\/([^/]+)$/;
 </script>
 
 <AppShell {system}>
@@ -48,6 +51,11 @@
     <ContextImprovements />
   {:else if getPath() === "/system"}
     <SystemPage />
+  {:else if getPath() === "/deliveries"}
+    <DeliveriesList />
+  {:else if deliveryDetailPath.exec(getPath())}
+    {@const match = deliveryDetailPath.exec(getPath())}
+    <DeliveryDetail orchestrationId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if approvalsPath.exec(getPath())}
     {@const match = approvalsPath.exec(getPath())}
     <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />

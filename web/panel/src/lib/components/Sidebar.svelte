@@ -6,6 +6,7 @@
   const links: { path: string; label: string; icon: IconName; disabled?: boolean }[] = [
     { path: "/", label: "Overview", icon: "dashboard" },
     { path: "/projects", label: "Projects", icon: "folder" },
+    { path: "/deliveries", label: "Deliveries", icon: "git-branch" },
     { path: "/improvements", label: "Context Improvements", icon: "comment" },
     { path: "/system", label: "System", icon: "settings" },
   ];

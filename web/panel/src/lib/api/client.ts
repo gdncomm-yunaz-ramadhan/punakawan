@@ -1464,3 +1464,164 @@ export function acceptContextImprovement(projectId: string, reviewId: string, pr
 export function rejectContextImprovement(projectId: string, reviewId: string, proposalAttempt: number): Promise<void> {
   return resolveContextImprovement(projectId, reviewId, proposalAttempt, "reject");
 }
+
+// --- Deliveries (multi-project orchestration) ----------------------------
+//
+// A DeliveryOrchestration coordinates one lane per parent task across
+// however many projects it touches. DeliveryView (internal/delivery
+// /deliveryview.go) is the single read model every delivery endpoint
+// returns; its Projects/Lanes/Blockers are reduced summaries derived from
+// protocol.DeliveryLane, not that full struct - worktree path, branch,
+// base sha, lease/worker info, and the Semar/Gareng/Petruk/Bagong role
+// record ids live on DeliveryLane but aren't surfaced by any panel HTTP
+// endpoint yet, so this client (and the UI built on it) cannot render
+// them until a backend endpoint exposes them.
+
+export type DeliveryOrchestrationStatus = "pending" | "active" | "cancelled" | "completed";
+
+export interface DeliveryOrchestration {
+  id: string;
+  revision: number;
+  status: DeliveryOrchestrationStatus;
+  unresolved_inputs: unknown[];
+  created_at: string;
+  updated_at: string;
+  workflow_definition_id?: string;
+}
+
+export type DeliveryLaneStatus = "accepted" | "blocked" | "failed" | "leased" | "review" | "runnable" | "running" | "waiting";
+
+export interface DeliveryProjectSummary {
+  project_id: string;
+  lane_ids: string[];
+  counts_by_status: Partial<Record<DeliveryLaneStatus, number>>;
+}
+
+export interface DeliveryLaneSummary {
+  lane_id: string;
+  project_id: string;
+  parent_task_id?: string;
+  status: DeliveryLaneStatus;
+  blocked_by?: string[];
+  pr_url?: string;
+  pr_number?: number;
+  pr_provider?: string;
+}
+
+export interface DeliveryBlockerSummary {
+  lane_id: string;
+  parent_task_id?: string;
+  blocked_by: string[];
+}
+
+export type ApprovalManifestStatus = "pending" | "approved" | "rejected";
+
+export interface ApprovalManifestCheck {
+  name: string;
+  status: string;
+  classification: string;
+  detail?: string;
+}
+
+export interface ApprovalManifestWorklogEntry {
+  bucket: string;
+  hours: number;
+  subtask_key: string;
+  subtask_name?: string;
+}
+
+export interface ApprovalManifest {
+  id: string;
+  orchestration_id: string;
+  project_id: string;
+  parent_task_ids: string[];
+  planned_base_ref: string;
+  planned_branches?: string[];
+  checks: ApprovalManifestCheck[];
+  expects_commits?: boolean;
+  expects_jira_writes?: boolean;
+  expects_prs?: boolean;
+  expects_pushes?: boolean;
+  proposed_worklog?: ApprovalManifestWorklogEntry[];
+  proposed_worklog_total_hours?: number;
+  proposed_worklog_unmapped_hours?: number;
+  status: ApprovalManifestStatus;
+  approved_by?: string;
+  created_at: string;
+  decided_at?: string;
+  revision: number;
+}
+
+export interface DeliveryView {
+  orchestration: DeliveryOrchestration;
+  projects: DeliveryProjectSummary[];
+  lanes: DeliveryLaneSummary[];
+  blockers: DeliveryBlockerSummary[];
+  pending_approvals: ApprovalManifest[];
+  pending_questions: string[];
+  next_action: string;
+  latest_seq: number;
+  newly_runnable_lane_ids: string[];
+}
+
+export function listDeliveries(): Promise<{ items: DeliveryOrchestration[] }> {
+  return getJSON<{ items: DeliveryOrchestration[] }>("/deliveries");
+}
+
+export function getDeliveryView(orchestrationId: string, sinceSeq?: number): Promise<DeliveryView> {
+  const qs = sinceSeq ? `?since_seq=${encodeURIComponent(String(sinceSeq))}` : "";
+  return getJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}${qs}`);
+}
+
+// answerDeliveryQuestion resolves one entry from DeliveryView.pending_questions
+// - reference is that entry's exact string. Set provider (+ external_id/url/
+// title/summary) to resolve it as a requirement source, or parent_task_id +
+// project_id to route it directly to a task instead (deliveries_handler.go's
+// answerDeliveryQuestionBody documents both shapes).
+export interface AnswerDeliveryQuestionRequest {
+  reference: string;
+  expected_revision?: number;
+  provider?: string;
+  external_id?: string;
+  url?: string;
+  title?: string;
+  summary?: string;
+  parent_task_id?: string;
+  project_id?: string;
+}
+
+export function answerDeliveryQuestion(orchestrationId: string, body: AnswerDeliveryQuestionRequest): Promise<DeliveryView> {
+  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/answer-question`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// approveProjectDelivery resolves one project's ApprovalManifest
+// independently of any other project's - reject:false approves,
+// reject:true rejects. There is no project_id field: manifest_id alone
+// identifies which project's approval this decides.
+export interface ApproveProjectDeliveryRequest {
+  manifest_id: string;
+  approved_by: string;
+  reject?: boolean;
+}
+
+export function approveProjectDelivery(orchestrationId: string, body: ApproveProjectDeliveryRequest): Promise<DeliveryView> {
+  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/approve`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export interface CancelDeliveryRequest {
+  expected_revision: number;
+  reason?: string;
+}
+
+export function cancelDelivery(orchestrationId: string, body: CancelDeliveryRequest): Promise<DeliveryView> {
+  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
