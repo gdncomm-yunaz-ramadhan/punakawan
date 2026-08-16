@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -85,15 +86,40 @@ type App struct {
 
 	jiraWorkflowMu     sync.Mutex
 	jiraWorkflowConfig *jiraworkflow.Config
+
+	// ephemeralRoot is set when Workspace.Ephemeral is true, so Close can
+	// remove the throwaway temp directory DiscoverOrEphemeral created for
+	// it. Empty for a real, discovered project.
+	ephemeralRoot string
 }
 
-// Load discovers the workspace containing startDir and wires up its services.
+// Load discovers the workspace containing startDir and wires up its
+// services. Fails if no project is found above startDir - see LoadOptional
+// for the one entrypoint (the MCP server) that must not require one.
 func Load(startDir string) (*App, error) {
 	ws, err := workspace.Discover(startDir)
 	if err != nil {
 		return nil, err
 	}
+	return load(ws)
+}
 
+// LoadOptional is Load, except that finding no project above startDir is
+// not an error: it wires up services against a throwaway ephemeral
+// workspace instead (see workspace.DiscoverOrEphemeral). Only the MCP
+// server uses this - every other entrypoint is inherently run against a
+// specific project checkout and should keep failing fast via Load.
+func LoadOptional(startDir string) (*App, error) {
+	ws, err := workspace.DiscoverOrEphemeral(startDir)
+	if err != nil {
+		return nil, err
+	}
+	return load(ws)
+}
+
+// load wires up an *App's services from an already-resolved workspace,
+// shared by Load and LoadOptional.
+func load(ws *workspace.Workspace) (*App, error) {
 	pol, err := policy.Load(ws.PolicyPath())
 	if err != nil {
 		return nil, err
@@ -151,6 +177,9 @@ func Load(startDir string) (*App, error) {
 		PrReviews:       prReviews,
 		ContextRequests: contextRequests,
 		RoleConfig:      roleResolver,
+	}
+	if ws.Ephemeral {
+		a.ephemeralRoot = ws.Root
 	}
 
 	// The approval store and sync queue now live in the shared SQLite kernel,
@@ -534,6 +563,10 @@ func (a *App) Close() error {
 	a.syncQueueMu.Lock()
 	a.syncQueue = nil
 	a.syncQueueMu.Unlock()
+
+	if a.ephemeralRoot != "" {
+		os.RemoveAll(a.ephemeralRoot)
+	}
 
 	if adapterErr != nil {
 		return adapterErr

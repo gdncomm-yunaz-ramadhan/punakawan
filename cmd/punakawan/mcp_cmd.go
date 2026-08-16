@@ -1,8 +1,11 @@
 package main
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
+	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 )
 
@@ -20,7 +23,7 @@ func newMCPServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Serve Semar/Gareng/Petruk/Bagong as MCP prompts and tools over stdio (§28)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := loadApp()
+			a, err := loadAppOptional()
 			if err != nil {
 				return err
 			}
@@ -29,4 +32,17 @@ func newMCPServeCmd() *cobra.Command {
 			return mcpserver.Serve(cmd.Context(), a)
 		},
 	}
+}
+
+// loadAppOptional is loadApp, except that starting outside any project is
+// not an error - the MCP server is meant to be one project-independent
+// process a client attaches to before naming any project, unlike every
+// other CLI command here, which is inherently scoped to a checkout and
+// should keep failing fast via loadApp.
+func loadAppOptional() (*app.App, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return app.LoadOptional(cwd)
 }
