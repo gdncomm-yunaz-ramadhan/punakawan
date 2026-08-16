@@ -26,6 +26,10 @@ type fakeDeliveryReader struct {
 	lastAns  daemon.AnswerDeliveryQuestionRequest
 	lastAppr daemon.ApproveProjectDeliveryRequest
 	lastCanc daemon.CancelDeliveryRequest
+
+	evidenceData []byte
+	evidenceType string
+	lastEvidence string
 }
 
 func (f *fakeDeliveryReader) ListDeliveries(ctx context.Context) ([]*protocol.DeliveryOrchestration, error) {
@@ -54,6 +58,11 @@ func (f *fakeDeliveryReader) ApproveProjectDelivery(ctx context.Context, orchest
 func (f *fakeDeliveryReader) CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error) {
 	f.lastID, f.lastCanc = orchestrationID, in
 	return f.view, f.err
+}
+
+func (f *fakeDeliveryReader) GetDeliveryEvidence(ctx context.Context, orchestrationID, evidenceID string) ([]byte, string, error) {
+	f.lastID, f.lastEvidence = orchestrationID, evidenceID
+	return f.evidenceData, f.evidenceType, f.err
 }
 
 func doDelivery(method, target, orchestrationID, body string, h http.HandlerFunc) *httptest.ResponseRecorder {
@@ -212,6 +221,47 @@ func TestCancelDeliveryHandler(t *testing.T) {
 
 func TestCancelDeliveryHandlerNilReaderIs503(t *testing.T) {
 	rec := doDelivery(http.MethodPost, "/api/v1/deliveries/orc-1/cancel", "orc-1", `{"expected_revision":1}`, CancelDeliveryHandler(nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
+
+func doDeliveryEvidence(orchestrationID, evidenceID string, h http.HandlerFunc) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/deliveries/"+orchestrationID+"/evidence/"+evidenceID, nil)
+	r.SetPathValue("orchestrationId", orchestrationID)
+	r.SetPathValue("evidenceId", evidenceID)
+	rec := httptest.NewRecorder()
+	h(rec, r)
+	return rec
+}
+
+func TestDeliveryEvidenceHandlerServesRawBytes(t *testing.T) {
+	reader := &fakeDeliveryReader{evidenceData: []byte("screenshot bytes"), evidenceType: "image/png"}
+	rec := doDeliveryEvidence("orc-1", "ev-1", DeliveryEvidenceHandler(reader))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("Content-Type = %q, want image/png", got)
+	}
+	if rec.Body.String() != "screenshot bytes" {
+		t.Fatalf("body = %q, want screenshot bytes", rec.Body.String())
+	}
+	if reader.lastID != "orc-1" || reader.lastEvidence != "ev-1" {
+		t.Fatalf("reader called with (%q, %q), want (orc-1, ev-1)", reader.lastID, reader.lastEvidence)
+	}
+}
+
+func TestDeliveryEvidenceHandlerMapsNotFoundStatus(t *testing.T) {
+	reader := &fakeDeliveryReader{err: &daemon.StatusError{Status: http.StatusNotFound, Message: "no such evidence"}}
+	rec := doDeliveryEvidence("orc-1", "ev-missing", DeliveryEvidenceHandler(reader))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestDeliveryEvidenceHandlerNilReaderIs503(t *testing.T) {
+	rec := doDeliveryEvidence("orc-1", "ev-1", DeliveryEvidenceHandler(nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}

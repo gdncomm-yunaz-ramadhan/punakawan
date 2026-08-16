@@ -363,6 +363,112 @@ func TestHandleCancelDeliveryRevisionConflict(t *testing.T) {
 	}
 }
 
+func TestHandleDeliveryEvidenceServesRawBytes(t *testing.T) {
+	s := newDeliveryTestServer(t)
+	ctx := context.Background()
+	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	project, err := s.store.RegisterProject(ctx, "project", delivery.NewID(), "svc", "https://example.test/svc.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	source, err := s.store.CaptureRequirement(ctx, delivery.NewID(), orch.Id, delivery.SourceInput{Provider: "freetext", Title: "T"})
+	if err != nil {
+		t.Fatalf("CaptureRequirement: %v", err)
+	}
+	taskID := delivery.NewID()
+	if _, err := s.store.CreateParentTask(ctx, delivery.NewID(), taskID, orch.Id, "Task", []string{source.Id}); err != nil {
+		t.Fatalf("CreateParentTask: %v", err)
+	}
+	if _, err := s.store.RouteParentTask(ctx, delivery.NewID(), orch.Id, taskID, project.Id); err != nil {
+		t.Fatalf("RouteParentTask: %v", err)
+	}
+	laneID := delivery.NewID()
+	if _, err := s.store.CreateLane(ctx, delivery.NewID(), laneID, orch.Id, project.Id, taskID); err != nil {
+		t.Fatalf("CreateLane: %v", err)
+	}
+	hash, err := s.store.PutArtifact(ctx, []byte("evidence bytes"), "text/plain")
+	if err != nil {
+		t.Fatalf("PutArtifact: %v", err)
+	}
+	artifact, err := s.store.RecordArtifact(ctx, delivery.NewID(), delivery.NewID(), delivery.ArtifactRef{
+		OrchestrationID: orch.Id, ProjectID: project.Id, LaneID: laneID, Kind: protocol.EvidenceArtifactKindCommand,
+	}, hash)
+	if err != nil {
+		t.Fatalf("RecordArtifact: %v", err)
+	}
+
+	resp := s.do(t, http.MethodGet, "/api/v1/deliveries/"+orch.Id+"/evidence/"+artifact.Id, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/plain" {
+		t.Fatalf("Content-Type = %q, want text/plain", got)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(data) != "evidence bytes" {
+		t.Fatalf("body = %q, want %q", data, "evidence bytes")
+	}
+}
+
+// TestHandleDeliveryEvidenceMismatchedOrchestrationIs404 covers the
+// scoping check handleDeliveryEvidence does beyond GetArtifactRecord's
+// own id lookup: an evidence id that exists, but under a different
+// orchestration than the URL names, must 404 rather than leak across
+// orchestrations.
+func TestHandleDeliveryEvidenceMismatchedOrchestrationIs404(t *testing.T) {
+	s := newDeliveryTestServer(t)
+	ctx := context.Background()
+	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	other, err := s.store.CreateOrchestration(ctx, "other", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration(other): %v", err)
+	}
+	project, err := s.store.RegisterProject(ctx, "project", delivery.NewID(), "svc", "https://example.test/svc.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	hash, err := s.store.PutArtifact(ctx, []byte("data"), "text/plain")
+	if err != nil {
+		t.Fatalf("PutArtifact: %v", err)
+	}
+	artifact, err := s.store.RecordArtifact(ctx, delivery.NewID(), delivery.NewID(), delivery.ArtifactRef{
+		OrchestrationID: other.Id, ProjectID: project.Id, Kind: protocol.EvidenceArtifactKindCommand,
+	}, hash)
+	if err != nil {
+		t.Fatalf("RecordArtifact: %v", err)
+	}
+
+	resp := s.do(t, http.MethodGet, "/api/v1/deliveries/"+orch.Id+"/evidence/"+artifact.Id, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleDeliveryEvidenceUnknownIdIs404(t *testing.T) {
+	s := newDeliveryTestServer(t)
+	ctx := context.Background()
+	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	resp := s.do(t, http.MethodGet, "/api/v1/deliveries/"+orch.Id+"/evidence/unknown", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
 // --- Client round-trip tests -----------------------------------------
 
 func TestClientDeliveryRoundTrip(t *testing.T) {
@@ -423,6 +529,64 @@ func TestClientDeliveryRoundTrip(t *testing.T) {
 	}
 	if view.Orchestration.Status != protocol.DeliveryOrchestrationStatusCancelled {
 		t.Fatalf("expected cancelled, got %s", view.Orchestration.Status)
+	}
+}
+
+// TestClientGetDeliveryEvidenceRoundTrip covers Client.GetDeliveryEvidence,
+// the one non-JSON daemon route: it must return the artifact's raw bytes
+// and media type, not a decoded struct.
+func TestClientGetDeliveryEvidenceRoundTrip(t *testing.T) {
+	paths := testPaths(t)
+	d, err := Run(context.Background(), "127.0.0.1", "0", paths)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	go d.Serve()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		d.Shutdown(ctx)
+	}()
+
+	client, err := Discover(paths)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+
+	store := delivery.NewStore(d.DB())
+	ctx := context.Background()
+	orch, err := store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	project, err := store.RegisterProject(ctx, "project", delivery.NewID(), "svc", "https://example.test/svc.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	hash, err := store.PutArtifact(ctx, []byte("evidence bytes"), "text/plain")
+	if err != nil {
+		t.Fatalf("PutArtifact: %v", err)
+	}
+	artifact, err := store.RecordArtifact(ctx, delivery.NewID(), delivery.NewID(), delivery.ArtifactRef{
+		OrchestrationID: orch.Id, ProjectID: project.Id, Kind: protocol.EvidenceArtifactKindCommand,
+	}, hash)
+	if err != nil {
+		t.Fatalf("RecordArtifact: %v", err)
+	}
+
+	data, mediaType, err := client.GetDeliveryEvidence(ctx, orch.Id, artifact.Id)
+	if err != nil {
+		t.Fatalf("GetDeliveryEvidence: %v", err)
+	}
+	if string(data) != "evidence bytes" {
+		t.Fatalf("data = %q, want %q", data, "evidence bytes")
+	}
+	if mediaType != "text/plain" {
+		t.Fatalf("mediaType = %q, want text/plain", mediaType)
+	}
+
+	if _, _, err := client.GetDeliveryEvidence(ctx, orch.Id, "unknown"); err == nil {
+		t.Fatalf("expected error for unknown evidence id")
 	}
 }
 

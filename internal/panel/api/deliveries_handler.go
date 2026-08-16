@@ -67,6 +67,30 @@ func DeliveryViewHandler(reader contract.DeliveryReader) http.HandlerFunc {
 	}
 }
 
+// DeliveryEvidenceHandler serves
+// GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}: the raw
+// bytes of one lane-scoped evidence artifact, at whatever media type it
+// was recorded with - mirroring EvidencePreviewHandler's binary path
+// (evidence_handler.go), since delivery evidence has no text-preview
+// shape of its own.
+func DeliveryEvidenceHandler(reader contract.DeliveryReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if reader == nil {
+			writeError(w, http.StatusServiceUnavailable, errDeliveryUnavailable)
+			return
+		}
+		data, mediaType, err := reader.GetDeliveryEvidence(r.Context(), r.PathValue("orchestrationId"), r.PathValue("evidenceId"))
+		if err != nil {
+			writeError(w, deliveryErrorStatus(err), err)
+			return
+		}
+		w.Header().Set("Content-Type", mediaType)
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}
+}
+
 // answerDeliveryQuestionBody is POST .../answer-question's request body,
 // mirroring daemon's own wire shape exactly (the unexported
 // answerDeliveryQuestionRequest in internal/daemon/delivery.go): set

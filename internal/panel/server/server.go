@@ -209,6 +209,7 @@ func (s *Server) Start() error {
 	// startup, and every handler here degrades to 503 rather than panicking.
 	mux.HandleFunc("GET /api/v1/deliveries", api.ListDeliveriesHandler(s.readers.Delivery))
 	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}", api.DeliveryViewHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}", api.DeliveryEvidenceHandler(s.readers.Delivery))
 	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/answer-question", session.RequireSession(s.sessions, api.AnswerDeliveryQuestionHandler(s.readers.Delivery)))
 	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/approve", session.RequireSession(s.sessions, api.ApproveProjectDeliveryHandler(s.readers.Delivery)))
 	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/cancel", session.RequireSession(s.sessions, api.CancelDeliveryHandler(s.readers.Delivery)))

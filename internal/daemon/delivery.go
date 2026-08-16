@@ -92,6 +92,35 @@ func (t *Transport) handleDeliveryView(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleDeliveryEvidence serves
+// GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}: the raw
+// bytes of one lane-scoped evidence artifact recorded via
+// delivery.Store.RecordArtifact, at whatever media type it was stored
+// with. There is no JSON metadata shape here - DeliveryView.Lanes[].
+// Evidence already carries that; this route exists only to serve the
+// bytes a link built from that metadata points at.
+func (t *Transport) handleDeliveryEvidence(w http.ResponseWriter, r *http.Request) {
+	orchestrationID := r.PathValue("orchestrationId")
+	rec, err := t.delivery.GetArtifactRecord(r.Context(), r.PathValue("evidenceId"))
+	if err != nil {
+		writeDeliveryError(w, err)
+		return
+	}
+	if rec.OrchestrationId != orchestrationID {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "delivery: evidence not found for this orchestration"})
+		return
+	}
+	data, err := t.delivery.GetArtifact(rec.ContentHash)
+	if err != nil {
+		writeDeliveryError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", rec.MediaType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 // answerDeliveryQuestionRequest is POST
 // /api/v1/deliveries/{orchestrationId}/answer-question's body. It mirrors
 // mcpserver.AnswerDeliveryQuestionInput's own two cases - set provider
@@ -422,23 +451,25 @@ func deliveryViewPath(orchestrationID string, sinceSeq, waitSeconds int) string 
 	return p
 }
 
-// doJSON issues one authenticated JSON request against the daemon: body
-// (if non-nil) is marshaled as the request payload, and a 200 response is
-// unmarshaled into out (if non-nil). A non-200 response becomes an error
-// carrying the response's own JSON error detail, so a caller sees the
-// same message the HTTP handler produced rather than just a bare status.
-func (c *Client) doJSON(ctx context.Context, hc *http.Client, method, path string, body, out any) error {
+// doRequest issues one authenticated request against the daemon: body
+// (if non-nil) is marshaled as the JSON request payload. A non-200
+// response becomes an error carrying the response's own JSON error
+// detail, so a caller sees the same message the HTTP handler produced
+// rather than just a bare status; on that path the response body is
+// already closed. On success, the caller owns the still-open response
+// and must close its body.
+func (c *Client) doRequest(ctx context.Context, hc *http.Client, method, path string, body any) (*http.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		reader = bytes.NewReader(encoded)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+c.addr+path, reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	if body != nil {
@@ -446,24 +477,52 @@ func (c *Client) doJSON(ctx context.Context, hc *http.Client, method, path strin
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		msg, _ := io.ReadAll(resp.Body)
+		message := string(bytes.TrimSpace(msg))
+		var errBody struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(msg, &errBody) == nil && errBody.Error != "" {
+			message = errBody.Error
+		}
+		return nil, &StatusError{Method: method, Path: path, Status: resp.StatusCode, Message: message}
+	}
+	return resp, nil
+}
+
+// doJSON is doRequest plus decoding a 200 response's body into out (if
+// non-nil).
+func (c *Client) doJSON(ctx context.Context, hc *http.Client, method, path string, body, out any) error {
+	resp, err := c.doRequest(ctx, hc, method, path, body)
+	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(resp.Body)
-		message := string(bytes.TrimSpace(msg))
-		var body struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(msg, &body) == nil && body.Error != "" {
-			message = body.Error
-		}
-		return &StatusError{Method: method, Path: path, Status: resp.StatusCode, Message: message}
-	}
 	if out == nil {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// GetDeliveryEvidence fetches one lane-scoped evidence artifact's raw
+// bytes and media type by id, scoped to orchestrationID (a mismatched
+// orchestration/evidence pair 404s, same as an unknown evidenceID).
+func (c *Client) GetDeliveryEvidence(ctx context.Context, orchestrationID, evidenceID string) ([]byte, string, error) {
+	path := "/api/v1/deliveries/" + url.PathEscape(orchestrationID) + "/evidence/" + url.PathEscape(evidenceID)
+	resp, err := c.doRequest(ctx, c.http, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, resp.Header.Get("Content-Type"), nil
 }
 
 // StatusError is doJSON's error for a non-200 daemon response: Status is

@@ -1471,11 +1471,7 @@ export function rejectContextImprovement(projectId: string, reviewId: string, pr
 // however many projects it touches. DeliveryView (internal/delivery
 // /deliveryview.go) is the single read model every delivery endpoint
 // returns; its Projects/Lanes/Blockers are reduced summaries derived from
-// protocol.DeliveryLane, not that full struct - worktree path, branch,
-// base sha, lease/worker info, and the Semar/Gareng/Petruk/Bagong role
-// record ids live on DeliveryLane but aren't surfaced by any panel HTTP
-// endpoint yet, so this client (and the UI built on it) cannot render
-// them until a backend endpoint exposes them.
+// protocol.DeliveryLane, not that full struct.
 
 export type DeliveryOrchestrationStatus = "pending" | "active" | "cancelled" | "completed";
 
@@ -1497,6 +1493,14 @@ export interface DeliveryProjectSummary {
   counts_by_status: Partial<Record<DeliveryLaneStatus, number>>;
 }
 
+export interface DeliveryEvidenceRef {
+  id: string;
+  kind: string;
+  media_type: string;
+  byte_size: number;
+  content_hash: string;
+}
+
 export interface DeliveryLaneSummary {
   lane_id: string;
   project_id: string;
@@ -1506,6 +1510,18 @@ export interface DeliveryLaneSummary {
   pr_url?: string;
   pr_number?: number;
   pr_provider?: string;
+  worker?: string;
+  worktree_path?: string;
+  base_sha?: string;
+  base_remote?: string;
+  semar_record_id?: string;
+  gareng_record_id?: string;
+  petruk_record_id?: string;
+  bagong_record_id?: string;
+  attempt?: number;
+  repair_cycle_count?: number;
+  escalated_at?: string;
+  evidence?: DeliveryEvidenceRef[];
 }
 
 export interface DeliveryBlockerSummary {
@@ -1571,6 +1587,14 @@ export function listDeliveries(): Promise<{ items: DeliveryOrchestration[] }> {
 export function getDeliveryView(orchestrationId: string, sinceSeq?: number): Promise<DeliveryView> {
   const qs = sinceSeq ? `?since_seq=${encodeURIComponent(String(sinceSeq))}` : "";
   return getJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}${qs}`);
+}
+
+// deliveryEvidenceUrl builds a lane evidence artifact's raw-bytes URL
+// directly (mirroring evidencePreviewUrl above), so callers can hand it
+// straight to a plain <a href> link without round-tripping the bytes
+// through JS.
+export function deliveryEvidenceUrl(orchestrationId: string, evidenceId: string): string {
+  return `/api/v1/deliveries/${encodeURIComponent(orchestrationId)}/evidence/${encodeURIComponent(evidenceId)}`;
 }
 
 // answerDeliveryQuestion resolves one entry from DeliveryView.pending_questions

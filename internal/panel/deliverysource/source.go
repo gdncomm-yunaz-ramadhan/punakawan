@@ -52,3 +52,9 @@ func (s *Source) ApproveProjectDelivery(ctx context.Context, orchestrationID str
 func (s *Source) CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error) {
 	return s.Client.CancelDelivery(ctx, orchestrationID, in)
 }
+
+// GetDeliveryEvidence fetches one lane-scoped evidence artifact's raw
+// bytes and media type by id.
+func (s *Source) GetDeliveryEvidence(ctx context.Context, orchestrationID, evidenceID string) ([]byte, string, error) {
+	return s.Client.GetDeliveryEvidence(ctx, orchestrationID, evidenceID)
+}

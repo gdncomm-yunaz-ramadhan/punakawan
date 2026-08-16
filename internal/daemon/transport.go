@@ -54,6 +54,7 @@ func NewTransport(host, port, token string, ready func() error, deliveryStore *d
 	mux.Handle("/readyz", t.authenticate(http.HandlerFunc(t.handleReady)))
 	mux.Handle("GET /api/v1/deliveries", t.authenticate(http.HandlerFunc(t.handleListDeliveries)))
 	mux.Handle("GET /api/v1/deliveries/{orchestrationId}", t.authenticate(http.HandlerFunc(t.handleDeliveryView)))
+	mux.Handle("GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}", t.authenticate(http.HandlerFunc(t.handleDeliveryEvidence)))
 	mux.Handle("POST /api/v1/deliveries/{orchestrationId}/answer-question", t.authenticate(http.HandlerFunc(t.handleAnswerDeliveryQuestion)))
 	mux.Handle("POST /api/v1/deliveries/{orchestrationId}/approve", t.authenticate(http.HandlerFunc(t.handleApproveProjectDelivery)))
 	mux.Handle("POST /api/v1/deliveries/{orchestrationId}/cancel", t.authenticate(http.HandlerFunc(t.handleCancelDelivery)))

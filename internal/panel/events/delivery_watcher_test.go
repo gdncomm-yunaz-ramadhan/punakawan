@@ -100,6 +100,10 @@ func (f *fakeDeliveryReader) CancelDelivery(ctx context.Context, orchestrationID
 	return nil, errors.New("not implemented")
 }
 
+func (f *fakeDeliveryReader) GetDeliveryEvidence(ctx context.Context, orchestrationID, evidenceID string) ([]byte, string, error) {
+	return nil, "", errors.New("not implemented")
+}
+
 func TestDeliveryWatcherPublishesOnLatestSeqAdvance(t *testing.T) {
 	reader := newFakeDeliveryReader()
 	reader.addOrchestration("orc-1", protocol.DeliveryOrchestrationStatusActive)

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -34,6 +35,43 @@ type LaneSummary struct {
 	PRURL        string                      `json:"pr_url,omitempty"`
 	PRNumber     int                         `json:"pr_number,omitempty"`
 	PRProvider   string                      `json:"pr_provider,omitempty"`
+
+	// Worker, WorktreePath, BaseSha, and BaseRemote surface protocol.
+	// DeliveryLane's lease/worktree fields, unwrapped from their pointer
+	// form (empty when the lane was never leased/never got a worktree).
+	Worker       string `json:"worker,omitempty"`
+	WorktreePath string `json:"worktree_path,omitempty"`
+	BaseSha      string `json:"base_sha,omitempty"`
+	BaseRemote   string `json:"base_remote,omitempty"`
+
+	// SemarRecordID through BagongRecordID mark how far this attempt has
+	// progressed through the fixed Semar->Gareng->Petruk->Bagong pipeline -
+	// each is set once that stage's record is recorded, and empty before
+	// then.
+	SemarRecordID  string `json:"semar_record_id,omitempty"`
+	GarengRecordID string `json:"gareng_record_id,omitempty"`
+	PetrukRecordID string `json:"petruk_record_id,omitempty"`
+	BagongRecordID string `json:"bagong_record_id,omitempty"`
+
+	Attempt          int        `json:"attempt,omitempty"`
+	RepairCycleCount int        `json:"repair_cycle_count,omitempty"`
+	EscalatedAt      *time.Time `json:"escalated_at,omitempty"`
+
+	// Evidence lists this lane's recorded artifacts by reference only -
+	// never their bytes - so a caller links to (or fetches) the
+	// underlying content instead of this view inlining it.
+	Evidence []EvidenceRef `json:"evidence,omitempty"`
+}
+
+// EvidenceRef is one evidence artifact's linkable metadata: enough for a
+// caller to fetch or display a link to the underlying content-addressed
+// bytes without this view ever carrying the bytes themselves.
+type EvidenceRef struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	MediaType   string `json:"media_type"`
+	ByteSize    int    `json:"byte_size"`
+	ContentHash string `json:"content_hash"`
 }
 
 // BlockerSummary names one lane still waiting on unresolved
@@ -165,6 +203,27 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	laneIDsByProject := map[string][]string{}
 	countsByProject := map[string]map[protocol.DeliveryLaneStatus]int{}
 
+	// Evidence is fetched once for the whole orchestration, then grouped
+	// by lane in memory, rather than one ListArtifacts call per lane. A
+	// failed lookup degrades gracefully - evidence is supplementary, not
+	// core lane state, so it is worth losing rather than failing the
+	// whole view over.
+	evidenceByLane := map[string][]EvidenceRef{}
+	if artifacts, err := s.ListArtifacts(ctx, ArtifactFilter{OrchestrationID: orchestrationID}); err == nil {
+		for _, a := range artifacts {
+			if a.LaneId == nil {
+				continue
+			}
+			evidenceByLane[*a.LaneId] = append(evidenceByLane[*a.LaneId], EvidenceRef{
+				ID:          a.Id,
+				Kind:        string(a.Kind),
+				MediaType:   a.MediaType,
+				ByteSize:    a.ByteSize,
+				ContentHash: a.ContentHash,
+			})
+		}
+	}
+
 	for _, id := range laneIDs {
 		l := laneMap[id]
 		summary := LaneSummary{
@@ -172,6 +231,7 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 			ProjectID: l.ProjectId,
 			Status:    l.Status,
 			BlockedBy: l.BlockedBy,
+			Evidence:  evidenceByLane[l.Id],
 		}
 		if l.ParentTaskId != nil {
 			summary.ParentTaskID = *l.ParentTaskId
@@ -185,6 +245,37 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		if l.PrProvider != nil {
 			summary.PRProvider = string(*l.PrProvider)
 		}
+		if l.LeaseWorkerId != nil {
+			summary.Worker = *l.LeaseWorkerId
+		}
+		if l.WorktreePath != nil {
+			summary.WorktreePath = *l.WorktreePath
+		}
+		if l.BaseSha != nil {
+			summary.BaseSha = *l.BaseSha
+		}
+		if l.BaseRemote != nil {
+			summary.BaseRemote = *l.BaseRemote
+		}
+		if l.SemarRecordId != nil {
+			summary.SemarRecordID = *l.SemarRecordId
+		}
+		if l.GarengRecordId != nil {
+			summary.GarengRecordID = *l.GarengRecordId
+		}
+		if l.PetrukRecordId != nil {
+			summary.PetrukRecordID = *l.PetrukRecordId
+		}
+		if l.BagongRecordId != nil {
+			summary.BagongRecordID = *l.BagongRecordId
+		}
+		if l.Attempt != nil {
+			summary.Attempt = *l.Attempt
+		}
+		if l.RepairCycleCount != nil {
+			summary.RepairCycleCount = *l.RepairCycleCount
+		}
+		summary.EscalatedAt = l.EscalatedAt
 		view.Lanes = append(view.Lanes, summary)
 
 		laneIDsByProject[l.ProjectId] = append(laneIDsByProject[l.ProjectId], l.Id)

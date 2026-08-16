@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -287,6 +288,126 @@ func TestBuildDeliveryViewSinceReportsLaneUnblockedAfterCheckpoint(t *testing.T)
 	}
 	if len(fromStart.NewlyRunnableLaneIDs) != 1 || fromStart.NewlyRunnableLaneIDs[0] != dependentLane.Id {
 		t.Fatalf("NewlyRunnableLaneIDs (from start) = %+v, want exactly [%s]", fromStart.NewlyRunnableLaneIDs, dependentLane.Id)
+	}
+}
+
+// TestBuildDeliveryViewSurfacesLaneDetailAndEvidence covers AC3/AC5: once
+// a lane has a worktree, a lease, a recorded Semar stage, and one piece
+// of recorded evidence, BuildDeliveryView's LaneSummary must expose all
+// of that - worker, worktree/base git state, exactly the recorded stage
+// (and no later stage), attempt count, and the evidence as a link-ready
+// reference rather than inlined content.
+func TestBuildDeliveryViewSurfacesLaneDetailAndEvidence(t *testing.T) {
+	f := newWorktreeFixture(t)
+	ctx := context.Background()
+
+	if _, err := f.store.SyncFrontier(ctx, "sync-"+NewID(), f.orchestrationID); err != nil {
+		t.Fatalf("SyncFrontier: %v", err)
+	}
+	lane := f.lane(t)
+
+	created, err := f.store.CreateWorktree(ctx, "create-"+NewID(), f.orchestrationID, f.laneID, lane.Revision)
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	leased, err := f.store.GrantLease(ctx, "lease-"+NewID(), f.orchestrationID, f.laneID, created.Revision, "worker-1", time.Minute)
+	if err != nil {
+		t.Fatalf("GrantLease: %v", err)
+	}
+
+	semarRecordID := NewID()
+	if _, err := f.store.RecordRoleStage(ctx, "semar-"+NewID(), f.orchestrationID, f.laneID, *leased.LeaseToken, RoleStageSemar, semarRecordID, leased.Revision); err != nil {
+		t.Fatalf("RecordRoleStage(Semar): %v", err)
+	}
+
+	hash, err := f.store.PutArtifact(ctx, []byte("evidence bytes"), "text/plain")
+	if err != nil {
+		t.Fatalf("PutArtifact: %v", err)
+	}
+	artifact, err := f.store.RecordArtifact(ctx, "record-"+NewID(), NewID(), ArtifactRef{
+		OrchestrationID: f.orchestrationID,
+		ProjectID:       f.projectID,
+		LaneID:          f.laneID,
+		Kind:            protocol.EvidenceArtifactKindCommand,
+		Producer:        "go test",
+	}, hash)
+	if err != nil {
+		t.Fatalf("RecordArtifact: %v", err)
+	}
+
+	view, err := f.store.BuildDeliveryView(ctx, f.orchestrationID)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if len(view.Lanes) != 1 {
+		t.Fatalf("Lanes = %+v, want exactly one", view.Lanes)
+	}
+	got := view.Lanes[0]
+
+	if got.Worker != "worker-1" {
+		t.Fatalf("Worker = %q, want worker-1", got.Worker)
+	}
+	if got.WorktreePath == "" {
+		t.Fatalf("WorktreePath = %q, want it populated", got.WorktreePath)
+	}
+	if got.BaseSha == "" {
+		t.Fatalf("BaseSha = %q, want it populated", got.BaseSha)
+	}
+	if got.BaseRemote != "origin" {
+		t.Fatalf("BaseRemote = %q, want origin", got.BaseRemote)
+	}
+	if got.SemarRecordID != semarRecordID {
+		t.Fatalf("SemarRecordID = %q, want %q", got.SemarRecordID, semarRecordID)
+	}
+	if got.GarengRecordID != "" || got.PetrukRecordID != "" || got.BagongRecordID != "" {
+		t.Fatalf("later-stage record ids should still be empty, got %+v", got)
+	}
+	if got.Attempt != 1 {
+		t.Fatalf("Attempt = %d, want 1", got.Attempt)
+	}
+	if got.RepairCycleCount != 0 {
+		t.Fatalf("RepairCycleCount = %d, want 0 (never repaired)", got.RepairCycleCount)
+	}
+	if got.EscalatedAt != nil {
+		t.Fatalf("EscalatedAt = %v, want nil (never escalated)", got.EscalatedAt)
+	}
+	if len(got.Evidence) != 1 {
+		t.Fatalf("Evidence = %+v, want exactly the one recorded artifact", got.Evidence)
+	}
+	ev := got.Evidence[0]
+	if ev.ID != artifact.Id || ev.ContentHash != hash || ev.MediaType != "text/plain" || ev.Kind != string(protocol.EvidenceArtifactKindCommand) {
+		t.Fatalf("Evidence[0] = %+v, want it to match the recorded artifact", ev)
+	}
+	if ev.ByteSize != len("evidence bytes") {
+		t.Fatalf("Evidence[0].ByteSize = %d, want %d", ev.ByteSize, len("evidence bytes"))
+	}
+}
+
+// TestBuildDeliveryViewEvidenceLookupFailureDegradesGracefully covers
+// buildDeliveryView's own graceful-degradation contract: evidence is
+// supplementary, so a lane with no recorded evidence simply gets an
+// empty Evidence slice rather than the view failing outright, and every
+// other field is still populated normally.
+func TestBuildDeliveryViewEvidenceLookupFailureDegradesGracefully(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	orch := createTestOrchestration(t, s)
+	proj := registerProject(t, s, "no-evidence")
+	task := createTestTask(t, s, orch.Id, "task")
+	if _, err := s.RouteParentTask(ctx, "route-"+NewID(), orch.Id, task.Id, proj.Id); err != nil {
+		t.Fatalf("RouteParentTask: %v", err)
+	}
+	if _, err := s.CreateLane(ctx, "lane-"+NewID(), NewID(), orch.Id, proj.Id, task.Id); err != nil {
+		t.Fatalf("CreateLane: %v", err)
+	}
+
+	view, err := s.BuildDeliveryView(ctx, orch.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if len(view.Lanes) != 1 || view.Lanes[0].Evidence != nil {
+		t.Fatalf("Lanes = %+v, want exactly one lane with a nil/empty Evidence slice", view.Lanes)
 	}
 }
 

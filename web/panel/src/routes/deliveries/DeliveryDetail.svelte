@@ -3,6 +3,7 @@
   import {
     getDeliveryView,
     cancelDelivery,
+    deliveryEvidenceUrl,
     type DeliveryView,
     type DeliveryLaneStatus,
     type DeliveryLaneSummary,
@@ -100,6 +101,25 @@
 
   function lanesFor(projectId: string): DeliveryLaneSummary[] {
     return view?.lanes.filter((l) => l.project_id === projectId) ?? [];
+  }
+
+  // stageLabel names how far a lane's current attempt has progressed
+  // through the fixed Semar -> Gareng -> Petruk -> Bagong pipeline, e.g.
+  // "Semar → Gareng" once Gareng's review is recorded but Petruk's plan
+  // isn't yet - null before any stage has been recorded at all.
+  function stageLabel(lane: DeliveryLaneSummary): string | null {
+    const stages: [string, string | undefined][] = [
+      ["Semar", lane.semar_record_id],
+      ["Gareng", lane.gareng_record_id],
+      ["Petruk", lane.petruk_record_id],
+      ["Bagong", lane.bagong_record_id],
+    ];
+    const reached = stages.filter(([, id]) => id).map(([name]) => name);
+    return reached.length ? reached.join(" → ") : null;
+  }
+
+  function shortSha(sha: string): string {
+    return sha.slice(0, 8);
   }
 
   const orchestrationStatusVariants: Record<string, BadgeVariant> = {
@@ -244,6 +264,7 @@
           {#snippet children()}
             <ul class="lanes">
               {#each lanesFor(project.project_id) as lane (lane.lane_id)}
+                {@const stage = stageLabel(lane)}
                 <li class="lane" class:newly-runnable={newlyRunnable.has(lane.lane_id)}>
                   <div class="lane-head">
                     <span class="lane-id">{lane.lane_id}</span>
@@ -264,6 +285,39 @@
                         ({lane.pr_provider})
                       {/if}
                     </a>
+                  {/if}
+                  {#if lane.worker || lane.worktree_path || lane.base_sha}
+                    <div class="lane-detail meta">
+                      {#if lane.worker}<span>worker {lane.worker}</span>{/if}
+                      {#if lane.worktree_path}<span>worktree {lane.worktree_path}</span>{/if}
+                      {#if lane.base_sha}<span>base {shortSha(lane.base_sha)}{lane.base_remote ? ` (${lane.base_remote})` : ""}</span>{/if}
+                    </div>
+                  {/if}
+                  {#if stage}
+                    <span class="meta">stage: {stage}</span>
+                  {/if}
+                  {#if lane.repair_cycle_count}
+                    <span class="meta">
+                      attempt {lane.attempt ?? 1} · {lane.repair_cycle_count} repair cycle{lane.repair_cycle_count === 1 ? "" : "s"}
+                    </span>
+                  {/if}
+                  {#if lane.escalated_at}
+                    <span class="escalated">escalated at {lane.escalated_at}</span>
+                  {/if}
+                  {#if lane.evidence?.length}
+                    <ul class="evidence">
+                      {#each lane.evidence as ev (ev.id)}
+                        <li>
+                          <a
+                            href={deliveryEvidenceUrl(orchestrationId, ev.id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {ev.kind} evidence ({ev.byte_size}B)
+                          </a>
+                        </li>
+                      {/each}
+                    </ul>
                   {/if}
                 </li>
               {/each}
@@ -407,6 +461,32 @@
     text-decoration: none;
   }
   .pr-link:hover {
+    text-decoration: underline;
+  }
+  .lane-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  .escalated {
+    color: var(--color-danger);
+    font-weight: 600;
+    font-size: 0.78rem;
+  }
+  .evidence {
+    list-style: none;
+    padding: 0;
+    margin: 0.1rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .evidence a {
+    color: var(--color-accent);
+    font-size: 0.78rem;
+    text-decoration: none;
+  }
+  .evidence a:hover {
     text-decoration: underline;
   }
   .empty {

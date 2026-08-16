@@ -221,4 +221,44 @@ describe("DeliveryDetail", () => {
     await waitFor(() => expect(screen.getByText("runnable")).toBeTruthy());
     expect(screen.getByText("Newly runnable")).toBeTruthy();
   });
+
+  it("renders worker, worktree, base sha, pipeline stage, repair count, escalation, and evidence links", async () => {
+    const view = baseView({
+      lanes: [
+        {
+          lane_id: "lane-1",
+          project_id: "proj-a",
+          status: "running",
+          worker: "worker-42",
+          worktree_path: "/tmp/worktrees/lane-1",
+          base_sha: "abcdef1234567890",
+          base_remote: "origin",
+          semar_record_id: "rec-semar",
+          gareng_record_id: "rec-gareng",
+          attempt: 2,
+          repair_cycle_count: 1,
+          escalated_at: "2026-08-10T00:00:00Z",
+          evidence: [{ id: "ev-1", kind: "test", media_type: "application/json", byte_size: 512, content_hash: "sha256:abc" }],
+        },
+      ],
+    });
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(view);
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByText("lane-1")).toBeTruthy());
+    expect(container.textContent).toContain("worker worker-42");
+    expect(container.textContent).toContain("worktree /tmp/worktrees/lane-1");
+    expect(container.textContent).toContain("base abcdef12 (origin)");
+    expect(container.textContent).toContain("stage: Semar → Gareng");
+    expect(container.textContent).toContain("attempt 2");
+    expect(container.textContent).toContain("1 repair cycle");
+    expect(container.textContent).toContain("escalated at 2026-08-10T00:00:00Z");
+
+    const evidenceLink = screen.getByRole("link", { name: /test evidence/ });
+    expect(evidenceLink.getAttribute("href")).toBe("/api/v1/deliveries/orc-1/evidence/ev-1");
+  });
 });
