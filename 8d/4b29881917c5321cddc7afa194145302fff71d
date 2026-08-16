@@ -1,0 +1,23 @@
+internal/app/slo_bench_test.go
+  f9605b8f4acd1e01 1-470
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8d4b29881917c5321cddc7afa194145302fff71d",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 470,
+      "total_deletions": 0,
+      "accepted_lines": 470,
+      "overriden_lines": 0
+    }
+  }
+}
