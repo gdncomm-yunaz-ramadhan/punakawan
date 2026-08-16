@@ -16,6 +16,7 @@
   import Icon from "../../lib/components/Icon.svelte";
   import VersionLineageGraphView from "../../lib/components/graphs/VersionLineageGraphView.svelte";
   import type { GraphNode, GraphEdge } from "../../lib/components/graphs/types";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
 
   interface Props {
     projectId: string;
@@ -310,289 +311,289 @@
               </p>
               {#if row.explanation?.length}<p class="explanation">{row.explanation.join(" · ")}</p>{/if}
             </button>
-
-            {#if selectedId === row.record.id}
-              <div class="detail" data-testid="knowledge-detail">
-                {#if detailLoading}
-                  <p>Loading record…</p>
-                {:else if detailError}
-                  <ErrorStateCard title="Failed to load record" message={detailError} />
-                {:else if detail}
-                  {#if detail.tags?.length}
-                    <p class="tags">{#each detail.tags as t (t)}<span class="tag">{t}</span>{/each}</p>
-                  {/if}
-                  {#if detail.content}
-                    <pre class="content">{detail.content}</pre>
-                  {:else if detail.summary}
-                    <p>{detail.summary}</p>
-                  {/if}
-
-                  {#if typedBody(detail)}
-                    {@const body = typedBody(detail)}
-                    <h5>{body?.label}</h5>
-                    <pre class="content">{body?.json}</pre>
-                  {/if}
-
-                  {#if detail.superseded_by}
-                    <p class="superseded">
-                      Superseded by
-                      <button type="button" class="link-button" onclick={() => open(detail?.superseded_by ?? "")}>
-                        {detail.superseded_by}
-                      </button>
-                    </p>
-                  {/if}
-
-                  {#if detail.type === "retrieval_recipe" && detail.retrieval_recipe}
-                    {@const recipe = detail.retrieval_recipe}
-                    <section aria-labelledby="recipe-identity-heading-{detail.id}" class="recipe-block">
-                      <h5 id="recipe-identity-heading-{detail.id}">Recipe identity</h5>
-                      <dl class="provenance">
-                        <dt>Capability</dt>
-                        <dd><code>{recipe.capability}</code></dd>
-                        <dt>Intent</dt>
-                        <dd><code>{recipe.intent}</code></dd>
-                        <dt>Provider</dt>
-                        <dd>{recipe.provider}</dd>
-                        <dt>Resource / operation</dt>
-                        <dd>{recipe.resource} / {recipe.operation}</dd>
-                        <dt>Read-only</dt>
-                        <dd>{recipe.read_only ? "Yes" : "No"}</dd>
-                        {#if recipe.recipe_version}
-                          <dt>Recipe version</dt>
-                          <dd>{recipe.recipe_version}</dd>
-                        {/if}
-                        {#if recipe.applies_to?.workspace_ids?.length}
-                          <dt>Scope: workspaces</dt>
-                          <dd>{recipe.applies_to.workspace_ids.join(", ")}</dd>
-                        {/if}
-                        {#if recipe.applies_to?.repository_ids?.length}
-                          <dt>Scope: repositories</dt>
-                          <dd>{recipe.applies_to.repository_ids.join(", ")}</dd>
-                        {:else if !recipe.applies_to?.workspace_ids?.length}
-                          <dt>Scope</dt>
-                          <dd class="muted">Globally scoped (no workspace/repository restriction declared)</dd>
-                        {/if}
-                      </dl>
-                    </section>
-
-                    <section aria-labelledby="recipe-selector-heading-{detail.id}" class="recipe-block">
-                      <h5 id="recipe-selector-heading-{detail.id}">Selector</h5>
-                      <p class="hint">
-                        The structured condition this recipe's compiled query is built from - matches
-                        <code>punakawan knowledge recipe explain</code>'s clause vocabulary.
-                      </p>
-                      {#if recipe.selector.all?.length}
-                        <p class="selector-group-label">All of:</p>
-                        <ul class="clause-list">
-                          {#each recipe.selector.all as clause, i (i)}
-                            <li>
-                              {#if clause.field}
-                                <code>{clause.field}</code> {operatorSymbol(clause.operator)} <code>{clauseValueText(clause.value)}</code>
-                              {:else if clause.all?.length || clause.any?.length}
-                                <span class="muted">(nested group - {clause.all?.length ? "all" : "any"} of {clause.all?.length ?? clause.any?.length})</span>
-                              {/if}
-                            </li>
-                          {/each}
-                        </ul>
-                      {/if}
-                      {#if recipe.selector.any?.length}
-                        <p class="selector-group-label">Any of:</p>
-                        <ul class="clause-list">
-                          {#each recipe.selector.any as clause, i (i)}
-                            <li>
-                              {#if clause.field}
-                                <code>{clause.field}</code> {operatorSymbol(clause.operator)} <code>{clauseValueText(clause.value)}</code>
-                              {:else if clause.all?.length || clause.any?.length}
-                                <span class="muted">(nested group - {clause.all?.length ? "all" : "any"} of {clause.all?.length ?? clause.any?.length})</span>
-                              {/if}
-                            </li>
-                          {/each}
-                        </ul>
-                      {/if}
-                      {#if !recipe.selector.all?.length && !recipe.selector.any?.length}
-                        <p class="muted">No selector clauses declared.</p>
-                      {/if}
-                    </section>
-
-                    <section aria-labelledby="recipe-shape-heading-{detail.id}" class="recipe-block">
-                      <h5 id="recipe-shape-heading-{detail.id}">Inputs, ordering, and output shape</h5>
-                      {#if recipe.inputs?.length}
-                        <h6>Inputs</h6>
-                        <ul class="plain-list">
-                          {#each recipe.inputs as input, i (i)}
-                            <li>
-                              <code>{input.name}</code> ({input.type}){input.required ? " - required" : ""}
-                              {#if input.default}<span class="muted"> default: {input.default}</span>{/if}
-                            </li>
-                          {/each}
-                        </ul>
-                      {:else}
-                        <p class="muted">No dynamic inputs - this recipe's selector is fully literal.</p>
-                      {/if}
-
-                      {#if recipe.ordering?.length}
-                        <h6>Ordering</h6>
-                        <ul class="plain-list">
-                          {#each recipe.ordering as order, i (i)}
-                            <li><code>{order.field}</code> {order.direction}</li>
-                          {/each}
-                        </ul>
-                      {/if}
-
-                      <h6>Output</h6>
-                      <dl class="provenance">
-                        <dt>Entity type</dt>
-                        <dd>{recipe.output.entity_type}</dd>
-                        <dt>Identity field</dt>
-                        <dd><code>{recipe.output.identity_field}</code></dd>
-                        <dt>Fields</dt>
-                        <dd>{recipe.output.fields.join(", ")}</dd>
-                      </dl>
-                    </section>
-
-                    <section aria-labelledby="recipe-execution-heading-{detail.id}" class="recipe-block">
-                      <h5 id="recipe-execution-heading-{detail.id}">Last execution evidence</h5>
-                      {#if recipe.last_execution}
-                        <dl class="provenance">
-                          <dt>Status</dt>
-                          <dd>{recipe.last_execution.status ?? "unknown"}</dd>
-                          {#if recipe.last_execution.executed_at}
-                            <dt>Executed</dt>
-                            <dd>{new Date(recipe.last_execution.executed_at).toLocaleString()}</dd>
-                          {/if}
-                          {#if recipe.last_execution.result_count !== undefined}
-                            <dt>Result count</dt>
-                            <dd>{recipe.last_execution.result_count}</dd>
-                          {/if}
-                          {#if recipe.last_execution.session_id}
-                            <dt>Session</dt>
-                            <dd>{recipe.last_execution.session_id}</dd>
-                          {/if}
-                          {#if recipe.last_execution.task_id}
-                            <dt>Task</dt>
-                            <dd>{recipe.last_execution.task_id}</dd>
-                          {/if}
-                          {#if recipe.last_execution.evidence_id}
-                            <dt>Evidence record</dt>
-                            <dd class="break">{recipe.last_execution.evidence_id}</dd>
-                          {/if}
-                        </dl>
-                      {:else}
-                        <p class="muted">This recipe has never been executed (no last_execution recorded yet).</p>
-                      {/if}
-                      <p class="hint">
-                        Full usage history (every execution, not just the latest) is a known gap - the panel has no
-                        evidence-by-recipe-id query today, only evidence scoped to a single session
-                        (see GET /projects/&lbrace;projectId&rbrace;/sessions/&lbrace;sessionId&rbrace;/evidence). Tracked as a follow-up.
-                      </p>
-                    </section>
-
-                    {#if recipe.validation}
-                      <section aria-labelledby="recipe-validation-heading-{detail.id}" class="recipe-block">
-                        <h5 id="recipe-validation-heading-{detail.id}">Validation and acceptance</h5>
-                        <dl class="provenance">
-                          <dt>Status</dt>
-                          <dd>{recipe.validation.status ?? "unknown"}</dd>
-                          {#if recipe.validation.sample_size !== undefined}
-                            <dt>Sample size</dt>
-                            <dd>{recipe.validation.sample_size}</dd>
-                          {/if}
-                          {#if recipe.validation.accepted_at}
-                            <dt>Accepted</dt>
-                            <dd>{new Date(recipe.validation.accepted_at).toLocaleString()}</dd>
-                          {/if}
-                          {#if recipe.validation.accepted_by}
-                            <dt>Accepted by</dt>
-                            <dd>{recipe.validation.accepted_by}</dd>
-                          {/if}
-                          {#if recipe.validation.accepted_result_count !== undefined}
-                            <dt>Accepted result count</dt>
-                            <dd>{recipe.validation.accepted_result_count}</dd>
-                          {/if}
-                        </dl>
-                      </section>
-                    {/if}
-
-                    <section aria-labelledby="recipe-lineage-heading-{detail.id}" class="recipe-block">
-                      <h5 id="recipe-lineage-heading-{detail.id}">Version lineage</h5>
-                      {#if lineage.nodes.length > 1}
-                        <VersionLineageGraphView nodes={lineage.nodes} edges={lineage.edges} title="Recipe lineage" />
-                      {:else}
-                        <p class="muted">No prior or later version is known from this record's own data.</p>
-                      {/if}
-                      <p class="hint">
-                        This is a best-effort, one-hop view derived from this record's own superseded_by pointer and its
-                        "referenced by" relations - there is no dedicated recipe lineage-list endpoint yet (unlike a plan review's
-                        proposal history), so a longer correction chain is not fully walkable from the panel today. Tracked as a
-                        follow-up.
-                      </p>
-                    </section>
-                  {/if}
-
-                  <h5>Provenance</h5>
-                  <dl class="provenance">
-                    <dt>Type</dt><dd>{detail.type}</dd>
-                    <dt>Status</dt><dd>{detail.status}</dd>
-                    <dt>Validity</dt>
-                    <dd>
-                      {#if detail.type === "retrieval_recipe"}
-                        <StatusBadge
-                          variant={recipeStateVariant[detail.validity.state] ?? "neutral"}
-                          label={recipeStateLabel[detail.validity.state] ?? detail.validity.state}
-                        />
-                      {:else}
-                        {validityLabels[detail.validity.state] ?? detail.validity.state}
-                      {/if}
-                      {#if detail.validity.verified_by?.length}· verified by {detail.validity.verified_by.join(", ")}{/if}
-                    </dd>
-                    <dt>Source</dt><dd>{detail.source.provider}</dd>
-                    {#if detail.source.external_id}<dt>External ID</dt><dd>{detail.source.external_id}</dd>{/if}
-                    {#if detail.source.uri}<dt>URI</dt><dd class="break">{detail.source.uri}</dd>{/if}
-                    {#if detail.source.section}<dt>Section</dt><dd>{detail.source.section}</dd>{/if}
-                    <dt>Retrieved</dt><dd>{new Date(detail.source.retrieved_at).toLocaleString()}</dd>
-                    <dt>Extraction</dt><dd>{detail.extraction.method}</dd>
-                    {#if detail.scope?.repository}<dt>Repository</dt><dd>{detail.scope.repository}</dd>{/if}
-                    {#if detail.aliases?.length}<dt>Aliases</dt><dd>{detail.aliases.join(", ")}</dd>{/if}
-                  </dl>
-
-                  <h5>Relations</h5>
-                  {#if !detail.relations?.length}
-                    <p class="muted">No outgoing relations declared.</p>
-                  {:else}
-                    <ul class="relations">
-                      {#each detail.relations as rel, i (i)}
-                        <li><span class="muted">{rel.type}</span> <button type="button" class="link-button" onclick={() => open(rel.target)}>{rel.target}</button></li>
-                      {/each}
-                    </ul>
-                  {/if}
-                  <h6>Referenced by</h6>
-                  {#if relations.length === 0}
-                    <p class="muted">No other record declares a relation to this one.</p>
-                  {:else}
-                    <ul class="relations">
-                      {#each relations as rel (rel.id)}
-                        <li><span class="muted">{rel.type}</span> <button type="button" class="link-button" onclick={() => open(rel.id)}>{rel.title || rel.id}</button></li>
-                      {/each}
-                    </ul>
-                  {/if}
-
-                  {#if history.length > 0}
-                    <h5>History</h5>
-                    <ol class="history">
-                      {#each history as ev, i (i)}
-                        <li><span class="muted">{new Date(ev.timestamp).toLocaleString()}</span> {eventLabels[ev.type] ?? ev.type}{#if ev.superseded_by} · by {ev.superseded_by}{/if}</li>
-                      {/each}
-                    </ol>
-                  {/if}
-                {/if}
-              </div>
-            {/if}
           </li>
         {/each}
       </ul>
     {/if}
   </div>
 </section>
+
+<Dialog open={selectedId !== null} title={detail?.title ?? "Knowledge record"} size="lg" onclose={() => (selectedId = null)}>
+  <div data-testid="knowledge-detail">
+    {#if detailLoading}
+      <p>Loading record…</p>
+    {:else if detailError}
+      <ErrorStateCard title="Failed to load record" message={detailError} />
+    {:else if detail}
+      {#if detail.tags?.length}
+        <p class="tags">{#each detail.tags as t (t)}<span class="tag">{t}</span>{/each}</p>
+      {/if}
+      {#if detail.content}
+        <pre class="content">{detail.content}</pre>
+      {:else if detail.summary}
+        <p>{detail.summary}</p>
+      {/if}
+
+      {#if typedBody(detail)}
+        {@const body = typedBody(detail)}
+        <h5>{body?.label}</h5>
+        <pre class="content">{body?.json}</pre>
+      {/if}
+
+      {#if detail.superseded_by}
+        <p class="superseded">
+          Superseded by
+          <button type="button" class="link-button" onclick={() => open(detail?.superseded_by ?? "")}>
+            {detail.superseded_by}
+          </button>
+        </p>
+      {/if}
+
+      {#if detail.type === "retrieval_recipe" && detail.retrieval_recipe}
+        {@const recipe = detail.retrieval_recipe}
+        <section aria-labelledby="recipe-identity-heading-{detail.id}" class="recipe-block">
+          <h5 id="recipe-identity-heading-{detail.id}">Recipe identity</h5>
+          <dl class="provenance">
+            <dt>Capability</dt>
+            <dd><code>{recipe.capability}</code></dd>
+            <dt>Intent</dt>
+            <dd><code>{recipe.intent}</code></dd>
+            <dt>Provider</dt>
+            <dd>{recipe.provider}</dd>
+            <dt>Resource / operation</dt>
+            <dd>{recipe.resource} / {recipe.operation}</dd>
+            <dt>Read-only</dt>
+            <dd>{recipe.read_only ? "Yes" : "No"}</dd>
+            {#if recipe.recipe_version}
+              <dt>Recipe version</dt>
+              <dd>{recipe.recipe_version}</dd>
+            {/if}
+            {#if recipe.applies_to?.workspace_ids?.length}
+              <dt>Scope: workspaces</dt>
+              <dd>{recipe.applies_to.workspace_ids.join(", ")}</dd>
+            {/if}
+            {#if recipe.applies_to?.repository_ids?.length}
+              <dt>Scope: repositories</dt>
+              <dd>{recipe.applies_to.repository_ids.join(", ")}</dd>
+            {:else if !recipe.applies_to?.workspace_ids?.length}
+              <dt>Scope</dt>
+              <dd class="muted">Globally scoped (no workspace/repository restriction declared)</dd>
+            {/if}
+          </dl>
+        </section>
+
+        <section aria-labelledby="recipe-selector-heading-{detail.id}" class="recipe-block">
+          <h5 id="recipe-selector-heading-{detail.id}">Selector</h5>
+          <p class="hint">
+            The structured condition this recipe's compiled query is built from - matches
+            <code>punakawan knowledge recipe explain</code>'s clause vocabulary.
+          </p>
+          {#if recipe.selector.all?.length}
+            <p class="selector-group-label">All of:</p>
+            <ul class="clause-list">
+              {#each recipe.selector.all as clause, i (i)}
+                <li>
+                  {#if clause.field}
+                    <code>{clause.field}</code> {operatorSymbol(clause.operator)} <code>{clauseValueText(clause.value)}</code>
+                  {:else if clause.all?.length || clause.any?.length}
+                    <span class="muted">(nested group - {clause.all?.length ? "all" : "any"} of {clause.all?.length ?? clause.any?.length})</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if recipe.selector.any?.length}
+            <p class="selector-group-label">Any of:</p>
+            <ul class="clause-list">
+              {#each recipe.selector.any as clause, i (i)}
+                <li>
+                  {#if clause.field}
+                    <code>{clause.field}</code> {operatorSymbol(clause.operator)} <code>{clauseValueText(clause.value)}</code>
+                  {:else if clause.all?.length || clause.any?.length}
+                    <span class="muted">(nested group - {clause.all?.length ? "all" : "any"} of {clause.all?.length ?? clause.any?.length})</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if !recipe.selector.all?.length && !recipe.selector.any?.length}
+            <p class="muted">No selector clauses declared.</p>
+          {/if}
+        </section>
+
+        <section aria-labelledby="recipe-shape-heading-{detail.id}" class="recipe-block">
+          <h5 id="recipe-shape-heading-{detail.id}">Inputs, ordering, and output shape</h5>
+          {#if recipe.inputs?.length}
+            <h6>Inputs</h6>
+            <ul class="plain-list">
+              {#each recipe.inputs as input, i (i)}
+                <li>
+                  <code>{input.name}</code> ({input.type}){input.required ? " - required" : ""}
+                  {#if input.default}<span class="muted"> default: {input.default}</span>{/if}
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="muted">No dynamic inputs - this recipe's selector is fully literal.</p>
+          {/if}
+
+          {#if recipe.ordering?.length}
+            <h6>Ordering</h6>
+            <ul class="plain-list">
+              {#each recipe.ordering as order, i (i)}
+                <li><code>{order.field}</code> {order.direction}</li>
+              {/each}
+            </ul>
+          {/if}
+
+          <h6>Output</h6>
+          <dl class="provenance">
+            <dt>Entity type</dt>
+            <dd>{recipe.output.entity_type}</dd>
+            <dt>Identity field</dt>
+            <dd><code>{recipe.output.identity_field}</code></dd>
+            <dt>Fields</dt>
+            <dd>{recipe.output.fields.join(", ")}</dd>
+          </dl>
+        </section>
+
+        <section aria-labelledby="recipe-execution-heading-{detail.id}" class="recipe-block">
+          <h5 id="recipe-execution-heading-{detail.id}">Last execution evidence</h5>
+          {#if recipe.last_execution}
+            <dl class="provenance">
+              <dt>Status</dt>
+              <dd>{recipe.last_execution.status ?? "unknown"}</dd>
+              {#if recipe.last_execution.executed_at}
+                <dt>Executed</dt>
+                <dd>{new Date(recipe.last_execution.executed_at).toLocaleString()}</dd>
+              {/if}
+              {#if recipe.last_execution.result_count !== undefined}
+                <dt>Result count</dt>
+                <dd>{recipe.last_execution.result_count}</dd>
+              {/if}
+              {#if recipe.last_execution.session_id}
+                <dt>Session</dt>
+                <dd>{recipe.last_execution.session_id}</dd>
+              {/if}
+              {#if recipe.last_execution.task_id}
+                <dt>Task</dt>
+                <dd>{recipe.last_execution.task_id}</dd>
+              {/if}
+              {#if recipe.last_execution.evidence_id}
+                <dt>Evidence record</dt>
+                <dd class="break">{recipe.last_execution.evidence_id}</dd>
+              {/if}
+            </dl>
+          {:else}
+            <p class="muted">This recipe has never been executed (no last_execution recorded yet).</p>
+          {/if}
+          <p class="hint">
+            Full usage history (every execution, not just the latest) is a known gap - the panel has no
+            evidence-by-recipe-id query today, only evidence scoped to a single session
+            (see GET /projects/&lbrace;projectId&rbrace;/sessions/&lbrace;sessionId&rbrace;/evidence). Tracked as a follow-up.
+          </p>
+        </section>
+
+        {#if recipe.validation}
+          <section aria-labelledby="recipe-validation-heading-{detail.id}" class="recipe-block">
+            <h5 id="recipe-validation-heading-{detail.id}">Validation and acceptance</h5>
+            <dl class="provenance">
+              <dt>Status</dt>
+              <dd>{recipe.validation.status ?? "unknown"}</dd>
+              {#if recipe.validation.sample_size !== undefined}
+                <dt>Sample size</dt>
+                <dd>{recipe.validation.sample_size}</dd>
+              {/if}
+              {#if recipe.validation.accepted_at}
+                <dt>Accepted</dt>
+                <dd>{new Date(recipe.validation.accepted_at).toLocaleString()}</dd>
+              {/if}
+              {#if recipe.validation.accepted_by}
+                <dt>Accepted by</dt>
+                <dd>{recipe.validation.accepted_by}</dd>
+              {/if}
+              {#if recipe.validation.accepted_result_count !== undefined}
+                <dt>Accepted result count</dt>
+                <dd>{recipe.validation.accepted_result_count}</dd>
+              {/if}
+            </dl>
+          </section>
+        {/if}
+
+        <section aria-labelledby="recipe-lineage-heading-{detail.id}" class="recipe-block">
+          <h5 id="recipe-lineage-heading-{detail.id}">Version lineage</h5>
+          {#if lineage.nodes.length > 1}
+            <VersionLineageGraphView nodes={lineage.nodes} edges={lineage.edges} title="Recipe lineage" />
+          {:else}
+            <p class="muted">No prior or later version is known from this record's own data.</p>
+          {/if}
+          <p class="hint">
+            This is a best-effort, one-hop view derived from this record's own superseded_by pointer and its
+            "referenced by" relations - there is no dedicated recipe lineage-list endpoint yet (unlike a plan review's
+            proposal history), so a longer correction chain is not fully walkable from the panel today. Tracked as a
+            follow-up.
+          </p>
+        </section>
+      {/if}
+
+      <h5>Provenance</h5>
+      <dl class="provenance">
+        <dt>Type</dt><dd>{detail.type}</dd>
+        <dt>Status</dt><dd>{detail.status}</dd>
+        <dt>Validity</dt>
+        <dd>
+          {#if detail.type === "retrieval_recipe"}
+            <StatusBadge
+              variant={recipeStateVariant[detail.validity.state] ?? "neutral"}
+              label={recipeStateLabel[detail.validity.state] ?? detail.validity.state}
+            />
+          {:else}
+            {validityLabels[detail.validity.state] ?? detail.validity.state}
+          {/if}
+          {#if detail.validity.verified_by?.length}· verified by {detail.validity.verified_by.join(", ")}{/if}
+        </dd>
+        <dt>Source</dt><dd>{detail.source.provider}</dd>
+        {#if detail.source.external_id}<dt>External ID</dt><dd>{detail.source.external_id}</dd>{/if}
+        {#if detail.source.uri}<dt>URI</dt><dd class="break">{detail.source.uri}</dd>{/if}
+        {#if detail.source.section}<dt>Section</dt><dd>{detail.source.section}</dd>{/if}
+        <dt>Retrieved</dt><dd>{new Date(detail.source.retrieved_at).toLocaleString()}</dd>
+        <dt>Extraction</dt><dd>{detail.extraction.method}</dd>
+        {#if detail.scope?.repository}<dt>Repository</dt><dd>{detail.scope.repository}</dd>{/if}
+        {#if detail.aliases?.length}<dt>Aliases</dt><dd>{detail.aliases.join(", ")}</dd>{/if}
+      </dl>
+
+      <h5>Relations</h5>
+      {#if !detail.relations?.length}
+        <p class="muted">No outgoing relations declared.</p>
+      {:else}
+        <ul class="relations">
+          {#each detail.relations as rel, i (i)}
+            <li><span class="muted">{rel.type}</span> <button type="button" class="link-button" onclick={() => open(rel.target)}>{rel.target}</button></li>
+          {/each}
+        </ul>
+      {/if}
+      <h6>Referenced by</h6>
+      {#if relations.length === 0}
+        <p class="muted">No other record declares a relation to this one.</p>
+      {:else}
+        <ul class="relations">
+          {#each relations as rel (rel.id)}
+            <li><span class="muted">{rel.type}</span> <button type="button" class="link-button" onclick={() => open(rel.id)}>{rel.title || rel.id}</button></li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if history.length > 0}
+        <h5>History</h5>
+        <ol class="history">
+          {#each history as ev, i (i)}
+            <li><span class="muted">{new Date(ev.timestamp).toLocaleString()}</span> {eventLabels[ev.type] ?? ev.type}{#if ev.superseded_by} · by {ev.superseded_by}{/if}</li>
+          {/each}
+        </ol>
+      {/if}
+    {/if}
+  </div>
+</Dialog>
 
 <style>
   .knowledge {
@@ -725,13 +726,6 @@
     margin: 0;
     font-size: 0.75rem;
     color: var(--color-accent);
-  }
-  .detail {
-    margin-top: 0.5rem;
-    padding: 0.75rem 0.9rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-subtle);
   }
   .tags {
     display: flex;

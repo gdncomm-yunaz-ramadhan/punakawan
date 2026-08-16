@@ -64,7 +64,7 @@ describe("ProjectKnowledge", () => {
     expect(screen.getAllByText("Verified").length).toBeGreaterThan(0);
   });
 
-  it("expands a row inline with provenance, relations, and history", async () => {
+  it("opens a modal with provenance, relations, and history", async () => {
     (fetch as unknown as FetchMock).mockImplementation((url: string) => {
       if (url.includes("/relations")) return Promise.resolve(jsonResponse({ items: [] }));
       if (url.includes("/history"))
@@ -78,15 +78,21 @@ describe("ProjectKnowledge", () => {
     render(ProjectKnowledge, { props: { projectId: "proj-a" } });
     await waitFor(() => expect(screen.getByText("Refund SLA policy")).toBeTruthy());
 
+    expect(screen.queryByRole("dialog")).toBeNull();
     await fireEvent.click(screen.getByText("Refund SLA policy"));
 
     await waitFor(() => {
       expect(screen.getByText("pkw:claim/repo-a/refund-claim")).toBeTruthy();
     });
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
     expect(screen.getByText("Created or updated")).toBeTruthy();
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("renders a retrieval_recipe's identity, selector, execution evidence, and lineage inline", async () => {
+  it("renders a retrieval_recipe's identity, selector, execution evidence, and lineage in the modal", async () => {
     (fetch as unknown as FetchMock).mockImplementation((url: string) => {
       if (url.includes("/relations")) return Promise.resolve(jsonResponse({ items: [] }));
       if (url.includes("/history")) return Promise.resolve(jsonResponse({ items: [] }));
@@ -102,6 +108,7 @@ describe("ProjectKnowledge", () => {
     await waitFor(() => {
       expect(screen.getByText("jira.issue.search")).toBeTruthy();
     });
+    expect(screen.getByRole("dialog", { name: "Next sprint issues" })).toBeTruthy();
     expect(screen.getByText("project.next-sprint.issues")).toBeTruthy();
     expect(screen.getByText("project")).toBeTruthy();
     expect(screen.getByText(/12/)).toBeTruthy();
