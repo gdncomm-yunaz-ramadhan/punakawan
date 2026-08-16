@@ -1,0 +1,35 @@
+docs/architecture/README.md
+  f9605b8f4acd1e01 11,24-25
+internal/app/app.go
+  f9605b8f4acd1e01 478
+README.md
+  f9605b8f4acd1e01 73,111,176-181,193-212,215,217-219,225-226,232,249,291-297,340-345
+internal/panel/runtime/manager.go
+  f9605b8f4acd1e01 8-16
+docs/architecture/ADR-0005-dolt-is-the-canonical-knowledge-store.md
+  f9605b8f4acd1e01 4
+docs/architecture/ADR-0019-per-project-dolt-servers-are-bounded-by-an-lru-runtime-pool.md
+  f9605b8f4acd1e01 4
+docs/architecture/ADR-0018-punakawan-managed-dolt-is-the-beads-less-fallback-task-graph.md
+  f9605b8f4acd1e01 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "b1f48790ccbaee88b69aad64b310cd1730053e5d",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 66,
+      "total_deletions": 51,
+      "accepted_lines": 66,
+      "overriden_lines": 0
+    }
+  }
+}
