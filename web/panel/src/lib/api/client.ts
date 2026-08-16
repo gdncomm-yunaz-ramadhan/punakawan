@@ -210,34 +210,6 @@ export function getOverview(): Promise<Overview> {
   return getJSON<Overview>("/overview");
 }
 
-export interface SessionFilter {
-  status?: string;
-  workflow?: string;
-  role?: string;
-  limit?: number;
-}
-
-export function listSessions(
-  workspaceId: string,
-  filter: SessionFilter = {},
-): Promise<{ items: PanelSessionSummary[] }> {
-  const params = new URLSearchParams();
-  if (filter.status) params.set("status", filter.status);
-  if (filter.workflow) params.set("workflow", filter.workflow);
-  if (filter.role) params.set("role", filter.role);
-  if (filter.limit) params.set("limit", String(filter.limit));
-  const qs = params.toString();
-  return getJSON<{ items: PanelSessionSummary[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/sessions${qs ? `?${qs}` : ""}`,
-  );
-}
-
-export function getSession(workspaceId: string, sessionId: string): Promise<SessionDetail> {
-  return getJSON<SessionDetail>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`,
-  );
-}
-
 export function listCapsules(workspaceId: string, taskId: string): Promise<{ items: ContextCapsule[] }> {
   return getJSON<{ items: ContextCapsule[] }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/capsules?task_id=${encodeURIComponent(taskId)}`,
@@ -333,18 +305,6 @@ function taskListQuery(filter: TaskFilter): string {
   if (filter.limit) params.set("limit", String(filter.limit));
   const qs = params.toString();
   return qs ? `?${qs}` : "";
-}
-
-export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
-  return getJSON<{ items: TaskSummary[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks${taskListQuery(filter)}`);
-}
-
-export function getTask(workspaceId: string, taskId: string): Promise<TaskDetail> {
-  return getJSON<TaskDetail>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`);
-}
-
-export function getTaskGraph(workspaceId: string): Promise<TaskGraph> {
-  return getJSON<TaskGraph>(`/workspaces/${encodeURIComponent(workspaceId)}/task-graph`);
 }
 
 export interface KnowledgeRelation {
@@ -540,32 +500,6 @@ function buildKnowledgeQuery(filter: KnowledgeFilter): string {
   return params.toString();
 }
 
-export async function listKnowledge(
-  workspaceId: string,
-  filter: KnowledgeFilter = {},
-): Promise<{ items: (KnowledgeRecord | SearchResult)[] }> {
-  const qs = buildKnowledgeQuery(filter);
-  return getJSON<{ items: (KnowledgeRecord | SearchResult)[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge${qs ? `?${qs}` : ""}`,
-  );
-}
-
-export function getKnowledge(workspaceId: string, knowledgeId: string): Promise<KnowledgeRecord> {
-  return getJSON<KnowledgeRecord>(`/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}`);
-}
-
-export function getKnowledgeRelations(workspaceId: string, knowledgeId: string): Promise<{ items: KnowledgeRecord[] }> {
-  return getJSON<{ items: KnowledgeRecord[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}/relations`,
-  );
-}
-
-export function getKnowledgeHistory(workspaceId: string, knowledgeId: string): Promise<{ items: KnowledgeEvent[] }> {
-  return getJSON<{ items: KnowledgeEvent[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}/history`,
-  );
-}
-
 export interface GlobalSearchResult {
   workspace_id: string;
   result: SearchResult;
@@ -626,37 +560,48 @@ export interface EvidenceTextPreview {
 
 // binaryEvidenceTypes mirrors internal/panel/sources/evidence_source.go's
 // binaryEvidenceTypes: these are served as a raw blob (an <img> can point
-// straight at evidencePreviewUrl), never as the JSON text-preview shape.
+// straight at projectEvidencePreviewUrl), never as the JSON text-preview
+// shape.
 const binaryEvidenceTypes: ReadonlySet<EvidenceRecordType> = new Set(["screenshot", "playwright-trace"]);
 
 export function isBinaryEvidence(type: EvidenceRecordType): boolean {
   return binaryEvidenceTypes.has(type);
 }
 
-export function listEvidence(workspaceId: string, sessionId: string): Promise<{ items: EvidenceRecord[] }> {
+// listProjectEvidence/getProjectEvidence/projectEvidencePreviewUrl are
+// project-scoped, mounted under /projects/{id}/... the same way
+// listProjectSessions/getProjectSession mirror the session reads below -
+// they let any registered project's session evidence load, not only the
+// startup workspace's.
+
+export function listProjectEvidence(id: string, sessionId: string): Promise<{ items: EvidenceRecord[] }> {
   return getJSON<{ items: EvidenceRecord[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}/evidence`,
+    `/projects/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}/evidence`,
   );
 }
 
-export function getEvidence(workspaceId: string, evidenceId: string): Promise<EvidenceRecord> {
-  return getJSON<EvidenceRecord>(`/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}`);
+export function getProjectEvidence(id: string, evidenceId: string): Promise<EvidenceRecord> {
+  return getJSON<EvidenceRecord>(`/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}`);
 }
 
-// evidencePreviewUrl builds the preview URL directly (rather than
-// fetching through getJSON) so callers can hand it straight to an <img
-// src> for binary evidence (screenshots) without round-tripping the
+// projectEvidencePreviewUrl mirrors evidencePreviewUrl: built directly
+// (rather than through getJSON) so callers can hand it straight to an
+// <img src> for binary evidence (screenshots) without round-tripping the
 // bytes through JS.
-export function evidencePreviewUrl(workspaceId: string, evidenceId: string, opts: { offset?: number; limit?: number } = {}): string {
+export function projectEvidencePreviewUrl(
+  id: string,
+  evidenceId: string,
+  opts: { offset?: number; limit?: number } = {},
+): string {
   const params = new URLSearchParams();
   if (opts.offset) params.set("offset", String(opts.offset));
   if (opts.limit) params.set("limit", String(opts.limit));
   const qs = params.toString();
-  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`;
+  return `/api/v1/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`;
 }
 
-export function getEvidenceTextPreview(
-  workspaceId: string,
+export function getProjectEvidenceTextPreview(
+  id: string,
   evidenceId: string,
   opts: { offset?: number; limit?: number } = {},
 ): Promise<EvidenceTextPreview> {
@@ -665,7 +610,7 @@ export function getEvidenceTextPreview(
   if (opts.limit) params.set("limit", String(opts.limit));
   const qs = params.toString();
   return getJSON<EvidenceTextPreview>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`,
+    `/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`,
   );
 }
 

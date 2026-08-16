@@ -1,17 +1,17 @@
 <script lang="ts">
   import {
-    evidencePreviewUrl,
-    getEvidenceTextPreview,
+    getProjectEvidenceTextPreview,
     isBinaryEvidence,
+    projectEvidencePreviewUrl,
     type EvidenceRecord,
     type EvidenceTextPreview,
   } from "../api/client";
 
   interface Props {
-    workspaceId: string;
+    projectId: string;
     record: EvidenceRecord;
   }
-  let { workspaceId, record }: Props = $props();
+  let { projectId, record }: Props = $props();
 
   let expanded = $state(false);
   let preview: EvidenceTextPreview | null = $state(null);
@@ -25,7 +25,7 @@
     error = null;
     try {
       const offset = preview ? preview.offset + preview.text.length : 0;
-      const next = await getEvidenceTextPreview(workspaceId, record.id, { offset, limit: PAGE_BYTES });
+      const next = await getProjectEvidenceTextPreview(projectId, record.id, { offset, limit: PAGE_BYTES });
       preview = preview ? { ...next, text: preview.text + next.text } : next;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -51,7 +51,7 @@
 
   {#if expanded}
     {#if isBinaryEvidence(record.type)}
-      <img class="screenshot" src={evidencePreviewUrl(workspaceId, record.id)} alt={record.summary ?? record.type} />
+      <img class="screenshot" src={projectEvidencePreviewUrl(projectId, record.id)} alt={record.summary ?? record.type} />
     {:else if error}
       <p role="alert" class="error">Failed to load preview: {error}</p>
     {:else if preview}

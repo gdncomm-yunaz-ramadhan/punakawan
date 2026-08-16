@@ -3,15 +3,18 @@
   import {
     listProjectSessions,
     getProjectSession,
+    listProjectEvidence,
     type PanelSessionSummary,
     type SessionDetail,
     type TimelineEvent,
+    type EvidenceRecord,
   } from "../../lib/api/client";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
   import { roleLabel } from "../../lib/roles";
   import DataTable from "../../lib/components/data/DataTable.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import EvidenceItem from "../../lib/components/EvidenceItem.svelte";
   import type { Column, RowAction } from "../../lib/components/data/types";
 
   interface Props {
@@ -29,6 +32,7 @@
   let detail: SessionDetail | null = $state(null);
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
+  let evidence: EvidenceRecord[] = $state([]);
 
   async function load(id: string) {
     loading = true;
@@ -47,14 +51,21 @@
     if (selectedId === sessionId) {
       selectedId = null;
       detail = null;
+      evidence = [];
       return;
     }
     selectedId = sessionId;
     detail = null;
+    evidence = [];
     detailError = null;
     detailLoading = true;
     try {
-      detail = await getProjectSession(projectId, sessionId);
+      const [d, ev] = await Promise.all([
+        getProjectSession(projectId, sessionId),
+        listProjectEvidence(projectId, sessionId),
+      ]);
+      detail = d;
+      evidence = ev.items;
     } catch (e) {
       detailError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -135,6 +146,17 @@
             <div class="count-card"><strong>{detail.task_counts?.closed ?? 0}</strong><span>Closed</span></div>
             <div class="count-card"><strong>{detail.evidence_count ?? 0}</strong><span>Evidence</span></div>
           </div>
+
+          <h4>Evidence</h4>
+          {#if evidence.length === 0}
+            <p class="muted">No evidence recorded for this session.</p>
+          {:else}
+            <ul class="evidence">
+              {#each evidence as rec (rec.id)}
+                <EvidenceItem {projectId} record={rec} />
+              {/each}
+            </ul>
+          {/if}
 
           <h4>Phase timeline</h4>
           {#if !detail.Timeline || detail.Timeline.length === 0}
@@ -221,6 +243,13 @@
   .muted {
     color: var(--color-text-muted);
     font-size: 0.85rem;
+  }
+  ul.evidence {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    display: grid;
+    gap: 0.4rem;
   }
   ol.timeline {
     list-style: none;

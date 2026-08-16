@@ -1,18 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getTask, type TaskDetail } from "../../lib/api/client";
+  import type { TaskDetail } from "../../lib/api/client";
   import Button from "../../lib/components/Button.svelte";
 
   interface Props {
-    workspaceId: string;
     taskId: string;
     onclose: () => void;
-    // Optional override for how the task detail is fetched. Defaults to the
-    // workspace-scoped getTask; the project Tasks tab passes a project-
-    // scoped loader so it works for any project, not just the workspace.
-    fetchTask?: (taskId: string) => Promise<TaskDetail>;
+    fetchTask: (taskId: string) => Promise<TaskDetail>;
   }
-  let { workspaceId, taskId, onclose, fetchTask }: Props = $props();
+  let { taskId, onclose, fetchTask }: Props = $props();
 
   let detail: TaskDetail | null = $state(null);
   let error: string | null = $state(null);
@@ -23,7 +19,7 @@
     error = null;
     detail = null;
     try {
-      detail = fetchTask ? await fetchTask(id) : await getTask(workspaceId, id);
+      detail = await fetchTask(id);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

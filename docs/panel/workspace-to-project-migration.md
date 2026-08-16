@@ -17,28 +17,29 @@ the physical backing directory, but users and clients should address projects.
 
 No manual migration step is required for existing `v1` or legacy files.
 
-## Deprecated API aliases
+## API routes are project-scoped only
 
-The canonical read routes are now under `/api/v1/projects`:
+The bare `GET /api/v1/workspaces` and `GET /api/v1/workspaces/{workspaceId}`
+list/detail routes this doc used to document as a deprecated alias are gone —
+there is no workspace-scoped equivalent left for them, and no `Deprecation`
+header to look for. Use `GET /api/v1/projects` and
+`GET /api/v1/projects/{projectId}`.
 
-| Deprecated alias | Canonical successor |
-|---|---|
-| `GET /api/v1/workspaces` | `GET /api/v1/projects` |
-| `GET /api/v1/workspaces/{workspaceId}` | `GET /api/v1/projects/{projectId}` |
+The `/api/v1/workspaces/{id}/{sub}` sub-resource routes have likewise been
+consolidated to their `/api/v1/projects/{id}/{sub}` equivalents — sessions,
+tasks, task graphs, knowledge, and evidence are all reachable only project-
+scoped now (Panel UI: `ProjectDetail.svelte`'s Sessions/Tasks/Knowledge tabs).
+Project ids equal the registry workspace ids, so the `{workspaceId}` path
+value on these routes is a project id in practice.
 
-The deprecated routes still work but respond with:
+Approvals is the one exception: `GET /api/v1/workspaces/{workspaceId}/approvals`
+still exists alongside `GET /api/v1/projects/{workspaceId}/approvals` — both
+serve the same reader, and the Panel's `ApprovalsList.svelte` component is
+shared between the top-level Approvals view and `ProjectDetail`'s Approvals
+tab rather than duplicated, so there was nothing to consolidate here.
 
-```
-Deprecation: true
-Link: <…successor…>; rel="successor-version"
-```
-
-Project ids equal the registry workspace ids, so a client can switch by
-swapping the path prefix. The `/api/v1/workspaces/{id}/{sub}` sub-resource
-routes (sessions, tasks, knowledge, evidence, approvals) are **not** deprecated
-— they have no `/projects` equivalent yet and remain the way to reach those.
-
-Project-scoped equivalents that already exist: `/projects/{id}/metadata`,
-`/projects/{id}/workflows`, `/projects/{id}/plans`, `/projects/{id}/health`,
-and the project-scoped artifact review protocol under
-`/projects/{id}/artifacts` and `/projects/{id}/reviews`.
+Project-scoped routes that already exist beyond the above:
+`/projects/{id}/metadata`, `/projects/{id}/workflows`, `/projects/{id}/plans`,
+`/projects/{id}/health`, `/projects/{id}/context-improvements`, and the
+project-scoped artifact-review-resolution actions under
+`/projects/{id}/reviews/{reviewId}/proposals/{proposalId}/{accept,reject}`.

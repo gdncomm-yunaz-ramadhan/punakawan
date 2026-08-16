@@ -6,11 +6,6 @@
   import Overview from "./routes/overview/Overview.svelte";
   import ProjectsList from "./routes/projects/ProjectsList.svelte";
   import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
-  import SessionsList from "./routes/sessions/SessionsList.svelte";
-  import SessionDetail from "./routes/sessions/SessionDetail.svelte";
-  import TasksPage from "./routes/tasks/TasksPage.svelte";
-  import KnowledgeList from "./routes/knowledge/KnowledgeList.svelte";
-  import KnowledgeDetail from "./routes/knowledge/KnowledgeDetail.svelte";
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import ContextImprovements from "./routes/improvements/ContextImprovements.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
@@ -29,11 +24,6 @@
   });
 
   const projectDetailPath = /^\/projects\/([^/]+)$/;
-  const sessionsListPath = /^\/workspaces\/([^/]+)\/sessions$/;
-  const sessionDetailPath = /^\/workspaces\/([^/]+)\/sessions\/([^/]+)$/;
-  const tasksPath = /^\/workspaces\/([^/]+)\/tasks$/;
-  const knowledgeListPath = /^\/workspaces\/([^/]+)\/knowledge$/;
-  const knowledgeDetailPath = /^\/workspaces\/([^/]+)\/knowledge\/([^/]+)$/;
   const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
   const deliveryDetailPath = /^\/deliveries\/([^/]+)$/;
 </script>
@@ -59,27 +49,6 @@
   {:else if approvalsPath.exec(getPath())}
     {@const match = approvalsPath.exec(getPath())}
     <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if knowledgeDetailPath.exec(getPath())}
-    {@const match = knowledgeDetailPath.exec(getPath())}
-    <KnowledgeDetail
-      workspaceId={decodeURIComponent(match?.[1] ?? "")}
-      knowledgeId={decodeURIComponent(match?.[2] ?? "")}
-    />
-  {:else if knowledgeListPath.exec(getPath())}
-    {@const match = knowledgeListPath.exec(getPath())}
-    <KnowledgeList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if sessionDetailPath.exec(getPath())}
-    {@const match = sessionDetailPath.exec(getPath())}
-    <SessionDetail
-      workspaceId={decodeURIComponent(match?.[1] ?? "")}
-      sessionId={decodeURIComponent(match?.[2] ?? "")}
-    />
-  {:else if sessionsListPath.exec(getPath())}
-    {@const match = sessionsListPath.exec(getPath())}
-    <SessionsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if tasksPath.exec(getPath())}
-    {@const match = tasksPath.exec(getPath())}
-    <TasksPage workspaceId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if projectDetailPath.exec(getPath())}
     {@const match = projectDetailPath.exec(getPath())}
     <ProjectDetail projectId={decodeURIComponent(match?.[1] ?? "")} />

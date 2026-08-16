@@ -23,37 +23,14 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/search"
-	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
-
-func requireBd(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not installed")
-	}
-}
 
 func requireDolt(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("dolt"); err != nil {
 		t.Skip("dolt not installed")
-	}
-}
-
-// initBd runs bd init in a's workspace root, for tests that exercise the
-// tasks endpoints: newTestApp itself does not initialize a bd project,
-// since most server tests have no need for one.
-func initBd(t *testing.T, a *app.App) {
-	t.Helper()
-	res, err := a.Supervisor.Run(context.Background(), tools.Spec{
-		Name: "bd",
-		Args: []string{"init", "--non-interactive", "--prefix", "test", "--skip-agents", "--skip-hooks", "-q"},
-		Dir:  a.Workspace.Root,
-	})
-	if err != nil || res.ExitCode != 0 {
-		t.Fatalf("bd init: err=%v exit=%d stderr=%s", err, res.ExitCode, res.Stderr)
 	}
 }
 
@@ -260,7 +237,7 @@ func TestServerSessionsEndpoints(t *testing.T) {
 		t.Fatalf("Workflow.Append: %v", err)
 	}
 
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions")
+	status, body := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions")
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
@@ -269,74 +246,12 @@ func TestServerSessionsEndpoints(t *testing.T) {
 		t.Fatalf("items = %+v, want 1", items)
 	}
 
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/run-test-1")
+	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions/run-test-1")
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
 	if body["id"] != "run-test-1" {
 		t.Fatalf("id = %v, want run-test-1", body["id"])
-	}
-}
-
-func TestServerTasksEndpoints(t *testing.T) {
-	requireBd(t)
-	s, a := startTestServer(t)
-	initBd(t, a)
-
-	res, err := a.Supervisor.Run(context.Background(), tools.Spec{
-		Name: "bd",
-		Args: []string{"create", "--json", "--title=first task", "--type=task"},
-		Dir:  a.Workspace.Root,
-	})
-	if err != nil || res.ExitCode != 0 {
-		t.Fatalf("bd create: err=%v exit=%d stderr=%s", err, res.ExitCode, res.Stderr)
-	}
-	var created struct {
-		Id string `json:"id"`
-	}
-	if err := json.Unmarshal(res.Stdout, &created); err != nil {
-		t.Fatalf("decode bd create output: %v", err)
-	}
-
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/tasks")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want 1", items)
-	}
-	first, _ := items[0].(map[string]any)
-	if first["board_status"] != "ready" {
-		t.Fatalf("board_status = %v, want ready", first["board_status"])
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/tasks/"+created.Id)
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if body["id"] != created.Id {
-		t.Fatalf("id = %v, want %v", body["id"], created.Id)
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/task-graph")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	nodes, _ := body["nodes"].([]any)
-	if len(nodes) != 1 {
-		t.Fatalf("nodes = %+v, want 1", nodes)
-	}
-}
-
-func TestServerTasksEndpointUnknownTaskReturns404(t *testing.T) {
-	requireBd(t)
-	s, a := startTestServer(t)
-	initBd(t, a)
-
-	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/tasks/no-such-task")
-	if status != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", status)
 	}
 }
 
@@ -360,7 +275,7 @@ func TestServerKnowledgeEndpoints(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge")
+	status, body := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge")
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
@@ -369,7 +284,7 @@ func TestServerKnowledgeEndpoints(t *testing.T) {
 		t.Fatalf("items = %+v, want 1", items)
 	}
 
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/"+rec.Id)
+	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/"+rec.Id)
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
@@ -377,7 +292,7 @@ func TestServerKnowledgeEndpoints(t *testing.T) {
 		t.Fatalf("id = %v, want %v", body["id"], rec.Id)
 	}
 
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/relations")
+	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/relations")
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
@@ -385,7 +300,7 @@ func TestServerKnowledgeEndpoints(t *testing.T) {
 		t.Fatalf("expected an items field: %+v", body)
 	}
 
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/history")
+	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/history")
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
@@ -398,7 +313,7 @@ func TestServerKnowledgeEndpoints(t *testing.T) {
 func TestServerKnowledgeHandlerUnknownIDReturns404(t *testing.T) {
 	requireDolt(t)
 	s, a := startTestServer(t)
-	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/knowledge/no-such-id")
+	status, _ := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/no-such-id")
 	if status != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", status)
 	}
@@ -476,7 +391,7 @@ func TestServerEvidenceEndpoints(t *testing.T) {
 		t.Fatalf("ledger.Append: %v", err)
 	}
 
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/run-ev-1/evidence")
+	status, body := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions/run-ev-1/evidence")
 	if status != http.StatusOK {
 		t.Fatalf("list: status = %d, want 200", status)
 	}
@@ -485,7 +400,7 @@ func TestServerEvidenceEndpoints(t *testing.T) {
 		t.Fatalf("list items = %+v, want 1", items)
 	}
 
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/evidence/ev-1")
+	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/evidence/ev-1")
 	if status != http.StatusOK {
 		t.Fatalf("get: status = %d, want 200", status)
 	}
@@ -493,7 +408,7 @@ func TestServerEvidenceEndpoints(t *testing.T) {
 		t.Fatalf("get id = %v, want ev-1", body["id"])
 	}
 
-	status, body = getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/evidence/ev-1/preview")
+	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/evidence/ev-1/preview")
 	if status != http.StatusOK {
 		t.Fatalf("preview: status = %d, want 200", status)
 	}
@@ -528,7 +443,7 @@ func TestServerEvidencePreviewRejectsPathOutsideEvidenceRoot(t *testing.T) {
 		t.Fatalf("ledger.Append: %v", err)
 	}
 
-	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/evidence/ev-escape/preview")
+	status, _ := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/evidence/ev-escape/preview")
 	if status == http.StatusOK {
 		t.Fatal("preview: want a non-200 status for a path outside the evidence directory")
 	}
@@ -569,7 +484,7 @@ func TestServerApprovalsEndpoint(t *testing.T) {
 
 func TestServerSessionsEndpointUnknownSessionReturns404(t *testing.T) {
 	s, a := startTestServer(t)
-	status, _ := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/sessions/no-such-run")
+	status, _ := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions/no-such-run")
 	if status != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", status)
 	}

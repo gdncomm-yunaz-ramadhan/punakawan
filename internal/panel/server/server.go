@@ -189,17 +189,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
 	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions", api.SessionsHandler(s.readers.Session))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}", api.SessionHandler(s.readers.Session))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks", api.TasksHandler(s.readers.Task))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks/{taskId}", api.TaskHandler(s.readers.Task))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/task-graph", api.TaskGraphHandler(s.readers.Task))
 	mux.HandleFunc("GET /api/v1/search", api.GlobalSearchHandler(s.readers.GlobalSearch))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/knowledge", api.KnowledgeListHandler(s.readers.Knowledge))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/knowledge/{knowledgeRest...}", api.KnowledgeDetailHandler(s.readers.Knowledge))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}/evidence", api.EvidenceListHandler(s.readers.Evidence))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(s.readers.Evidence))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(s.readers.Evidence))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/approvals", api.ApprovalsHandler(s.readers.Approval))
 
 	// Delivery orchestrations: served straight from the daemon's own
@@ -315,12 +305,13 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/health", api.HealthHandler(healthCache))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/health/refresh", session.RequireSession(s.sessions, api.HealthRefreshHandler(healthCache)))
 
-	// Project-scoped Tasks / Sessions / Knowledge reads. These resolve the
-	// backing *app.App per project id through the runtime pool (the primary is
-	// used directly), so a project's Tasks/Knowledge/Sessions tabs work for any
-	// registered project, not only the startup workspace. The {workspaceId}
-	// path-value name is intentional: it lets the existing workspace-scoped
-	// handlers be reused verbatim over a project-aware reader.
+	// Project-scoped Tasks / Sessions / Evidence / Knowledge reads. These
+	// resolve the backing *app.App per project id through the runtime pool
+	// (the primary is used directly), so a project's Tasks/Knowledge/Sessions
+	// tabs (including a session's evidence) work for any registered project,
+	// not only the startup workspace. The {workspaceId} path-value name is
+	// intentional: it lets the existing workspace-scoped handlers be reused
+	// verbatim over a project-aware reader.
 	projResolver := &sources.AppResolver{
 		PrimaryID: s.app.Workspace.ID,
 		Primary:   s.app,
@@ -331,12 +322,16 @@ func (s *Server) Start() error {
 	projSessions := sources.ProjectSessionReader{AppResolver: projResolver}
 	projKnowledge := sources.ProjectKnowledgeReader{AppResolver: projResolver}
 	projApprovals := sources.ProjectApprovalReader{AppResolver: projResolver}
+	projEvidence := sources.ProjectEvidenceReader{AppResolver: projResolver}
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/approvals", api.ApprovalsHandler(projApprovals))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks", api.TasksHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks/{taskId}", api.TaskHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/task-graph", api.TaskGraphHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions", api.SessionsHandler(projSessions))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}", api.SessionHandler(projSessions))
+	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}/evidence", api.EvidenceListHandler(projEvidence))
+	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(projEvidence))
+	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(projEvidence))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge", api.KnowledgeListHandler(projKnowledge))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge/{knowledgeRest...}", api.KnowledgeDetailHandler(projKnowledge))
 
