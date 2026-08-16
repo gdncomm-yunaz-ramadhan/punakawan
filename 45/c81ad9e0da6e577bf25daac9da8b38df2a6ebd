@@ -1,0 +1,27 @@
+internal/doltimport/doltimport_test.go
+  f9605b8f4acd1e01 579-679
+internal/doltimport/importer.go
+  f9605b8f4acd1e01 113-133,195-215
+internal/doltimport/dolt.go
+  f9605b8f4acd1e01 123-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "45c81ad9e0da6e577bf25daac9da8b38df2a6ebd",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 156,
+      "total_deletions": 1,
+      "accepted_lines": 156,
+      "overriden_lines": 0
+    }
+  }
+}
