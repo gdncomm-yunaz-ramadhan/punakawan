@@ -393,26 +393,21 @@ func requireDolt(t *testing.T) {
 	}
 }
 
-func TestSubmitSemarSynthesisRejectsBothPayloads(t *testing.T) {
+func TestSubmitFinalPlanRequiresFinalPlan(t *testing.T) {
 	requireDolt(t)
 	a := newTestApp(t)
 	cs := connect(t, a)
 
 	ctx := context.Background()
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
-		Name: "submit_semar_synthesis",
+	_, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "submit_final_plan",
 		Arguments: map[string]any{
-			"id":         "run-1",
-			"title":      "synthesis",
-			"synthesis":  map[string]any{"goal": "ship it"},
-			"final_plan": map[string]any{"requirements": []string{"r1"}, "acceptance_criteria": []string{"a1"}},
+			"id":    "run-1",
+			"title": "final plan",
 		},
 	})
-	if err != nil {
-		t.Fatalf("CallTool: %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("expected an error result when both synthesis and final_plan are set")
+	if err == nil {
+		t.Fatal("expected an error when final_plan is omitted (rejected by the required-field schema)")
 	}
 }
 

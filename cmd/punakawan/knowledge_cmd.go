@@ -23,7 +23,109 @@ func newKnowledgeCmd() *cobra.Command {
 		Short: "Inspect and manage durable knowledge records",
 	}
 	cmd.AddCommand(newRecipeCmd())
+	cmd.AddCommand(newKnowledgeResetCmd())
 	return cmd
+}
+
+// newKnowledgeResetCmd bulk-deletes every knowledge record matching a given
+// project/repository/module scope - a deliberate CLI-only action rather than
+// an MCP tool: an unbounded scope wipe is destructive enough (and rare
+// enough) that it belongs behind an operator explicitly running a command,
+// not behind a tool any agent session could reach for. Mirrors the removed
+// reset_project_knowledge MCP tool's exact semantics: dry run by default,
+// requires at least one scope field, and reports the Dolt commit hash so a
+// confirmed delete can be read or restored via delete_knowledge's own
+// AS OF/checkout instructions.
+func newKnowledgeResetCmd() *cobra.Command {
+	var project, repository, module string
+	var confirm bool
+
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Bulk-delete every knowledge record matching a project/repository/module scope",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if project == "" && repository == "" && module == "" {
+				return fmt.Errorf("reset requires at least one of --project/--repository/--module - an empty scope would match every record in the store")
+			}
+
+			a, err := loadApp()
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+
+			store, err := a.OpenKnowledge()
+			if err != nil {
+				return err
+			}
+			records, err := store.AllWithUpdatedAt()
+			if err != nil {
+				return fmt.Errorf("list knowledge records: %w", err)
+			}
+
+			var matched []string
+			for _, rec := range records {
+				if knowledgeScopeMatches(rec.Record.Scope, project, repository, module) {
+					matched = append(matched, rec.Record.Id)
+				}
+			}
+
+			out := cmd.OutOrStdout()
+			if !confirm {
+				fmt.Fprintf(out, "dry run: %d record(s) match this scope; re-run with --confirm to delete them\n", len(matched))
+				for _, id := range matched {
+					fmt.Fprintf(out, "  %s\n", id)
+				}
+				return nil
+			}
+
+			ix, err := a.OpenSearchIndex()
+			if err != nil {
+				return err
+			}
+			for _, id := range matched {
+				if err := store.Delete(id); err != nil {
+					return fmt.Errorf("delete knowledge record %q: %w", id, err)
+				}
+				if err := ix.DeleteRecord(id); err != nil {
+					return fmt.Errorf("remove %q from search index: %w", id, err)
+				}
+			}
+
+			var commitHash string
+			if len(matched) > 0 {
+				commitHash, err = store.CommitWorkingSet(fmt.Sprintf("punakawan: knowledge reset project=%q repository=%q module=%q (%d records)", project, repository, module, len(matched)))
+				if err != nil {
+					return fmt.Errorf("commit reset: %w", err)
+				}
+			}
+			fmt.Fprintf(out, "deleted %d record(s)\n", len(matched))
+			if commitHash != "" {
+				fmt.Fprintf(out, "commit: %s\n", commitHash)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "match records scoped to this project")
+	cmd.Flags().StringVar(&repository, "repository", "", "match records scoped to this repository")
+	cmd.Flags().StringVar(&module, "module", "", "match records scoped to this module")
+	cmd.Flags().BoolVar(&confirm, "confirm", false, "actually delete the matched records; without this, only a dry-run preview is printed")
+	return cmd
+}
+
+// knowledgeScopeMatches reports whether scope satisfies every non-empty
+// requested field; unset requested fields are not filtered on.
+func knowledgeScopeMatches(scope *protocol.KnowledgeRecordScope, project, repository, module string) bool {
+	if project != "" && (scope == nil || scope.Project == nil || *scope.Project != project) {
+		return false
+	}
+	if repository != "" && (scope == nil || scope.Repository == nil || *scope.Repository != repository) {
+		return false
+	}
+	if module != "" && (scope == nil || scope.Module == nil || *scope.Module != module) {
+		return false
+	}
+	return true
 }
 
 func newRecipeCmd() *cobra.Command {

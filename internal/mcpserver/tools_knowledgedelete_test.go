@@ -1,11 +1,8 @@
 package mcpserver
 
 import (
-	"context"
 	"testing"
 	"time"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -61,83 +58,6 @@ func TestDeleteKnowledgeRemovesRecordsAndReportsMissingIds(t *testing.T) {
 	}
 }
 
-func TestResetProjectKnowledgeRequiresAScopeField(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "reset_project_knowledge",
-		Arguments: map[string]any{},
-	})
-	if err != nil {
-		t.Fatalf("CallTool: %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("expected an error when no project/repository/module scope is given")
-	}
-}
-
-func TestResetProjectKnowledgeDefaultsToDryRun(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	scope := &protocol.KnowledgeRecordScope{Repository: strp("checkout-service")}
-	rec := putFixtureRecord(t, store, "REQ-2", "Checkout note", scope)
-
-	var out map[string]any
-	callTool(t, cs, "reset_project_knowledge", map[string]any{
-		"repository": "checkout-service",
-	}, &out)
-
-	if deleted, _ := out["deleted"].(bool); deleted {
-		t.Fatal("expected deleted=false on a dry run")
-	}
-	matched, _ := out["matched_ids"].([]any)
-	if len(matched) != 1 || matched[0] != rec.Id {
-		t.Fatalf("matched_ids = %v, want [%s]", matched, rec.Id)
-	}
-
-	if _, err := store.Get(rec.Id); err != nil {
-		t.Fatalf("expected the record to still exist after a dry run: %v", err)
-	}
-}
-
-func TestResetProjectKnowledgeDeletesWhenConfirmed(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	inScope := putFixtureRecord(t, store, "REQ-3", "Checkout note A", &protocol.KnowledgeRecordScope{Repository: strp("checkout-service")})
-	outOfScope := putFixtureRecord(t, store, "REQ-4", "Unrelated note", &protocol.KnowledgeRecordScope{Repository: strp("other-service")})
-
-	var out map[string]any
-	callTool(t, cs, "reset_project_knowledge", map[string]any{
-		"repository": "checkout-service",
-		"confirm":    true,
-	}, &out)
-
-	if deleted, _ := out["deleted"].(bool); !deleted {
-		t.Fatalf("out = %+v, want deleted=true when confirm=true", out)
-	}
-
-	if _, err := store.Get(inScope.Id); err == nil {
-		t.Fatal("expected the in-scope record to be deleted")
-	}
-	if _, err := store.Get(outOfScope.Id); err != nil {
-		t.Fatalf("expected the out-of-scope record to survive: %v", err)
-	}
-}
-
 // TestDeleteKnowledgeCommitsToDoltAndIsRevertable checks the commit_hash
 // contract at the MCP boundary (non-empty, distinct per call); the deeper
 // guarantee - that AS OF '<hash>~1' / `dolt checkout <hash>~1` actually
@@ -179,48 +99,6 @@ func TestDeleteKnowledgeOmitsCommitHashWhenNothingDeleted(t *testing.T) {
 
 	if hash, ok := out["commit_hash"]; ok && hash != "" {
 		t.Fatalf("expected no commit_hash when every id was not_found, got %+v", out)
-	}
-}
-
-func TestResetProjectKnowledgeMatchedIdsIsEmptyArrayNotNullWhenNothingMatches(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	var out map[string]any
-	callTool(t, cs, "reset_project_knowledge", map[string]any{
-		"repository": "no-such-repository",
-	}, &out)
-
-	matched, ok := out["matched_ids"].([]any)
-	if !ok {
-		t.Fatalf("expected matched_ids to be an array (not null) when nothing matches, got %+v (%T)", out["matched_ids"], out["matched_ids"])
-	}
-	if len(matched) != 0 {
-		t.Fatalf("expected zero matches, got %v", matched)
-	}
-}
-
-func TestResetProjectKnowledgeCommitsToDoltWhenConfirmed(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	putFixtureRecord(t, store, "REQ-6", "Checkout note", &protocol.KnowledgeRecordScope{Repository: strp("checkout-service")})
-
-	var out map[string]any
-	callTool(t, cs, "reset_project_knowledge", map[string]any{
-		"repository": "checkout-service",
-		"confirm":    true,
-	}, &out)
-
-	hash, _ := out["commit_hash"].(string)
-	if hash == "" {
-		t.Fatalf("expected a non-empty commit_hash after a confirmed reset, got %+v", out)
 	}
 }
 

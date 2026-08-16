@@ -117,7 +117,7 @@ func TestSemarFinalizeBlockedByOpenContradiction(t *testing.T) {
 	}
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "submit_semar_synthesis",
+		Name: "submit_final_plan",
 		Arguments: map[string]any{
 			"id":         "run-1",
 			"title":      "final plan",
@@ -125,7 +125,7 @@ func TestSemarFinalizeBlockedByOpenContradiction(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("CallTool submit_semar_synthesis: %v", err)
+		t.Fatalf("CallTool submit_final_plan: %v", err)
 	}
 	if !res.IsError {
 		t.Fatal("final plan submission should be refused while a blocking contradiction is open")

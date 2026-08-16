@@ -223,7 +223,7 @@ func createPathHint(artifactType string) string {
 	case learning.TypeMetadata:
 		return "propose_project_learning only improves an existing metadata entry - to create one use set_project_metadata, then propose improvements against its key here"
 	case learning.TypeConvention:
-		return "propose_project_learning only improves an existing convention proposal - a detector (e.g. detect_no_ternary_convention) creates the first pending proposal for a new convention id"
+		return "propose_project_learning only improves an existing convention proposal, not create one from scratch"
 	default:
 		return "propose_project_learning only improves an artifact that already exists; create it with its dedicated tool first"
 	}

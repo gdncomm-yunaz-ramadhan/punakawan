@@ -70,6 +70,103 @@ func opPtrLocal(o protocol.KnowledgeRecordRetrievalRecipeSelectorAllElemOperator
 	return &o
 }
 
+// seedRequirement puts a minimal requirement-type knowledge record scoped
+// to repository, for exercising `knowledge reset`'s scope filtering.
+func seedRequirement(t *testing.T, dir, id, repository string) protocol.KnowledgeRecord {
+	t.Helper()
+	a, err := app.Load(dir)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	defer a.Close()
+
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	rec := protocol.KnowledgeRecord{
+		Id:     id,
+		Type:   protocol.KnowledgeRecordTypeRequirement,
+		Status: "active",
+		Title:  "Fixture requirement",
+		Scope:  &protocol.KnowledgeRecordScope{Repository: strPtrLocal(repository)},
+		Source: protocol.KnowledgeRecordSource{Provider: "test", RetrievedAt: time.Now().UTC()},
+		Extraction: protocol.KnowledgeRecordExtraction{
+			Method: protocol.KnowledgeRecordExtractionMethodManual,
+		},
+		Validity: protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateObserved},
+	}
+	if err := store.Put(rec); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	return rec
+}
+
+func TestKnowledgeResetRequiresAScopeField(t *testing.T) {
+	dir := newSmokeWorkspace(t)
+
+	out, err := runCLI(t, dir, "knowledge", "reset")
+	if err == nil {
+		t.Fatalf("expected an error when no scope flag is given, got output: %s", out)
+	}
+}
+
+func TestKnowledgeResetDefaultsToDryRun(t *testing.T) {
+	dir := newSmokeWorkspace(t)
+	rec := seedRequirement(t, dir, "pkw:req/fixture/reset-1", "checkout-service")
+
+	out, err := runCLI(t, dir, "knowledge", "reset", "--repository", "checkout-service")
+	if err != nil {
+		t.Fatalf("knowledge reset: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "dry run") || !strings.Contains(out, rec.Id) {
+		t.Fatalf("unexpected dry-run output: %s", out)
+	}
+
+	a, err := app.Load(dir)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	defer a.Close()
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	if _, err := store.Get(rec.Id); err != nil {
+		t.Fatalf("expected the record to still exist after a dry run: %v", err)
+	}
+}
+
+func TestKnowledgeResetDeletesOnlyMatchedScopeWhenConfirmed(t *testing.T) {
+	dir := newSmokeWorkspace(t)
+	inScope := seedRequirement(t, dir, "pkw:req/fixture/reset-2", "checkout-service")
+	outOfScope := seedRequirement(t, dir, "pkw:req/fixture/reset-3", "other-service")
+
+	out, err := runCLI(t, dir, "knowledge", "reset", "--repository", "checkout-service", "--confirm")
+	if err != nil {
+		t.Fatalf("knowledge reset: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "deleted 1 record") || !strings.Contains(out, "commit:") {
+		t.Fatalf("unexpected confirmed-reset output: %s", out)
+	}
+
+	a, err := app.Load(dir)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	defer a.Close()
+	store, err := a.OpenKnowledge()
+	if err != nil {
+		t.Fatalf("OpenKnowledge: %v", err)
+	}
+	if _, err := store.Get(inScope.Id); err == nil {
+		t.Fatal("expected the in-scope record to be deleted")
+	}
+	if _, err := store.Get(outOfScope.Id); err != nil {
+		t.Fatalf("expected the out-of-scope record to survive: %v", err)
+	}
+}
+
 func TestRecipeListAndShow(t *testing.T) {
 	dir := newSmokeWorkspace(t)
 	rec := seedRecipe(t, dir, "pkw:recipe/smoke/next-sprint", protocol.KnowledgeRecordValidityStateVerified)

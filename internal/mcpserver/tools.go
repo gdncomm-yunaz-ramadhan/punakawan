@@ -57,9 +57,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 	}, setProjectMetadataHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_semar_synthesis",
-		Description: "Validate and persist Semar's consolidated clarification (§8.1/§9.2) or final plan (§9.3) as durable knowledge. Exactly one of synthesis or final_plan must be set.",
-	}, submitSemarSynthesisHandler(a))
+		Name:        "submit_final_plan",
+		Description: "Validate and persist Semar's final implementation plan (§9.3) as durable knowledge, refused while blocking contradictions remain open. For a lane's Synthesis stage instead, use submit_lane_semar_synthesis.",
+	}, submitFinalPlanHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_workflow_run",
@@ -105,11 +105,6 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "propose_project_learning",
 		Description: "Open (or reinforce) a reviewed learning proposal for a workflow, project_metadata, knowledge, or convention improvement. Supply target_id and the proposed candidate content; it becomes a proposal in the artifact-review flow - never a direct canonical write. A human accepts/rejects it in the panel. An equivalent pending proposal absorbs your evidence_ids/source_run_ids and increments support_count instead of duplicating. Proposals must reference structured outcome/evidence, not mined chat. Acceptance writes a new immutable revision; for workflows, acceptance never auto-activates it.",
 	}, proposeProjectLearningHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "detect_no_ternary_convention",
-		Description: "Scan a repository for a small, fixed ternary-emulation-helper idiom (calls to Ternary(...) or IIf(...)) and, if it appears often enough, open or reinforce a pending, inferred learning proposal recommending a project convention of avoiding it. This is a narrow, honestly-scoped textual heuristic, not a linter - see internal/convention.DetectNoTernaryConvention's doc comment for its exact limits. The resulting proposal is never auto-accepted: it stays invisible to every role's rendered context until a human approves it in the panel.",
-	}, detectNoTernaryConventionHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "record_work_outcome",
@@ -361,11 +356,6 @@ func registerTools(server *mcp.Server, a *app.App, reg *capability.Registry) {
 		Name:        "delete_knowledge",
 		Description: "Bulk-delete specific knowledge records by id, e.g. ones find_prune_candidates or search_knowledge flagged as stale, superseded, or wrong. Any validity_state may be deleted; naming an id is the deliberate act. Not undoable through this tool but not unrecoverable: a delete is committed to the project's Dolt store and commit_hash is returned - deleted records stay readable via `SELECT ... AS OF '<commit_hash>~1'`, or restorable with `dolt checkout <commit_hash>~1`. commit_hash is empty when every id was not_found.",
 	}, deleteKnowledgeHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "reset_project_knowledge",
-		Description: "Bulk-delete every knowledge record matching a given project/repository/module scope - use when a whole project's knowledge has gone stale and should be re-ingested from scratch rather than pruned record by record. Requires at least one of project/repository/module. Defaults to a dry run: returns matching ids without deleting unless confirm=true. A confirmed delete is committed to the project's Dolt store and commit_hash is returned - see delete_knowledge for how to read or restore the pre-delete state.",
-	}, resetProjectKnowledgeHandler(a))
 
 	// Contradiction Ledger (Gareng, §16-22). Deterministic, no reasoning.
 	addTool(server, reg, &mcp.Tool{
