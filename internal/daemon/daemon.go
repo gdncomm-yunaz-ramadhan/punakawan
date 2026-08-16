@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/procreg"
 	"github.com/ygrip/punakawan/internal/storage"
 )
@@ -90,7 +91,13 @@ func Run(ctx context.Context, host, port string, paths Paths) (*Daemon, error) {
 	}
 
 	d := &Daemon{paths: paths, lock: lock, db: db, processes: processes, reconciled: reconciled}
-	transport, err := NewTransport(host, port, token, d.readyCheck)
+	// The daemon is the only process allowed to storage.Open DBPath (see
+	// Daemon's own doc comment), so it mints the one delivery.Store every
+	// HTTP route in this package reads and writes through - no MCP-style
+	// openDeliveryStore-per-call here, since there is nothing else for the
+	// daemon to scope storage.Open against.
+	deliveryStore := delivery.NewStore(db)
+	transport, err := NewTransport(host, port, token, d.readyCheck, deliveryStore)
 	if err != nil {
 		db.Close()
 		lock.Release()

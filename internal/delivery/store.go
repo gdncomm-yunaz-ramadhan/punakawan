@@ -160,6 +160,43 @@ func (s *Store) GetOrchestration(ctx context.Context, id string) (*protocol.Deli
 	return reduceOrchestration(id, events)
 }
 
+// ListOrchestrations returns every orchestration this store knows about,
+// oldest first. There is exactly one orchestration.created event per
+// orchestration (always at sequence 0), so selecting that event type
+// alone already gives one row per id - no DISTINCT needed.
+func (s *Store) ListOrchestrations(ctx context.Context) ([]*protocol.DeliveryOrchestration, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		`SELECT orchestration_id FROM delivery_events WHERE type = ? ORDER BY occurred_at`,
+		string(protocol.DeliveryEventTypeOrchestrationCreated),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: list orchestrations: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("delivery: scan orchestration id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("delivery: list orchestrations: %w", err)
+	}
+
+	out := make([]*protocol.DeliveryOrchestration, 0, len(ids))
+	for _, id := range ids {
+		orch, err := s.GetOrchestration(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, orch)
+	}
+	return out, nil
+}
+
 // CancelOrchestration appends orchestration.cancelled after checking
 // expectedRevision against the current derived revision and that the
 // orchestration is not already terminal.

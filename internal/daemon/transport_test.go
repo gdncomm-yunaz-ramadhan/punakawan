@@ -10,7 +10,7 @@ import (
 
 func startTestTransport(t *testing.T, token string, ready func() error) *Transport {
 	t.Helper()
-	tr, err := NewTransport("127.0.0.1", "0", token, ready)
+	tr, err := NewTransport("127.0.0.1", "0", token, ready, newTestDeliveryStore(t))
 	if err != nil {
 		t.Fatalf("NewTransport: %v", err)
 	}

@@ -29,6 +29,12 @@ type Client struct {
 	addr  string
 	token string
 	http  *http.Client
+	// watchHTTP backs WatchDeliveryView's long-poll requests, which can
+	// legitimately take up to maxDeliveryWaitSeconds - http's own fixed
+	// Timeout would cut those off, so long-poll calls use this client
+	// (unbounded Timeout; bounded instead via the request's own context
+	// deadline) instead of http.
+	watchHTTP *http.Client
 }
 
 // Discover builds a Client from an already-running daemon's published
@@ -44,9 +50,10 @@ func Discover(paths Paths) (*Client, error) {
 		return nil, fmt.Errorf("daemon: read token file %s: %w", paths.TokenPath, err)
 	}
 	return &Client{
-		addr:  strings.TrimSpace(string(addr)),
-		token: strings.TrimSpace(string(token)),
-		http:  &http.Client{Timeout: 5 * time.Second},
+		addr:      strings.TrimSpace(string(addr)),
+		token:     strings.TrimSpace(string(token)),
+		http:      &http.Client{Timeout: 5 * time.Second},
+		watchHTTP: &http.Client{},
 	}, nil
 }
 
