@@ -237,32 +237,35 @@
           </header>
           {#if wf.description}<p class="description">{wf.description}</p>{/if}
 
-          <div class="workflow-canvas" aria-label={`${wf.name || wf.id} workflow graph`}>
+          <div class="workflow-canvas" aria-label={`${wf.name || wf.id} workflow steps`}>
             <div class="canvas-label">
               <span><Icon name="activity" size={14} /> Execution path</span>
-              <span>{wf.steps.length} nodes</span>
+              <span>{wf.steps.length} steps</span>
             </div>
-            <div class="node-track">
-              <div class="flow-node trigger">
-                <span class="node-icon"><Icon name="activity" size={18} /></span>
-                <div><small>TRIGGER</small><strong>Invoke</strong></div>
-                <span class="port output"></span>
-              </div>
+            <ol class="stepper" data-testid="workflow-stepper">
+              <li class="step trigger">
+                <div class="step-rail">
+                  <span class="step-marker"><Icon name="activity" size={15} /></span>
+                  <span class="step-line" aria-hidden="true"></span>
+                </div>
+                <div class="step-content">
+                  <small>TRIGGER</small>
+                  <strong>Invoke</strong>
+                </div>
+              </li>
               {#each wf.steps as step, index (step.id)}
-                <span class="connector" aria-hidden="true"><span></span></span>
-                <div class="flow-node" class:approval={stepKind(step.capability) === "approval"}>
-                  <span class="port input"></span>
-                  <span class="node-icon">
-                    <Icon
-                      name={stepKind(step.capability) === "approval"
-                        ? "approval"
-                        : stepKind(step.capability) === "code"
-                          ? "code"
-                          : "settings"}
-                      size={18}
-                    />
-                  </span>
-                  <div>
+                {@const kind = stepKind(step.capability)}
+                <li class="step" class:approval={kind === "approval"} class:code={kind === "code"}>
+                  <div class="step-rail">
+                    <span class="step-marker">
+                      <Icon
+                        name={kind === "approval" ? "approval" : kind === "code" ? "code" : "settings"}
+                        size={15}
+                      />
+                    </span>
+                    <span class="step-line" aria-hidden="true"></span>
+                  </div>
+                  <div class="step-content">
                     <small>STEP {index + 1}</small>
                     <strong>{step.intent || step.id}</strong>
                     <code>{step.capability}</code>
@@ -271,16 +274,18 @@
                       <span class="step-role">{ROLE_STEP_VERB[owner]} {roleLabel(owner)}</span>
                     {/if}
                   </div>
-                  <span class="port output"></span>
-                </div>
+                </li>
               {/each}
-              <span class="connector" aria-hidden="true"><span></span></span>
-              <div class="flow-node finish">
-                <span class="port input"></span>
-                <span class="node-icon"><Icon name="check" size={18} /></span>
-                <div><small>OUTPUT</small><strong>{wf.output?.type || "Complete"}</strong></div>
-              </div>
-            </div>
+              <li class="step finish">
+                <div class="step-rail">
+                  <span class="step-marker"><Icon name="check" size={15} /></span>
+                </div>
+                <div class="step-content">
+                  <small>OUTPUT</small>
+                  <strong>{wf.output?.type || "Complete"}</strong>
+                </div>
+              </li>
+            </ol>
           </div>
 
           <dl class="meta-list">
@@ -535,20 +540,16 @@
   .workflow-canvas {
     min-width: 0;
     margin-top: 0.9rem;
-    padding: 0.75rem;
-    overflow: auto;
+    padding: 0.85rem 0.9rem;
     border: 1px solid var(--color-border);
     border-radius: 12px;
-    background-color: color-mix(in srgb, var(--color-surface-subtle) 85%, var(--color-surface));
-    background-image: radial-gradient(circle, color-mix(in srgb, var(--color-text-muted) 28%, transparent) 1px, transparent 1px);
-    background-size: 18px 18px;
+    background: var(--color-surface-subtle);
   }
   .canvas-label {
-    position: sticky;
-    left: 0;
     display: flex;
     justify-content: space-between;
     gap: 1rem;
+    margin-bottom: 0.7rem;
     color: var(--color-text-muted);
     font-size: 0.68rem;
     font-weight: 700;
@@ -560,124 +561,92 @@
     align-items: center;
     gap: 0.3rem;
   }
-  .node-track {
-    min-width: max-content;
+  ol.stepper {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .step {
     display: flex;
+    gap: 0.7rem;
+  }
+  .step-rail {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    padding: 1.6rem 0.65rem 1.2rem;
+    flex: 0 0 auto;
   }
-  .flow-node {
-    position: relative;
-    width: 164px;
-    min-height: 74px;
-    display: flex;
-    align-items: flex-start;
-    gap: 0.55rem;
-    padding: 0.72rem;
-    border: 1px solid var(--color-border-strong);
-    border-radius: 9px;
-    background: var(--color-surface-raised);
-    box-shadow: 0 4px 14px color-mix(in srgb, var(--color-text) 9%, transparent);
-  }
-  .flow-node.trigger {
-    border-color: color-mix(in srgb, #ff6d2e 55%, var(--color-border));
-  }
-  .flow-node.approval {
-    border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
-  }
-  .flow-node.finish {
-    border-color: color-mix(in srgb, var(--color-success) 55%, var(--color-border));
-  }
-  .node-icon {
+  .step-marker {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     flex: 0 0 auto;
-    border-radius: 8px;
+    border-radius: 50%;
     color: var(--color-accent);
     background: var(--color-accent-soft);
+    box-shadow: 0 0 0 1px var(--color-border-strong);
   }
-  .trigger .node-icon {
+  .step-line {
+    width: 2px;
+    flex: 1;
+    min-height: 0.6rem;
+    margin: 0.2rem 0;
+    background: var(--color-border-strong);
+  }
+  .step-content {
+    flex: 1;
+    min-width: 0;
+    padding: 0.15rem 0 1rem 0.75rem;
+    border-left: 3px solid var(--color-border-strong);
+    display: grid;
+    gap: 0.12rem;
+  }
+  .step:last-child .step-content {
+    padding-bottom: 0.1rem;
+    border-left-color: transparent;
+  }
+  .step.trigger .step-marker {
     color: #cf4d17;
     background: color-mix(in srgb, #ff6d2e 14%, var(--color-surface));
   }
-  .finish .node-icon {
+  .step.trigger .step-content {
+    border-left-color: color-mix(in srgb, #ff6d2e 55%, var(--color-border));
+  }
+  .step.approval .step-marker {
+    color: var(--color-warning);
+    background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+  }
+  .step.approval .step-content {
+    border-left-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
+  }
+  .step.finish .step-marker {
     color: var(--color-success);
     background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
   }
-  .flow-node > div {
-    min-width: 0;
-    display: grid;
-    gap: 0.15rem;
+  .step.finish .step-content {
+    border-left-color: color-mix(in srgb, var(--color-success) 55%, var(--color-border));
   }
-  .flow-node small {
+  .step-content small {
     color: var(--color-text-muted);
-    font-size: 0.58rem;
+    font-size: 0.6rem;
     font-weight: 750;
     letter-spacing: 0.07em;
   }
-  .flow-node strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.78rem;
+  .step-content strong {
+    font-size: 0.85rem;
   }
-  .flow-node code {
-    overflow: hidden;
+  .step-content code {
     color: var(--color-text-muted);
-    font-size: 0.62rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 0.7rem;
+    word-break: break-all;
   }
   .step-role {
-    display: block;
-    margin-top: 0.15rem;
-    font-size: 0.6rem;
+    margin-top: 0.1rem;
+    font-size: 0.68rem;
     font-weight: 600;
     color: var(--color-accent, var(--color-text));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .port {
-    position: absolute;
-    top: calc(50% - 5px);
-    width: 8px;
-    height: 8px;
-    border: 2px solid var(--color-surface-raised);
-    border-radius: 50%;
-    background: var(--color-border-strong);
-  }
-  .port.input {
-    left: -5px;
-  }
-  .port.output {
-    right: -5px;
-  }
-  .connector {
-    width: 38px;
-    height: 14px;
-    display: inline-flex;
-    align-items: center;
-  }
-  .connector span {
-    position: relative;
-    width: 100%;
-    height: 2px;
-    background: var(--color-border-strong);
-  }
-  .connector span::after {
-    content: "";
-    position: absolute;
-    right: -1px;
-    top: -3px;
-    width: 6px;
-    height: 6px;
-    border-top: 2px solid var(--color-border-strong);
-    border-right: 2px solid var(--color-border-strong);
-    transform: rotate(45deg);
   }
   dl.meta-list {
     margin: 0.8rem 0 0;

@@ -108,6 +108,38 @@ describe("ProjectWorkflows", () => {
     expect(screen.getByText("Verified by Bagong")).toBeTruthy();
   });
 
+  it("renders the stepper with steps in order, each carrying its role label", async () => {
+    const roleWorkflow = {
+      ...baseWorkflow,
+      steps: [
+        { id: "ctx", capability: "build_task_context", intent: "implement" },
+        { id: "review", capability: "submit_bagong_review", intent: "review" },
+      ],
+    };
+    (fetch as unknown as FetchMock).mockImplementation(async () =>
+      jsonResponse({ items: [{ ...roleWorkflow, enabled: true }] }),
+    );
+
+    render(ProjectWorkflows, { props: { projectId: "p1" } });
+    await waitFor(() => expect(screen.getByText("Deploy")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("workflow-row-deploy"));
+
+    const stepper = await screen.findByTestId("workflow-stepper");
+    const stepEls = stepper.querySelectorAll("li.step");
+    // Trigger bookend, both workflow steps, and the finish bookend.
+    expect(stepEls.length).toBe(4);
+
+    const stepTexts = Array.from(stepEls).map((el) => el.textContent ?? "");
+    expect(stepTexts[0]).toContain("Invoke");
+    expect(stepTexts[1]).toContain("STEP 1");
+    expect(stepTexts[1]).toContain("implement");
+    expect(stepTexts[1]).toContain("Built by Petruk");
+    expect(stepTexts[2]).toContain("STEP 2");
+    expect(stepTexts[2]).toContain("review");
+    expect(stepTexts[2]).toContain("Verified by Bagong");
+    expect(stepTexts[3]).toContain("Complete");
+  });
+
   it("shows a disabled-workflow message on a 409 invoke", async () => {
     (fetch as unknown as FetchMock).mockImplementation(async (_url: string, init?: RequestInit) => {
       const method = (init?.method ?? "GET").toUpperCase();
