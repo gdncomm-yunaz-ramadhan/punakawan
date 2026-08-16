@@ -1,0 +1,214 @@
+internal/panel/server/server_test.go
+  7bf9711812567778 652-655
+internal/mcpserver/tools_learning_knowledgecreate_test.go
+  7bf9711812567778 9-10,39-41
+internal/panel/sources/session_source.go
+  7bf9711812567778 32-34
+internal/profile/merge.go
+  7bf9711812567778 12-14
+internal/storage/consolidation_test.go
+  7bf9711812567778 11-16,18-23,34-36,53-54
+protocol/deliveryproject.schema.json
+  7bf9711812567778 5
+internal/panel/events/reconciler.go
+  7bf9711812567778 169
+internal/procident/procident.go
+  7bf9711812567778 5-6
+internal/daemon/token_windows.go
+  7bf9711812567778 9
+internal/panel/api/artifact_stores.go
+  7bf9711812567778 45-47
+internal/mcpserver/tools_deliverygraph.go
+  7bf9711812567778 2
+internal/delivery/reduce.go
+  7bf9711812567778 13
+internal/mcpserver/tools_deliverysummary.go
+  7bf9711812567778 13
+internal/convention/ternary.go
+  7bf9711812567778 19-20
+internal/storage/bench_test.go
+  7bf9711812567778 13-15
+internal/learning/store.go
+  7bf9711812567778 10-11,49-51,64-65,339-342,369-371
+internal/doltimport/discover.go
+  7bf9711812567778 4-5
+internal/tools/grandchild_test.go
+  7bf9711812567778 14-16
+internal/delivery/store_test.go
+  7bf9711812567778 38-39,173
+internal/panel/server/security.go
+  7bf9711812567778 14-15
+internal/mcpserver/tools.go
+  7bf9711812567778 111
+internal/mcpserver/tools_delivery_pr.go
+  7bf9711812567778 1-3
+protocol/dependencyedge.schema.json
+  7bf9711812567778 5
+cmd/punakawand/main.go
+  7bf9711812567778 4
+internal/mcpserver/tools_workflowsteps_test.go
+  7bf9711812567778 143-144
+protocol/projectdeliveryprofile.schema.json
+  7bf9711812567778 5
+internal/panel/events/reconciler_test.go
+  7bf9711812567778 269-272
+internal/adapters/registry.go
+  7bf9711812567778 54
+protocol/testreportsummary.schema.json
+  7bf9711812567778 5
+internal/panel/api/overview_handler_test.go
+  7bf9711812567778 114-116
+internal/procreg/procreg.go
+  7bf9711812567778 1-5
+protocol/parenttask.schema.json
+  7bf9711812567778 5
+cmd/punakawan/daemon_cmd.go
+  7bf9711812567778 15
+internal/mcpserver/tools_startdelivery.go
+  7bf9711812567778 1-2
+internal/daemon/client.go
+  7bf9711812567778 26-27,82-84
+internal/mcpserver/tools_workflowsteps.go
+  7bf9711812567778 196-197
+internal/workflow/store_test.go
+  7bf9711812567778 71-72
+internal/mcpserver/tools_jiraprogress_test.go
+  7bf9711812567778 200-203
+internal/approvals/approvals.go
+  7bf9711812567778 2-3
+internal/delivery/manifests_test.go
+  7bf9711812567778 61-63
+internal/panel/registry/registry.go
+  7bf9711812567778 4-5
+internal/delivery/testreport.go
+  7bf9711812567778 1-2,25-27,150-151
+internal/syncqueue/syncqueue.go
+  7bf9711812567778 15-17
+protocol/preflightcheck.schema.json
+  7bf9711812567778 5
+internal/knowledge/knowledge.go
+  7bf9711812567778 2,6
+internal/mcpserver/tools_createpr.go
+  7bf9711812567778 196
+internal/delivery/routing.go
+  7bf9711812567778 13-15
+internal/panel/sources/workspace_source.go
+  7bf9711812567778 387-389
+internal/daemon/lock.go
+  7bf9711812567778 1-4,7-8
+internal/daemon/daemon.go
+  7bf9711812567778 126-127
+protocol/evidenceartifact.schema.json
+  7bf9711812567778 5
+internal/tools/killpid.go
+  7bf9711812567778 27-30
+internal/learning/adapters.go
+  7bf9711812567778 378-380
+internal/workflow/store.go
+  7bf9711812567778 31-32
+internal/mcpserver/tools_conventiondetect.go
+  7bf9711812567778 34-36
+internal/mcpserver/tools_jiraprogress.go
+  7bf9711812567778 110
+internal/roleconfig/resolver.go
+  7bf9711812567778 154-156
+internal/mcpserver/tools_learning.go
+  7bf9711812567778 63-64,216
+internal/mcpserver/tools_workflowdef_save_test.go
+  7bf9711812567778 110-113,175-177
+cmd/punakawan/storage_cmd.go
+  7bf9711812567778 17
+internal/delivery/deliveryview.go
+  7bf9711812567778 2-4
+internal/adapters/gate.go
+  7bf9711812567778 103
+internal/delivery/artifacts.go
+  7bf9711812567778 1-3,204-205
+internal/mcpserver/prompts_test.go
+  7bf9711812567778 123-124,126
+internal/mcpserver/tools_jira.go
+  7bf9711812567778 398-399
+internal/learning/store_test.go
+  7bf9711812567778 88
+internal/mcpserver/prompts.go
+  7bf9711812567778 44-45
+internal/tasks/tasks.go
+  7bf9711812567778 387-388
+internal/delivery/graph.go
+  7bf9711812567778 14-16,85,196-197
+internal/panel/sources/sources_test.go
+  7bf9711812567778 369-373,1006-1008
+internal/gitops/worktree.go
+  7bf9711812567778 49
+internal/mcpserver/tools_metadata_test.go
+  7bf9711812567778 14-16
+internal/panel/runtime/manager.go
+  7bf9711812567778 247-248
+internal/mcpserver/tools_pushbranch.go
+  7bf9711812567778 83-84
+internal/deliverysummary/summary.go
+  7bf9711812567778 7-8,19,79-83,169-170
+internal/loopback/loopback.go
+  7bf9711812567778 3-4
+internal/delivery/normalize.go
+  7bf9711812567778 29
+internal/app/app.go
+  7bf9711812567778 244-245,273-274,325-326,361-362,395-396
+internal/taskstore/taskstore.go
+  7bf9711812567778 2-3
+internal/delivery/store.go
+  7bf9711812567778 1-3,205
+internal/mcpserver/tools_createpr_test.go
+  7bf9711812567778 206-209
+protocol/requirementsource.schema.json
+  7bf9711812567778 5
+internal/mcpserver/tools_jiracreate_workflowcap_test.go
+  7bf9711812567778 38-39
+internal/profile/profile.go
+  7bf9711812567778 2-4
+internal/roleconfig/resolver_test.go
+  7bf9711812567778 261-264,321-323,326-328
+internal/delivery/manifests.go
+  7bf9711812567778 36-39
+internal/worklogalloc/allocation.go
+  7bf9711812567778 4-5
+protocol/approvalmanifest.schema.json
+  7bf9711812567778 5,40
+protocol/deliveryorchestration.schema.json
+  7bf9711812567778 5,14
+internal/mcpserver/tools_pushbranch_gitcapabilities_test.go
+  7bf9711812567778 29-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "1d45aee2850915cc0c1f5ea9077b02e81e0664ca",
+  "prompts": {
+    "7bf9711812567778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f815f49d-f4bc-42e5-8a16-73ec482e8281",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 310,
+      "total_deletions": 329,
+      "accepted_lines": 278,
+      "overriden_lines": 0
+    },
+    "8b0a813fdd748761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdbdc-9796-70d1-a5fa-523aa3a35e7b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 33,
+      "overriden_lines": 0
+    }
+  }
+}
