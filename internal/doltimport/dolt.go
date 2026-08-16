@@ -120,6 +120,19 @@ func jsonAny(raw json.RawMessage, out any) error {
 	return nil
 }
 
+// sqlQuote renders s as a single-quoted SQL string literal for embedding into
+// a `dolt sql -q "..."` query string - this querier has no parameterized-query
+// support, since it shells out to the dolt CLI rather than a driver, so
+// callers building a WHERE clause from a value (e.g. the single-row id
+// re-query below) must quote it themselves. Single quotes are doubled, the
+// SQL-standard escape dolt's MySQL-compatible parser honors, rather than
+// backslash-escaped - MySQL only treats backslash as an escape outside
+// ANSI_QUOTES mode, and this codebase doesn't control which mode dolt runs
+// in.
+func sqlQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 // countRows runs SELECT COUNT(*) against table and returns the scalar count.
 func countRows(ctx context.Context, q Querier, table string) (int, error) {
 	rows, err := q(ctx, "SELECT COUNT(*) AS n FROM "+table)

@@ -576,6 +576,107 @@ func TestImportSkipsDataColumnThatMatchesNeitherShape(t *testing.T) {
 	}
 }
 
+// TestImportRecoversViaSingleRowRequeryWhenBulkDataIsEmpty pins the fallback
+// for a real, confirmed dolt 2.2.1 engine bug: its own multi-row JSON scan
+// (this package's one bulk SELECT) has been observed to intermittently return
+// an empty `data` column for a row that decodes correctly every time when
+// queried alone. The fake Querier here answers the bulk SELECT with an empty
+// `data` value for the record and a correct, fully-populated single-row
+// WHERE-id re-query, so a successful import (not a skip) proves the fallback
+// actually recovers what the bulk query lost.
+func TestImportRecoversViaSingleRowRequeryWhenBulkDataIsEmpty(t *testing.T) {
+	db := openKernel(t)
+	id := "pkw:req/demo/R-1"
+	goodData := validRecordJSON(id, "Recovered")
+	bulkRows := []map[string]json.RawMessage{
+		fakeKnowledgeRow(id, `""`, "2024-03-04 05:06:07"),
+	}
+	requeried := false
+	q := func(ctx context.Context, sqlStr string) ([]map[string]json.RawMessage, error) {
+		switch {
+		case strings.Contains(sqlStr, "COUNT(*)"):
+			return []map[string]json.RawMessage{{"n": json.RawMessage("0")}}, nil
+		case strings.Contains(sqlStr, "WHERE id"):
+			requeried = true
+			if !strings.Contains(sqlStr, id) {
+				t.Fatalf("expected the re-query to target id %q, got: %s", id, sqlStr)
+			}
+			return []map[string]json.RawMessage{fakeKnowledgeRow(id, goodData, "2024-03-04 05:06:07")}, nil
+		default:
+			return bulkRows, nil
+		}
+	}
+	rep, err := runWithQuerier(context.Background(), db, proj, legacySource(t.TempDir()), true, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !requeried {
+		t.Fatal("expected a single-row re-query for the record whose bulk data came back empty")
+	}
+	if len(rep.Skipped) != 0 {
+		t.Fatalf("want 0 skipped, got %+v", rep.Skipped)
+	}
+	if rep.RecordsImported != 1 {
+		t.Fatalf("want 1 imported, got %d", rep.RecordsImported)
+	}
+	store := knowledge.New(db, proj)
+	got, err := store.Get(id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Title != "Recovered" {
+		t.Fatalf("title mismatch: got %q want %q", got.Title, "Recovered")
+	}
+}
+
+// TestImportSkipsWhenSingleRowRequeryAlsoFails is the inverse of the recovery
+// test above: when the single-row re-query comes back just as empty as the
+// bulk query did, the record is genuinely unrecoverable (not merely a
+// transient bulk-scan quirk), so it must still be reported as skipped with a
+// clear reason - not silently dropped, and not fatal to the rest of the run
+// (a sibling good record in the same batch must still import).
+func TestImportSkipsWhenSingleRowRequeryAlsoFails(t *testing.T) {
+	db := openKernel(t)
+	badID := "pkw:req/demo/R-BAD"
+	okID := "pkw:req/demo/R-OK"
+	bulkRows := []map[string]json.RawMessage{
+		fakeKnowledgeRow(badID, `""`, "2024-03-04 05:06:07"),
+		fakeKnowledgeRow(okID, validRecordJSON(okID, "Fine"), "2024-03-04 05:06:08"),
+	}
+	q := func(ctx context.Context, sqlStr string) ([]map[string]json.RawMessage, error) {
+		switch {
+		case strings.Contains(sqlStr, "COUNT(*)"):
+			return []map[string]json.RawMessage{{"n": json.RawMessage("0")}}, nil
+		case strings.Contains(sqlStr, "WHERE id"):
+			// The re-query is just as empty as the bulk query - a genuinely
+			// corrupt/unrecoverable record, not a transient dolt quirk.
+			return []map[string]json.RawMessage{fakeKnowledgeRow(badID, `""`, "2024-03-04 05:06:07")}, nil
+		default:
+			return bulkRows, nil
+		}
+	}
+	rep, err := runWithQuerier(context.Background(), db, proj, legacySource(t.TempDir()), true, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.RecordsImported != 1 {
+		t.Fatalf("want 1 imported (the sibling good record), got %d", rep.RecordsImported)
+	}
+	if len(rep.Skipped) != 1 {
+		t.Fatalf("want 1 skipped, got %+v", rep.Skipped)
+	}
+	if rep.Skipped[0].ID != badID {
+		t.Fatalf("want skip for %q, got %q", badID, rep.Skipped[0].ID)
+	}
+	if !strings.Contains(rep.Skipped[0].Reason, "malformed data json") {
+		t.Fatalf("expected a malformed-data reason, got %q", rep.Skipped[0].Reason)
+	}
+	store := knowledge.New(db, proj)
+	if _, err := store.Get(okID); err != nil {
+		t.Fatalf("sibling good record should have imported despite the bad one being skipped: %v", err)
+	}
+}
+
 func TestImportIsIdempotent(t *testing.T) {
 	requireDolt(t)
 	dir := filepath.Join(t.TempDir(), "knowledge")

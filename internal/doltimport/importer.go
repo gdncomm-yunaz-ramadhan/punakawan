@@ -110,7 +110,27 @@ func runWithQuerier(ctx context.Context, db *storage.DB, destProjectID string, s
 		id, _ := jsonString(row["id"])
 		raw := row["data"]
 		var rec protocol.KnowledgeRecord
-		if err := jsonAny(raw, &rec); err != nil {
+		err := jsonAny(raw, &rec)
+		if err != nil && id != "" {
+			// Confirmed live against a real per-project store (dolt 2.2.1):
+			// dolt's own multi-row JSON scan - this package's one bulk SELECT
+			// above - has been observed via direct `dolt sql` reproduction to
+			// intermittently return an empty `data` column for complex/large
+			// nested-JSON records, even though the identical row queried
+			// alone always returns the full, correct content. That is dolt's
+			// engine losing column content during the multi-row scan, not a
+			// decode-shape problem jsonAny can fix, so the only way to
+			// recover it is to re-fetch just this row on its own. Scoped to
+			// only the rows that actually failed above, so a project that
+			// never hits this dolt bug never pays for the extra query.
+			if reRec, reErr := requeryRecord(ctx, q, id); reErr == nil {
+				rec = reRec
+				err = nil
+			} else {
+				err = fmt.Errorf("%w (single-row re-query also failed: %v)", err, reErr)
+			}
+		}
+		if err != nil {
 			rep.Skipped = append(rep.Skipped, Skipped{ID: fallbackID(id, i), Reason: "malformed data json: " + err.Error()})
 			continue
 		}
@@ -170,6 +190,27 @@ func runWithQuerier(ctx context.Context, db *storage.DB, destProjectID string, s
 		return nil, err
 	}
 	return rep, nil
+}
+
+// requeryRecord re-fetches one record by id with a single-row point query and
+// decodes its data column, for the targeted dolt-multi-row-scan-bug fallback
+// in runWithQuerier above. id is embedded via sqlQuote since this Querier has
+// no parameterized-query support (it shells out to the dolt CLI, not a
+// driver). Only called for a row whose bulk-query decode already failed, so
+// it is one extra query per genuinely affected row, never per row.
+func requeryRecord(ctx context.Context, q Querier, id string) (protocol.KnowledgeRecord, error) {
+	rows, err := q(ctx, "SELECT id, type, status, validity_state, data, updated_at FROM knowledge_records WHERE id = "+sqlQuote(id))
+	if err != nil {
+		return protocol.KnowledgeRecord{}, err
+	}
+	if len(rows) == 0 {
+		return protocol.KnowledgeRecord{}, fmt.Errorf("no row for id %s", id)
+	}
+	var rec protocol.KnowledgeRecord
+	if err := jsonAny(rows[0]["data"], &rec); err != nil {
+		return protocol.KnowledgeRecord{}, err
+	}
+	return rec, nil
 }
 
 // writeManifest persists rep as the import manifest for destProjectID,
