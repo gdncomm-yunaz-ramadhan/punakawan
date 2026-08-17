@@ -1,0 +1,27 @@
+internal/panel/events/sse_test.go
+  f9605b8f4acd1e01 22,50,66-98
+internal/panel/events/sse.go
+  f9605b8f4acd1e01 4,18-25,71-76
+internal/panel/server/server.go
+  f9605b8f4acd1e01 76-83,109,111-119,202,451-456
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ab7fd879eb27de1e3f1c7de227d013d60dbbc252",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 77,
+      "total_deletions": 11,
+      "accepted_lines": 77,
+      "overriden_lines": 0
+    }
+  }
+}
