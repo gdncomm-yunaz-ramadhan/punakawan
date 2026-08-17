@@ -11,13 +11,49 @@ const layoutRun = vi.fn();
 const zoomFn = vi.fn((v?: number) => (v === undefined ? 1 : undefined));
 const fitFn = vi.fn();
 const onFn = vi.fn();
+const addFn = vi.fn();
+const removeFn = vi.fn();
+
+// Minimal in-memory element set standing in for the real Cytoscape core's
+// element store, just enough to exercise GraphCanvas's add/remove/
+// getElementById-based diffing without a real canvas/WebGL context.
+interface FakeElement {
+  id: string;
+  isNode: boolean;
+}
+let liveElements: FakeElement[] = [];
+
+function elementIdOf(el: { data: { id?: string; source?: string } }): string {
+  return el.data.id ?? "";
+}
+
+function isNodeDef(el: { data: { source?: string } }): boolean {
+  return el.data.source === undefined;
+}
+
+function makeCollection(items: FakeElement[]) {
+  return {
+    length: items.length,
+    empty: () => items.length === 0,
+    // Not a real Cytoscape API - internal plumbing so the mock's remove()
+    // can recover which ids a previously-filtered collection stands for.
+    ids: () => items.map((it) => it.id),
+    filter: (fn: (ele: { id: () => string }) => boolean) =>
+      makeCollection(items.filter((it) => fn({ id: () => it.id }))),
+    nodes: () => makeCollection(items.filter((it) => it.isNode)),
+    addClass: vi.fn(),
+    removeClass: vi.fn(),
+    layout: () => ({ run: layoutRun }),
+  };
+}
 
 // Mocking cytoscape itself (rather than fighting jsdom's lack of a real
 // canvas/WebGL context) - the standard/reliable approach for
 // Cytoscape.js-consuming component tests per the task's test strategy.
 vi.mock("cytoscape", () => {
-  const factory = vi.fn((_opts: unknown) => {
+  const factory = vi.fn((opts: { elements?: { data: { id?: string; source?: string } }[] }) => {
     constructedCount++;
+    liveElements = (opts.elements ?? []).map((el) => ({ id: elementIdOf(el), isNode: isNodeDef(el) }));
     return {
       on: onFn,
       destroy,
@@ -28,6 +64,19 @@ vi.mock("cytoscape", () => {
       zoom: zoomFn,
       fit: fitFn,
       layout: () => ({ run: layoutRun }),
+      elements: () => makeCollection(liveElements),
+      getElementById: (id: string) => makeCollection(liveElements.filter((it) => it.id === id)),
+      collection: () => makeCollection([]),
+      add: addFn.mockImplementation((els: { data: { id?: string; source?: string } } | { data: { id?: string; source?: string } }[]) => {
+        const arr = Array.isArray(els) ? els : [els];
+        const added = arr.map((el) => ({ id: elementIdOf(el), isNode: isNodeDef(el) }));
+        liveElements.push(...added);
+        return makeCollection(added);
+      }),
+      remove: removeFn.mockImplementation((coll: { ids?: () => string[] }) => {
+        const removedIds = new Set(coll.ids?.() ?? []);
+        liveElements = liveElements.filter((it) => !removedIds.has(it.id));
+      }),
     };
   });
   return { default: factory };
@@ -36,12 +85,15 @@ vi.mock("cytoscape", () => {
 beforeEach(() => {
   constructedCount = 0;
   lastStyle = null;
+  liveElements = [];
   styleUpdate.mockClear();
   destroy.mockClear();
   layoutRun.mockClear();
   zoomFn.mockClear();
   fitFn.mockClear();
   onFn.mockClear();
+  addFn.mockClear();
+  removeFn.mockClear();
   document.documentElement.removeAttribute("data-theme");
 });
 
@@ -114,5 +166,48 @@ describe("GraphCanvas", () => {
     expect(options.layout.animationDuration).toBe(0);
 
     matchMediaSpy.mockRestore();
+  });
+
+  it("updates elements in place rather than destroying the instance when the new nodes overlap the current set", async () => {
+    const { rerender } = render(GraphCanvas, { props: { nodes, edges, ariaLabel: "Sample graph" } });
+    await waitFor(() => expect(constructedCount).toBe(1));
+
+    const grownNodes: GraphNode[] = [...nodes, { id: "d", label: "D" }];
+    const grownEdges: GraphEdge[] = [...edges, { id: "e3", source: "c", target: "d", label: "depends on" }];
+    await rerender({ nodes: grownNodes, edges: grownEdges, ariaLabel: "Sample graph" });
+
+    // Same underlying graph plus one new node/edge - this must be an
+    // incremental add, not a teardown-and-rebuild.
+    expect(constructedCount).toBe(1);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(addFn).toHaveBeenCalled();
+    // Only the newly-added node gets laid out, not the whole graph.
+    expect(layoutRun).toHaveBeenCalled();
+
+    const shrunkNodes: GraphNode[] = nodes.slice(0, 2);
+    const shrunkEdges: GraphEdge[] = [edges[0]];
+    await rerender({ nodes: shrunkNodes, edges: shrunkEdges, ariaLabel: "Sample graph" });
+
+    // Same graph, narrower bounds - still an incremental removal, not a
+    // reconstruction, and the still-visible nodes never get removed.
+    expect(constructedCount).toBe(1);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(removeFn).toHaveBeenCalled();
+  });
+
+  it("falls back to a full reconstruct when the new node set shares nothing with the current one", async () => {
+    const { rerender } = render(GraphCanvas, { props: { nodes, edges, ariaLabel: "Sample graph" } });
+    await waitFor(() => expect(constructedCount).toBe(1));
+
+    // A wholesale replacement can't be diffed sensibly - swapping to a
+    // disjoint id space should still warrant a real teardown+rebuild.
+    const disjointNodes: GraphNode[] = [
+      { id: "x", label: "X" },
+      { id: "y", label: "Y" },
+    ];
+    await rerender({ nodes: disjointNodes, edges: [], ariaLabel: "Sample graph" });
+
+    await waitFor(() => expect(constructedCount).toBe(2));
+    expect(destroy).toHaveBeenCalled();
   });
 });

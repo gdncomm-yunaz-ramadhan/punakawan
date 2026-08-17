@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import type { Core, ElementDefinition, LayoutOptions } from "cytoscape";
+  import type { Core, CoseLayoutOptions, ElementDefinition, LayoutOptions } from "cytoscape";
   import {
     prefersReducedMotion,
     readThemePalette,
@@ -57,6 +57,15 @@
   let unwatchTheme: (() => void) | null = null;
   let unwatchMotion: (() => void) | null = null;
 
+  // Node ids currently represented in `cy` - null whenever there's no live
+  // instance to diff against (before first render, or after a tooLarge/
+  // error state left `cy` pointing at a detached container). Tracked
+  // separately from `nodes` so the effect can tell "same underlying graph,
+  // different focus/expand bounds" apart from "genuinely new dataset".
+  let renderedNodeIds: Set<string> | null = null;
+  let appliedLayoutName: GraphLayoutName | null = null;
+  let appliedFocusNodeId: string | undefined;
+
   function toElements(): ElementDefinition[] {
     const nodeIds = new Set(nodes.map((n) => n.id));
     const els: ElementDefinition[] = nodes.map((n) => ({
@@ -103,6 +112,11 @@
         layout: layoutOptions(layoutName, reducedMotion),
         minZoom: 0.1,
         maxZoom: 4,
+        // Keeps panning/dragging smooth as node count grows toward the
+        // cap: edges disappear (cheaply) during viewport transforms, and
+        // the whole graph rasterizes to a texture while it's moving.
+        hideEdgesOnViewport: true,
+        textureOnViewport: true,
       });
       cy.on("tap", "node", (evt) => {
         onNodeSelect?.(evt.target.id());
@@ -110,11 +124,72 @@
       cy.on("dbltap", "node", (evt) => {
         onNodeExpand?.(evt.target.id());
       });
+      renderedNodeIds = new Set(nodes.map((n) => n.id));
+      appliedLayoutName = layoutName;
+      appliedFocusNodeId = focusNodeId;
       publishApi();
     } catch (e) {
       loading = false;
       loadError = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  // Updates the live instance's elements instead of tearing it down - the
+  // common case (focus/expand changing which bounded subset of the same
+  // graph is visible) shouldn't discard positions the user just dragged a
+  // node to, nor pay for a full teardown + fresh layout. Only elements
+  // that actually left/entered the visible set are touched; everything
+  // else keeps its current position untouched.
+  function diffAndUpdate() {
+    if (!cy) return;
+    const newElements = toElements();
+    const newElementIds = new Set(newElements.map((el) => (el.data as { id: string }).id));
+
+    const stale = cy.elements().filter((ele) => !newElementIds.has(ele.id()));
+    if (stale.length > 0) cy.remove(stale);
+
+    const additions = newElements.filter((el) => cy!.getElementById((el.data as { id: string }).id).empty());
+    const added = additions.length > 0 ? cy.add(additions) : cy.collection();
+
+    // add()/remove() alone won't restyle a node that was already present
+    // and simply stopped/started being the focus node - flip its class
+    // directly instead of touching every node on every diff.
+    if (appliedFocusNodeId !== focusNodeId) {
+      if (appliedFocusNodeId) cy.getElementById(appliedFocusNodeId).removeClass("focus-node");
+      if (focusNodeId) cy.getElementById(focusNodeId).addClass("focus-node");
+      appliedFocusNodeId = focusNodeId;
+    }
+
+    if (layoutName !== appliedLayoutName) {
+      // A deliberate layout-algorithm switch (via GraphControls) - a full
+      // re-arrangement is the point, unlike the incidental focus/expand
+      // churn this diffing exists to avoid disturbing.
+      cy.layout(layoutOptions(layoutName, prefersReducedMotion())).run();
+      appliedLayoutName = layoutName;
+    } else {
+      const addedNodes = added.nodes();
+      if (addedNodes.length > 0) {
+        // Lay out only the newly-added elements, starting from their
+        // current (default/stacked) positions rather than re-scattering
+        // the nodes that were already placed.
+        const opts = layoutOptions(layoutName, prefersReducedMotion());
+        if (opts.name === "cose") (opts as CoseLayoutOptions).randomize = false;
+        added.layout(opts).run();
+      }
+    }
+
+    renderedNodeIds = new Set(nodes.map((n) => n.id));
+  }
+
+  // "Same dataset" means the new node set shares at least one id with what's
+  // currently rendered - i.e. this is the same underlying graph with a
+  // different focus/expand boundary, not a wholesale replacement.
+  function isSameDataset(newNodeIds: Set<string>): boolean {
+    if (!renderedNodeIds || renderedNodeIds.size === 0) return false;
+    for (const id of newNodeIds) {
+      if (renderedNodeIds.has(id)) return true;
+    }
+    return false;
   }
 
   function recolor() {
@@ -135,7 +210,14 @@
       zoomOut: () => instance.zoom(instance.zoom() / 1.2),
       fit: () => instance.fit(undefined, 24),
       runLayout: (name: GraphLayoutName) => {
-        instance.layout(layoutOptions(name, prefersReducedMotion())).run();
+        // Re-running a layout on an already-positioned graph (e.g. the
+        // user re-triggering the current layout) shouldn't re-scatter
+        // everything cose already settled - only a fresh cy.destroy()+
+        // reconstruct (first mount, new dataset) should randomize.
+        const opts = layoutOptions(name, prefersReducedMotion());
+        if (opts.name === "cose") (opts as CoseLayoutOptions).randomize = false;
+        instance.layout(opts).run();
+        appliedLayoutName = name;
       },
     });
   }
@@ -161,7 +243,21 @@
     edges;
     layoutName;
     focusNodeId;
-    if (!loading) render();
+    if (loading) return;
+    if (tooLarge) {
+      // Matches render()'s own early return: cy (if any) is about to be
+      // orphaned behind the "too large" state, so nothing left to diff
+      // against once we're back under the cap.
+      renderedNodeIds = null;
+      render();
+      return;
+    }
+    const newNodeIds = new Set(nodes.map((n) => n.id));
+    if (cy && isSameDataset(newNodeIds)) {
+      diffAndUpdate();
+    } else {
+      render();
+    }
   });
 </script>
 
@@ -198,8 +294,8 @@
     border-radius: var(--radius-card);
     background-color: var(--color-surface);
     background-image:
-      linear-gradient(color-mix(in srgb, var(--color-border) 38%, transparent) 1px, transparent 1px),
-      linear-gradient(90deg, color-mix(in srgb, var(--color-border) 38%, transparent) 1px, transparent 1px);
+      linear-gradient(color-mix(in srgb, var(--color-border) 24%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--color-border) 24%, transparent) 1px, transparent 1px);
     background-size: 24px 24px;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), var(--shadow-sm);
   }
