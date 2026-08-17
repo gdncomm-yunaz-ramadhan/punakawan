@@ -30,11 +30,25 @@
     }
   }
 
+  async function refresh(id: string) {
+    error = null;
+    try {
+      const res = await listApprovals(id, status || undefined);
+      records = res.items;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   onMount(() => {
-    load(workspaceId);
-    return onPanelEvent(() => load(workspaceId));
+    return onPanelEvent((evt) => {
+      if (evt.type !== "approval.requested" && evt.type !== "approval.resolved") return;
+      refresh(workspaceId);
+    });
   });
   $effect(() => {
+    workspaceId;
+    status;
     load(workspaceId);
   });
 
@@ -66,7 +80,7 @@
 
 <label class="filter">
   Status
-  <select bind:value={status} onchange={() => load(workspaceId)}>
+  <select bind:value={status}>
     <option value="">Any</option>
     <option value="pending">Pending</option>
     <option value="approved">Approved</option>
