@@ -1,0 +1,27 @@
+web/panel/src/lib/components/graphs/graphStyle.ts
+  f9605b8f4acd1e01 1,29-43,51,57,59-60,66,97,100-101
+web/panel/tests/GraphCanvas.test.ts
+  f9605b8f4acd1e01 14-15,17-48,54,56,67-79,88,95-96,170-212
+web/panel/src/lib/components/graphs/GraphCanvas.svelte
+  f9605b8f4acd1e01 3,60-68,115-119,127-129,137-192,213-220,246-260,297-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4c58cb2bba95fdf53a3bd39c203a15b569e32acc",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 226,
+      "total_deletions": 29,
+      "accepted_lines": 221,
+      "overriden_lines": 0
+    }
+  }
+}
