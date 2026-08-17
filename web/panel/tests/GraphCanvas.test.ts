@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import GraphCanvas from "../src/lib/components/graphs/GraphCanvas.svelte";
 import type { GraphEdge, GraphNode } from "../src/lib/components/graphs/types";
@@ -14,12 +14,20 @@ const onFn = vi.fn();
 const addFn = vi.fn();
 const removeFn = vi.fn();
 
+// Stand-in for whatever a node's rendered dimensions would resolve to
+// (in real Cytoscape, graphStyle.ts's `width: "label"` sizing) before any
+// manual resize - arbitrary but fixed, so the resize math in the tests
+// below has a known starting point to assert deltas against.
+const DEFAULT_NODE_WIDTH = 100;
+const DEFAULT_NODE_HEIGHT = 50;
+
 // Minimal in-memory element set standing in for the real Cytoscape core's
 // element store, just enough to exercise GraphCanvas's add/remove/
 // getElementById-based diffing without a real canvas/WebGL context.
 interface FakeElement {
   id: string;
   isNode: boolean;
+  data: Record<string, unknown>;
 }
 let liveElements: FakeElement[] = [];
 
@@ -44,6 +52,28 @@ function makeCollection(items: FakeElement[]) {
     addClass: vi.fn(),
     removeClass: vi.fn(),
     layout: () => ({ run: layoutRun }),
+    id: () => items[0]?.id,
+    // Real Cytoscape's getter form reads the first element in the
+    // collection; GraphCanvas only ever calls these on the single-element
+    // collections getElementById() returns, so that's all this needs to
+    // support.
+    data: (arg?: string | Record<string, unknown>, value?: unknown) => {
+      const el = items[0];
+      if (!el) return undefined;
+      if (arg === undefined) return el.data;
+      if (typeof arg === "object") {
+        Object.assign(el.data, arg);
+        return makeCollection(items);
+      }
+      if (value === undefined) return el.data[arg];
+      el.data[arg] = value;
+      return makeCollection(items);
+    },
+    width: () => (items[0]?.data.width as number | undefined) ?? DEFAULT_NODE_WIDTH,
+    height: () => (items[0]?.data.height as number | undefined) ?? DEFAULT_NODE_HEIGHT,
+    renderedWidth: () => (items[0]?.data.width as number | undefined) ?? DEFAULT_NODE_WIDTH,
+    renderedHeight: () => (items[0]?.data.height as number | undefined) ?? DEFAULT_NODE_HEIGHT,
+    renderedPosition: () => ({ x: 100, y: 100 }),
   };
 }
 
@@ -53,7 +83,11 @@ function makeCollection(items: FakeElement[]) {
 vi.mock("cytoscape", () => {
   const factory = vi.fn((opts: { elements?: { data: { id?: string; source?: string } }[] }) => {
     constructedCount++;
-    liveElements = (opts.elements ?? []).map((el) => ({ id: elementIdOf(el), isNode: isNodeDef(el) }));
+    liveElements = (opts.elements ?? []).map((el) => ({
+      id: elementIdOf(el),
+      isNode: isNodeDef(el),
+      data: { ...el.data },
+    }));
     return {
       on: onFn,
       destroy,
@@ -69,7 +103,7 @@ vi.mock("cytoscape", () => {
       collection: () => makeCollection([]),
       add: addFn.mockImplementation((els: { data: { id?: string; source?: string } } | { data: { id?: string; source?: string } }[]) => {
         const arr = Array.isArray(els) ? els : [els];
-        const added = arr.map((el) => ({ id: elementIdOf(el), isNode: isNodeDef(el) }));
+        const added = arr.map((el) => ({ id: elementIdOf(el), isNode: isNodeDef(el), data: { ...el.data } }));
         liveElements.push(...added);
         return makeCollection(added);
       }),
@@ -81,6 +115,18 @@ vi.mock("cytoscape", () => {
   });
   return { default: factory };
 });
+
+// Pulls out the handler passed to a specific cy.on(...) registration -
+// the mock's `on` is a plain spy, not a real dispatcher, so tests that
+// need to simulate a Cytoscape-fired event (tap, remove, viewport change)
+// invoke the captured handler directly instead.
+function onHandler(event: string, selector?: string): (evt: unknown) => void {
+  const call = onFn.mock.calls.find((c) =>
+    selector === undefined ? c[0] === event && c.length === 2 : c[0] === event && c[1] === selector,
+  );
+  if (!call) throw new Error(`no cy.on("${event}"${selector ? `, "${selector}"` : ""}, ...) registration found`);
+  return call[call.length - 1] as (evt: unknown) => void;
+}
 
 beforeEach(() => {
   constructedCount = 0;
@@ -209,5 +255,137 @@ describe("GraphCanvas", () => {
 
     await waitFor(() => expect(constructedCount).toBe(2));
     expect(destroy).toHaveBeenCalled();
+  });
+
+  describe("node resize handle", () => {
+    // jsdom doesn't implement PointerEvent in every version - MouseEvent
+    // carries the same clientX/clientY fields our handlers read, and
+    // window.addEventListener("pointermove", ...) dispatches on `type`
+    // alone, so it's an equally valid stand-in here.
+    const PointerEventCtor: typeof MouseEvent =
+      typeof PointerEvent !== "undefined" ? (PointerEvent as unknown as typeof MouseEvent) : MouseEvent;
+
+    function dispatchOnWindow(type: string, init: MouseEventInit = {}) {
+      window.dispatchEvent(new PointerEventCtor(type, { bubbles: true, ...init }));
+    }
+
+    // fireEvent.pointerDown's built-in event construction doesn't carry
+    // clientX/clientY through in this jsdom (no native PointerEvent to
+    // build on) - dispatch the same MouseEvent-based stand-in directly on
+    // the handle instead, so beginResize sees real starting coordinates.
+    function dispatchOnElement(el: Element, type: string, init: MouseEventInit = {}) {
+      el.dispatchEvent(new PointerEventCtor(type, { bubbles: true, ...init }));
+    }
+
+    it("shows a resize handle only once a node is selected, and hides it again on a background tap", async () => {
+      const { queryByRole } = render(GraphCanvas, { props: { nodes, edges, ariaLabel: "Sample graph" } });
+      await waitFor(() => expect(constructedCount).toBe(1));
+
+      expect(queryByRole("button", { name: "Resize node" })).toBeNull();
+
+      onHandler("tap", "node")({ target: { id: () => "a" } });
+      await waitFor(() => expect(queryByRole("button", { name: "Resize node" })).toBeTruthy());
+
+      // A tap whose target is the core instance itself (not an element)
+      // is Cytoscape's own idiom for "the user tapped empty canvas" -
+      // recover the real instance the mocked factory returned so the
+      // component's `evt.target === cy` check actually matches.
+      const factoryCall = (await import("cytoscape")).default as unknown as ReturnType<typeof vi.fn>;
+      const instance = factoryCall.mock.results[factoryCall.mock.results.length - 1].value;
+      onHandler("tap")({ target: instance });
+      await waitFor(() => expect(queryByRole("button", { name: "Resize node" })).toBeNull());
+    });
+
+    it("drag-resizing the handle writes clamped width/height onto the selected node's data, leaving other nodes untouched", async () => {
+      const { getByRole } = render(GraphCanvas, { props: { nodes, edges, ariaLabel: "Sample graph" } });
+      await waitFor(() => expect(constructedCount).toBe(1));
+
+      onHandler("tap", "node")({ target: { id: () => "a" } });
+      const handle = await waitFor(() => getByRole("button", { name: "Resize node" }));
+
+      dispatchOnElement(handle, "pointerdown", { clientX: 0, clientY: 0 });
+      dispatchOnWindow("pointermove", { clientX: 40, clientY: 20 });
+      dispatchOnWindow("pointerup");
+
+      const nodeA = liveElements.find((el) => el.id === "a");
+      // Started at the DEFAULT_NODE_WIDTH/HEIGHT stand-in, moved by
+      // (40, 20) screen px at zoom 1 (the mock's zoom() returns 1).
+      expect(nodeA?.data.width).toBe(DEFAULT_NODE_WIDTH + 40);
+      expect(nodeA?.data.height).toBe(DEFAULT_NODE_HEIGHT + 20);
+
+      // Every other node/edge is untouched - a per-node data write, not a
+      // graph-wide operation.
+      const nodeB = liveElements.find((el) => el.id === "b");
+      const nodeC = liveElements.find((el) => el.id === "c");
+      expect(nodeB?.data.width).toBeUndefined();
+      expect(nodeC?.data.width).toBeUndefined();
+
+      // No rebuild, no add/remove of elements - this is exactly the
+      // "per-node data change, not grounds for a full graph rebuild"
+      // behavior punokawan-z8dp's diffing depends on.
+      expect(destroy).not.toHaveBeenCalled();
+      expect(addFn).not.toHaveBeenCalled();
+      expect(removeFn).not.toHaveBeenCalled();
+      expect(constructedCount).toBe(1);
+    });
+
+    it("clamps drag-resize to the configured min/max bounds", async () => {
+      const { getByRole } = render(GraphCanvas, { props: { nodes, edges, ariaLabel: "Sample graph" } });
+      await waitFor(() => expect(constructedCount).toBe(1));
+
+      onHandler("tap", "node")({ target: { id: () => "a" } });
+      const handle = await waitFor(() => getByRole("button", { name: "Resize node" }));
+
+      // Drag far past the upper bound in both dimensions.
+      dispatchOnElement(handle, "pointerdown", { clientX: 0, clientY: 0 });
+      dispatchOnWindow("pointermove", { clientX: 100000, clientY: 100000 });
+      dispatchOnWindow("pointerup");
+
+      let nodeA = liveElements.find((el) => el.id === "a");
+      expect(nodeA?.data.width).toBe(480);
+      expect(nodeA?.data.height).toBe(320);
+
+      // Drag far past the lower bound in both dimensions.
+      dispatchOnElement(handle, "pointerdown", { clientX: 0, clientY: 0 });
+      dispatchOnWindow("pointermove", { clientX: -100000, clientY: -100000 });
+      dispatchOnWindow("pointerup");
+
+      nodeA = liveElements.find((el) => el.id === "a");
+      expect(nodeA?.data.width).toBe(60);
+      expect(nodeA?.data.height).toBe(40);
+    });
+
+    it("resizes via arrow keys while the handle has focus", async () => {
+      const { getByRole } = render(GraphCanvas, { props: { nodes, edges, ariaLabel: "Sample graph" } });
+      await waitFor(() => expect(constructedCount).toBe(1));
+
+      onHandler("tap", "node")({ target: { id: () => "a" } });
+      const handle = await waitFor(() => getByRole("button", { name: "Resize node" }));
+
+      await fireEvent.keyDown(handle, { key: "ArrowRight" });
+      await fireEvent.keyDown(handle, { key: "ArrowDown" });
+
+      const nodeA = liveElements.find((el) => el.id === "a");
+      expect(nodeA?.data.width).toBe(DEFAULT_NODE_WIDTH + 12);
+      expect(nodeA?.data.height).toBe(DEFAULT_NODE_HEIGHT + 12);
+      expect(destroy).not.toHaveBeenCalled();
+    });
+
+    it("drops the handle if the resized node is removed from the visible set", async () => {
+      const { getByRole, queryByRole } = render(GraphCanvas, {
+        props: { nodes, edges, ariaLabel: "Sample graph" },
+      });
+      await waitFor(() => expect(constructedCount).toBe(1));
+
+      onHandler("tap", "node")({ target: { id: () => "a" } });
+      await waitFor(() => expect(getByRole("button", { name: "Resize node" })).toBeTruthy());
+
+      // Simulate diffAndUpdate's cy.remove(...) pruning node "a" out of
+      // the bounded/focused subgraph - GraphCanvas's cy.on("remove",
+      // "node", ...) handler should notice and drop the dangling handle.
+      onHandler("remove", "node")({ target: { id: () => "a" } });
+
+      await waitFor(() => expect(queryByRole("button", { name: "Resize node" })).toBeNull());
+    });
   });
 });
