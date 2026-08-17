@@ -73,6 +73,14 @@ type Server struct {
 	deliveryWatchDone  chan struct{}
 	stopRuntimeSweep   context.CancelFunc
 
+	// shutdownCtx/cancelShutdown are the server's shutdown signal, separate
+	// from any one request's context: it is cancelled once, at the very start
+	// of Shutdown, so every long-lived handler (currently just the SSE
+	// stream) can stop waiting on its own client and return immediately
+	// instead of holding httpServer.Shutdown's connection-draining open.
+	shutdownCtx    context.Context
+	cancelShutdown context.CancelFunc
+
 	sessions     *session.Manager
 	bootstrapURL string
 
@@ -98,14 +106,17 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 	if opts.DaemonClient != nil {
 		readers.Delivery = &deliverysource.Source{Client: opts.DaemonClient}
 	}
+	shutdownCtx, cancelShutdown := context.WithCancel(context.Background())
 	return &Server{
-		app:      a,
-		registry: reg,
-		readers:  readers,
-		opts:     opts,
-		logger:   logger,
-		hub:      events.NewHub(),
-		sessions: session.NewManager(),
+		app:            a,
+		registry:       reg,
+		readers:        readers,
+		opts:           opts,
+		logger:         logger,
+		hub:            events.NewHub(),
+		sessions:       session.NewManager(),
+		shutdownCtx:    shutdownCtx,
+		cancelShutdown: cancelShutdown,
 	}
 }
 
@@ -188,7 +199,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
 	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
-	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
+	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub, s.shutdownCtx))
 	mux.HandleFunc("GET /api/v1/search", api.GlobalSearchHandler(s.readers.GlobalSearch))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/approvals", api.ApprovalsHandler(s.readers.Approval))
 
@@ -437,6 +448,12 @@ func (s *Server) Start() error {
 // sql-server process writing into a directory the caller believes is now
 // quiescent (root cause of punokawan-q9r.6.1's flaky TempDir cleanup).
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Fire the shutdown signal first, before anything else: this is what lets
+	// an open SSE connection's handler goroutine (events.SSEHandler) notice
+	// shutdown has begun and return right away, instead of blocking
+	// s.httpServer.Shutdown below on a client that only disconnects on its
+	// own initiative (which, for a browser tab left open, may be never).
+	s.cancelShutdown()
 	s.sessions.InvalidateAll()
 	if s.stopReconciliation != nil {
 		s.stopReconciliation()
