@@ -1,6 +1,10 @@
 package search
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // TestSearchUnicodeQueryMatchesRecord guards against a regression specific to
 // the Bleve->SQLite FTS5 migration: FTS5's default unicode61 tokenizer must
@@ -30,6 +34,73 @@ func TestSearchUnicodeQueryMatchesRecord(t *testing.T) {
 	}
 	if len(results) == 0 || results[0].Id != rec.Id {
 		t.Fatalf("results = %+v, want %s ranked first for a Unicode query", results, rec.Id)
+	}
+}
+
+// TestOpenIndexAtFreshPathCreatesWorkingIndex covers the ordinary case: no
+// file or directory exists yet at path, so OpenIndex must create the parent
+// dir and the SQLite file from scratch and return a usable index.
+func TestOpenIndexAtFreshPathCreatesWorkingIndex(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "bm25")
+
+	ix, err := OpenIndex(path)
+	if err != nil {
+		t.Fatalf("OpenIndex: %v", err)
+	}
+	defer ix.Close()
+
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
+		t.Fatalf("stat %s: info=%+v err=%v, want a plain file", path, info, err)
+	}
+}
+
+// TestOpenIndexReplacesStaleBleveDirectory guards the Bleve->SQLite migration
+// case: a pre-migration deployment left a directory (index_meta.json +
+// store/, Bleve's on-disk shape) sitting at the exact path OpenIndex now
+// wants as a single SQLite file. sql.Open tolerates that path shape, but the
+// schema Exec that follows does not - it fails with SQLITE_CANTOPEN because
+// sqlite cannot open a directory as a database file. OpenIndex must detect
+// and remove the stale directory before it ever gets there, since the index
+// is disposable and always rebuildable from the knowledge Store.
+func TestOpenIndexReplacesStaleBleveDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bm25")
+
+	// Recreate the shape Bleve left behind: a directory at path containing
+	// its own metadata and store subdirectory, not a file.
+	if err := os.MkdirAll(filepath.Join(path, "store"), 0o755); err != nil {
+		t.Fatalf("seed stale bleve dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "index_meta.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("seed index_meta.json: %v", err)
+	}
+
+	ix, err := OpenIndex(path)
+	if err != nil {
+		t.Fatalf("OpenIndex: %v, want the stale directory removed and a fresh index opened", err)
+	}
+	defer ix.Close()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s after OpenIndex: %v", path, err)
+	}
+	if info.IsDir() {
+		t.Fatalf("stat %s after OpenIndex = directory, want the stale directory replaced by a SQLite file", path)
+	}
+
+	// Prove the fresh index is actually usable end to end, not merely a file
+	// that happens to exist.
+	store := newTestStore(t)
+	rec := newRecord(t, "REQ-STALE-DIR")
+	rec.Title = "Recovered after stale bleve directory"
+	putAndIndex(t, store, ix, rec)
+
+	results, err := Search(store, ix, Request{Query: "recovered stale bleve"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 || results[0].Id != rec.Id {
+		t.Fatalf("results = %+v, want %s to match", results, rec.Id)
 	}
 }
 

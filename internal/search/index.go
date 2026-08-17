@@ -101,7 +101,20 @@ type Index struct {
 // OpenIndex opens the SQLite FTS5 index at path, creating the file and its
 // schema if they do not already exist. path is a single database file (the
 // parent directory is created if missing), one index per workspace/project.
+//
+// Pre-migration deployments had Bleve write its on-disk index as a directory
+// (index_meta.json + a store/ subdir) at this exact path. sql.Open happily
+// opens a path shaped like that, but the schema Exec below then fails with
+// SQLITE_CANTOPEN because sqlite cannot treat a directory as a database file.
+// Since this index is disposable and always rebuildable from the knowledge
+// Store (see App.OpenSearchIndex's doc comment), a leftover directory here is
+// dead weight, not data to preserve, so it is removed before proceeding.
 func OpenIndex(path string) (*Index, error) {
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		if err := os.RemoveAll(path); err != nil {
+			return nil, fmt.Errorf("search: remove stale index directory %s: %w", path, err)
+		}
+	}
 	if dir := filepath.Dir(path); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("search: create index dir %s: %w", dir, err)
