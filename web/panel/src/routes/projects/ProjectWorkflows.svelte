@@ -221,6 +221,7 @@
   open={selectedWf !== null}
   title={selectedWf ? selectedWf.name || selectedWf.id : undefined}
   onclose={closeDetail}
+  size="lg"
 >
   {#if selectedWf}
     {@const wf = selectedWf}
