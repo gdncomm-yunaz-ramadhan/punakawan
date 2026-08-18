@@ -4,11 +4,14 @@ import (
 	"context"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // repoRoot locates the punakawan repo root from this test file, so the dogfood
@@ -19,7 +22,7 @@ func repoRoot() string {
 	return filepath.Join(filepath.Dir(thisFile), "..", "..")
 }
 
-// TestShippedWorkflowsValidateAgainstRegistry dogfoods the three real workflow
+// TestShippedWorkflowsValidateAgainstRegistry dogfoods the real workflow
 // definitions (agent-context plan §9 Phase 5): every step and allowed
 // capability must resolve against the SAME capability registry the MCP server
 // exposes. This is the anti-drift guarantee end to end — a shipped definition
@@ -42,10 +45,100 @@ func TestShippedWorkflowsValidateAgainstRegistry(t *testing.T) {
 			t.Errorf("shipped workflow %q does not validate against the capability registry: %v", d.ID, err)
 		}
 	}
-	for _, want := range []string{"repo-orientation", "implementation-with-tests", "pr-review"} {
+	for _, want := range []string{"repo-orientation", "implementation-with-tests", "pr-review", "feature-delivery"} {
 		if !found[want] {
 			t.Errorf("expected shipped workflow %q under .punakawan/workflows/", want)
 		}
+	}
+}
+
+// TestShippedFeatureDeliveryStepOrder walks the shipped feature-delivery
+// definition through the real step engine — the same NextSteps/CompleteStep
+// pair get_next_workflow_step and complete_workflow_step are built on — and
+// asserts the dependency graph unlocks the delivery loop in the intended order:
+// requirement before decomposition, plan before any file is written, evidence
+// before the commit, the push before the pull request, and the learning
+// proposal only once Jira has been updated and the worktree torn down.
+//
+// Walking it here rather than eyeballing the YAML is what proves the wiring:
+// an input_from typo, a step reachable too early, or a capability the
+// definition forgot to allowlist all surface as a wave mismatch.
+func TestShippedFeatureDeliveryStepOrder(t *testing.T) {
+	store, err := workflowdef.Open(repoRoot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := store.Get("feature-delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !def.Enabled {
+		t.Fatal("feature-delivery must ship enabled to be resolvable by selector")
+	}
+
+	// Project the definition exactly as stepDefsForRun does for a live run, and
+	// gate on the definition's own allowlist intersected with the registry, so a
+	// step whose capability is missing from either shows up as never-ready.
+	steps := make([]workflow.StepDef, 0, len(def.Steps))
+	for _, s := range def.Steps {
+		steps = append(steps, workflow.StepDef{ID: s.ID, Capability: s.Capability, Intent: s.Intent, InputFrom: s.InputFrom})
+	}
+	reg := CapabilityRegistry(newTestApp(t))
+	allowSet := make(map[string]bool, len(def.AllowedCapabilities))
+	for _, c := range def.AllowedCapabilities {
+		allowSet[c] = true
+	}
+	allowed := func(capability string) bool { return allowSet[capability] && reg.Has(capability) }
+
+	// Each wave is the set of steps that become ready together once the previous
+	// waves are done. Steps within a wave are independent of each other.
+	wantWaves := [][]string{
+		{"requirement"},
+		{"decompose"},
+		{"claim"},
+		{"context", "worktree"},
+		{"plan"},
+		{"implement"},
+		{"tests", "diff"},
+		{"verify"},
+		{"commit"},
+		{"push"},
+		{"pull_request"},
+		{"jira", "finish"},
+		{"learning"},
+	}
+
+	run := protocol.WorkflowRun{Id: "r", DefinitionRef: &protocol.WorkflowRunDefinitionRef{Id: def.ID}}
+	for _, s := range def.Steps {
+		state := protocol.WorkflowRunStepProgressElemStateReady
+		if len(s.InputFrom) > 0 {
+			state = protocol.WorkflowRunStepProgressElemStatePending
+		}
+		run.StepProgress = append(run.StepProgress, protocol.WorkflowRunStepProgressElem{StepId: s.ID, State: state})
+	}
+
+	for i, want := range wantWaves {
+		ready, blocked := workflow.NextSteps(run, steps, allowed)
+		got := make([]string, 0, len(ready))
+		for _, r := range ready {
+			got = append(got, r.StepID)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("wave %d: ready = %v, want %v (blocked: %+v)", i, got, want, blocked)
+		}
+		for _, id := range want {
+			run, err = workflow.CompleteStep(run, id, []string{"ev-" + id}, "", steps, allowed, time.Now())
+			if err != nil {
+				t.Fatalf("wave %d: complete %s: %v", i, id, err)
+			}
+		}
+	}
+
+	// Nothing left over: every declared step was reached by some wave, so the
+	// expectation above covers the whole definition rather than a prefix of it.
+	ready, blocked := workflow.NextSteps(run, steps, allowed)
+	if len(ready) != 0 || len(blocked) != 0 {
+		t.Fatalf("steps remain after the last wave: ready=%+v blocked=%+v", ready, blocked)
 	}
 }
 
