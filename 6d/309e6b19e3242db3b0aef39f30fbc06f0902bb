@@ -1,0 +1,33 @@
+internal/delivery/store.go
+  f9605b8f4acd1e01 14,99-116,120-122,124,127-135,137,139-140,147-151
+internal/mcpserver/tools_startdelivery.go
+  f9605b8f4acd1e01 26-29,89-96,105-108,112,118,127
+internal/delivery/requirements.go
+  f9605b8f4acd1e01 119-127,138
+internal/delivery/deliveryview.go
+  f9605b8f4acd1e01 91-99,190-193,197,397-457,527,530-539,557
+protocol/deliveryorchestration.schema.json
+  f9605b8f4acd1e01 11
+internal/delivery/reduce.go
+  f9605b8f4acd1e01 48-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "6d309e6b19e3242db3b0aef39f30fbc06f0902bb",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1694,
+      "total_deletions": 113,
+      "accepted_lines": 1684,
+      "overriden_lines": 0
+    }
+  }
+}
