@@ -1,0 +1,33 @@
+punakawan-panel-project-performance-improvement-plan.md
+  f9605b8f4acd1e01 525-529
+internal/workflowdef/definition.go
+  f9605b8f4acd1e01 52-57
+.punakawan/workflows/implementation-with-tests.yaml
+  f9605b8f4acd1e01 7-8,10,21,41-47
+internal/workflowdef/validation.go
+  f9605b8f4acd1e01 30-37,50-51,65-67
+internal/workflowdef/validation_test.go
+  f9605b8f4acd1e01 120-139
+web/panel/src/routes/projects/ProjectWorkflows.svelte
+  f9605b8f4acd1e01 285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "68927015ee527b6f0cc93103c0c30c935a4e5d20",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 178,
+      "total_deletions": 210,
+      "accepted_lines": 178,
+      "overriden_lines": 0
+    }
+  }
+}
