@@ -1,0 +1,57 @@
+web/panel/src/routes/deliveries/deliveryList.ts
+  f9605b8f4acd1e01 1-113
+web/panel/src/routes/projects/projectList.ts
+  f9605b8f4acd1e01 1-57
+web/panel/src/lib/api/client.ts
+  f9605b8f4acd1e01 747-761,1067-1070,1167-1170
+web/panel/tests/ProjectsList.test.ts
+  f9605b8f4acd1e01 1-181
+web/panel/src/routes/deliveries/DeliveriesList.svelte
+  f9605b8f4acd1e01 3-9,17,19-26,37-40,42-60,89,102-130,144,151-236,238-241,244,303-315,317,321-362,388-392,397-402,404,407,439-442,444,447-451
+web/panel/src/routes/projects/ProjectsList.svelte
+  f9605b8f4acd1e01 3,12-14,19-22,24-44,55,67-102,108,118-195,197-200,203-242,296-308,310,314-385,468-471,473,476-480
+web/panel/src/routes/deliveries/DeliveryCancelDialog.svelte
+  f9605b8f4acd1e01 1-72
+web/panel/tests/projectList.test.ts
+  f9605b8f4acd1e01 1-101
+internal/panel/deps.go
+  f9605b8f4acd1e01 101,143-183
+web/panel/tests/deliveryList.test.ts
+  f9605b8f4acd1e01 1-212
+web/panel/tests/DeliveriesList.test.ts
+  f9605b8f4acd1e01 1,4,6-31,37,45,73-74,81-100,138-306
+internal/panel/api/project_handler.go
+  f9605b8f4acd1e01 30-32,70-101
+internal/panel/contract/readers.go
+  f9605b8f4acd1e01 36-43,325-332
+internal/panel/server/server_test.go
+  f9605b8f4acd1e01 642-711
+internal/panel/api/overview_bench_test.go
+  f9605b8f4acd1e01 134-136
+web/panel/src/routes/deliveries/DeliveryDetail.svelte
+  f9605b8f4acd1e01 21-22,91-105,112,168,171,176-188,197-199,375,380-384
+internal/panel/server/server.go
+  f9605b8f4acd1e01 220
+internal/panel/api/project_handler_test.go
+  f9605b8f4acd1e01 19-21,37-48,158-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2a355dccbf8ffb63121c02bc4d33fd426af7398f",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 373,
+      "total_deletions": 60,
+      "accepted_lines": 1776,
+      "overriden_lines": 11
+    }
+  }
+}
