@@ -639,6 +639,76 @@ func exchangeSession(t *testing.T, s *Server) (*http.Client, string) {
 	return client, out.CSRFToken
 }
 
+// Deregistering a project is destructive from the panel's point of view, so
+// the route must be gated exactly like the metadata mutations. The api-package
+// tests call the handler directly and so never exercise the wrapper; this one
+// goes through the real mux.
+func TestProjectDeleteRouteRequiresSessionAndCSRF(t *testing.T) {
+	a := newTestApp(t)
+	reg, err := registry.Open()
+	if err != nil {
+		t.Fatalf("registry.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = reg.Close() })
+	s := New(a, reg, Options{Port: "0"})
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.Shutdown(ctx)
+	})
+
+	target := fmt.Sprintf("http://%s/api/v1/projects/some-project", s.Addr())
+
+	// No session cookie at all.
+	req, err := http.NewRequest(http.MethodDelete, target, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete without session: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status without session = %d, want 401", resp.StatusCode)
+	}
+
+	// Valid session, but the CSRF header is missing.
+	client, csrf := exchangeSession(t, s)
+	req, err = http.NewRequest(http.MethodDelete, target, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("delete without CSRF: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status without CSRF header = %d, want 403", resp.StatusCode)
+	}
+
+	// Fully authenticated: the request now reaches the handler, which answers
+	// 404 because "some-project" was never registered. Anything but 401/403
+	// proves the gate let it through.
+	req, err = http.NewRequest(http.MethodDelete, target, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("X-Csrf-Token", csrf)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("delete with session and CSRF: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status for an unregistered project = %d, want 404", resp.StatusCode)
+	}
+}
+
 func TestServerSessionIsInvalidatedOnShutdown(t *testing.T) {
 	a := newTestApp(t)
 	reg, err := registry.Open()

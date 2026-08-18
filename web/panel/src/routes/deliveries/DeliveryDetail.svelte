@@ -18,6 +18,8 @@
   import Button from "../../lib/components/Button.svelte";
   import DeliveryQuestionForm from "./DeliveryQuestionForm.svelte";
   import DeliveryApprovalCard from "./DeliveryApprovalCard.svelte";
+  import { deliveryLabel } from "./deliveryList";
+  import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
 
   interface Props {
     orchestrationId: string;
@@ -86,12 +88,28 @@
     lastSeq = v.latest_seq;
   }
 
+  // Cancelling is irreversible, so it goes through the same confirmation the
+  // deliveries list uses rather than firing on a single click.
+  let confirmingCancel = $state(false);
+
+  function startCancel() {
+    cancelError = null;
+    confirmingCancel = true;
+  }
+
+  function closeCancel() {
+    if (cancelling) return;
+    confirmingCancel = false;
+    cancelError = null;
+  }
+
   async function cancel() {
     if (!view) return;
     cancelling = true;
     cancelError = null;
     try {
       applyUpdate(await cancelDelivery(orchestrationId, { expected_revision: view.orchestration.revision }));
+      confirmingCancel = false;
     } catch (e) {
       cancelError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -147,17 +165,27 @@
   <ErrorStateCard title="Failed to load delivery" message={error} />
 {:else if view}
   {@const v = view}
-  <PageHeader title={orchestrationId} description={v.next_action}>
+  <PageHeader title={deliveryLabel(v.orchestration, v)} description={v.next_action}>
     {#snippet actions()}
       {#if v.orchestration.status === "pending" || v.orchestration.status === "active"}
-        <Button variant="danger" size="sm" disabled={cancelling} onclick={cancel}>
-          {cancelling ? "Cancelling…" : "Cancel delivery"}
-        </Button>
+        <Button variant="danger" size="sm" disabled={cancelling} onclick={startCancel}>Cancel delivery</Button>
       {/if}
     {/snippet}
   </PageHeader>
 
-  {#if cancelError}
+  <DeliveryCancelDialog
+    open={confirmingCancel}
+    label={deliveryLabel(v.orchestration, v)}
+    orchestrationId={orchestrationId}
+    busy={cancelling}
+    error={cancelError}
+    onclose={closeCancel}
+    onconfirm={cancel}
+  />
+
+  <!-- A cancel failure while the dialog is closed (it closes on success) still
+       needs somewhere to show. -->
+  {#if cancelError && !confirmingCancel}
     <p role="alert" class="error">{cancelError}</p>
   {/if}
 
@@ -166,6 +194,9 @@
       variant={orchestrationStatusVariants[v.orchestration.status] ?? "neutral"}
       label={v.orchestration.status}
     />
+    <!-- The id is no longer the page title, so it is surfaced here (in a
+         monospace run that selects cleanly) to stay copyable for CLI use. -->
+    <span class="meta"><code class="id">{orchestrationId}</code></span>
     <span class="meta">revision {v.orchestration.revision} · latest seq {v.latest_seq}</span>
   </div>
 
@@ -341,10 +372,16 @@
     align-items: center;
     gap: 0.6rem;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
   }
   .meta {
     color: var(--color-text-muted);
     font-size: 0.8rem;
+    min-width: 0;
+  }
+  .meta .id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap: anywhere;
   }
   section {
     margin-top: 1.6rem;

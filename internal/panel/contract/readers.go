@@ -33,6 +33,14 @@ import (
 // detect this with errors.Is and answer 404 rather than 500.
 var ErrWorkspaceUnavailable = errors.New("workspace is not available on this panel instance")
 
+// ErrPrimaryProject is returned when a caller tries to deregister the
+// primary workspace - the one this panel instance's *app.App was loaded
+// for. Removing its registry row would not actually remove it: every id
+// resolution falls back to the primary root, so the panel would keep
+// listing and serving it while the registry claimed otherwise. Refusing is
+// the honest answer; the panel is stopped or pointed elsewhere instead.
+var ErrPrimaryProject = errors.New("the primary workspace cannot be removed from this panel instance")
+
 // WorkspaceSummary is one workspace's panel-facing overview, per
 // punakawan-panel-implementation-plan.md §14.2's workspace card. JSON tags
 // are load-bearing: HTTP handlers marshal this type directly as the
@@ -314,6 +322,14 @@ type ProjectReader interface {
 	List(ctx context.Context) ([]ProjectSummary, error)
 	Summary(ctx context.Context, projectID string) (ProjectSummary, error)
 	Get(ctx context.Context, projectID string) (*project.Project, error)
+	// Deregister drops the project's row from the panel's workspace
+	// registry so the panel stops listing and serving it. It is a registry
+	// operation only: the workspace directory, its .punakawan tree,
+	// knowledge database, tasks, and repositories are all left untouched on
+	// disk, and re-registering the same path restores it. Returns
+	// ErrWorkspaceUnavailable for an unknown id and ErrPrimaryProject for
+	// the primary workspace.
+	Deregister(ctx context.Context, projectID string) error
 	AddMetadata(ctx context.Context, projectID string, entry project.MetadataEntry, baseRevision int) (*project.Project, error)
 	UpdateMetadata(ctx context.Context, projectID, key string, newDescription *string, newValue any, baseRevision int) (*project.Project, error)
 	DeleteMetadata(ctx context.Context, projectID, key string, baseRevision int) (*project.Project, error)

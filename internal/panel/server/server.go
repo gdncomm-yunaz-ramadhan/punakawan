@@ -217,6 +217,7 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("GET /api/v1/projects", api.ProjectsHandler(s.readers.Project))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}", api.ProjectHandler(s.readers.Project))
+	mux.HandleFunc("DELETE /api/v1/projects/{projectId}", session.RequireSession(s.sessions, api.ProjectDeleteHandler(s.readers.Project)))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/metadata", api.MetadataListHandler(s.readers.Project))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/metadata", session.RequireSession(s.sessions, api.MetadataCreateHandler(s.readers.Project)))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/metadata/{key}", session.RequireSession(s.sessions, api.MetadataUpdateHandler(s.readers.Project)))

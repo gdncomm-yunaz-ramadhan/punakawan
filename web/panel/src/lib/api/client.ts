@@ -744,6 +744,21 @@ export async function deleteMetadata(id: string, key: string, baseRevision: numb
   }
 }
 
+// deleteProject removes a project from this panel's workspace registry, so
+// the panel stops listing and serving it. It deletes nothing the project
+// owns: the workspace directory, its .punakawan tree, knowledge database,
+// tasks, evidence, and repositories all stay on disk, and registering the
+// same path again brings it back. Registry rows carry no revision, so there
+// is no base_revision to send. Answers 204; 404 for an unknown id and 409
+// for the primary workspace, which cannot be removed.
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetchWithCsrf(`/api/v1/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
+    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
+  }
+}
+
 // --- Project Roles (role configuration) ----------------------------------
 //
 // A project's four Punakawan roles (Semar/Gareng/Petruk/Bagong) each carry
@@ -1045,235 +1060,18 @@ export function getProjectKnowledgeHistory(id: string, knowledgeId: string): Pro
   );
 }
 
-// --- Project Contradictions (plan §22) -----------------------------------
+// --- Project Change Dossiers ---------------------------------------------
 //
-// A contradiction records two or more conflicting claims about the same
-// subject (a metadata key, a requirement, a plan clause, …). It is
-// read-heavy from the panel: list + detail with each claim shown
-// side-by-side, plus two lightweight resolution actions (record a resolved
-// statement, or accept the divergence as intentional). Mutations go through
-// mutateJSON so they carry the session CSRF header.
-
-export type ContradictionSeverity = "informational" | "minor" | "material" | "critical";
-export type ContradictionStatus =
-  | "detected"
-  | "triaged"
-  | "needs_clarification"
-  | "resolution_proposed"
-  | "resolved"
-  | "accepted_divergence"
-  | "superseded";
-
-export interface ContradictionSubject {
-  type: string;
-  key: string;
-}
-
-export interface ContradictionClaim {
-  source: { type: string; ref: string };
-  statement: string;
-  evidence?: string[];
-}
-
-export interface ContradictionResolution {
-  proposed_statement?: string;
-  rationale?: string;
-  requires_human_confirmation?: boolean;
-  resolved_statement?: string;
-}
-
-export interface Contradiction {
-  id: string;
-  title: string;
-  severity: ContradictionSeverity;
-  status: ContradictionStatus;
-  blocking?: boolean;
-  subject: ContradictionSubject;
-  claims: ContradictionClaim[];
-  resolution?: ContradictionResolution;
-  updated_at?: string;
-}
-
-export function listContradictions(id: string): Promise<{ items: Contradiction[] }> {
-  return getJSON<{ items: Contradiction[] }>(`/projects/${encodeURIComponent(id)}/contradictions`);
-}
-
-export function getContradiction(id: string, contradictionId: string): Promise<Contradiction> {
-  return getJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}`,
-  );
-}
-
-export function resolveContradiction(
-  id: string,
-  contradictionId: string,
-  body: { statement: string; by: string },
-): Promise<Contradiction> {
-  return mutateJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/resolve`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
-export function acceptDivergence(
-  id: string,
-  contradictionId: string,
-  body: { by: string },
-): Promise<Contradiction> {
-  return mutateJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/accept-divergence`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
-export function proposeContradictionResolution(
-  id: string,
-  contradictionId: string,
-  body: { proposed_statement: string; rationale: string; requires_human_confirmation: boolean },
-): Promise<Contradiction> {
-  return mutateJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/propose-resolution`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
-// --- Project Impact (plan §30) -------------------------------------------
+// A change dossier is the assembled, human-readable case for a change: its
+// objective, requirement coverage, cross-repo impact, plan conformance, and
+// the verified claims backing it. No screen consumes any of this today: the
+// JSON list/detail/finalize wrappers were removed as dead, and the Markdown
+// export below is kept deliberately unwired, as the one piece a future
+// "download the dossier" affordance would need.
 //
-// The impact query walks the project's dependency/coverage graph from a
-// subject node and returns the blast radius as READABLE LISTS (plan §30
-// prefers lists over a graph): affected repositories/tests/deployments,
-// owners, missing coverage, and any related contradictions. `listImpactNodes`
-// backs the subject picker; `refreshImpact` forces the graph to rebuild.
-
-export interface ImpactNode {
-  id: string;
-  type: string;
-  label?: string;
-  repository?: string;
-}
-
-export interface ImpactResult {
-  direct_impact: ImpactNode[];
-  transitive_impact: ImpactNode[];
-  affected_repositories: string[];
-  affected_tests: ImpactNode[];
-  deployment_artifacts: ImpactNode[];
-  owners: ImpactNode[];
-  missing_coverage: ImpactNode[];
-  related_contradictions: string[];
-}
-
-export interface ImpactQueryRequest {
-  subject_id: string;
-  depth: number;
-  include: string[];
-}
-
-export function queryImpact(id: string, body: ImpactQueryRequest): Promise<ImpactResult> {
-  return mutateJSON<ImpactResult>(`/projects/${encodeURIComponent(id)}/impact/query`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export function listImpactNodes(id: string): Promise<{ items: ImpactNode[] }> {
-  return getJSON<{ items: ImpactNode[] }>(`/projects/${encodeURIComponent(id)}/impact/nodes`);
-}
-
-export function refreshImpact(id: string): Promise<{ ok: true }> {
-  return mutateJSON<{ ok: true }>(`/projects/${encodeURIComponent(id)}/impact/refresh`, { method: "POST" });
-}
-
-// --- Project Change Dossiers (plan §38) ----------------------------------
-//
-// A change dossier is the assembled, human-readable case for a change:
-// its objective, requirement coverage, contradiction state, cross-repo
-// impact, plan conformance, and the verified claims backing it. The panel
-// lists dossiers with their summary indicators, shows one in detail, and
-// can finalize it or export the Markdown rendering.
-
-export interface DossierRequirements {
-  covered: number;
-  uncovered: number;
-}
-
-export interface DossierContradictions {
-  resolved: number;
-  unresolved: number;
-}
-
-export interface DossierImpact {
-  repositories?: string[];
-  excluded_repositories?: string[];
-  missing_coverage?: string[];
-}
-
-export interface DossierPlanConformance {
-  implemented: number;
-  partial: number;
-  missing: number;
-}
-
-export interface ChangeDossier {
-  id: string;
-  title: string;
-  status: string;
-  objective: { statement: string };
-  requirements?: DossierRequirements;
-  contradictions?: DossierContradictions;
-  impact?: DossierImpact;
-  plan_conformance?: DossierPlanConformance;
-  claims?: string[];
-  evidence?: string[];
-  blocking?: boolean;
-}
-
-// DossierClaim mirrors protocol/dossierclaim.schema.json. A claim always has a
-// producer role; a verification (by a different role) records whether it was
-// verified or disputed — the independent-check attribution the dossier exists
-// to make visible.
-export interface DossierClaim {
-  id: string;
-  type: string;
-  statement: string;
-  producer: { role: string };
-  status: string;
-  evidence?: string[];
-  verification?: {
-    role: string;
-    result: "verified" | "disputed";
-    note?: string;
-    at?: string;
-  };
-}
-
-// DossierDetail is the GET-one dossier response: the dossier summary plus its
-// structured claims and evidence ids (internal/panel/api/dossiers_handler.go
-// DossierGetHandler).
-export interface DossierDetail {
-  dossier: ChangeDossier;
-  claims: DossierClaim[];
-  evidence: string[];
-}
-
-export function listDossiers(id: string): Promise<{ items: ChangeDossier[] }> {
-  return getJSON<{ items: ChangeDossier[] }>(`/projects/${encodeURIComponent(id)}/dossiers`);
-}
-
-export function getDossier(id: string, dossierId: string): Promise<DossierDetail> {
-  return getJSON<DossierDetail>(`/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}`);
-}
-
-export function finalizeDossier(id: string, dossierId: string): Promise<ChangeDossier> {
-  return mutateJSON<ChangeDossier>(
-    `/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}/finalize`,
-    { method: "POST" },
-  );
-}
-
-// The Markdown export is served as text, not JSON, so it is fetched
-// directly rather than through getJSON. Callers hand the string to a
-// download/preview; a non-2xx still surfaces as an ApiError.
+// The export is served as text, not JSON, so it is fetched directly rather
+// than through getJSON. Callers hand the string to a download/preview; a
+// non-2xx still surfaces as an ApiError.
 export async function exportDossierMarkdown(id: string, dossierId: string): Promise<string> {
   const res = await fetch(
     `/api/v1/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}/export.md`,
@@ -1284,56 +1082,6 @@ export async function exportDossierMarkdown(id: string, dossierId: string): Prom
     throw new ApiError(res.status, body.error ?? res.statusText);
   }
   return res.text();
-}
-
-// --- Project Handoffs (handoff capsules) ---------------------------------
-//
-// A handoff capsule is a resumable snapshot of an in-flight run: its
-// objective, current phase/task, who created it, and the dossier it hangs
-// off. `validateHandoff` re-checks it against current state and answers
-// whether it is still resumable (and if not, what changed / must be
-// refreshed); `supersedeHandoff` retires it.
-
-export interface HandoffCapsule {
-  id: string;
-  run_id: string;
-  current_phase: string;
-  objective: { statement: string };
-  current_task?: { id: string; next_action: string };
-  created_by?: { role: string; agent_client: string };
-  superseded?: boolean;
-  created_at?: string;
-  dossier?: { id: string; status: string };
-}
-
-export type HandoffValidationStatus = "resumable" | "refresh_required" | "blocked" | "superseded" | "invalid";
-
-export interface HandoffValidation {
-  status: HandoffValidationStatus;
-  changes_since_handoff?: string[];
-  required_refresh?: string[];
-}
-
-export function listHandoffs(id: string): Promise<{ items: HandoffCapsule[] }> {
-  return getJSON<{ items: HandoffCapsule[] }>(`/projects/${encodeURIComponent(id)}/handoffs`);
-}
-
-export function getHandoff(id: string, handoffId: string): Promise<HandoffCapsule> {
-  return getJSON<HandoffCapsule>(`/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}`);
-}
-
-export function validateHandoff(id: string, handoffId: string): Promise<HandoffValidation> {
-  return mutateJSON<HandoffValidation>(
-    `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}/validate`,
-    { method: "POST" },
-  );
-}
-
-export function supersedeHandoff(id: string, handoffId: string): Promise<HandoffCapsule> {
-  return mutateJSON<HandoffCapsule>(
-    `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}/supersede`,
-    { method: "POST" },
-  );
 }
 
 // --- Context Improvements (agent-context plan §8) ------------------------
@@ -1416,6 +1164,10 @@ export type DeliveryOrchestrationStatus = "pending" | "active" | "cancelled" | "
 
 export interface DeliveryOrchestration {
   id: string;
+  // Optional because orchestrations stored before titles existed carry none.
+  // A delivery's id is an opaque hash, so the UI must always be able to
+  // derive a readable label instead of depending on this being set.
+  title?: string;
   revision: number;
   status: DeliveryOrchestrationStatus;
   unresolved_inputs: unknown[];

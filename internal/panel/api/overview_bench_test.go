@@ -131,6 +131,9 @@ func (b benchProjectReader) UpdateMetadata(ctx context.Context, id, key string, 
 func (b benchProjectReader) DeleteMetadata(ctx context.Context, id, key string, base int) (*project.Project, error) {
 	return nil, errors.New("not implemented")
 }
+func (b benchProjectReader) Deregister(ctx context.Context, id string) error {
+	return errors.New("not implemented")
+}
 
 func benchProjects(n int) []contract.ProjectSummary {
 	out := make([]contract.ProjectSummary, 0, n)

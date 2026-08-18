@@ -98,6 +98,7 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		Registry:    reg,
 		PrimaryID:   a.Workspace.ID,
 		PrimaryRoot: a.Workspace.Root,
+		Runtime:     runtimeMgr,
 	}
 	return Readers{
 		Workspace:    workspaceReader,
@@ -139,6 +140,47 @@ type ProjectSource struct {
 	// always resolvable even before it is registered.
 	PrimaryID   string
 	PrimaryRoot string
+	// Runtime is consulted only on deregistration, to close any pooled
+	// *app.App still held for a project that is no longer registered. Nil is
+	// valid (nothing pooled to evict).
+	Runtime *runtime.ProjectRuntimeManager
+}
+
+// Deregister removes the project from the panel's workspace registry.
+//
+// This deletes one row from the panel registry and nothing else. The
+// workspace directory, its .punakawan tree, knowledge database, tasks,
+// evidence, and repositories all stay exactly as they are on disk, and
+// registering the same path again brings the project back (its pinned flag
+// and original registration time are not restored). The registry holds no
+// revision counter, so unlike the metadata mutations there is no
+// base_revision to check - the row either exists or it does not.
+func (s *ProjectSource) Deregister(ctx context.Context, projectID string) error {
+	if projectID == s.PrimaryID {
+		return fmt.Errorf("panel: project %q: %w", projectID, contract.ErrPrimaryProject)
+	}
+	// No registry at all means this panel instance has nowhere to deregister
+	// from, which is a wiring fault rather than a bad project id.
+	if s.Registry == nil {
+		return fmt.Errorf("panel: deregister project %q: no workspace registry is configured", projectID)
+	}
+	if err := s.Registry.Remove(projectID); err != nil {
+		if errors.Is(err, registry.ErrNotFound) {
+			return fmt.Errorf("panel: project %q: %w", projectID, contract.ErrWorkspaceUnavailable)
+		}
+		return fmt.Errorf("panel: deregister project %q: %w", projectID, err)
+	}
+	// The pooled runtime outlives the registry row, so drop it too - otherwise
+	// a re-registered project would be served by a runtime loaded against the
+	// old row until the idle sweep got to it.
+	//
+	// A close failure is not reported back: the registry row is already gone,
+	// so the deregistration did succeed, and failing the call would tell the
+	// caller the opposite. The pool's idle sweep retries the close later.
+	if s.Runtime != nil {
+		_ = s.Runtime.Invalidate(projectID)
+	}
+	return nil
 }
 
 // resolveRoot maps a project id to the workspace root that contains its
