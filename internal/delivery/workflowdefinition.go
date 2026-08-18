@@ -16,7 +16,7 @@ import "context"
 
 // WorkflowDefinitionResolver looks up an externally-owned workflow
 // definition on this package's behalf: once at
-// CreateOrchestrationWithDefinition time (must exist and be enabled),
+// CreateOrchestrationWithOptions time (must exist and be enabled),
 // and repeatedly at role-stage gate time (which of a lane's four stages
 // it marks required). The integrator supplies the real implementation,
 // backed by internal/workflowdef.Store. A Store with none configured

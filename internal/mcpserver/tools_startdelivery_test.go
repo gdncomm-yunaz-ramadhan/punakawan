@@ -372,3 +372,41 @@ func TestAnswerDeliveryQuestionRequiresEitherCase(t *testing.T) {
 		t.Fatal("expected an error result when neither case's fields are set")
 	}
 }
+
+// TestStartDeliveryAcceptsTitleAndDerivesOneOtherwise covers the tool
+// surface's half of delivery titles: a supplied title comes back verbatim
+// beside the orchestration id, and an omitted one comes back derived from
+// the call's own references rather than blank - so nothing a caller shows
+// a human is ever just 26 opaque characters.
+func TestStartDeliveryAcceptsTitleAndDerivesOneOtherwise(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	var supplied StartDeliveryOutput
+	callTool(t, cs, "start_delivery", map[string]any{
+		"references": []string{"PAY-1842", "acme/checkout#42"},
+		"title":      "migrate checkout to the new payments API",
+	}, &supplied)
+	if supplied.Title != "migrate checkout to the new payments API" {
+		t.Fatalf("Title = %q, want the supplied title", supplied.Title)
+	}
+	if supplied.View.Title != supplied.Title {
+		t.Fatalf("view.title = %q, want it to match the output's title %q", supplied.View.Title, supplied.Title)
+	}
+
+	var derived StartDeliveryOutput
+	callTool(t, cs, "start_delivery", map[string]any{
+		"references": []string{"PAY-1842", "acme/checkout#42"},
+	}, &derived)
+	if derived.Title != "PAY-1842 (+1 more)" {
+		t.Fatalf("Title = %q, want one derived from the references", derived.Title)
+	}
+
+	// get_delivery must report the same label, so a caller resuming an
+	// orchestration it did not start sees what the work is for too.
+	var got DeliveryViewOutput
+	callTool(t, cs, "get_delivery", map[string]any{"orchestration_id": derived.OrchestrationId}, &got)
+	if got.View.Title != derived.Title {
+		t.Fatalf("get_delivery view.title = %q, want %q", got.View.Title, derived.Title)
+	}
+}

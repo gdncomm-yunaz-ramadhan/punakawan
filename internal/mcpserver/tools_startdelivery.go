@@ -23,6 +23,10 @@ import (
 // references to bootstrap one new delivery orchestration from.
 type StartDeliveryInput struct {
 	References []string `json:"references" jsonschema:"one entry per requirement source - a Jira PROJECT-123 key, a GitHub owner/repo#123 reference, an absolute http(s) URL, or free text; a reference this call cannot confidently classify becomes a pending question (visible in the returned view's pending_questions) instead of erroring the whole call"`
+	// Title is optional: the label humans and agents see in place of the
+	// orchestration's opaque id. Omitted, one is derived from the
+	// references this call captured.
+	Title string `json:"title,omitempty" jsonschema:"short human-readable summary of what this delivery delivers, written for whoever reads it later instead of the orchestration's opaque id - e.g. \"migrate checkout to the new payments API\". Omitting it derives one from the first reference, so supply it whenever the references alone would not say what the work is"`
 	// IdempotencyKey is optional: repeating the same key on retry
 	// resolves to the same orchestration instead of minting a second
 	// one for the same request.
@@ -82,9 +86,14 @@ type StartDeliveryProjectResult struct {
 // is rebuilt after the decomposition so it shows the lanes just created
 // rather than the empty pre-decomposition snapshot.
 type StartDeliveryOutput struct {
-	OrchestrationId string                       `json:"orchestration_id"`
-	View            delivery.DeliveryView        `json:"view"`
-	Decomposition   []StartDeliveryProjectResult `json:"decomposition,omitempty"`
+	OrchestrationId string `json:"orchestration_id"`
+	// Title sits beside the id so a caller quoting this response back to a
+	// human has something to quote other than 26 opaque characters. It is
+	// the supplied title when there was one, and the derived one
+	// otherwise, matching view.title exactly.
+	Title         string                       `json:"title"`
+	View          delivery.DeliveryView        `json:"view"`
+	Decomposition []StartDeliveryProjectResult `json:"decomposition,omitempty"`
 }
 
 func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
@@ -93,17 +102,20 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		if err != nil {
 			return nil, StartDeliveryOutput{}, err
 		}
-		view, err := store.StartDeliveryWithDefinition(ctx, in.IdempotencyKey, in.References, in.WorkflowDefinitionId)
+		view, err := store.StartDeliveryWithOptions(ctx, in.IdempotencyKey, in.References, delivery.OrchestrationOptions{
+			WorkflowDefinitionID: in.WorkflowDefinitionId,
+			Title:                in.Title,
+		})
 		if err != nil {
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: start delivery: %w", err)
 		}
-		out := StartDeliveryOutput{OrchestrationId: view.Orchestration.Id, View: *view}
+		out := StartDeliveryOutput{OrchestrationId: view.Orchestration.Id, Title: view.Title, View: *view}
 		if len(in.Projects) == 0 {
 			return nil, out, nil
 		}
 
 		out.Decomposition = decomposeStartDelivery(ctx, store, view.Orchestration.Id, in.References, in.Projects)
-		// The view built inside StartDeliveryWithDefinition predates every
+		// The view built inside StartDeliveryWithOptions predates every
 		// project, task, and lane just created, so it is rebuilt here rather
 		// than returned stale - the whole point of accepting projects is that
 		// the caller sees the live delivery in this one response.
@@ -112,6 +124,7 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
 		out.View = *rebuilt
+		out.Title = rebuilt.Title
 		return nil, out, nil
 	}
 }

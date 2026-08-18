@@ -12,6 +12,10 @@ export interface DeliveryOrchestration {
    * Filesystem-safe ULID (Crockford base32, 26 chars).
    */
   id: string;
+  /**
+   * Short human-readable summary of what this run delivers, supplied when the run was created. Absent when the creator supplied none - and absent on every run created before titles existed - so a consumer that needs a label always derives one from the run's requirement references instead of reading this field directly.
+   */
+  title?: string;
   status: "pending" | "active" | "cancelled" | "completed";
   /**
    * Requirement sources (Jira/Confluence/GitHub/URL/free-text) not yet routed to a project. Routing and normalization happens elsewhere; this record only persists the raw reference.

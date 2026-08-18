@@ -87,13 +87,22 @@ type BlockerSummary struct {
 // still-blocked lane, every pending approval, every pending question,
 // and one honest sentence about what to do next.
 type DeliveryView struct {
-	Orchestration    *protocol.DeliveryOrchestration `json:"orchestration"`
-	Projects         []ProjectSummary                `json:"projects"`
-	Lanes            []LaneSummary                   `json:"lanes"`
-	Blockers         []BlockerSummary                `json:"blockers"`
-	PendingApprovals []*protocol.ApprovalManifest    `json:"pending_approvals"`
-	PendingQuestions []string                        `json:"pending_questions"`
-	NextAction       string                          `json:"next_action"`
+	Orchestration *protocol.DeliveryOrchestration `json:"orchestration"`
+
+	// Title is the label to show instead of the orchestration's opaque
+	// id. It is whatever title the run was started with, or - when it was
+	// started without one, as every run predating titles was - a label
+	// derived mechanically from the run's own requirement references (see
+	// deriveOrchestrationTitle). Never empty, so no consumer has to
+	// choose a fallback of its own.
+	Title string `json:"title"`
+
+	Projects         []ProjectSummary             `json:"projects"`
+	Lanes            []LaneSummary                `json:"lanes"`
+	Blockers         []BlockerSummary             `json:"blockers"`
+	PendingApprovals []*protocol.ApprovalManifest `json:"pending_approvals"`
+	PendingQuestions []string                     `json:"pending_questions"`
+	NextAction       string                       `json:"next_action"`
 
 	// LatestSeq is the highest event sequence number reflected in this
 	// view - pass it back as a later call's SinceSeq to learn what
@@ -178,9 +187,14 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	if err != nil {
 		return nil, err
 	}
+	sourceMap, err := allRequirementSources(orchestrationID, events)
+	if err != nil {
+		return nil, err
+	}
 
 	view := &DeliveryView{
 		Orchestration:        orch,
+		Title:                orchestrationTitle(orch, sortedRequirementSources(sourceMap)),
 		Projects:             []ProjectSummary{},
 		Lanes:                []LaneSummary{},
 		Blockers:             []BlockerSummary{},
@@ -380,6 +394,67 @@ func newlyRunnableLaneIDs(orchestrationID string, events []protocol.DeliveryEven
 	return out, nil
 }
 
+// orchestrationTitle returns the label a consumer should show for a run
+// instead of its opaque id: the title it was started with, or a derived
+// one when it carries none. Deriving on read rather than stamping a
+// title onto every orchestration at creation is what makes runs recorded
+// before titles existed render a real label too - there is no backfill
+// migration, because there is nothing persisted to backfill.
+func orchestrationTitle(orch *protocol.DeliveryOrchestration, sources []*protocol.RequirementSource) string {
+	if orch.Title != nil {
+		if given := strings.TrimSpace(*orch.Title); given != "" {
+			return given
+		}
+	}
+	return deriveOrchestrationTitle(sources, orch.UnresolvedInputs)
+}
+
+// deriveOrchestrationTitle builds a readable label out of what a run
+// already recorded about its own requirements, by a fixed rule rather
+// than by interpreting anything: name the first requirement captured,
+// and say how many others ride along with it.
+//
+// The first requirement is named by its captured title, else its
+// summary, else its canonical key (which for a reference nobody enriched
+// is just the reference string itself). A run whose only inputs are
+// still-unanswered pending questions has no captured source to name, so
+// it falls back to the first pending reference; a run with neither is
+// counted rather than named. Nothing here inspects wording or tries to
+// summarize - a derived title is always traceable back to exactly one
+// requirement the caller passed in.
+func deriveOrchestrationTitle(sources []*protocol.RequirementSource, pending []protocol.DeliveryOrchestrationUnresolvedInputsElem) string {
+	total := len(sources) + len(pending)
+
+	lead := ""
+	switch {
+	case len(sources) > 0:
+		first := sources[0]
+		candidates := []string{first.Title, "", first.CanonicalKey}
+		if first.Summary != nil {
+			candidates[1] = *first.Summary
+		}
+		for _, candidate := range candidates {
+			if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+				lead = trimmed
+				break
+			}
+		}
+	case len(pending) > 0:
+		lead = strings.TrimSpace(pending[0].Reference)
+	}
+
+	if lead == "" {
+		if total == 0 {
+			return "delivery with no requirements yet"
+		}
+		return fmt.Sprintf("delivery of %d requirements", total)
+	}
+	if total > 1 {
+		return fmt.Sprintf("%s (+%d more)", lead, total-1)
+	}
+	return lead
+}
+
 // computeNextAction picks the single most useful next step, honestly
 // and without trying to be clever: the first matching condition in a
 // fixed priority order wins, and every other true condition is simply
@@ -449,15 +524,19 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 // there is then nothing to derive the same id from on a hypothetical
 // retry.
 func (s *Store) StartDelivery(ctx context.Context, idempotencyKey string, references []string) (*DeliveryView, error) {
-	return s.StartDeliveryWithDefinition(ctx, idempotencyKey, references, "")
+	return s.StartDeliveryWithOptions(ctx, idempotencyKey, references, OrchestrationOptions{})
 }
 
-// StartDeliveryWithDefinition is StartDelivery plus an optional
-// workflowDefinitionID, threaded through to
-// CreateOrchestrationWithDefinition so the new orchestration's role-stage
-// gate can be customized by that definition's Roles map. An empty
-// workflowDefinitionID behaves identically to StartDelivery.
-func (s *Store) StartDeliveryWithDefinition(ctx context.Context, idempotencyKey string, references []string, workflowDefinitionID string) (*DeliveryView, error) {
+// StartDeliveryWithOptions is StartDelivery plus the optional creation
+// attributes in opts, threaded through to
+// CreateOrchestrationWithOptions: a workflow definition whose Roles map
+// customizes the new orchestration's role-stage gate, and a title. A
+// zero opts behaves identically to StartDelivery - including for the
+// title, which is left unset rather than derived and persisted here,
+// since the requirement sources a derived title reads from are only
+// captured further down this same function and can still change
+// afterwards.
+func (s *Store) StartDeliveryWithOptions(ctx context.Context, idempotencyKey string, references []string, opts OrchestrationOptions) (*DeliveryView, error) {
 	orchestrationID := NewID()
 	createKey := orchestrationID
 	if idempotencyKey != "" {
@@ -475,7 +554,7 @@ func (s *Store) StartDeliveryWithDefinition(ctx context.Context, idempotencyKey 
 		}
 	}
 
-	if _, err := s.CreateOrchestrationWithDefinition(ctx, createKey, orchestrationID, pending, workflowDefinitionID); err != nil {
+	if _, err := s.CreateOrchestrationWithOptions(ctx, createKey, orchestrationID, pending, opts); err != nil {
 		return nil, err
 	}
 	// Each capture uses its own fresh key rather than one derived from

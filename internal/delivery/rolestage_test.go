@@ -47,9 +47,9 @@ func (f *fakeWorkflowDefinitionResolver) RequiredRoleStages(ctx context.Context,
 func leasedLaneForRoleStagesWithStore(t *testing.T, s *Store, workflowDefinitionID string) (*Store, string, string, string) {
 	t.Helper()
 	ctx := context.Background()
-	orch, err := s.CreateOrchestrationWithDefinition(ctx, "orch-"+NewID(), NewID(), nil, workflowDefinitionID)
+	orch, err := s.CreateOrchestrationWithOptions(ctx, "orch-"+NewID(), NewID(), nil, OrchestrationOptions{WorkflowDefinitionID: workflowDefinitionID})
 	if err != nil {
-		t.Fatalf("CreateOrchestrationWithDefinition: %v", err)
+		t.Fatalf("CreateOrchestrationWithOptions: %v", err)
 	}
 	proj := registerProject(t, s, "rolestage-project-"+NewID())
 	task := createTestTask(t, s, orch.Id, "rolestage task")
@@ -297,18 +297,18 @@ func TestCompleteLeaseRequiresAllFourWithEmptyRolesMap(t *testing.T) {
 	}
 }
 
-// TestCreateOrchestrationWithDefinitionRejectsUnknownOrDisabled:
+// TestCreateOrchestrationWithOptionsRejectsUnknownOrDisabled:
 // attaching a workflow_definition_id that does not exist, or names a
 // disabled definition, is rejected at attach time rather than silently
 // ignored, and with no resolver configured at all it fails closed
 // rather than silently accepting the id unchecked.
-func TestCreateOrchestrationWithDefinitionRejectsUnknownOrDisabled(t *testing.T) {
+func TestCreateOrchestrationWithOptionsRejectsUnknownOrDisabled(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("unknown id", func(t *testing.T) {
 		resolver := &fakeWorkflowDefinitionResolver{enabled: map[string]bool{}}
 		s := NewStore(newTestDB(t), WithWorkflowDefinitionResolver(resolver))
-		if _, err := s.CreateOrchestrationWithDefinition(ctx, "orch-unknown", NewID(), nil, "does-not-exist"); err == nil {
+		if _, err := s.CreateOrchestrationWithOptions(ctx, "orch-unknown", NewID(), nil, OrchestrationOptions{WorkflowDefinitionID: "does-not-exist"}); err == nil {
 			t.Fatal("expected an error attaching an unknown workflow_definition_id")
 		}
 	})
@@ -316,14 +316,14 @@ func TestCreateOrchestrationWithDefinitionRejectsUnknownOrDisabled(t *testing.T)
 	t.Run("disabled id", func(t *testing.T) {
 		resolver := &fakeWorkflowDefinitionResolver{enabled: map[string]bool{"disabled-workflow": false}}
 		s := NewStore(newTestDB(t), WithWorkflowDefinitionResolver(resolver))
-		if _, err := s.CreateOrchestrationWithDefinition(ctx, "orch-disabled", NewID(), nil, "disabled-workflow"); err == nil {
+		if _, err := s.CreateOrchestrationWithOptions(ctx, "orch-disabled", NewID(), nil, OrchestrationOptions{WorkflowDefinitionID: "disabled-workflow"}); err == nil {
 			t.Fatal("expected an error attaching a disabled workflow_definition_id")
 		}
 	})
 
 	t.Run("no resolver configured", func(t *testing.T) {
 		s := newTestStore(t)
-		if _, err := s.CreateOrchestrationWithDefinition(ctx, "orch-noresolver", NewID(), nil, "some-workflow"); err == nil {
+		if _, err := s.CreateOrchestrationWithOptions(ctx, "orch-noresolver", NewID(), nil, OrchestrationOptions{WorkflowDefinitionID: "some-workflow"}); err == nil {
 			t.Fatal("expected an error attaching a workflow_definition_id with no resolver configured")
 		}
 	})

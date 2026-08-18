@@ -45,6 +45,15 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 			if defID, ok := ev.Payload["workflow_definition_id"].(string); ok && defID != "" {
 				o.WorkflowDefinitionId = &defID
 			}
+			// A title is optional and only ever supplied here, so a log
+			// without one simply leaves the field nil - every orchestration
+			// recorded before titles existed replays exactly as it always
+			// did. Deriving a readable label for those is a read-model
+			// concern (deliveryview.go), not something this reducer invents
+			// and hands back as if it had been persisted.
+			if title, ok := ev.Payload["title"].(string); ok && title != "" {
+				o.Title = &title
+			}
 		case protocol.DeliveryEventTypeInputRegistered:
 			ref, _ := ev.Payload["reference"].(string)
 			note, _ := ev.Payload["note"].(string)

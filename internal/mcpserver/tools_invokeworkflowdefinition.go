@@ -5,7 +5,7 @@
 // a non-empty Roles map is delivery-shaped - its Roles/AllowedCapabilities/
 // ApprovalPolicy are a configuration overlay over internal/delivery's own
 // fixed lane/lease/role-stage sequence, not a step graph to execute - so it
-// is invoked by calling StartDeliveryWithDefinition and returning the
+// is invoked by calling StartDeliveryWithOptions and returning the
 // resulting orchestration id. Every other definition keeps going through
 // internal/workflow's existing run engine, the same way the panel's own
 // invoke endpoint already creates a run today, unchanged.
@@ -82,11 +82,13 @@ func shapeAwareRunCreator(a *app.App) workflowdef.RunCreator {
 }
 
 // createDeliveryRun turns a delivery-shaped definition's inputs into a
-// StartDeliveryWithDefinition call, carrying the definition's id onto
+// StartDeliveryWithOptions call, carrying the definition's id onto
 // the new orchestration so its role-stage gate can consult the
 // definition's Roles map. It returns the orchestration id as this
 // invocation's run id - a real, fetchable-via-get_delivery id, not a
-// legacy workflow run id.
+// legacy workflow run id. No title is passed: a definition's inputs
+// carry only references, so the run gets the same derived title
+// get_delivery would show for it anyway.
 func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any) (string, error) {
 	references, err := referencesFromInputs(inputs)
 	if err != nil {
@@ -96,7 +98,7 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 	if err != nil {
 		return "", err
 	}
-	view, err := store.StartDeliveryWithDefinition(ctx, delivery.NewID(), references, def.ID)
+	view, err := store.StartDeliveryWithOptions(ctx, delivery.NewID(), references, delivery.OrchestrationOptions{WorkflowDefinitionID: def.ID})
 	if err != nil {
 		return "", fmt.Errorf("start delivery for definition %q: %w", def.ID, err)
 	}

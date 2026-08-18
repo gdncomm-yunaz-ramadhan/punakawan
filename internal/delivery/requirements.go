@@ -116,6 +116,15 @@ func (s *Store) ListRequirementSources(ctx context.Context, orchestrationID stri
 	if err != nil {
 		return nil, err
 	}
+	return sortedRequirementSources(sourceMap), nil
+}
+
+// sortedRequirementSources flattens allRequirementSources' by-id map
+// into capture order, ties broken by id so the result is stable across
+// calls. "Oldest capture first" is also what makes "the first
+// requirement" a well-defined thing for anything reading only the head
+// of the list.
+func sortedRequirementSources(sourceMap map[string]*protocol.RequirementSource) []*protocol.RequirementSource {
 	sources := make([]*protocol.RequirementSource, 0, len(sourceMap))
 	for _, src := range sourceMap {
 		sources = append(sources, src)
@@ -126,7 +135,7 @@ func (s *Store) ListRequirementSources(ctx context.Context, orchestrationID stri
 		}
 		return sources[i].Id < sources[j].Id
 	})
-	return sources, nil
+	return sources
 }
 
 func isTerminal(status protocol.DeliveryOrchestrationStatus) bool {

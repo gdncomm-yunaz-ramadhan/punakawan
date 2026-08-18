@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/storage"
@@ -95,40 +96,59 @@ func (s *Store) GetProject(ctx context.Context, id string) (*protocol.DeliveryPr
 	return &p, nil
 }
 
+// OrchestrationOptions carries the attributes a new orchestration may
+// optionally be created with. Both are fixed at creation: they are
+// written into the single orchestration.created event and never amended
+// afterwards, so there is one options value per creation call rather
+// than a growing tail of positional parameters.
+type OrchestrationOptions struct {
+	// WorkflowDefinitionID, when set, must name an existing, enabled
+	// workflow definition. Once attached, every lane's role-stage gate
+	// consults that definition's Roles map instead of always requiring
+	// all four stages.
+	WorkflowDefinitionID string
+	// Title is a short human-readable summary of what the run delivers,
+	// as written by whoever started it. Left empty, the orchestration
+	// simply carries no title and consumers derive a readable label from
+	// its requirement references instead.
+	Title string
+}
+
 // CreateOrchestration appends the orchestration.created event that
 // establishes id. A duplicate idempotencyKey is harmless and returns
 // the already-created orchestration. It is a thin wrapper over
-// CreateOrchestrationWithDefinition with an empty workflow_definition_id,
-// so every existing caller of this exact signature keeps compiling and
-// behaving exactly as before.
+// CreateOrchestrationWithOptions with no options set, so every existing
+// caller of this exact signature keeps compiling and behaving exactly as
+// before.
 func (s *Store) CreateOrchestration(ctx context.Context, idempotencyKey, id string, inputs []protocol.DeliveryOrchestrationUnresolvedInputsElem) (*protocol.DeliveryOrchestration, error) {
-	return s.CreateOrchestrationWithDefinition(ctx, idempotencyKey, id, inputs, "")
+	return s.CreateOrchestrationWithOptions(ctx, idempotencyKey, id, inputs, OrchestrationOptions{})
 }
 
-// CreateOrchestrationWithDefinition is CreateOrchestration plus an
-// optional workflowDefinitionID to attach: once set, every lane's
-// role-stage gate consults that definition's Roles map instead of
-// always requiring all four stages. An empty
-// workflowDefinitionID behaves identically to CreateOrchestration. A
-// non-empty one is validated (must exist and be enabled) via the
-// configured WorkflowDefinitionResolver before anything is written -
-// with none configured, attaching a definition is rejected outright
-// rather than silently accepted and later ignored by the gate.
-func (s *Store) CreateOrchestrationWithDefinition(ctx context.Context, idempotencyKey, id string, inputs []protocol.DeliveryOrchestrationUnresolvedInputsElem, workflowDefinitionID string) (*protocol.DeliveryOrchestration, error) {
-	if workflowDefinitionID != "" {
+// CreateOrchestrationWithOptions is CreateOrchestration plus the
+// optional attributes in opts. A zero opts behaves identically to
+// CreateOrchestration. A non-empty WorkflowDefinitionID is validated
+// (must exist and be enabled) via the configured
+// WorkflowDefinitionResolver before anything is written - with none
+// configured, attaching a definition is rejected outright rather than
+// silently accepted and later ignored by the gate.
+func (s *Store) CreateOrchestrationWithOptions(ctx context.Context, idempotencyKey, id string, inputs []protocol.DeliveryOrchestrationUnresolvedInputsElem, opts OrchestrationOptions) (*protocol.DeliveryOrchestration, error) {
+	if opts.WorkflowDefinitionID != "" {
 		if s.workflowDefinitions == nil {
-			return nil, fmt.Errorf("delivery: workflow_definition_id %q given but no workflow definition resolver is configured", workflowDefinitionID)
+			return nil, fmt.Errorf("delivery: workflow_definition_id %q given but no workflow definition resolver is configured", opts.WorkflowDefinitionID)
 		}
-		if err := s.workflowDefinitions.ValidateEnabled(ctx, workflowDefinitionID); err != nil {
-			return nil, fmt.Errorf("delivery: attach workflow definition %q: %w", workflowDefinitionID, err)
+		if err := s.workflowDefinitions.ValidateEnabled(ctx, opts.WorkflowDefinitionID); err != nil {
+			return nil, fmt.Errorf("delivery: attach workflow definition %q: %w", opts.WorkflowDefinitionID, err)
 		}
 	}
 	if inputs == nil {
 		inputs = []protocol.DeliveryOrchestrationUnresolvedInputsElem{}
 	}
 	payloadMap := map[string]interface{}{"unresolved_inputs": inputs}
-	if workflowDefinitionID != "" {
-		payloadMap["workflow_definition_id"] = workflowDefinitionID
+	if opts.WorkflowDefinitionID != "" {
+		payloadMap["workflow_definition_id"] = opts.WorkflowDefinitionID
+	}
+	if title := strings.TrimSpace(opts.Title); title != "" {
+		payloadMap["title"] = title
 	}
 	payload, err := json.Marshal(payloadMap)
 	if err != nil {

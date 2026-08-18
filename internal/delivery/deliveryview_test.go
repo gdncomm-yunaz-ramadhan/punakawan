@@ -494,3 +494,141 @@ func TestStartDeliveryRepeatedIdempotencyKeyReusesSameOrchestration(t *testing.T
 		t.Fatalf("retry minted a different orchestration: first=%s second=%s", first.Orchestration.Id, second.Orchestration.Id)
 	}
 }
+
+// TestStartDeliverySuppliedTitleWinsOverDerivation covers the plain case:
+// a caller who says what the delivery is for gets exactly that back, both
+// persisted on the orchestration and surfaced on the view, with no
+// derivation applied on top of it.
+func TestStartDeliverySuppliedTitleWinsOverDerivation(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	view, err := s.StartDeliveryWithOptions(ctx, "", []string{"PAY-1842", "PAY-1843"}, OrchestrationOptions{
+		Title: "  migrate checkout to the new payments API  ",
+	})
+	if err != nil {
+		t.Fatalf("StartDeliveryWithOptions: %v", err)
+	}
+	if view.Title != "migrate checkout to the new payments API" {
+		t.Fatalf("Title = %q, want the supplied title, trimmed", view.Title)
+	}
+	if view.Orchestration.Title == nil || *view.Orchestration.Title != "migrate checkout to the new payments API" {
+		t.Fatalf("Orchestration.Title = %v, want the supplied title persisted on the orchestration itself", view.Orchestration.Title)
+	}
+
+	// Rebuilding from the event log must produce the same title: a
+	// supplied title is state, not something recomputed per call.
+	reread, err := s.BuildDeliveryView(ctx, view.Orchestration.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if reread.Title != view.Title {
+		t.Fatalf("Title after replay = %q, want %q", reread.Title, view.Title)
+	}
+}
+
+// TestDeliveryViewDerivesTitleFromSingleReference covers the one-reference
+// derivation: with no title supplied, the view must name the single
+// requirement rather than fall back to a count or an empty string, and
+// must not append a "+N more" suffix when there is nothing more.
+func TestDeliveryViewDerivesTitleFromSingleReference(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	view, err := s.StartDelivery(ctx, "", []string{"PAY-1842"})
+	if err != nil {
+		t.Fatalf("StartDelivery: %v", err)
+	}
+	if view.Orchestration.Title != nil {
+		t.Fatalf("Orchestration.Title = %v, want nil - nothing was supplied, so nothing should be persisted", view.Orchestration.Title)
+	}
+	if view.Title != "PAY-1842" {
+		t.Fatalf("Title = %q, want the single reference itself", view.Title)
+	}
+
+	// Once that reference is enriched with a real title, the derived
+	// label follows it - the derivation reads whatever the captured
+	// source now carries, it does not freeze the bare reference string.
+	if _, err := s.CaptureRequirement(ctx, NewID(), view.Orchestration.Id, SourceInput{
+		Provider: "jira", ExternalID: "PAY-1842", Title: "Split payment capture from authorization",
+	}); err != nil {
+		t.Fatalf("CaptureRequirement: %v", err)
+	}
+	enriched, err := s.BuildDeliveryView(ctx, view.Orchestration.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if enriched.Title != "Split payment capture from authorization" {
+		t.Fatalf("Title = %q, want the captured source's own title", enriched.Title)
+	}
+}
+
+// TestDeliveryViewDerivesTitleForMultipleReferences covers the
+// multi-reference derivation: the earliest captured requirement names the
+// delivery and every other requirement - captured or still pending - is
+// counted, so the label stays one line no matter how many references came
+// in.
+func TestDeliveryViewDerivesTitleForMultipleReferences(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	view, err := s.StartDelivery(ctx, "", []string{
+		"PAY-1842",
+		"https://example.com/spec",
+		"acme/checkout#42",
+		"a note nobody can classify",
+	})
+	if err != nil {
+		t.Fatalf("StartDelivery: %v", err)
+	}
+	// Three captured sources plus one pending question is four
+	// requirements, so the first one is named and the other three counted.
+	if view.Title != "PAY-1842 (+3 more)" {
+		t.Fatalf("Title = %q, want the first reference plus a count of the rest", view.Title)
+	}
+}
+
+// TestDeliveryViewDerivesTitleWithoutAnyTitleEvent is the backfill case:
+// an orchestration whose event log predates titles entirely (its
+// orchestration.created payload carries no title key at all) must still
+// render a readable label rather than an empty string.
+func TestDeliveryViewDerivesTitleWithoutAnyTitleEvent(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id := NewID()
+
+	// CreateOrchestration writes an orchestration.created payload with no
+	// title key, which is byte-for-byte the shape every already-persisted
+	// orchestration has.
+	orch, err := s.CreateOrchestration(ctx, "create-"+id, id, []protocol.DeliveryOrchestrationUnresolvedInputsElem{
+		{Reference: "some ambiguous note"},
+	})
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	if orch.Title != nil {
+		t.Fatalf("Orchestration.Title = %v, want nil for a log with no title", orch.Title)
+	}
+
+	view, err := s.BuildDeliveryView(ctx, orch.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if view.Title != "some ambiguous note" {
+		t.Fatalf("Title = %q, want the pending reference - a titleless log must never render a blank label", view.Title)
+	}
+
+	// An orchestration with no requirements at all is the last resort and
+	// still must not be blank.
+	bare := NewID()
+	if _, err := s.CreateOrchestration(ctx, "create-"+bare, bare, nil); err != nil {
+		t.Fatalf("CreateOrchestration (bare): %v", err)
+	}
+	bareView, err := s.BuildDeliveryView(ctx, bare)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView (bare): %v", err)
+	}
+	if bareView.Title == "" {
+		t.Fatal("Title is empty for an orchestration with no requirements; want a non-empty last-resort label")
+	}
+}
