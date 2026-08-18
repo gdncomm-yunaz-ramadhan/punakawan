@@ -1,0 +1,25 @@
+internal/delivery/deliveryview.go
+  f9605b8f4acd1e01 396-398
+internal/delivery/deliveryview_test.go
+  f9605b8f4acd1e01 44-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "3c28ca76bf943a7a1da8295f8652611092e2c2ed",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 22,
+      "total_deletions": 0,
+      "accepted_lines": 22,
+      "overriden_lines": 0
+    }
+  }
+}
