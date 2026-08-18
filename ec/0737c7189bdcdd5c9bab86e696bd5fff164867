@@ -1,0 +1,49 @@
+internal/mcpserver/tools.go
+  f9605b8f4acd1e01 64,154-156,289-291,432-434
+internal/mcpserver/tools_fileops.go
+  f9605b8f4acd1e01 13-16,18,21-27,30-31,36-42,45-46,56,58
+internal/mcpserver/tools_delivery.go
+  f9605b8f4acd1e01 12,360-362,380-397,399-402,405-412,415-417,426-433,437-447,451-452,460-467,469-481,483
+.punakawan/workflows/implementation-with-tests.yaml
+  f9605b8f4acd1e01 18,27
+internal/mcpserver/tools_learning_knowledgecreate_test.go
+  f9605b8f4acd1e01 83
+.punakawan/workflows/feature-delivery.yaml
+  f9605b8f4acd1e01 31,79
+internal/mcpserver/tools_validate.go
+  f9605b8f4acd1e01 25-38
+internal/mcpserver/tools_projectapproval.go
+  f9605b8f4acd1e01 34,268
+internal/mcpserver/tools_knowledgecreate.go
+  f9605b8f4acd1e01 45-48
+internal/mcpserver/tools_execution_m6_test.go
+  f9605b8f4acd1e01 127,156-157,160-162,165-167
+internal/mcpserver/server.go
+  f9605b8f4acd1e01 49,57
+internal/mcpserver/tools_jira.go
+  f9605b8f4acd1e01 7,14,242,244-253,256,263-273,275-281,284-285,288,290,295-303,309,312,314,316,318-390,393-396,401-420,617,629-631,640-644,654,672,675,681-684
+internal/mcpserver/tools_delivery_test.go
+  f9605b8f4acd1e01 426-429,448,453,455,462,467,469,476,481,483,486,489,493,498,500,504,509,511,515,520,522,545-598
+internal/mcpserver/tools_jira_test.go
+  f9605b8f4acd1e01 6,276,278,290-291,293,295-296,304-307,320-351,355-358,360-379,386-387,389,396,398-399,404,406-407,412-419,594,596,604-605,607,609-610,620,622,630-631,633,635,638-639,644-646,654-671
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ec0737c7189bdcdd5c9bab86e696bd5fff164867",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1250,
+      "total_deletions": 342,
+      "accepted_lines": 1355,
+      "overriden_lines": 0
+    }
+  }
+}
