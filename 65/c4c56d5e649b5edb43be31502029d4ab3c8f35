@@ -1,0 +1,31 @@
+cmd/punakawan/panel_service_unsupported.go
+  f9605b8f4acd1e01 1-14
+cmd/punakawan/panel_cmd.go
+  f9605b8f4acd1e01 21-39,41,50-56,58,120,122
+cmd/punakawan/panel_service.go
+  f9605b8f4acd1e01 1-342
+cmd/punakawan/panel_service_cmd.go
+  f9605b8f4acd1e01 1-217
+cmd/punakawan/panel_service_darwin.go
+  f9605b8f4acd1e01 1-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "65c4c56d5e649b5edb43be31502029d4ab3c8f35",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 826,
+      "overriden_lines": 0
+    }
+  }
+}
