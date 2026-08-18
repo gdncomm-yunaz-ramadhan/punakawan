@@ -1,0 +1,31 @@
+internal/mcpserver/tools.go
+  f9605b8f4acd1e01 510,516,521
+internal/delivery/deliveryview.go
+  f9605b8f4acd1e01 1,386-387
+internal/mcpserver/tools_startdelivery_test.go
+  f9605b8f4acd1e01 14,42,182-352
+internal/delivery/requirements.go
+  f9605b8f4acd1e01 8,104-131
+internal/mcpserver/tools_startdelivery.go
+  f9605b8f4acd1e01 1-8,14,36-41,44-75,81-83,85-87,100-170,172,175-235,237-238,240,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "96d677b90face097cb97afcb4564a3a05d472368",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 667,
+      "total_deletions": 48,
+      "accepted_lines": 666,
+      "overriden_lines": 0
+    }
+  }
+}
