@@ -18,8 +18,27 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/server"
 )
 
+// panelServeFlags are the bind/workspace settings that decide what a
+// panel process serves. They are shared by `panel`, which runs the
+// server in the foreground, and `panel service install`, which bakes the
+// same settings into a background service definition - keeping one
+// definition here is what makes `panel service install --port 1234`
+// register a service that serves on the port `panel --port 1234` would
+// have used.
+type panelServeFlags struct {
+	host          string
+	port          string
+	workspacePath string
+}
+
+func (f *panelServeFlags) register(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.host, "host", "127.0.0.1", "bind address (must be loopback)")
+	cmd.Flags().StringVar(&f.port, "port", "7331", "bind port")
+	cmd.Flags().StringVar(&f.workspacePath, "workspace", "", "workspace root (defaults to the current directory)")
+}
+
 func newPanelCmd() *cobra.Command {
-	var host, port, workspacePath string
+	var serve panelServeFlags
 	var openBrowser bool
 
 	cmd := &cobra.Command{
@@ -28,8 +47,15 @@ func newPanelCmd() *cobra.Command {
 		Long: "Start the Punakawan Panel, per punakawan-panel-implementation-plan.md: a local web " +
 			"dashboard served from this binary. It binds to loopback only, auto-registers the " +
 			"current workspace, and never writes to canonical workspace state except through an " +
-			"authenticated review session, per punakawan-artifact-review-plan-mutation-plan-v2.md §15.",
+			"authenticated review session, per punakawan-artifact-review-plan-mutation-plan-v2.md §15.\n\n" +
+			"This command runs in the foreground and stops when its terminal goes away. To keep the " +
+			"panel available without a terminal - started at login and restarted if it crashes - " +
+			"register it as a background service instead:\n\n" +
+			"  punakawan panel service install\n" +
+			"  punakawan panel service status\n\n" +
+			"See `punakawan panel service --help` for the full set of subcommands.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			host, port, workspacePath := serve.host, serve.port, serve.workspacePath
 			dir := workspacePath
 			if dir == "" {
 				cwd, err := os.Getwd()
@@ -91,10 +117,9 @@ func newPanelCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "bind address (must be loopback)")
-	cmd.Flags().StringVar(&port, "port", "7331", "bind port")
-	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace root (defaults to the current directory)")
+	serve.register(cmd)
 	cmd.Flags().BoolVar(&openBrowser, "open-browser", true, "open the panel in the default browser on startup")
+	cmd.AddCommand(newPanelServiceCmd())
 	return cmd
 }
 
