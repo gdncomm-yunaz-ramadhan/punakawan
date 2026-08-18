@@ -520,14 +520,13 @@ allowed_capabilities:
   - jira.board.read
   - jira.sprint.read
   - jira.issue.search
-
-approval:
-  required_for:
-    - external_write
-
-output:
-  type: jira_issue_list
 ```
+
+An earlier draft of this schema also carried `approval.required_for` and
+`output.type`. Both were dropped: nothing at runtime ever read them, so an
+`approval` stanza read like a security control while gating nothing. Write
+approvals are enforced per tool by the capability's own approval gate, which
+applies whether or not a workflow definition is involved.
 
 ### 6.2 Workflow constraints
 

@@ -27,6 +27,14 @@ var (
 	// arbitrary command string (contains whitespace or shell metacharacters)
 	// rather than a bare capability identifier.
 	ErrCommandNotAllowed = errors.New("workflowdef: arbitrary command not allowed as capability")
+	// ErrRolesAndSteps is returned when a definition declares both roles and
+	// steps. Invocation dispatches on the presence of roles alone: a non-empty
+	// roles map sends the definition to the delivery engine, whose fixed
+	// lane/lease/role-stage sequence has no place to run a step graph, so the
+	// steps would be dropped without a trace. Rejecting the combination up
+	// front is the only way the author learns that one half of what they wrote
+	// would never run.
+	ErrRolesAndSteps = errors.New("workflowdef: definition declares both roles and steps")
 )
 
 // Validate checks a definition against the plan §6.2 constraints and the set
@@ -39,7 +47,8 @@ var (
 //   - step ids are unique;
 //   - every capability value is a bare identifier, not a command string;
 //   - every Step.Capability and every AllowedCapabilities entry is registered;
-//   - every Step.InputFrom entry refers to an earlier step's id.
+//   - every Step.InputFrom entry refers to an earlier step's id;
+//   - roles and steps are not both declared.
 func Validate(def Definition, caps CapabilitySet) error {
 	if strings.TrimSpace(def.ID) == "" {
 		return fmt.Errorf("%w: id", ErrMissingField)
@@ -52,6 +61,9 @@ func Validate(def Definition, caps CapabilitySet) error {
 	}
 	if def.Version != SchemaVersion {
 		return fmt.Errorf("%w: %q (want %q)", ErrBadVersion, def.Version, SchemaVersion)
+	}
+	if len(def.Roles) > 0 && len(def.Steps) > 0 {
+		return fmt.Errorf("%w: %d role(s) and %d step(s); only the roles are honoured — the definition runs as a delivery orchestration and none of its steps execute. Drop one or the other", ErrRolesAndSteps, len(def.Roles), len(def.Steps))
 	}
 
 	// allowed_capabilities entries must be registered bare identifiers.

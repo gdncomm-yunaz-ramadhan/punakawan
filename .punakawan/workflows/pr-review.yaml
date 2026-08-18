@@ -23,5 +23,3 @@ steps:
     intent: report
     input_from:
       - fetch
-output:
-  type: review-findings

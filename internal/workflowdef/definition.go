@@ -28,29 +28,33 @@ const SchemaVersion = "punakawan.workflow/v1"
 // tags the HTTP layer would emit Go's PascalCase field names, which the
 // Svelte client (expecting snake_case/camelCase) silently reads as undefined.
 type Definition struct {
-	Version             string         `yaml:"version" json:"version"`
-	ID                  string         `yaml:"id" json:"id"`
-	Name                string         `yaml:"name" json:"name"`
-	Description         string         `yaml:"description" json:"description"`
-	Enabled             bool           `yaml:"enabled" json:"enabled"`
-	RequiredMetadata    []string       `yaml:"required_metadata,omitempty" json:"required_metadata,omitempty"`
-	Inputs              []Input        `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+	Version          string   `yaml:"version" json:"version"`
+	ID               string   `yaml:"id" json:"id"`
+	Name             string   `yaml:"name" json:"name"`
+	Description      string   `yaml:"description" json:"description"`
+	Enabled          bool     `yaml:"enabled" json:"enabled"`
+	RequiredMetadata []string `yaml:"required_metadata,omitempty" json:"required_metadata,omitempty"`
+	Inputs           []Input  `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 	// Selectors, when present, let this workflow be resolved implicitly by an
 	// exact capability/intent match instead of requiring the caller to name its
 	// id (plan §4.2). Resolution is deliberately non-fuzzy: a match must be
 	// exact, and more than one match is returned as ambiguous rather than
 	// guessed. A definition without selectors is still fully usable — it just
 	// must be invoked by explicit id.
-	Selectors           []Selector     `yaml:"selectors,omitempty" json:"selectors,omitempty"`
-	Steps               []Step         `yaml:"steps" json:"steps"`
-	AllowedCapabilities []string       `yaml:"allowed_capabilities,omitempty" json:"allowed_capabilities,omitempty"`
-	Approval            ApprovalPolicy `yaml:"approval,omitempty" json:"approval,omitempty"`
-	Output              OutputSpec     `yaml:"output,omitempty" json:"output,omitempty"`
+	Selectors           []Selector `yaml:"selectors,omitempty" json:"selectors,omitempty"`
+	Steps               []Step     `yaml:"steps" json:"steps"`
+	AllowedCapabilities []string   `yaml:"allowed_capabilities,omitempty" json:"allowed_capabilities,omitempty"`
 	// Roles carries this workflow's optional per-role restrictions (plan §15,
 	// ROLE-010), keyed by role name (semar|gareng|petruk|bagong). A workflow may
 	// only *reduce* a role's project authority; internal/roleconfig.Effective
 	// enforces the reduce-never-increase rule when this is applied. A missing
 	// key means the workflow imposes no restriction on that role.
+	//
+	// This field also selects the execution engine: a non-empty map makes the
+	// definition delivery-shaped, so invoking it starts a delivery orchestration
+	// whose fixed lane/lease/role-stage sequence runs instead of Steps — the
+	// steps of such a definition never execute. Validate therefore rejects a
+	// definition that declares both.
 	Roles    map[string]RoleRestriction `yaml:"roles,omitempty" json:"roles,omitempty"`
 	Revision int                        `yaml:"revision" json:"revision"`
 }
@@ -92,15 +96,4 @@ type Step struct {
 	Intent     string   `yaml:"intent,omitempty" json:"intent,omitempty"`
 	ID         string   `yaml:"id" json:"id"`
 	InputFrom  []string `yaml:"input_from,omitempty" json:"input_from,omitempty"`
-}
-
-// ApprovalPolicy declares which capability classes require human approval
-// before the run may perform them (§6.1 approval.required_for).
-type ApprovalPolicy struct {
-	RequiredFor []string `yaml:"required_for,omitempty" json:"required_for,omitempty"`
-}
-
-// OutputSpec names the shape a workflow produces (§6.1 output.type).
-type OutputSpec struct {
-	Type string `yaml:"type,omitempty" json:"type,omitempty"`
 }

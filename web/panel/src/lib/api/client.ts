@@ -860,12 +860,6 @@ export interface WorkflowDefinition {
   inputs?: WorkflowInput[];
   steps: WorkflowStep[];
   allowed_capabilities?: string[];
-  approval?: {
-    required_for?: string[];
-  };
-  output?: {
-    type: string;
-  };
   revision: number;
 }
 

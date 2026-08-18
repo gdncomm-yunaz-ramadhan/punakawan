@@ -282,7 +282,7 @@
             </div>
             <div class="step-content">
               <small>OUTPUT</small>
-              <strong>{wf.output?.type || "Complete"}</strong>
+              <strong>Complete</strong>
             </div>
           </li>
         </ol>
@@ -291,10 +291,6 @@
       <dl class="meta-list">
         <dt>Workflow ID</dt>
         <dd><code>{wf.id}</code></dd>
-        {#if wf.output?.type}
-          <dt>Output</dt>
-          <dd>{wf.output.type}</dd>
-        {/if}
         {#if wf.required_metadata?.length}
           <dt>Required metadata</dt>
           <dd>{wf.required_metadata.join(", ")}</dd>
@@ -302,10 +298,6 @@
         {#if wf.allowed_capabilities?.length}
           <dt>Allowed capabilities</dt>
           <dd>{wf.allowed_capabilities.join(", ")}</dd>
-        {/if}
-        {#if wf.approval?.required_for?.length}
-          <dt>Approval required for</dt>
-          <dd>{wf.approval.required_for.join(", ")}</dd>
         {/if}
       </dl>
 

@@ -4,10 +4,10 @@ name: Implementation with Tests
 description: >-
   Implement a ready task and prove it with tests before review: build the
   bounded task context, write the change, run the project's tests, check the
-  diff, then submit an independent Bagong review. Requires the project's test
-  command to be known up front.
+  diff, then independently verify that nothing reachable from the change was
+  left uncovered. Requires the project's test command to be known up front.
 enabled: true
-revision: 1
+revision: 2
 selectors:
   - capability: task
     intent: implement
@@ -18,10 +18,7 @@ allowed_capabilities:
   - write_file
   - run_tests
   - check_diff
-  - submit_lane_bagong_review
-approval:
-  required_for:
-    - write_file
+  - verify_impact_coverage
 steps:
   - id: context
     capability: build_task_context
@@ -41,9 +38,13 @@ steps:
     intent: verify
     input_from:
       - implement
-  - id: review
-    capability: submit_lane_bagong_review
-    intent: review
+  # Independent verification: walk the impact graph out from what changed and
+  # confirm nothing reachable is left untested or in dispute. This runs on the
+  # recorded test and diff evidence, and unlike the lane role-stage tools it
+  # needs no delivery lane or lease, so it can actually execute as a step here.
+  - id: verify
+    capability: verify_impact_coverage
+    intent: verify
     input_from:
       - test
       - diff

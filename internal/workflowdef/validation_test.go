@@ -117,6 +117,26 @@ func TestValidateBadInputFrom(t *testing.T) {
 	}
 }
 
+func TestValidateRolesAndStepsConflict(t *testing.T) {
+	// A non-empty roles map routes invocation to the delivery engine, which
+	// never runs the step graph, so declaring both must be refused rather than
+	// silently dropping every step.
+	d := validDef()
+	d.Roles = map[string]RoleRestriction{"bagong": {Required: true}}
+	if !errors.Is(Validate(d, testCaps()), ErrRolesAndSteps) {
+		t.Fatalf("roles+steps conflict not caught")
+	}
+	// Either half on its own stays valid.
+	d.Steps = nil
+	d.AllowedCapabilities = nil
+	if err := Validate(d, testCaps()); err != nil {
+		t.Fatalf("roles-only def rejected: %v", err)
+	}
+	if err := Validate(validDef(), testCaps()); err != nil {
+		t.Fatalf("steps-only def rejected: %v", err)
+	}
+}
+
 func TestCapabilitySet(t *testing.T) {
 	caps := testCaps()
 	if !caps.Has("knowledge.search") || !caps.Has("create_pr") {

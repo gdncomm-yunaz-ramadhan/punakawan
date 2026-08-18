@@ -38,14 +38,6 @@ allowed_capabilities:
   - update_jira_task_progress
   - finish_task_execution
   - propose_project_learning
-approval:
-  required_for:
-    - create_worktree
-    - write_file
-    - commit_task
-    - push_task_branch
-    - create_pr
-    - update_jira_task_progress
 steps:
   # The requirement must exist as a knowledge record before anything downstream
   # can reference it: both the decomposition and the per-task context hard-require
@@ -149,5 +141,3 @@ steps:
     input_from:
       - jira
       - finish
-output:
-  type: delivered-feature
