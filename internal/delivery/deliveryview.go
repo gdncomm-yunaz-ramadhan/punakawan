@@ -393,6 +393,9 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 		}
 		return fmt.Sprintf("resolve %d pending question(s) via answer_delivery_question: %s", len(refs), strings.Join(refs, ", "))
 	}
+	if len(lanes) == 0 && len(pendingApprovals) == 0 {
+		return "no lanes yet — decompose the delivery via register_project, create_parent_task, and create_lane"
+	}
 	if len(pendingApprovals) > 0 {
 		return fmt.Sprintf("approve project delivery for project %s via approve_project_delivery", pendingApprovals[0].ProjectId)
 	}
