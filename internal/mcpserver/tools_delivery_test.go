@@ -423,10 +423,10 @@ func TestBuildLaneContextEndToEnd(t *testing.T) {
 }
 
 // TestSubmitLaneRoleStagesEndToEnd drives the full four-stage loop over
-// the real MCP wire protocol: claim a lane, submit each role stage in
-// order, verify a blocking Gareng review actually blocks Petruk until
-// resubmitted clean, then complete the lease once Bagong's stage is
-// recorded.
+// the real MCP wire protocol through the one submit_lane_review tool:
+// claim a lane, submit each role stage in order, verify a blocking Gareng
+// review actually blocks Petruk until resubmitted clean, then complete the
+// lease once Bagong's stage is recorded.
 func TestSubmitLaneRoleStagesEndToEnd(t *testing.T) {
 	requireDolt(t)
 	a := newTestApp(t)
@@ -445,75 +445,81 @@ func TestSubmitLaneRoleStagesEndToEnd(t *testing.T) {
 	leaseToken := *claimOut.Lane.LeaseToken
 
 	var semarOut SubmitLaneStageOutput
-	callTool(t, cs, "submit_lane_semar_synthesis", map[string]any{
+	callTool(t, cs, "submit_lane_review", map[string]any{
 		"orchestration_id":  orchID,
 		"lane_id":           laneID,
 		"lease_token":       leaseToken,
 		"expected_revision": claimOut.Lane.Revision,
+		"role":              "semar",
 		"title":             "semar synthesis",
-		"synthesis":         map[string]any{"goal": "deliver the seed requirement"},
+		"semar_synthesis":   map[string]any{"goal": "deliver the seed requirement"},
 	}, &semarOut)
 	if semarOut.Lane.SemarRecordId == nil || *semarOut.Lane.SemarRecordId != semarOut.RecordId {
 		t.Fatalf("expected semar_record_id = %s, got %+v", semarOut.RecordId, semarOut.Lane.SemarRecordId)
 	}
 
 	var garengBlockedOut SubmitLaneStageOutput
-	callTool(t, cs, "submit_lane_gareng_review", map[string]any{
+	callTool(t, cs, "submit_lane_review", map[string]any{
 		"orchestration_id":  orchID,
 		"lane_id":           laneID,
 		"lease_token":       leaseToken,
 		"expected_revision": semarOut.Lane.Revision,
+		"role":              "gareng",
 		"title":             "gareng review (blocked)",
-		"review": map[string]any{
+		"gareng_review": map[string]any{
 			"verdict":           "clarification_required",
 			"blocking_findings": []string{"unclear expected null handling"},
 			"required_evidence": []string{"ask requester what happens on an empty payload"},
 		},
 	}, &garengBlockedOut)
 
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit_lane_petruk_plan", Arguments: map[string]any{
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit_lane_review", Arguments: map[string]any{
 		"orchestration_id":  orchID,
 		"lane_id":           laneID,
 		"lease_token":       leaseToken,
 		"expected_revision": garengBlockedOut.Lane.Revision,
+		"role":              "petruk",
 		"title":             "petruk plan (should be blocked)",
-		"plan":              map[string]any{"recommended_solution": "implement it"},
+		"petruk_plan":       map[string]any{"recommended_solution": "implement it"},
 	}})
 	if err != nil {
-		t.Fatalf("CallTool(submit_lane_petruk_plan): %v", err)
+		t.Fatalf("CallTool(submit_lane_review petruk): %v", err)
 	}
 	if !res.IsError {
-		t.Fatal("expected submit_lane_petruk_plan to fail while gareng's review has unresolved blocking findings")
+		t.Fatal("expected the petruk stage to fail while gareng's review has unresolved blocking findings")
 	}
 
 	var garengClearOut SubmitLaneStageOutput
-	callTool(t, cs, "submit_lane_gareng_review", map[string]any{
+	callTool(t, cs, "submit_lane_review", map[string]any{
 		"orchestration_id":  orchID,
 		"lane_id":           laneID,
 		"lease_token":       leaseToken,
 		"expected_revision": garengBlockedOut.Lane.Revision,
+		"role":              "gareng",
 		"title":             "gareng review (clear)",
-		"review":            map[string]any{"verdict": "feasible"},
+		"gareng_review":     map[string]any{"verdict": "feasible"},
 	}, &garengClearOut)
 
 	var petrukOut SubmitLaneStageOutput
-	callTool(t, cs, "submit_lane_petruk_plan", map[string]any{
+	callTool(t, cs, "submit_lane_review", map[string]any{
 		"orchestration_id":  orchID,
 		"lane_id":           laneID,
 		"lease_token":       leaseToken,
 		"expected_revision": garengClearOut.Lane.Revision,
+		"role":              "petruk",
 		"title":             "petruk plan",
-		"plan":              map[string]any{"recommended_solution": "implement it"},
+		"petruk_plan":       map[string]any{"recommended_solution": "implement it"},
 	}, &petrukOut)
 
 	var bagongOut SubmitLaneStageOutput
-	callTool(t, cs, "submit_lane_bagong_review", map[string]any{
+	callTool(t, cs, "submit_lane_review", map[string]any{
 		"orchestration_id":  orchID,
 		"lane_id":           laneID,
 		"lease_token":       leaseToken,
 		"expected_revision": petrukOut.Lane.Revision,
+		"role":              "bagong",
 		"title":             "bagong review",
-		"review": map[string]any{
+		"bagong_review": map[string]any{
 			"verdict":              "approved",
 			"honest_summary":       "no blocking issues; clean implementation, verified against the plan",
 			"requirement_coverage": []string{"verified against the seed requirement"},
@@ -533,6 +539,60 @@ func TestSubmitLaneRoleStagesEndToEnd(t *testing.T) {
 	}, &completeOut)
 	if completeOut.Lane.Status != protocol.DeliveryLaneStatusReview {
 		t.Fatalf("expected review status after completing all four stages, got %s", completeOut.Lane.Status)
+	}
+}
+
+// TestSubmitLaneReviewGuardsRoleAndLease covers the two ways one merged
+// tool could quietly do the wrong thing: recording an arbitrary role name
+// as some stage, and accepting a submission from a caller that does not
+// hold the lane's lease.
+func TestSubmitLaneReviewGuardsRoleAndLease(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	orchID, laneID := seedRunnableLane(t, a)
+	cs := connect(t, a)
+
+	var listOut ListRunnableLanesOutput
+	callTool(t, cs, "list_runnable_lanes", map[string]any{"orchestration_id": orchID}, &listOut)
+	var claimOut LaneOutput
+	callTool(t, cs, "claim_lane", map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"expected_revision": listOut.Lanes[0].Revision,
+		"worker_id":         "agent-1",
+	}, &claimOut)
+	leaseToken := *claimOut.Lane.LeaseToken
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit_lane_review", Arguments: map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       leaseToken,
+		"expected_revision": claimOut.Lane.Revision,
+		"role":              "togog",
+		"title":             "not a role",
+		"semar_synthesis":   map[string]any{"goal": "deliver the seed requirement"},
+	}})
+	if err != nil {
+		t.Fatalf("CallTool(submit_lane_review unknown role): %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected an unknown role to be rejected")
+	}
+
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit_lane_review", Arguments: map[string]any{
+		"orchestration_id":  orchID,
+		"lane_id":           laneID,
+		"lease_token":       "not-the-lease",
+		"expected_revision": claimOut.Lane.Revision,
+		"role":              "semar",
+		"title":             "semar synthesis",
+		"semar_synthesis":   map[string]any{"goal": "deliver the seed requirement"},
+	}})
+	if err != nil {
+		t.Fatalf("CallTool(submit_lane_review wrong token): %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected a mismatched lease token to be rejected")
 	}
 }
 

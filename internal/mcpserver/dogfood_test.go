@@ -154,7 +154,7 @@ func TestEndToEndContextLoop(t *testing.T) {
 		RequiredMetadata: []string{"test.command"},
 		Steps: []workflowdef.Step{
 			{ID: "context", Capability: "build_task_context"},
-			{ID: "implement", Capability: "write_file", InputFrom: []string{"context"}},
+			{ID: "implement", Capability: "write_files", InputFrom: []string{"context"}},
 			{ID: "test", Capability: "run_tests", InputFrom: []string{"implement"}},
 		},
 	}

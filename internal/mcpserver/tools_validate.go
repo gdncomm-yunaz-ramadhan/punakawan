@@ -22,6 +22,20 @@ func validateRequestedBy(raw string) (protocol.ApprovalRecordRequestedBy, error)
 	return v, nil
 }
 
+// validateLaneRole checks raw against protocol's role enum
+// (semar|gareng|petruk|bagong) so submit_lane_review rejects an unknown
+// role with a guiding message instead of silently recording no stage at
+// all. It reuses the generated enum validator the same way
+// validateRequestedBy does, so the accepted set stays tied to the schema.
+func validateLaneRole(raw string) (protocol.EventRole, error) {
+	data, _ := json.Marshal(raw)
+	var v protocol.EventRole
+	if err := v.UnmarshalJSON(data); err != nil {
+		return "", fmt.Errorf("mcpserver: invalid role %q: must be one of semar, gareng, petruk, bagong", raw)
+	}
+	return v, nil
+}
+
 // validateWorkflowName checks raw against protocol's workflow_name enum up
 // front (punokawan-4ae), so create_workflow_run rejects an unknown name with a
 // guiding message instead of persisting it unchecked (workflow.New stored it

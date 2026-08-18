@@ -31,7 +31,7 @@ import (
 
 // RequestProjectApprovalInput is request_project_approval's input.
 // RequestedBy attributes the Jira subtask lookup this call may need to
-// compute a proposed worklog allocation (list_jira_subtasks requires an
+// compute a proposed worklog allocation (get_jira_issue requires an
 // attributed requester); this call itself does not act in a single
 // role's name, so it defaults to semar when omitted rather than
 // requiring every caller to supply one for a read that may not even
@@ -265,7 +265,7 @@ func gatherJiraSubtasksForProject(ctx context.Context, req *mcp.CallToolRequest,
 	seenSubtaskKeys := map[string]bool{}
 	var subtasks []worklogalloc.Subtask
 	for _, issueKey := range issueKeys {
-		out, err := listJiraSubtasks(ctx, req, gate, ListJiraSubtasksInput{IssueIdOrKey: issueKey, RequestedBy: requestedBy})
+		out, err := getJiraIssue(ctx, req, gate, GetJiraIssueInput{IssueIdOrKey: issueKey, Include: []string{"subtasks"}, RequestedBy: requestedBy})
 		if err != nil {
 			return nil, fmt.Errorf("mcpserver: list jira subtasks for %s: %w", issueKey, err)
 		}

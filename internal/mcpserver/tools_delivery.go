@@ -9,6 +9,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/roles"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -356,9 +357,9 @@ func buildLaneContextHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 	}
 }
 
-// SubmitLaneStageOutput is the common output for every submit_lane_*
-// role-stage tool: the record it validated and persisted, and the
-// lane's state right after that stage was recorded.
+// SubmitLaneStageOutput is submit_lane_review's output: the record it
+// validated and persisted, and the lane's state right after that stage
+// was recorded.
 type SubmitLaneStageOutput struct {
 	Lane     protocol.DeliveryLane `json:"lane"`
 	RecordId string                `json:"record_id"`
@@ -376,101 +377,79 @@ func recordLaneStage(ctx context.Context, a *app.App, orchestrationID, laneID, l
 	return SubmitLaneStageOutput{Lane: *lane, RecordId: recordID}, nil
 }
 
-// SubmitLaneSemarInput is submit_lane_semar_synthesis's input.
-type SubmitLaneSemarInput struct {
-	OrchestrationId  string                                 `json:"orchestration_id"`
-	LaneId           string                                 `json:"lane_id"`
-	LeaseToken       string                                 `json:"lease_token" jsonschema:"must match the lane's current lease"`
-	ExpectedRevision int                                    `json:"expected_revision"`
-	Title            string                                 `json:"title" jsonschema:"human-readable title for this record"`
-	Synthesis        protocol.KnowledgeRecordSemarSynthesis `json:"synthesis"`
+// SubmitLaneReviewInput is submit_lane_review's input. One tool records
+// all four role stages: role picks which stage this call is, and the
+// payload field named after that role carries its content. The other
+// three payload fields are ignored, so a caller only ever fills one in.
+//
+// The four payloads are structurally different knowledge records, so
+// exactly one of them is meaningful per call - a conditional requirement
+// a schema inferred from a Go struct cannot express. All four are
+// therefore optional in the schema, and the real per-role requirement is
+// enforced by internal/roles' own validators, which reject an empty or
+// incomplete payload with a message naming the missing field.
+type SubmitLaneReviewInput struct {
+	OrchestrationId  string `json:"orchestration_id"`
+	LaneId           string `json:"lane_id"`
+	LeaseToken       string `json:"lease_token" jsonschema:"must match the lane's current lease"`
+	ExpectedRevision int    `json:"expected_revision"`
+	Role             string `json:"role" jsonschema:"which stage this call records: semar, gareng, petruk, or bagong"`
+	Title            string `json:"title" jsonschema:"human-readable title for this record"`
+
+	SemarSynthesis protocol.KnowledgeRecordSemarSynthesis `json:"semar_synthesis,omitempty" jsonschema:"the payload when role is semar; ignored for every other role"`
+	GarengReview   protocol.KnowledgeRecordGarengReview   `json:"gareng_review,omitempty" jsonschema:"the payload when role is gareng; ignored for every other role"`
+	PetrukPlan     protocol.KnowledgeRecordPetrukPlan     `json:"petruk_plan,omitempty" jsonschema:"the payload when role is petruk; ignored for every other role"`
+	BagongReview   protocol.KnowledgeRecordBagongReview   `json:"bagong_review,omitempty" jsonschema:"the payload when role is bagong; ignored for every other role"`
 }
 
-func submitLaneSemarHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLaneSemarInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLaneSemarInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+// laneRoleStages maps a validated role name onto the delivery stage it
+// records. The names are the same four internal/delivery already uses as
+// its workflow-definition role keys, so the two vocabularies cannot drift.
+var laneRoleStages = map[protocol.EventRole]delivery.RoleStage{
+	protocol.EventRoleSemar:  delivery.RoleStageSemar,
+	protocol.EventRoleGareng: delivery.RoleStageGareng,
+	protocol.EventRolePetruk: delivery.RoleStagePetruk,
+	protocol.EventRoleBagong: delivery.RoleStageBagong,
+}
+
+func submitLaneReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLaneReviewInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLaneReviewInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
+		role, err := validateLaneRole(in.Role)
+		if err != nil {
+			return nil, SubmitLaneStageOutput{}, err
+		}
+
 		kstore, err := a.OpenKnowledge()
 		if err != nil {
 			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
-		rec, err := roles.SubmitSemarSynthesis(kstore, recordID(a, "semar", delivery.NewID()), in.Title, in.Synthesis)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStageSemar, rec.Id, in.ExpectedRevision)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		return nil, out, nil
-	}
-}
 
-// SubmitLaneGarengInput is submit_lane_gareng_review's input.
-type SubmitLaneGarengInput struct {
-	OrchestrationId  string                               `json:"orchestration_id"`
-	LaneId           string                               `json:"lane_id"`
-	LeaseToken       string                               `json:"lease_token" jsonschema:"must match the lane's current lease"`
-	ExpectedRevision int                                  `json:"expected_revision"`
-	Title            string                               `json:"title" jsonschema:"human-readable title for this record"`
-	Review           protocol.KnowledgeRecordGarengReview `json:"review"`
-}
-
-func submitLaneGarengHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLaneGarengInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLaneGarengInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
-		kstore, err := a.OpenKnowledge()
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
-		}
-		rec, err := roles.SubmitGarengReview(kstore, recordID(a, "gareng", delivery.NewID()), in.Title, in.Review)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStageGareng, rec.Id, in.ExpectedRevision)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		return nil, out, nil
-	}
-}
-
-// SubmitLanePetrukInput is submit_lane_petruk_plan's input.
-type SubmitLanePetrukInput struct {
-	OrchestrationId  string                             `json:"orchestration_id"`
-	LaneId           string                             `json:"lane_id"`
-	LeaseToken       string                             `json:"lease_token" jsonschema:"must match the lane's current lease"`
-	ExpectedRevision int                                `json:"expected_revision"`
-	Title            string                             `json:"title" jsonschema:"human-readable title for this record"`
-	Plan             protocol.KnowledgeRecordPetrukPlan `json:"plan"`
-}
-
-func submitLanePetrukHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLanePetrukInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLanePetrukInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		lane, err := store.GetLane(ctx, in.OrchestrationId, in.LaneId)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		kstore, err := a.OpenKnowledge()
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
-		}
-		if lane.GarengRecordId != nil && *lane.GarengRecordId != "" {
-			garengRec, err := kstore.Get(*lane.GarengRecordId)
-			if err != nil {
-				return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: resolve this lane's gareng review: %w", err)
-			}
-			if garengRec.GarengReview != nil && len(garengRec.GarengReview.BlockingFindings) > 0 {
-				return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: gareng's review has unresolved blocking findings (%v); resubmit gareng's review once resolved before petruk can proceed", garengRec.GarengReview.BlockingFindings)
+		// Petruk plans against Gareng's review, so a review still carrying
+		// unresolved blocking findings has to be cleared before a plan built
+		// on top of it can mean anything. None of the other three stages has
+		// a precondition beyond the ordering RecordRoleStage already enforces.
+		if role == protocol.EventRolePetruk {
+			if err := requireClearGarengReview(ctx, a, kstore, in.OrchestrationId, in.LaneId); err != nil {
+				return nil, SubmitLaneStageOutput{}, err
 			}
 		}
 
-		rec, err := roles.SubmitPetrukPlan(kstore, recordID(a, "petruk", delivery.NewID()), in.Title, in.Plan)
+		var rec protocol.KnowledgeRecord
+		switch role {
+		case protocol.EventRoleSemar:
+			rec, err = roles.SubmitSemarSynthesis(kstore, recordID(a, "semar", delivery.NewID()), in.Title, in.SemarSynthesis)
+		case protocol.EventRoleGareng:
+			rec, err = roles.SubmitGarengReview(kstore, recordID(a, "gareng", delivery.NewID()), in.Title, in.GarengReview)
+		case protocol.EventRolePetruk:
+			rec, err = roles.SubmitPetrukPlan(kstore, recordID(a, "petruk", delivery.NewID()), in.Title, in.PetrukPlan)
+		case protocol.EventRoleBagong:
+			rec, err = roles.SubmitBagongReview(kstore, recordID(a, "bagong", delivery.NewID()), in.Title, in.BagongReview)
+		}
 		if err != nil {
 			return nil, SubmitLaneStageOutput{}, err
 		}
-		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStagePetruk, rec.Id, in.ExpectedRevision)
+
+		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, laneRoleStages[role], rec.Id, in.ExpectedRevision)
 		if err != nil {
 			return nil, SubmitLaneStageOutput{}, err
 		}
@@ -478,30 +457,28 @@ func submitLanePetrukHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 	}
 }
 
-// SubmitLaneBagongInput is submit_lane_bagong_review's input.
-type SubmitLaneBagongInput struct {
-	OrchestrationId  string                               `json:"orchestration_id"`
-	LaneId           string                               `json:"lane_id"`
-	LeaseToken       string                               `json:"lease_token" jsonschema:"must match the lane's current lease"`
-	ExpectedRevision int                                  `json:"expected_revision"`
-	Title            string                               `json:"title" jsonschema:"human-readable title for this record"`
-	Review           protocol.KnowledgeRecordBagongReview `json:"review"`
-}
-
-func submitLaneBagongHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitLaneBagongInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitLaneBagongInput) (*mcp.CallToolResult, SubmitLaneStageOutput, error) {
-		kstore, err := a.OpenKnowledge()
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
-		}
-		rec, err := roles.SubmitBagongReview(kstore, recordID(a, "bagong", delivery.NewID()), in.Title, in.Review)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		out, err := recordLaneStage(ctx, a, in.OrchestrationId, in.LaneId, in.LeaseToken, delivery.RoleStageBagong, rec.Id, in.ExpectedRevision)
-		if err != nil {
-			return nil, SubmitLaneStageOutput{}, err
-		}
-		return nil, out, nil
+// requireClearGarengReview refuses a Petruk plan while the lane's recorded
+// Gareng review still lists blocking findings. A lane with no Gareng review
+// recorded yet passes here and is rejected later by RecordRoleStage's own
+// ordering check instead, which reports the missing predecessor precisely.
+func requireClearGarengReview(ctx context.Context, a *app.App, kstore *knowledge.Store, orchestrationID, laneID string) error {
+	store, err := openDeliveryStore(ctx, a)
+	if err != nil {
+		return err
 	}
+	lane, err := store.GetLane(ctx, orchestrationID, laneID)
+	if err != nil {
+		return err
+	}
+	if lane.GarengRecordId == nil || *lane.GarengRecordId == "" {
+		return nil
+	}
+	garengRec, err := kstore.Get(*lane.GarengRecordId)
+	if err != nil {
+		return fmt.Errorf("mcpserver: resolve this lane's gareng review: %w", err)
+	}
+	if garengRec.GarengReview != nil && len(garengRec.GarengReview.BlockingFindings) > 0 {
+		return fmt.Errorf("mcpserver: gareng's review has unresolved blocking findings (%v); resubmit gareng's review once resolved before petruk can proceed", garengRec.GarengReview.BlockingFindings)
+	}
+	return nil
 }

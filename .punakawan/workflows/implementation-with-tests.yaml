@@ -15,7 +15,7 @@ required_metadata:
   - test.command
 allowed_capabilities:
   - build_task_context
-  - write_file
+  - write_files
   - run_tests
   - check_diff
   - verify_impact_coverage
@@ -24,7 +24,7 @@ steps:
     capability: build_task_context
     intent: assemble
   - id: implement
-    capability: write_file
+    capability: write_files
     intent: change
     input_from:
       - context

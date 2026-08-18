@@ -28,7 +28,7 @@ allowed_capabilities:
   - build_task_context
   - submit_final_plan
   - create_worktree
-  - write_file
+  - write_files
   - run_tests
   - check_diff
   - verify_impact_coverage
@@ -76,7 +76,7 @@ steps:
     input_from:
       - claim
   - id: implement
-    capability: write_file
+    capability: write_files
     intent: change
     input_from:
       - plan

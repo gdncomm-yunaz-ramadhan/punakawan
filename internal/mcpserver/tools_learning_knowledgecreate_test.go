@@ -80,7 +80,7 @@ func TestCreateKnowledgeRecordRejectsStructuredRoleOutput(t *testing.T) {
 		Title:   "Bypass review",
 		Content: "This must not bypass the senior review schema.",
 	})
-	if err == nil || !strings.Contains(err.Error(), "submit_lane_bagong_review") {
+	if err == nil || !strings.Contains(err.Error(), "submit_lane_review with role bagong") {
 		t.Fatalf("expected dedicated-tool guidance, got %v", err)
 	}
 }

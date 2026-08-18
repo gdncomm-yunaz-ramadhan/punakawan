@@ -25,7 +25,7 @@ func saveStepDef(t *testing.T, root string) {
 		Name:    "Two Step",
 		Enabled: true,
 		Steps: []workflowdef.Step{
-			{ID: "a", Capability: "write_file"},
+			{ID: "a", Capability: "write_files"},
 			{ID: "b", Capability: "run_tests", InputFrom: []string{"a"}},
 		},
 	}); err != nil {

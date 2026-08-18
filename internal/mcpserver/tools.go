@@ -61,7 +61,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_final_plan",
-		Description: "Validate and persist Semar's final implementation plan (§9.3) as durable knowledge, refused while blocking contradictions remain open. For a lane's Synthesis stage instead, use submit_lane_semar_synthesis.",
+		Description: "Validate and persist Semar's final implementation plan (§9.3) as durable knowledge, refused while blocking contradictions remain open. For a lane's Synthesis stage instead, use submit_lane_review with role semar.",
 	}, submitFinalPlanHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -151,14 +151,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	}, finishTaskExecutionHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
-		Name:        "write_file",
-		Description: "Write one file within a task's worktree, policy-checked and confined to the worktree root (§15.4, §3.1). Use instead of writing to disk directly.",
-	}, writeFileHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "bulk_create_files",
-		Description: "Create several files within a task's worktree in one call, with the same checks as write_file, best-effort per file.",
-	}, bulkCreateFilesHandler(a))
+		Name:        "write_files",
+		Description: "Write one or many files inside a task's worktree, each policy-checked and confined to the worktree root, creating parent directories and overwriting any existing file. Use this instead of writing to disk directly whenever a task is producing or editing code. Requires start_task_execution to have created that task's worktree first. Best-effort: each file reports its own error and one failure never aborts the rest.",
+	}, writeFilesHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "check_diff",
@@ -291,19 +286,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	}, jiraFindSprintHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
-		Name:        "list_jira_subtasks",
-		Description: "List a parent Jira issue's existing subtasks (children) as {key, summary, status}, plus the parent's own key/summary/status. Read-only: no approval needed. Call this before update_jira_task_progress on a decomposed issue to pick the correct subtask key to log work/estimate against, instead of logging on the parent. run_id is optional for one-off use.",
-	}, listJiraSubtasksHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "list_jira_linked_issues",
-		Description: "List a Jira issue's linked issues (Blocks/Relates/Duplicates/etc.) as {direction, relationship, key, summary, status, issue_type}. Read-only: no approval needed. run_id is optional for one-off use.",
-	}, listJiraLinkedIssuesHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "list_jira_comments",
-		Description: "List a Jira issue's comments (newest-ordered) as {id, author, body, created, updated}; body is plain text extracted from ADF, not raw ADF, to stay concise. Paged via start_at/max_results (default 20, max 100); Total tells you if more exist. Read-only: no approval needed. To post a comment or reply (comments are flat, not threaded), use add_jira_comment. run_id is optional for one-off use.",
-	}, listJiraCommentsHandler(a))
+		Name:        "get_jira_issue",
+		Description: "Read one Jira issue's subtasks, links, and/or comments - pick sections via include (default subtasks and links, which share one fetch). Call it to find the right subtask key before update_jira_task_progress on a decomposed issue, to see what blocks or relates to a ticket, or to read the discussion. Comment bodies are plain text from ADF, paged via start_at/max_results (default 20, max 100). Read-only: needs no approval. run_id is optional.",
+	}, getJiraIssueHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "add_jira_comment",
@@ -444,24 +429,9 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	}, buildLaneContextHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_lane_semar_synthesis",
-		Description: "Record Semar's synthesis for a held lane's current attempt. Must be the first role stage recorded; recording it clears any later stage already recorded, since those were built against a now-superseded synthesis.",
-	}, submitLaneSemarHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_lane_gareng_review",
-		Description: "Record Gareng's feasibility review for a held lane's current attempt. Requires Semar's synthesis to already be recorded. Recording it clears any petruk/bagong stage already recorded for this attempt.",
-	}, submitLaneGarengHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_lane_petruk_plan",
-		Description: "Record Petruk's plan for a held lane's current attempt. Requires Gareng's review to already be recorded, and fails if that review still has unresolved blocking findings. Recording it clears any bagong stage already recorded for this attempt.",
-	}, submitLanePetrukHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_lane_bagong_review",
-		Description: "Record Bagong's independent review for a held lane's current attempt. Requires Petruk's plan to already be recorded. Once recorded, the lease can be completed via complete_lease.",
-	}, submitLaneBagongHandler(a))
+		Name:        "submit_lane_review",
+		Description: "Record one role stage for a held lane's current attempt: role picks semar, gareng, petruk, or bagong, and the payload field of that name carries the content. Call it after reasoning as that role, once you hold the lane's lease. Stages run in that order, each requiring the one before it; petruk is refused while gareng's review still has blocking findings; recording a stage clears every later stage. After bagong, complete_lease.",
+	}, submitLaneReviewHandler(a))
 
 	// Publish, repair, and merge-readiness: turning a verified lane into a
 	// published pull request, a bounded repair loop for a lane whose review

@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -11,57 +10,40 @@ import (
 	"github.com/ygrip/punakawan/internal/gitops"
 )
 
-// WriteFileInput is write_file's input. Path is relative to the task's
-// worktree root; the caller never supplies (or needs) an absolute path.
-type WriteFileInput struct {
-	RepoId  string `json:"repo_id"`
-	TaskId  string `json:"task_id"`
+// WriteFilesInputFile is one file in a write_files call. Path is relative
+// to the task's worktree root; the caller never supplies (or needs) an
+// absolute path.
+type WriteFilesInputFile struct {
 	Path    string `json:"path" jsonschema:"path relative to the task's worktree root"`
-	Content string `json:"content"`
+	Content string `json:"content" jsonschema:"the file's full new content; an existing file is overwritten, a missing one and its parent directories are created"`
 }
 
-// WriteFileOutput is write_file's output.
-type WriteFileOutput struct {
-	Path string `json:"path"`
+// WriteFilesInput is write_files's input. One file and many files go
+// through the same list, so there is no separate single-file surface to
+// pick between.
+type WriteFilesInput struct {
+	RepoId string                `json:"repo_id"`
+	TaskId string                `json:"task_id"`
+	Files  []WriteFilesInputFile `json:"files"`
 }
 
-func writeFileHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, WriteFileInput) (*mcp.CallToolResult, WriteFileOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in WriteFileInput) (*mcp.CallToolResult, WriteFileOutput, error) {
-		worktreeRoot := gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)
-		if err := fileops.WriteFile(a.Policy, worktreeRoot, in.Path, []byte(in.Content)); err != nil {
-			return nil, WriteFileOutput{}, fmt.Errorf("mcpserver: write_file: %w", err)
-		}
-		return nil, WriteFileOutput{Path: in.Path}, nil
-	}
-}
-
-// BulkCreateFilesInputFile is one file in a bulk_create_files call.
-type BulkCreateFilesInputFile struct {
-	Path    string `json:"path" jsonschema:"path relative to the task's worktree root"`
-	Content string `json:"content"`
-}
-
-// BulkCreateFilesInput is bulk_create_files's input.
-type BulkCreateFilesInput struct {
-	RepoId string                     `json:"repo_id"`
-	TaskId string                     `json:"task_id"`
-	Files  []BulkCreateFilesInputFile `json:"files"`
-}
-
-// BulkCreateFilesOutputFile is one file's outcome in bulk_create_files's
-// output. Error is empty on success.
-type BulkCreateFilesOutputFile struct {
+// WriteFilesOutputFile is one file's outcome. Error is empty on success.
+type WriteFilesOutputFile struct {
 	Path  string `json:"path"`
 	Error string `json:"error,omitempty"`
 }
 
-// BulkCreateFilesOutput is bulk_create_files's output.
-type BulkCreateFilesOutput struct {
-	Results []BulkCreateFilesOutputFile `json:"results"`
+// WriteFilesOutput reports every file's outcome in the order it was
+// requested. A file that failed its policy check or escaped the worktree
+// root carries its own error here and does not stop the rest from being
+// attempted, so the caller always sees the concrete outcome of the whole
+// call rather than an all-or-nothing abort.
+type WriteFilesOutput struct {
+	Results []WriteFilesOutputFile `json:"results"`
 }
 
-func bulkCreateFilesHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, BulkCreateFilesInput) (*mcp.CallToolResult, BulkCreateFilesOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in BulkCreateFilesInput) (*mcp.CallToolResult, BulkCreateFilesOutput, error) {
+func writeFilesHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, WriteFilesInput) (*mcp.CallToolResult, WriteFilesOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in WriteFilesInput) (*mcp.CallToolResult, WriteFilesOutput, error) {
 		worktreeRoot := gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)
 
 		specs := make([]fileops.FileSpec, len(in.Files))
@@ -71,9 +53,9 @@ func bulkCreateFilesHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 
 		results := fileops.BulkCreateFiles(a.Policy, worktreeRoot, specs)
 
-		out := BulkCreateFilesOutput{Results: make([]BulkCreateFilesOutputFile, len(results))}
+		out := WriteFilesOutput{Results: make([]WriteFilesOutputFile, len(results))}
 		for i, r := range results {
-			out.Results[i] = BulkCreateFilesOutputFile{Path: r.Path, Error: r.Error}
+			out.Results[i] = WriteFilesOutputFile{Path: r.Path, Error: r.Error}
 		}
 		return nil, out, nil
 	}
