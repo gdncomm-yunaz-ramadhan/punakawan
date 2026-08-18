@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/storage"
@@ -98,6 +99,34 @@ func (s *Store) GetRequirementSource(ctx context.Context, orchestrationID, sourc
 		return nil, err
 	}
 	return reduceRequirementSource(orchestrationID, sourceID, events)
+}
+
+// ListRequirementSources returns every requirement source captured into
+// orchestrationID, ordered by capture time (ties broken by id) so the
+// result is stable across calls. GetRequirementSource requires already
+// knowing a source id, which a caller that only has the original
+// reference strings never does; this is the enumeration that closes that
+// gap, mirroring ListLanes/ListGraph's shape for lanes and tasks.
+func (s *Store) ListRequirementSources(ctx context.Context, orchestrationID string) ([]*protocol.RequirementSource, error) {
+	events, err := loadEvents(ctx, s.db.Reader(), orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	sourceMap, err := allRequirementSources(orchestrationID, events)
+	if err != nil {
+		return nil, err
+	}
+	sources := make([]*protocol.RequirementSource, 0, len(sourceMap))
+	for _, src := range sourceMap {
+		sources = append(sources, src)
+	}
+	sort.Slice(sources, func(i, j int) bool {
+		if !sources[i].CapturedAt.Equal(sources[j].CapturedAt) {
+			return sources[i].CapturedAt.Before(sources[j].CapturedAt)
+		}
+		return sources[i].Id < sources[j].Id
+	})
+	return sources, nil
 }
 
 func isTerminal(status protocol.DeliveryOrchestrationStatus) bool {

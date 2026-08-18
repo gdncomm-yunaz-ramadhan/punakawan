@@ -85,7 +85,6 @@ var serverInstructions = serverInstructionsBody + "\n\nInstructions revision: " 
 var facadeTools = map[string]bool{
 	"start_delivery":             true,
 	"get_delivery":               true,
-	"resume_delivery":            true,
 	"answer_delivery_question":   true,
 	"approve_project_delivery":   true,
 	"cancel_delivery":            true,

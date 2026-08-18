@@ -1,4 +1,4 @@
-// deliveryview.go assembles DeliveryView, the one read model the six
+// deliveryview.go assembles DeliveryView, the one read model the
 // start-delivery facade tools share instead of each hand-rolling its own
 // aggregation over lanes, tasks, edges, and manifests. It never mutates
 // anything - every field is derived by
@@ -383,8 +383,8 @@ func newlyRunnableLaneIDs(orchestrationID string, events []protocol.DeliveryEven
 // computeNextAction picks the single most useful next step, honestly
 // and without trying to be clever: the first matching condition in a
 // fixed priority order wins, and every other true condition is simply
-// not mentioned this time - a caller polls again (get_delivery/
-// resume_delivery are the same call) once it acts on this one.
+// not mentioned this time - a caller polls get_delivery again once it
+// acts on this one.
 func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary, pendingApprovals []*protocol.ApprovalManifest) string {
 	if orch.Status == protocol.DeliveryOrchestrationStatusPending && len(orch.UnresolvedInputs) > 0 {
 		refs := make([]string, 0, len(orch.UnresolvedInputs))

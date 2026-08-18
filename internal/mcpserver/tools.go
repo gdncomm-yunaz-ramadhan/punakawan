@@ -507,24 +507,19 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 		Description: "Ask whether a project's lanes in this orchestration are all ready to merge, and if so, run preflight and create the one approval manifest that project needs before delivery proceeds. Reports which lanes/gates are still blocking instead of creating a manifest if any lane is not yet ready. Re-calling with the same set of ready parent tasks returns the already-created manifest rather than making a second one.",
 	}, requestProjectApprovalHandler(a))
 
-	// Delivery facades: six higher-level tools over the granular delivery
+	// Delivery facades: five higher-level tools over the granular delivery
 	// primitives above, for a caller that wants "start this delivery and
 	// tell me what's going on" without first learning the whole
 	// orchestration/lane/task/manifest model.
 	addTool(server, reg, &mcp.Tool{
 		Name:        "start_delivery",
-		Description: "Bootstrap one new delivery orchestration from a batch of requirement references (Jira keys, GitHub owner/repo#number references, URLs, or free text) and return its id plus current status. A reference this call cannot confidently classify becomes a pending question rather than failing the whole call.",
+		Description: "Bootstrap one new delivery orchestration from a batch of requirement references (Jira keys, GitHub owner/repo#number references, URLs, or free text) and return its id plus current status. A reference this call cannot confidently classify becomes a pending question rather than failing the whole call. Pass projects to decompose it in the same call: each task becomes a parent task and a lane, so the returned view shows real lanes. Omitting projects leaves an inert shell nothing can run.",
 	}, startDeliveryHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "get_delivery",
-		Description: "Read one delivery orchestration's current status: every lane grouped by project, still-blocked lanes, pending approvals, pending questions, and one sentence naming the single most useful next step. Read-only.",
+		Description: "Read one delivery orchestration's current status: every lane grouped by project, still-blocked lanes, pending approvals, pending questions, and one sentence naming the single most useful next step. Read-only. This is also how a reconnecting caller resumes - the domain is event-sourced, so current state is always derived fresh, and passing a prior response's latest_seq as since_seq reports exactly which lanes became runnable while you were away.",
 	}, getDeliveryHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "resume_delivery",
-		Description: "Identical to get_delivery: this domain is event-sourced, so checking current status after reconnecting is already the same call as resuming - there is no separate resume mechanism to invoke.",
-	}, resumeDeliveryHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "answer_delivery_question",
