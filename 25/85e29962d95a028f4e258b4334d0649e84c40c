@@ -1,0 +1,25 @@
+internal/mcpserver/tools.go
+  f9605b8f4acd1e01 175,259,300
+internal/mcpserver/server.go
+  f9605b8f4acd1e01 76-94,96-104,106-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2585e29962d95a028f4e258b4334d0649e84c40c",
+  "prompts": {
+    "f9605b8f4acd1e01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd656f37-23ed-4613-bbed-af4fd03eae2c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 640,
+      "total_deletions": 88,
+      "accepted_lines": 627,
+      "overriden_lines": 4
+    }
+  }
+}
