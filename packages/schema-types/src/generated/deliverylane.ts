@@ -104,4 +104,8 @@ export interface DeliveryLane {
    * When this lane was last escalated for a human to look at, e.g. after exhausting its repair-cycle budget. Absent while the lane has never been escalated. Escalation never changes the lane's own scheduling status.
    */
   escalated_at?: string;
+  /**
+   * Id of the workflow run that opened this lane - the same identifier sessions carry everywhere else. Fixed at creation and never amended: it says which session decided this lane should exist, which is a fact about the past. Whoever is executing the lane right now is a different question, answered by lease_worker_id. Absent when the lane was opened without naming a session.
+   */
+  session_id?: string;
 }

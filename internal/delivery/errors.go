@@ -115,4 +115,12 @@ var (
 	// expected outcome for a caller to report honestly, not a normal
 	// repair-cycle start.
 	ErrRepairCyclesExhausted = errors.New("delivery: lane has exhausted its repair-cycle budget and was escalated")
+
+	// ErrProjectHasActiveLanes is returned when a project is detached
+	// from an orchestration while it still owns lanes short of a terminal
+	// status. Detaching cannot reassign or delete those lanes - a lane's
+	// project scope is fixed at its creation - and leaving them running
+	// against a project the run no longer claims would orphan real work,
+	// so the caller finishes or fails them first.
+	ErrProjectHasActiveLanes = errors.New("delivery: project still has lanes that have not reached a terminal status")
 )

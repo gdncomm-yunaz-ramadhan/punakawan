@@ -97,10 +97,11 @@ func (s *Store) GetProject(ctx context.Context, id string) (*protocol.DeliveryPr
 }
 
 // OrchestrationOptions carries the attributes a new orchestration may
-// optionally be created with. Both are fixed at creation: they are
-// written into the single orchestration.created event and never amended
-// afterwards, so there is one options value per creation call rather
-// than a growing tail of positional parameters.
+// optionally be created with, so there is one options value per creation
+// call rather than a growing tail of positional parameters.
+// WorkflowDefinitionID is fixed for the life of the run; Title and
+// Description are merely the values the run starts out with, and
+// UpdateOrchestrationDetails can change either afterwards.
 type OrchestrationOptions struct {
 	// WorkflowDefinitionID, when set, must name an existing, enabled
 	// workflow definition. Once attached, every lane's role-stage gate
@@ -112,6 +113,53 @@ type OrchestrationOptions struct {
 	// simply carries no title and consumers derive a readable label from
 	// its requirement references instead.
 	Title string
+	// Description is longer prose about what the run is for and why it
+	// exists. Left empty, the orchestration carries none and nothing
+	// substitutes for it - a derived title is traceable back to a
+	// requirement the caller supplied, whereas derived prose would be
+	// invention.
+	Description string
+}
+
+// OrchestrationDetails names the descriptive attributes of an
+// orchestration that stay editable for its whole life. Every field is a
+// pointer so the three cases stay distinct: nil leaves the current value
+// alone, a pointer to a non-empty string sets it, and a pointer to an
+// empty string clears it back to absent.
+type OrchestrationDetails struct {
+	Title       *string
+	Description *string
+	// PlanRecordID is the id of the knowledge record holding the run's
+	// final plan, as returned by submit_final_plan. This package does not
+	// resolve it: the knowledge store has an entirely separate
+	// persistence lifecycle from this event log, the same reason
+	// workflow definitions are reached through an injected resolver
+	// rather than a direct dependency.
+	PlanRecordID *string
+	// SessionID is the id of the workflow run driving the delivery - the
+	// identifier a session is known by everywhere else in the system.
+	SessionID *string
+}
+
+// set reports whether details asks for any change at all.
+func (d OrchestrationDetails) set() bool {
+	return d.Title != nil || d.Description != nil || d.PlanRecordID != nil || d.SessionID != nil
+}
+
+// payload renders details as an orchestration.details_updated payload
+// carrying a key for each field the caller actually supplied, so the
+// reducer can tell "leave this alone" from "clear this".
+func (d OrchestrationDetails) payload() map[string]interface{} {
+	out := map[string]interface{}{}
+	for key, value := range map[string]*string{
+		"title": d.Title, "description": d.Description,
+		"plan_record_id": d.PlanRecordID, "session_id": d.SessionID,
+	} {
+		if value != nil {
+			out[key] = strings.TrimSpace(*value)
+		}
+	}
+	return out
 }
 
 // CreateOrchestration appends the orchestration.created event that
@@ -149,6 +197,9 @@ func (s *Store) CreateOrchestrationWithOptions(ctx context.Context, idempotencyK
 	}
 	if title := strings.TrimSpace(opts.Title); title != "" {
 		payloadMap["title"] = title
+	}
+	if description := strings.TrimSpace(opts.Description); description != "" {
+		payloadMap["description"] = description
 	}
 	payload, err := json.Marshal(payloadMap)
 	if err != nil {
@@ -264,6 +315,138 @@ func (s *Store) ResolveInput(ctx context.Context, idempotencyKey, orchestrationI
 	return s.appendOrchestrationEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeInputResolved, map[string]interface{}{"reference": reference})
 }
 
+// UpdateOrchestrationDetails appends orchestration.details_updated,
+// changing whichever of title, description, plan reference, and session
+// id the caller supplied and leaving the rest alone. A call that asks
+// for no change at all is rejected rather than recorded: an event that
+// changes nothing would still bump the revision and invalidate every
+// concurrent caller's expected_revision for no reason.
+func (s *Store) UpdateOrchestrationDetails(ctx context.Context, idempotencyKey, orchestrationID string, expectedRevision int, details OrchestrationDetails) (*protocol.DeliveryOrchestration, error) {
+	if !details.set() {
+		return nil, fmt.Errorf("delivery: update orchestration %s: no field to update was supplied", orchestrationID)
+	}
+	return s.appendOrchestrationEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeOrchestrationDetailsUpdated, details.payload())
+}
+
+// AttachProject appends project.attached, recording that this run
+// involves an already-registered project. The project must exist and be
+// active, the same bar CreateLane holds a lane's project to, so a run
+// never claims to involve a project nothing could route work to.
+// Attaching a project that is already attached changes nothing and
+// appends no event, so a retry is harmless.
+func (s *Store) AttachProject(ctx context.Context, idempotencyKey, orchestrationID string, expectedRevision int, projectID string) (*protocol.DeliveryOrchestration, error) {
+	return s.appendProjectEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeProjectAttached, projectID,
+		func(tx *sql.Tx, orch *protocol.DeliveryOrchestration, lanes map[string]*protocol.DeliveryLane) (bool, error) {
+			if indexOfString(orch.ProjectIds, projectID) >= 0 {
+				return false, nil
+			}
+			var status string
+			if err := tx.QueryRowContext(ctx, `SELECT status FROM delivery_projects WHERE id = ?`, projectID).Scan(&status); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return false, ErrNotFound
+				}
+				return false, err
+			}
+			if status != string(protocol.DeliveryProjectStatusActive) {
+				return false, ErrProjectInactive
+			}
+			return true, nil
+		})
+}
+
+// DetachProject appends project.detached, withdrawing the statement that
+// this run involves projectID.
+//
+// Detaching never touches lanes. A lane's project scope is fixed at its
+// creation and every later call is checked against it, so silently
+// reassigning or deleting a lane here would break the one invariant the
+// whole package leans on - and orphaning it would leave work running
+// against a project the run claims not to involve. So a project with any
+// lane still short of a terminal status (accepted or failed) cannot be
+// detached at all: ErrProjectHasActiveLanes says so, and the caller
+// finishes or fails those lanes first.
+//
+// Lanes that already reached a terminal status do not block detaching,
+// and they keep their project_id afterwards - the run's history still
+// says the work happened there. A consumer therefore still sees that
+// project in a delivery view, marked as no longer attached rather than
+// erased.
+//
+// Unlike attaching, detaching does not require the project to still be
+// registered and active: a project disabled after it was attached is
+// exactly the one somebody most wants to withdraw.
+func (s *Store) DetachProject(ctx context.Context, idempotencyKey, orchestrationID string, expectedRevision int, projectID string) (*protocol.DeliveryOrchestration, error) {
+	return s.appendProjectEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeProjectDetached, projectID,
+		func(tx *sql.Tx, orch *protocol.DeliveryOrchestration, lanes map[string]*protocol.DeliveryLane) (bool, error) {
+			if indexOfString(orch.ProjectIds, projectID) < 0 {
+				return false, ErrNotFound
+			}
+			for _, lane := range lanes {
+				if lane.ProjectId == projectID && !isLaneTerminal(lane.Status) {
+					return false, ErrProjectHasActiveLanes
+				}
+			}
+			return true, nil
+		})
+}
+
+// appendProjectEvent is appendOrchestrationEvent for the two
+// project-membership events, which need to inspect the run's lanes and
+// its already-attached set inside the same transaction they append from.
+// decide reports whether the event is still worth appending (false with
+// a nil error means the request was already satisfied, which is a
+// success, not a no-op to complain about).
+func (s *Store) appendProjectEvent(
+	ctx context.Context,
+	idempotencyKey, orchestrationID string,
+	expectedRevision int,
+	eventType protocol.DeliveryEventType,
+	projectID string,
+	decide func(*sql.Tx, *protocol.DeliveryOrchestration, map[string]*protocol.DeliveryLane) (bool, error),
+) (*protocol.DeliveryOrchestration, error) {
+	if projectID == "" {
+		return nil, fmt.Errorf("delivery: %s on %s: project_id is required", eventType, orchestrationID)
+	}
+	payload, err := json.Marshal(map[string]interface{}{"project_id": projectID})
+	if err != nil {
+		return nil, fmt.Errorf("delivery: encode %s payload: %w", eventType, err)
+	}
+	err = s.db.Write(ctx, idempotencyKey, string(eventType)+" "+orchestrationID, func(tx *sql.Tx) error {
+		events, err := loadEventsTx(ctx, tx, orchestrationID)
+		if err != nil {
+			return err
+		}
+		current, err := reduceOrchestration(orchestrationID, events)
+		if err != nil {
+			return err
+		}
+		if current.Revision != expectedRevision {
+			return ErrRevisionConflict
+		}
+		if isTerminal(current.Status) {
+			return ErrInvalidState
+		}
+
+		lanes, err := allLanes(orchestrationID, events)
+		if err != nil {
+			return err
+		}
+		proceed, err := decide(tx, current, lanes)
+		if err != nil || !proceed {
+			return err
+		}
+		return insertEvent(ctx, tx, eventRow{
+			ID: newID(), OrchestrationID: orchestrationID, IdempotencyKey: idempotencyKey,
+			Type: string(eventType), Payload: string(payload),
+			Sequence: len(events), OccurredAt: time.Now().UTC(),
+		})
+	})
+	if errors.Is(err, storage.ErrDuplicateWrite) || err == nil {
+		return s.GetOrchestration(ctx, orchestrationID)
+	}
+	return nil, err
+}
+
 func (s *Store) appendOrchestrationEvent(ctx context.Context, idempotencyKey, orchestrationID string, expectedRevision int, eventType protocol.DeliveryEventType, payload map[string]interface{}) (*protocol.DeliveryOrchestration, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -305,8 +488,29 @@ func (s *Store) appendOrchestrationEvent(ctx context.Context, idempotencyKey, or
 // (ErrScopeMismatch otherwise) - a lane's project scope must always
 // agree with its own task's routing, never silently diverge from it.
 // A lane's project scope is fixed at creation and checked on every
-// later call against it.
+// later call against it. It is a thin wrapper over CreateLaneWithOptions
+// with no options set, so every existing caller of this exact signature
+// keeps compiling and behaving exactly as before.
 func (s *Store) CreateLane(ctx context.Context, idempotencyKey, id, orchestrationID, projectID, parentTaskID string) (*protocol.DeliveryLane, error) {
+	return s.CreateLaneWithOptions(ctx, idempotencyKey, id, orchestrationID, projectID, parentTaskID, LaneOptions{})
+}
+
+// LaneOptions carries the attributes a new lane may optionally be
+// created with, following OrchestrationOptions' shape so a later
+// addition does not grow CreateLane's parameter list again.
+type LaneOptions struct {
+	// SessionID names the workflow run that decided this lane should
+	// exist. It is recorded once, at creation, and never amended: it
+	// answers "which session opened this", not "who is working it now",
+	// which the lane's lease already answers. Left empty, the lane
+	// simply names no session, as every lane recorded before this field
+	// existed does.
+	SessionID string
+}
+
+// CreateLaneWithOptions is CreateLane plus the optional creation
+// attributes in opts. A zero opts behaves identically to CreateLane.
+func (s *Store) CreateLaneWithOptions(ctx context.Context, idempotencyKey, id, orchestrationID, projectID, parentTaskID string, opts LaneOptions) (*protocol.DeliveryLane, error) {
 	err := s.db.Write(ctx, idempotencyKey, "create lane "+id, func(tx *sql.Tx) error {
 		events, err := loadEventsTx(ctx, tx, orchestrationID)
 		if err != nil {
@@ -341,7 +545,11 @@ func (s *Store) CreateLane(ctx context.Context, idempotencyKey, id, orchestratio
 			return ErrProjectInactive
 		}
 
-		payload, err := json.Marshal(map[string]interface{}{"project_id": projectID, "parent_task_id": parentTaskID})
+		payloadMap := map[string]interface{}{"project_id": projectID, "parent_task_id": parentTaskID}
+		if sessionID := strings.TrimSpace(opts.SessionID); sessionID != "" {
+			payloadMap["session_id"] = sessionID
+		}
+		payload, err := json.Marshal(payloadMap)
 		if err != nil {
 			return err
 		}

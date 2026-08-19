@@ -16,10 +16,21 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// ProjectSummary rolls up one project's lanes within an orchestration:
-// which lanes belong to it and how many sit in each scheduling status.
+// ProjectSummary rolls up one project's involvement in an
+// orchestration: whether the run explicitly attached it, which of its
+// lanes belong to the run, and how many sit in each scheduling status.
 type ProjectSummary struct {
-	ProjectID      string                              `json:"project_id"`
+	ProjectID string `json:"project_id"`
+
+	// Attached distinguishes the two ways a project can show up here. A
+	// project the run explicitly attached is a statement that the run
+	// involves it, and it appears even with no lanes at all. A project
+	// that only shows up because some lane names it appears with
+	// attached false - including a project detached after its lanes
+	// finished, whose completed work the run still honestly reports.
+	// Only an attached project can be detached.
+	Attached bool `json:"attached"`
+
 	LaneIDs        []string                            `json:"lane_ids"`
 	CountsByStatus map[protocol.DeliveryLaneStatus]int `json:"counts_by_status"`
 }
@@ -56,6 +67,11 @@ type LaneSummary struct {
 	Attempt          int        `json:"attempt,omitempty"`
 	RepairCycleCount int        `json:"repair_cycle_count,omitempty"`
 	EscalatedAt      *time.Time `json:"escalated_at,omitempty"`
+
+	// SessionID is the workflow run that opened this lane, empty when it
+	// was opened without naming one. It is not the same question as
+	// Worker, which is whoever holds the lane's lease right now.
+	SessionID string `json:"session_id,omitempty"`
 
 	// Evidence lists this lane's recorded artifacts by reference only -
 	// never their bytes - so a caller links to (or fetches) the
@@ -96,6 +112,17 @@ type DeliveryView struct {
 	// deriveOrchestrationTitle). Never empty, so no consumer has to
 	// choose a fallback of its own.
 	Title string `json:"title"`
+
+	// Description, PlanRecordID, and SessionID unwrap the orchestration's
+	// own optional fields from their pointer form, the same way
+	// LaneSummary unwraps a lane's, so every consumer reads one flat
+	// shape instead of some fields here and others by reaching into
+	// Orchestration. Each is empty when never set. Unlike Title, none of
+	// them is ever derived: a run that never recorded prose, a plan, or a
+	// session simply reports none.
+	Description  string `json:"description,omitempty"`
+	PlanRecordID string `json:"plan_record_id,omitempty"`
+	SessionID    string `json:"session_id,omitempty"`
 
 	Projects         []ProjectSummary             `json:"projects"`
 	Lanes            []LaneSummary                `json:"lanes"`
@@ -202,6 +229,15 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		PendingQuestions:     []string{},
 		NewlyRunnableLaneIDs: []string{},
 	}
+	if orch.Description != nil {
+		view.Description = *orch.Description
+	}
+	if orch.PlanRecordId != nil {
+		view.PlanRecordID = *orch.PlanRecordId
+	}
+	if orch.SessionId != nil {
+		view.SessionID = *orch.SessionId
+	}
 	for _, ev := range events {
 		if ev.Sequence > view.LatestSeq {
 			view.LatestSeq = ev.Sequence
@@ -290,6 +326,9 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 			summary.RepairCycleCount = *l.RepairCycleCount
 		}
 		summary.EscalatedAt = l.EscalatedAt
+		if l.SessionId != nil {
+			summary.SessionID = *l.SessionId
+		}
 		view.Lanes = append(view.Lanes, summary)
 
 		laneIDsByProject[l.ProjectId] = append(laneIDsByProject[l.ProjectId], l.Id)
@@ -307,16 +346,46 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		}
 	}
 
-	projectIDs := make([]string, 0, len(laneIDsByProject))
+	// A project belongs in this list if the run attached it or if any of
+	// the run's lanes names it - the two overlap in the common case but
+	// neither contains the other. An attached project with no lanes yet
+	// is precisely what a caller sees between attaching it and
+	// decomposing work into it, and a project detached after its lanes
+	// finished still has to report that finished work rather than
+	// vanishing from the run's history.
+	attached := map[string]bool{}
+	for _, id := range orch.ProjectIds {
+		attached[id] = true
+	}
+	seen := map[string]bool{}
+	projectIDs := make([]string, 0, len(laneIDsByProject)+len(orch.ProjectIds))
+	for _, id := range orch.ProjectIds {
+		if !seen[id] {
+			seen[id] = true
+			projectIDs = append(projectIDs, id)
+		}
+	}
 	for id := range laneIDsByProject {
-		projectIDs = append(projectIDs, id)
+		if !seen[id] {
+			seen[id] = true
+			projectIDs = append(projectIDs, id)
+		}
 	}
 	sort.Strings(projectIDs)
 	for _, id := range projectIDs {
+		counts := countsByProject[id]
+		if counts == nil {
+			counts = map[protocol.DeliveryLaneStatus]int{}
+		}
+		laneIDs := laneIDsByProject[id]
+		if laneIDs == nil {
+			laneIDs = []string{}
+		}
 		view.Projects = append(view.Projects, ProjectSummary{
 			ProjectID:      id,
-			LaneIDs:        laneIDsByProject[id],
-			CountsByStatus: countsByProject[id],
+			Attached:       attached[id],
+			LaneIDs:        laneIDs,
+			CountsByStatus: counts,
 		})
 	}
 

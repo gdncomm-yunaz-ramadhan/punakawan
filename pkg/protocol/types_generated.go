@@ -3490,6 +3490,9 @@ const DeliveryEventTypeManifestRejected DeliveryEventType = "manifest.rejected"
 const DeliveryEventTypeOrchestrationCancelled DeliveryEventType = "orchestration.cancelled"
 const DeliveryEventTypeOrchestrationCompleted DeliveryEventType = "orchestration.completed"
 const DeliveryEventTypeOrchestrationCreated DeliveryEventType = "orchestration.created"
+const DeliveryEventTypeOrchestrationDetailsUpdated DeliveryEventType = "orchestration.details_updated"
+const DeliveryEventTypeProjectAttached DeliveryEventType = "project.attached"
+const DeliveryEventTypeProjectDetached DeliveryEventType = "project.detached"
 const DeliveryEventTypeRequirementCaptured DeliveryEventType = "requirement.captured"
 const DeliveryEventTypeTaskCreated DeliveryEventType = "task.created"
 const DeliveryEventTypeTaskRouted DeliveryEventType = "task.routed"
@@ -3498,6 +3501,9 @@ var enumValues_DeliveryEventType = []interface{}{
 	"orchestration.created",
 	"orchestration.cancelled",
 	"orchestration.completed",
+	"orchestration.details_updated",
+	"project.attached",
+	"project.detached",
 	"input.registered",
 	"input.resolved",
 	"lane.created",
@@ -3686,6 +3692,13 @@ type DeliveryLane struct {
 	// resubmitted.
 	SemarRecordId *string `json:"semar_record_id,omitempty,omitzero" yaml:"semar_record_id,omitempty" mapstructure:"semar_record_id,omitempty"`
 
+	// Id of the workflow run that opened this lane - the same identifier sessions
+	// carry everywhere else. Fixed at creation and never amended: it says which
+	// session decided this lane should exist, which is a fact about the past. Whoever
+	// is executing the lane right now is a different question, answered by
+	// lease_worker_id. Absent when the lane was opened without naming a session.
+	SessionId *string `json:"session_id,omitempty,omitzero" yaml:"session_id,omitempty" mapstructure:"session_id,omitempty"`
+
 	// The scheduling state machine. waiting: predecessors unresolved. blocked: an
 	// unresolved hard blocker was reported with evidence. runnable: no unresolved
 	// predecessor, no worker leased yet. leased: a worker holds an unexpired lease
@@ -3829,17 +3842,39 @@ type DeliveryOrchestration struct {
 	// CreatedAt corresponds to the JSON schema field "created_at".
 	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
 
+	// Longer prose about what this run is for and why it exists, as last set by
+	// whoever started or edited it. Absent when nobody wrote one; unlike title,
+	// nothing derives a substitute, because prose nobody wrote would be invention
+	// rather than description.
+	Description *string `json:"description,omitempty,omitzero" yaml:"description,omitempty" mapstructure:"description,omitempty"`
+
 	// Filesystem-safe ULID (Crockford base32, 26 chars).
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Id of the knowledge record holding this run's final plan, as persisted by
+	// submit_final_plan. Absent until a plan has been recorded against the run.
+	PlanRecordId *string `json:"plan_record_id,omitempty,omitzero" yaml:"plan_record_id,omitempty" mapstructure:"plan_record_id,omitempty"`
+
+	// Projects explicitly attached to this run, in attachment order. Attachment is a
+	// deliberate statement that a run involves a project, kept separate from the
+	// incidental fact that some lane happens to name it: a project can be attached
+	// before it has any lane, and detaching it never touches lanes it already owns.
+	ProjectIds []string `json:"project_ids,omitempty,omitzero" yaml:"project_ids,omitempty" mapstructure:"project_ids,omitempty"`
 
 	// Optimistic-concurrency counter; incremented on every applied event.
 	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
 
+	// Id of the workflow run driving this delivery - the same id sessions are
+	// identified by everywhere else (a WorkflowRun's id, which is also
+	// PanelSessionSummary's id and the run_id the MCP tools thread). Absent when no
+	// session has claimed the run.
+	SessionId *string `json:"session_id,omitempty,omitzero" yaml:"session_id,omitempty" mapstructure:"session_id,omitempty"`
+
 	// Status corresponds to the JSON schema field "status".
 	Status DeliveryOrchestrationStatus `json:"status" yaml:"status" mapstructure:"status"`
 
-	// Short human-readable summary of what this run delivers, supplied when the run
-	// was created. Absent when the creator supplied none - and absent on every run
+	// Short human-readable summary of what this run delivers, as last set by whoever
+	// started or edited it. Absent when nobody supplied one - and absent on every run
 	// created before titles existed - so a consumer that needs a label always derives
 	// one from the run's requirement references instead of reading this field
 	// directly.

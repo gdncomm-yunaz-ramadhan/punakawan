@@ -27,6 +27,10 @@ type StartDeliveryInput struct {
 	// orchestration's opaque id. Omitted, one is derived from the
 	// references this call captured.
 	Title string `json:"title,omitempty" jsonschema:"short human-readable summary of what this delivery delivers, written for whoever reads it later instead of the orchestration's opaque id - e.g. \"migrate checkout to the new payments API\". Omitting it derives one from the first reference, so supply it whenever the references alone would not say what the work is"`
+	// Description is optional: prose about what the delivery is for.
+	// Omitted, the orchestration simply carries none - nothing invents
+	// prose the way a missing title is derived.
+	Description string `json:"description,omitempty" jsonschema:"longer prose about what this delivery is for and why it exists, for whoever reads the run later. Omitting it leaves the delivery with no description at all; unlike title, nothing is derived in its place. Editable afterwards via update_delivery"`
 	// IdempotencyKey is optional: repeating the same key on retry
 	// resolves to the same orchestration instead of minting a second
 	// one for the same request.
@@ -105,6 +109,7 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		view, err := store.StartDeliveryWithOptions(ctx, in.IdempotencyKey, in.References, delivery.OrchestrationOptions{
 			WorkflowDefinitionID: in.WorkflowDefinitionId,
 			Title:                in.Title,
+			Description:          in.Description,
 		})
 		if err != nil {
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: start delivery: %w", err)

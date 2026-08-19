@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -45,14 +46,35 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 			if defID, ok := ev.Payload["workflow_definition_id"].(string); ok && defID != "" {
 				o.WorkflowDefinitionId = &defID
 			}
-			// A title is optional and only ever supplied here, so a log
-			// without one simply leaves the field nil - every orchestration
-			// recorded before titles existed replays exactly as it always
-			// did. Deriving a readable label for those is a read-model
-			// concern (deliveryview.go), not something this reducer invents
-			// and hands back as if it had been persisted.
-			if title, ok := ev.Payload["title"].(string); ok && title != "" {
-				o.Title = &title
+			// Title and description are optional here, so a log without
+			// them simply leaves both fields nil - every orchestration
+			// recorded before they existed replays exactly as it always
+			// did. Deriving a readable label for a titleless run is a
+			// read-model concern (deliveryview.go), not something this
+			// reducer invents and hands back as if it had been persisted;
+			// a description nobody wrote is never substituted at all.
+			applyOptionalText(&o.Title, ev.Payload, "title")
+			applyOptionalText(&o.Description, ev.Payload, "description")
+		case protocol.DeliveryEventTypeOrchestrationDetailsUpdated:
+			// Only the keys this event actually carries move; the rest of
+			// the run's description is left exactly as an earlier event
+			// left it, so editing a title never quietly erases prose
+			// somebody else wrote.
+			applyOptionalText(&o.Title, ev.Payload, "title")
+			applyOptionalText(&o.Description, ev.Payload, "description")
+			applyOptionalText(&o.PlanRecordId, ev.Payload, "plan_record_id")
+			applyOptionalText(&o.SessionId, ev.Payload, "session_id")
+		case protocol.DeliveryEventTypeProjectAttached:
+			// Attachment order is the order projects were named, and a
+			// project already attached is not appended twice - the field
+			// is a set of the projects this run involves, not a log of how
+			// often somebody said so.
+			if projectID := stringField(ev.Payload, "project_id"); projectID != "" && indexOfString(o.ProjectIds, projectID) < 0 {
+				o.ProjectIds = append(o.ProjectIds, projectID)
+			}
+		case protocol.DeliveryEventTypeProjectDetached:
+			if i := indexOfString(o.ProjectIds, stringField(ev.Payload, "project_id")); i >= 0 {
+				o.ProjectIds = append(o.ProjectIds[:i], o.ProjectIds[i+1:]...)
 			}
 		case protocol.DeliveryEventTypeInputRegistered:
 			ref, _ := ev.Payload["reference"].(string)
@@ -120,6 +142,11 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 	if parentTaskID, ok := laneEvents[0].Payload["parent_task_id"].(string); ok && parentTaskID != "" {
 		l.ParentTaskId = &parentTaskID
 	}
+	// The session that opened the lane is fixed at creation, so it is read
+	// from lane.created alongside project and parent task rather than
+	// folded in the loop below. A lane created without one keeps it nil,
+	// which is every lane recorded before lanes named a session.
+	applyOptionalText(&l.SessionId, laneEvents[0].Payload, "session_id")
 
 	for _, ev := range laneEvents {
 		l.UpdatedAt = ev.OccurredAt
@@ -579,6 +606,38 @@ func reduceApprovalManifest(orchestrationID, manifestID string, events []protoco
 func stringField(payload protocol.DeliveryEventPayload, key string) string {
 	v, _ := payload[key].(string)
 	return v
+}
+
+// applyOptionalText folds one optional free-text field out of a payload
+// into the pointer field it belongs to. A key the event never carried
+// leaves the current value untouched, which is what lets one event
+// change a title without disturbing a description; a key carrying only
+// whitespace clears the field back to absent, which is how a caller
+// takes back prose it no longer wants rather than being stuck with it
+// forever.
+func applyOptionalText(field **string, payload protocol.DeliveryEventPayload, key string) {
+	raw, present := payload[key]
+	if !present {
+		return
+	}
+	text, _ := raw.(string)
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		*field = nil
+		return
+	}
+	*field = &trimmed
+}
+
+// indexOfString returns where value sits in list, or -1 when it is
+// absent.
+func indexOfString(list []string, value string) int {
+	for i, v := range list {
+		if v == value {
+			return i
+		}
+	}
+	return -1
 }
 
 func numberField(payload protocol.DeliveryEventPayload, key string) float64 {

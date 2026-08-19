@@ -104,6 +104,10 @@ type CreateLaneInput struct {
 	OrchestrationId string `json:"orchestration_id"`
 	ProjectId       string `json:"project_id"`
 	ParentTaskId    string `json:"parent_task_id,omitempty" jsonschema:"optional - a lane can be created before a task is assigned to it; if set, must already exist in this orchestration and, once routed, must be routed to this same project_id"`
+	// SessionId is optional and fixed once recorded: it says which
+	// session decided the lane should exist, not who is executing it,
+	// which the lane's lease reports separately.
+	SessionId string `json:"session_id,omitempty" jsonschema:"optional run id of the session opening this lane, the same id run_id carries elsewhere. Recorded once at creation and never amended; who is executing the lane right now is reported separately as the lane's worker"`
 }
 
 // CreateLaneOutput is create_lane's output: the created lane plus a
@@ -119,7 +123,7 @@ func createLaneHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, C
 		if err != nil {
 			return nil, CreateLaneOutput{}, err
 		}
-		lane, err := store.CreateLane(ctx, delivery.NewID(), delivery.NewID(), in.OrchestrationId, in.ProjectId, in.ParentTaskId)
+		lane, err := store.CreateLaneWithOptions(ctx, delivery.NewID(), delivery.NewID(), in.OrchestrationId, in.ProjectId, in.ParentTaskId, delivery.LaneOptions{SessionID: in.SessionId})
 		if err != nil {
 			return nil, CreateLaneOutput{}, fmt.Errorf("mcpserver: create lane: %w", err)
 		}

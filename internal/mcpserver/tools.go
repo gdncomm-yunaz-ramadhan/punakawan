@@ -492,6 +492,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	}, getDeliveryHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "update_delivery",
+		Description: "Edit what a delivery orchestration says about itself after it was started: title, description, the plan record it follows, the session driving it, and which projects it involves. Every field is optional and only what you pass changes. Pass expected_revision from get_delivery so an edit against a stale view conflicts. Detaching a project whose lanes are still unfinished is refused; lanes are never deleted or reassigned.",
+	}, updateDeliveryHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "answer_delivery_question",
 		Description: "Answer one pending delivery question, either by supplying a now-known requirement's real content (provider/external_id/url/title/summary) or by routing an ambiguously-scoped parent task to a project (parent_task_id/project_id). Returns the orchestration's refreshed status.",
 	}, answerDeliveryQuestionHandler(a))
