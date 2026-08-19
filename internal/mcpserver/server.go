@@ -73,27 +73,44 @@ var serverInstructionsRevision = func() string {
 
 var serverInstructions = serverInstructionsBody + "\n\nInstructions revision: " + serverInstructionsRevision
 
-// facadeTools is the small, always-visible default discovery surface: the
-// delivery facade a normal caller needs, plus find_tool itself. Every other
-// registered tool (the ~90-tool worker-side surface: Jira, knowledge, git/
-// PR, role review, adapters, ...) still registers exactly as before, so
-// capability.Registry/workflowdef validation and CallTool-by-name (once
-// found) are unaffected - only its default tools/list visibility changes.
-// This is the AC2 gap an earlier design review had reinterpreted narrower
-// rather than actually built: reduce default discovery, not remove
-// capability.
+// facadeTools is the small, always-visible default discovery surface. Every
+// other registered tool (the ~85-tool worker-side surface: the rest of Jira,
+// knowledge, git/PR, role review, adapters, ...) still registers exactly as
+// before, so capability.Registry/workflowdef validation and CallTool-by-name
+// (once found) are unaffected - only its default tools/list visibility
+// changes. The point is to reduce default discovery, not capability.
+//
+// What earns a slot here is being a place work legitimately *starts*, because
+// a caller that cannot see a starting point does not go looking for one: it
+// concludes the server cannot do that thing at all. Jira was the clearest
+// casualty - fully wired and working, yet absent from this map, so a caller
+// with a ticket in hand saw only delivery-orchestration tools and reasonably
+// decided there was no Jira support to use.
+//
+// The three graph-authoring tools that used to sit here (create_parent_task,
+// create_lane, add_dependency_edge) do not, because start_delivery now takes
+// the whole decomposition in one call. They remain a find_tool away for
+// amending a delivery after the fact, which is the case they are actually
+// needed for.
 var facadeTools = map[string]bool{
-	"start_delivery":             true,
-	"get_delivery":               true,
-	"answer_delivery_question":   true,
-	"approve_project_delivery":   true,
-	"cancel_delivery":            true,
+	// Delivery lifecycle: start one, watch it, unblock it, land it.
+	"start_delivery":           true,
+	"get_delivery":             true,
+	"answer_delivery_question": true,
+	"approve_project_delivery": true,
+	"cancel_delivery":          true,
+	"register_project":         true,
+
+	// Run a saved end-to-end workflow rather than hand-chaining its steps.
 	"invoke_workflow_definition": true,
-	"register_project":           true,
-	"create_parent_task":         true,
-	"create_lane":                true,
-	"add_dependency_edge":        true,
-	"find_tool":                  true,
+
+	// Jira is where a requirement usually enters and where progress has to be
+	// reported back, so both ends of that round trip are visible by default.
+	"ingest_jira_requirement":   true,
+	"get_jira_issue":            true,
+	"update_jira_task_progress": true,
+
+	"find_tool": true,
 }
 
 // newServer builds the *mcp.Server with every prompt and tool registered,

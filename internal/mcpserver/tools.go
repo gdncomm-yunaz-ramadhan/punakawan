@@ -172,7 +172,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_task_evidence",
-		Description: "List every structured EvidenceRecord check_diff/run_tests/check_openapi_compatibility have recorded for a task (punokawan-s12), so a reviewer can enumerate its evidence without knowing the bundle's file-naming convention.",
+		Description: "List every structured EvidenceRecord check_diff/run_tests/check_openapi_compatibility have recorded for a task, so a reviewer can enumerate its evidence without knowing the bundle's file-naming convention.",
 	}, listTaskEvidenceHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -256,7 +256,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 		Description: "Update a Jira issue's estimate, worklog, and/or comment - each optional, one approval covers all. Log against the subtask, not the parent, for decomposed issues." + plainLanguageStyleNote + approvalGateNote,
 	}, updateJiraTaskProgressHandler(a))
 
-	// Native Jira convenience tools (punokawan-t6y): common ops that previously
+	// Native Jira convenience tools: common ops that previously
 	// needed a raw call_adapter_operation passthrough. Each is a thin,
 	// approval-gated wrapper over the same atlassian adapter operation layer as
 	// the tools above; run_id is optional (lightweight one-off mode).
@@ -297,7 +297,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_jira_sync_queue",
-		Description: "List outbound adapter writes (Jira syncs) that reached the adapter but failed after passing their approval check, recorded for retry (punokawan-nbz). Defaults to pending entries only.",
+		Description: "List outbound adapter writes (Jira syncs) that reached the adapter but failed after passing their approval check, recorded for retry. Defaults to pending entries only.",
 	}, listJiraSyncQueueHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
