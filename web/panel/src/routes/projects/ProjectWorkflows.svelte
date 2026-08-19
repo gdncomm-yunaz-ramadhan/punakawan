@@ -419,9 +419,9 @@
     height: 36px;
     flex: 0 0 auto;
     border-radius: 10px;
-    color: #cf4d17;
-    background: color-mix(in srgb, #ff6d2e 14%, var(--color-surface));
-    border: 1px solid color-mix(in srgb, #ff6d2e 30%, var(--color-border));
+    color: var(--color-terracotta);
+    background: color-mix(in srgb, var(--color-terracotta) 14%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--color-terracotta) 30%, var(--color-border));
   }
   .workflow-title {
     min-width: 0;
@@ -563,11 +563,11 @@
     border-left-color: transparent;
   }
   .step.trigger .step-marker {
-    color: #cf4d17;
-    background: color-mix(in srgb, #ff6d2e 14%, var(--color-surface));
+    color: var(--color-terracotta);
+    background: color-mix(in srgb, var(--color-terracotta) 14%, var(--color-surface));
   }
   .step.trigger .step-content {
-    border-left-color: color-mix(in srgb, #ff6d2e 55%, var(--color-border));
+    border-left-color: color-mix(in srgb, var(--color-terracotta) 55%, var(--color-border));
   }
   .step.approval .step-marker {
     color: var(--color-warning);
