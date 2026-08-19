@@ -86,10 +86,50 @@
     }
   }
 
+  // A live refresh reuses the same request but leaves `loading` and the
+  // already-rendered project alone, so an incoming event updates the header
+  // and the counts in place instead of tearing the page down to a spinner.
+  async function refresh(id: string) {
+    error = null;
+    try {
+      project = await getProject(id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // The summary this view renders spans several entity types at once -
+  // repository and metadata counts, open/blocked task counts, active session
+  // count, knowledge count, availability - so the filter is deliberately
+  // broader than a single entity's events. It still excludes every event that
+  // cannot move any of those numbers (approvals, evidence, deliveries,
+  // adapter health, contradictions, dossiers, handoffs) and the
+  // high-frequency session.progress/session.phase_changed frames, which
+  // report progress inside one session without changing how many are active.
+  const refreshOn = new Set([
+    "workspace.updated",
+    "workspace.availability_changed",
+    "task.created",
+    "task.updated",
+    "task.blocked",
+    "task.completed",
+    "session.started",
+    "session.completed",
+    "session.failed",
+    "knowledge.created",
+    "knowledge.updated",
+    "knowledge.superseded",
+  ]);
+
   onMount(() => {
-    load(projectId);
-    return onPanelEvent(() => load(projectId));
+    return onPanelEvent((evt) => {
+      if (!refreshOn.has(evt.type)) return;
+      refresh(projectId);
+    });
   });
+  // The effect is the single trigger for both the first load and any later
+  // projectId change - effects also run after the first render, so loading
+  // from onMount as well would fire the very same request twice per open.
   $effect(() => {
     load(projectId);
   });

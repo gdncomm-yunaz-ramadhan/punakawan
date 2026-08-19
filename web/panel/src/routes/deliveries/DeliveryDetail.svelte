@@ -70,7 +70,6 @@
   }
 
   onMount(() => {
-    load(orchestrationId);
     return onPanelEvent((evt) => {
       if (evt.type !== "delivery.updated") return;
       const parsed = parsePanelEvent(evt);
@@ -79,6 +78,9 @@
     });
   });
 
+  // Single trigger for the first load and for a later orchestrationId change -
+  // effects run after the first render too, so loading from onMount as well
+  // would fire the same request twice per open.
   $effect(() => {
     load(orchestrationId);
   });

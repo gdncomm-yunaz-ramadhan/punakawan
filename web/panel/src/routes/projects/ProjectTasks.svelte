@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import {
     listProjectTasks,
     getProjectTask,
@@ -34,16 +34,23 @@
   let priorityFilter = $state("");
   let query = $state("");
 
+  // Both endpoints are fetched together so the list and the dependency graph
+  // can never disagree about which tasks exist, and so the initial load and a
+  // live refresh stay in step with each other.
+  async function fetchTasks(id: string) {
+    const [tasksRes, graphRes] = await Promise.all([
+      listProjectTasks(id, { status: statusFilter || undefined, priority: priorityFilter || undefined, query: query || undefined }),
+      getProjectTaskGraph(id),
+    ]);
+    tasks = tasksRes.items ?? [];
+    graph = graphRes;
+  }
+
   async function load(id: string) {
     loading = true;
     error = null;
     try {
-      const [tasksRes, graphRes] = await Promise.all([
-        listProjectTasks(id, { status: statusFilter || undefined, priority: priorityFilter || undefined, query: query || undefined }),
-        getProjectTaskGraph(id),
-      ]);
-      tasks = tasksRes.items ?? [];
-      graph = graphRes;
+      await fetchTasks(id);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -51,12 +58,39 @@
     }
   }
 
+  // A live refresh keeps `loading` untouched so the board/table/graph the user
+  // is looking at is not replaced by a spinner, and the chosen view and open
+  // task drawer survive the update.
+  async function refresh(id: string) {
+    error = null;
+    try {
+      await fetchTasks(id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // Only task writes change this view's list, counts, and dependency edges.
+  const refreshOn = new Set(["task.created", "task.updated", "task.blocked", "task.completed"]);
+
   onMount(() => {
-    load(projectId);
-    return onPanelEvent(() => load(projectId));
+    return onPanelEvent((evt) => {
+      if (!refreshOn.has(evt.type)) return;
+      refresh(projectId);
+    });
   });
+  // Single trigger for the first load and for a project change - effects run
+  // after the first render too, so loading from onMount as well would fire the
+  // same pair of requests twice per open. The two dropdown filters are read
+  // here so they re-run the load; the free-text search deliberately is not,
+  // because it updates on every keystroke and would then fire a request per
+  // character - it refetches from its own change handler instead. load()'s own
+  // reads are untracked so they cannot re-add that dependency implicitly.
   $effect(() => {
-    load(projectId);
+    const id = projectId;
+    statusFilter;
+    priorityFilter;
+    untrack(() => load(id));
   });
 
   // Adapt the API task-graph shape to the presentation GraphNode/GraphEdge
@@ -116,7 +150,7 @@
           bind:value={query}
           onchange={() => load(projectId)}
         />
-        <select bind:value={statusFilter} onchange={() => load(projectId)}>
+        <select bind:value={statusFilter}>
           <option value="">Any status</option>
           <option value="open">Open</option>
           <option value="in_progress">In progress</option>
@@ -124,7 +158,7 @@
           <option value="deferred">Deferred</option>
           <option value="closed">Closed</option>
         </select>
-        <select bind:value={priorityFilter} onchange={() => load(projectId)}>
+        <select bind:value={priorityFilter}>
           <option value="">Any priority</option>
           <option value="0">P0</option>
           <option value="1">P1</option>

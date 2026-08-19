@@ -48,6 +48,19 @@
     }
   }
 
+  // A live refresh leaves `loading` alone so the table keeps its rows (and
+  // an open session dialog keeps its content) while the list updates
+  // underneath.
+  async function refresh(id: string) {
+    error = null;
+    try {
+      const res = await listProjectSessions(id);
+      sessions = res.items ?? [];
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   function closeDetail() {
     selectedId = null;
     detail = null;
@@ -78,10 +91,27 @@
     }
   }
 
+  // The columns are session lifecycle and active role, so only lifecycle
+  // events refetch. session.progress is left out on purpose: it fires
+  // continuously while a run works and would only ever move the "Updated"
+  // timestamp, which is not worth a full list refetch per frame - status,
+  // role, and completion all still arrive live.
+  const refreshOn = new Set([
+    "session.started",
+    "session.phase_changed",
+    "session.completed",
+    "session.failed",
+  ]);
+
   onMount(() => {
-    load(projectId);
-    return onPanelEvent(() => load(projectId));
+    return onPanelEvent((evt) => {
+      if (!refreshOn.has(evt.type)) return;
+      refresh(projectId);
+    });
   });
+  // Single trigger for the first load and for a project change - effects run
+  // after the first render too, so loading from onMount as well would fire
+  // the same request twice per open.
   $effect(() => {
     load(projectId);
   });

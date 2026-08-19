@@ -108,10 +108,10 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		Evidence:     &sources.EvidenceSource{App: a},
 		Approval:     &sources.ApprovalSource{App: a},
 		GlobalSearch: &sources.GlobalSearchSource{App: a, Registry: reg, Runtime: runtimeMgr},
-		// The project source composes the (cached) workspace reader for its
-		// counts and the registry for id->root resolution, so it never
-		// re-runs the deep bd/dolt/git inspection the workspace reader
-		// already performs (plan §8's "one snapshot, reused everywhere").
+		// The project source composes the cached workspace reader's
+		// counts-only Summary and the registry for id->root resolution, so it
+		// never re-runs the deep bd/dolt/git inspection whose result the
+		// snapshot already holds (plan §8's "one snapshot, reused everywhere").
 		Project: projectSource,
 		Roles:   projectSource,
 		Runtime: runtimeMgr,
@@ -120,8 +120,9 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 
 // ProjectSource implements contract.ProjectReader over the project files at
 // each workspace root, per the project performance plan §3/§4. Reads reuse
-// the injected WorkspaceReader for the per-workspace counts (repositories,
-// knowledge, tasks, sessions) instead of duplicating that inspection;
+// the injected ProjectWorkspaceReader's snapshot-backed per-workspace counts
+// (repositories, knowledge, tasks, sessions) instead of duplicating that
+// inspection;
 // project identity and metadata come from internal/project.Load. Metadata
 // mutations load the project fresh, apply an optimistically-locked change,
 // and persist a new immutable revision via internal/project.Save.
@@ -131,8 +132,24 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 // imports internal/project, and internal/panel/api imports panel, so the one
 // package that can depend on contract, internal/project, registry, and app
 // at once without a cycle is panel itself.
+// ProjectWorkspaceReader is the workspace-side surface ProjectSource reads
+// its per-project counts through.
+//
+// It is deliberately narrower than contract.WorkspaceReader, and in particular
+// it has no Get: the project routes need the registered list and one project's
+// counts, never the live per-source Health detail Get computes. Reading counts
+// through Get is what made GET /api/v1/projects/{id} open the project's Dolt
+// store, shell out to `bd list` plus `bd ready`, and run `git status` per
+// repository on every single request - measured at ~8s cold and ~2.6s warm for
+// a project with a real task graph, for numbers the snapshot cache was already
+// maintaining. Summary serves those same counts from that snapshot.
+type ProjectWorkspaceReader interface {
+	List(ctx context.Context) ([]contract.WorkspaceSummary, error)
+	Summary(ctx context.Context, projectID string) (contract.WorkspaceSummary, error)
+}
+
 type ProjectSource struct {
-	Workspace contract.WorkspaceReader
+	Workspace ProjectWorkspaceReader
 	Registry  *registry.Store
 	// PrimaryID / PrimaryRoot describe the single workspace this panel
 	// instance's *app.App was loaded for. They are the fallback when the
@@ -249,13 +266,14 @@ func (s *ProjectSource) List(ctx context.Context) ([]contract.ProjectSummary, er
 	return out, nil
 }
 
-// Summary describes one project by id.
+// Summary describes one project by id, from the snapshot-backed counts rather
+// than a live deep inspection - see ProjectWorkspaceReader.
 func (s *ProjectSource) Summary(ctx context.Context, projectID string) (contract.ProjectSummary, error) {
-	detail, err := s.Workspace.Get(ctx, projectID)
+	ws, err := s.Workspace.Summary(ctx, projectID)
 	if err != nil {
 		return contract.ProjectSummary{}, err
 	}
-	return s.summaryFromWorkspace(detail.WorkspaceSummary), nil
+	return s.summaryFromWorkspace(ws), nil
 }
 
 // Get loads the project's identity, metadata, and current revision.

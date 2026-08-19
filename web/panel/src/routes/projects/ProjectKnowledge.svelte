@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import {
     listProjectKnowledge,
     getProjectKnowledge,
@@ -157,24 +157,40 @@
   // detail.type here.
   const lineage = $derived(detail ? recipeLineage(detail, relations) : { nodes: [] as GraphNode[], edges: [] as GraphEdge[] });
 
+  async function fetchRows(id: string) {
+    const res = await listProjectKnowledge(id, {
+      q: q || undefined,
+      type: type || undefined,
+      state: validityState || undefined,
+      repository: repository || undefined,
+      stale: staleOnly || undefined,
+    });
+    rows = (res.items ?? []).map((item) =>
+      isSearchResult(item) ? { record: item.Record, explanation: item.Explanation } : { record: item },
+    );
+  }
+
   async function load(id: string) {
     loading = true;
     error = null;
     try {
-      const res = await listProjectKnowledge(id, {
-        q: q || undefined,
-        type: type || undefined,
-        state: validityState || undefined,
-        repository: repository || undefined,
-        stale: staleOnly || undefined,
-      });
-      rows = (res.items ?? []).map((item) =>
-        isSearchResult(item) ? { record: item.Record, explanation: item.Explanation } : { record: item },
-      );
+      await fetchRows(id);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  // A live refresh swaps the list contents in place without touching
+  // `loading`, so a record the user is reading does not vanish behind a
+  // spinner every time somebody else writes knowledge.
+  async function refresh(id: string) {
+    error = null;
+    try {
+      await fetchRows(id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -208,12 +224,29 @@
     }
   }
 
+  // Only knowledge writes can change this list; every other panel event
+  // (sessions, tasks, approvals, deliveries) would refetch it for nothing.
+  const refreshOn = new Set(["knowledge.created", "knowledge.updated", "knowledge.superseded"]);
+
   onMount(() => {
-    load(projectId);
-    return onPanelEvent(() => load(projectId));
+    return onPanelEvent((evt) => {
+      if (!refreshOn.has(evt.type)) return;
+      refresh(projectId);
+    });
   });
+  // Single trigger for the first load and for a project change - effects run
+  // after the first render too, so loading from onMount as well would fire
+  // the same request twice per open. The discrete filter controls are read
+  // here so they re-run the load; the free-text fields deliberately are not,
+  // because they update on every keystroke and would then fire one request
+  // per character - they refetch from their own change handlers instead.
+  // load()'s own reads are untracked so they cannot re-add those
+  // dependencies implicitly.
   $effect(() => {
-    load(projectId);
+    const id = projectId;
+    validityState;
+    staleOnly;
+    untrack(() => load(id));
   });
 
   const validityLabels: Record<string, string> = {
@@ -258,7 +291,7 @@
       </label>
       <label class="field">
         <span>Validity state</span>
-        <select bind:value={validityState} onchange={() => load(projectId)}>
+        <select bind:value={validityState}>
           <option value="">Any</option>
           {#each Object.entries(validityLabels) as [value, label] (value)}
             <option {value}>{label}</option>
@@ -270,7 +303,7 @@
         <input type="text" bind:value={repository} onchange={() => load(projectId)} />
       </label>
       <label class="checkbox">
-        <input type="checkbox" bind:checked={staleOnly} onchange={() => load(projectId)} />
+        <input type="checkbox" bind:checked={staleOnly} />
         Stale only
       </label>
     </div>

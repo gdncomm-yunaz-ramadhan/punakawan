@@ -3,6 +3,7 @@ package sources
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -152,24 +153,73 @@ func (c *CachedWorkspaceReader) List(ctx context.Context) ([]contract.WorkspaceS
 
 	out := make([]contract.WorkspaceSummary, 0, len(entries))
 	for _, e := range entries {
-		snap, stale := c.cache.GetOrRefresh(ctx, e.Id)
-		if snap == nil && stale {
-			// Cold entry: refresh once synchronously (deduplicated against the
-			// background refresh GetOrRefresh just triggered) so the first page
-			// still shows data rather than a placeholder.
-			if refreshed, refreshErr := c.cache.Refresh(ctx, e.Id); refreshErr == nil {
-				snap = refreshed
-			}
-		}
-		if snap == nil {
-			// Refresh failed and nothing is cached: degrade to an unavailable
-			// summary rather than dropping the project from the list.
-			out = append(out, c.unavailableSummary(e))
-			continue
-		}
-		out = append(out, c.snapshotToSummary(snap, e))
+		out = append(out, c.cachedSummary(ctx, e))
 	}
 	return out, nil
+}
+
+// cachedSummary serves one registered project's counts from the snapshot
+// cache, joining back the registry metadata the snapshot does not carry.
+//
+// A process-cold entry (nothing in memory and nothing persisted on disk)
+// refreshes once synchronously - deduplicated against the background refresh
+// GetOrRefresh just triggered - so a first read shows real data rather than a
+// placeholder. If that refresh also fails and nothing is cached, the project
+// degrades to an unavailable summary rather than disappearing from the caller's
+// result.
+func (c *CachedWorkspaceReader) cachedSummary(ctx context.Context, e protocol.PanelWorkspaceRegistryEntry) contract.WorkspaceSummary {
+	snap, stale := c.cache.GetOrRefresh(ctx, e.Id)
+	if snap == nil && stale {
+		if refreshed, refreshErr := c.cache.Refresh(ctx, e.Id); refreshErr == nil {
+			snap = refreshed
+		}
+	}
+	if snap == nil {
+		return c.unavailableSummary(e)
+	}
+	return c.snapshotToSummary(snap, e)
+}
+
+// Summary returns one project's counts from the snapshot cache, without the
+// live per-source Health detail Get computes.
+//
+// This is the read the project pages actually want. They render counts
+// (repositories, knowledge, open/blocked tasks, active sessions) and never
+// display per-source health - but recomputing health means opening the
+// project's Dolt store, shelling out to `bd list` plus `bd ready`, and running
+// `git status` once per repository. Against a project with a real task graph
+// that is several seconds of work, and routing the project detail read through
+// Get made every single request pay it, even though List had already computed
+// and cached the very same counts moments earlier.
+//
+// Get stays deliberately live because the Health page exists to show fresh
+// per-source detail. A counts-only read has no such reason to bypass the
+// snapshot, which is background-refreshed on staleness and persisted across
+// panel restarts, so the freshness here matches what the project list and
+// overview pages already show.
+//
+// An id the registry does not know yields contract.ErrWorkspaceUnavailable so
+// handlers answer 404 rather than 500. With no registry at all, or for the
+// workspace this panel instance was itself loaded for before it appears in the
+// registry, this falls through to Get: the primary is always resolvable, which
+// is the same fallback the inner reader makes.
+func (c *CachedWorkspaceReader) Summary(ctx context.Context, workspaceID string) (contract.WorkspaceSummary, error) {
+	if c.registry == nil {
+		detail, err := c.Get(ctx, workspaceID)
+		return detail.WorkspaceSummary, err
+	}
+	entry, err := c.registry.Get(workspaceID)
+	if err != nil {
+		if !errors.Is(err, registry.ErrNotFound) {
+			return contract.WorkspaceSummary{}, fmt.Errorf("sources: cached workspace summary %q: %w", workspaceID, err)
+		}
+		if workspaceID == c.primaryID {
+			detail, getErr := c.Get(ctx, workspaceID)
+			return detail.WorkspaceSummary, getErr
+		}
+		return contract.WorkspaceSummary{}, fmt.Errorf("sources: workspace %q: %w", workspaceID, contract.ErrWorkspaceUnavailable)
+	}
+	return c.cachedSummary(ctx, entry), nil
 }
 
 // Get delegates to the inner reader for the full detail and warms the cache
