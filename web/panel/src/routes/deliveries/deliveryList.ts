@@ -1,10 +1,10 @@
 // Human-readable labelling plus client-side search/sort for deliveries.
 //
 // A delivery's own id is an opaque hash, so the panel never shows it as the
-// primary identifier. The backend is growing an optional `title`; until every
-// stored orchestration has one, the label falls back to whatever the already
-// loaded view can describe the delivery by, and only uses a shortened id when
-// there is nothing else at all.
+// primary identifier. A loaded view always carries a title, but the list
+// endpoint returns bare orchestration records whose own title is optional, so
+// the label still falls back to whatever a view can describe the delivery by,
+// and only uses a shortened id when there is nothing else at all.
 
 import type { DeliveryOrchestration, DeliveryView } from "../../lib/api/client";
 
@@ -44,7 +44,12 @@ function joinCapped(values: string[]): string {
 }
 
 export function deliveryLabel(orchestration: DeliveryOrchestration, view: DeliveryView | null): string {
-  const title = orchestration.title?.trim();
+  // The view's title is the richer of the two: it is the supplied title when
+  // there is one, and a label derived from the delivery's own requirement
+  // references when there is not. The orchestration record only ever carries
+  // the supplied one, and is all the list endpoint returns before a view has
+  // loaded, so it is still consulted first for whichever source arrives first.
+  const title = orchestration.title?.trim() || view?.title?.trim();
   if (title) return title;
 
   // The parent tasks are what a delivery was actually opened to deliver, so

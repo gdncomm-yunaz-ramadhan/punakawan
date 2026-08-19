@@ -27,6 +27,9 @@ function orchestration(over: Partial<DeliveryOrchestration> = {}): DeliveryOrche
 function view(over: Partial<DeliveryView> = {}): DeliveryView {
   return {
     orchestration: orchestration(),
+    // Blank by default so each case opts into the title it wants to exercise,
+    // and the fallback chain stays reachable for the cases that need it.
+    title: "",
     projects: [],
     lanes: [],
     blockers: [],
@@ -47,6 +50,14 @@ describe("deliveryLabel", () => {
   it("prefers the backend title when it is present", () => {
     const label = deliveryLabel(orchestration({ title: "Migrate billing to v2" }), null);
     expect(label).toBe("Migrate billing to v2");
+  });
+
+  it("uses the loaded view's title when the orchestration record carries none", () => {
+    const v = view({
+      title: "Retire the legacy pricing endpoint",
+      lanes: [{ lane_id: "l1", project_id: "billing", status: "runnable", parent_task_id: "PUN-12" }],
+    });
+    expect(deliveryLabel(orchestration(), v)).toBe("Retire the legacy pricing endpoint");
   });
 
   it("ignores a title that is empty or only whitespace", () => {

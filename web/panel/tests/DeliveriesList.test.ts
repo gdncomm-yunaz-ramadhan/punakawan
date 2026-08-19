@@ -149,7 +149,20 @@ describe("DeliveriesList", () => {
     expect(container.querySelector(".id")?.textContent).toBe(rawId);
   });
 
-  it("derives a readable heading from the view when the backend sends no title", async () => {
+  it("leads with the view's title when only the view carries one, keeping the id as muted text", async () => {
+    const rawId = "c642fb0e8a69bdcae2be77e3ab";
+    const view = { ...deliveryView(rawId), title: "Retire the legacy pricing endpoint" };
+    installBackend([orchestration(rawId)], { [rawId]: view });
+
+    const { container } = render(DeliveriesList);
+
+    await waitFor(() =>
+      expect(container.querySelector(".name")?.textContent).toBe("Retire the legacy pricing endpoint"),
+    );
+    expect(container.querySelector(".id")?.textContent).toBe(rawId);
+  });
+
+  it("derives a readable heading from the view when neither the record nor the view has a title", async () => {
     const rawId = "c642fb0e8a69bdcae2be77e3ab";
     const view = {
       ...deliveryView(rawId),

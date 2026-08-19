@@ -1180,6 +1180,13 @@ export type DeliveryLaneStatus = "accepted" | "blocked" | "failed" | "leased" | 
 
 export interface DeliveryProjectSummary {
   project_id: string;
+  // Distinguishes the two ways a project shows up here. True means the
+  // delivery explicitly attached it, so it is listed even with no lanes at
+  // all. False means it only appears because some lane names it - including a
+  // project detached after its lanes finished, whose completed work the
+  // delivery still reports. Always sent, so the UI never has to guess.
+  attached: boolean;
+  // Always sent, empty rather than absent, for a project with no lanes.
   lane_ids: string[];
   counts_by_status: Partial<Record<DeliveryLaneStatus, number>>;
 }
@@ -1212,6 +1219,10 @@ export interface DeliveryLaneSummary {
   attempt?: number;
   repair_cycle_count?: number;
   escalated_at?: string;
+  // The session that opened this lane. Deliberately a different question from
+  // `worker`, which is whoever holds the lane's lease right now - the two are
+  // never interchangeable and must not be shown as one thing.
+  session_id?: string;
   evidence?: DeliveryEvidenceRef[];
 }
 
@@ -1261,6 +1272,16 @@ export interface ApprovalManifest {
 
 export interface DeliveryView {
   orchestration: DeliveryOrchestration;
+  // Never empty: whatever title the delivery was started with, or one derived
+  // from its own requirement references when it was started without one. The
+  // UI can show it directly instead of choosing a fallback of its own.
+  title: string;
+  // None of these three is ever derived, so an absent one honestly means
+  // nobody recorded it: no prose was written, no final plan was submitted, no
+  // session drove the delivery.
+  description?: string;
+  plan_record_id?: string;
+  session_id?: string;
   projects: DeliveryProjectSummary[];
   lanes: DeliveryLaneSummary[];
   blockers: DeliveryBlockerSummary[];

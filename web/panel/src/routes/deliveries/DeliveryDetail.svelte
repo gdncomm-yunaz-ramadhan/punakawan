@@ -202,6 +202,35 @@
     <span class="meta">revision {v.orchestration.revision} · latest seq {v.latest_seq}</span>
   </div>
 
+  <!-- Prose is never derived, so a delivery nobody wrote a description for has
+       nothing to show here and the block is left out entirely rather than
+       rendering an empty paragraph. -->
+  {#if v.description}
+    <p class="description" data-testid="delivery-description">{v.description}</p>
+  {/if}
+
+  <!-- The session and the plan record are questions a reader comes here to
+       answer either way, so both rows always render and an unrecorded one says
+       so in muted text - unlike the description, which simply disappears. -->
+  <dl class="references" data-testid="delivery-references">
+    <dt>Session</dt>
+    <dd>
+      {#if v.session_id}
+        <code class="id">{v.session_id}</code>
+      {:else}
+        <span class="unset">Not recorded</span>
+      {/if}
+    </dd>
+    <dt>Plan record</dt>
+    <dd>
+      {#if v.plan_record_id}
+        <code class="id">{v.plan_record_id}</code>
+      {:else}
+        <span class="unset">Not recorded</span>
+      {/if}
+    </dd>
+  </dl>
+
   <BentoGrid>
     <MetricCard size="small" columns={3} label="Projects" value={v.projects.length} />
     <MetricCard size="small" columns={3} label="Lanes" value={v.lanes.length} />
@@ -283,7 +312,21 @@
         <Card>
           {#snippet header()}
             <div class="project-head">
-              <strong>{project.project_id}</strong>
+              <span class="project-name">
+                <strong>{project.project_id}</strong>
+                <!-- Attached means the delivery states it involves this
+                     project; anything else is here only because a lane names
+                     it, which includes a project detached once its lanes
+                     finished. Saying which is which is the difference between
+                     "this is in scope" and "work happened here". -->
+                {#if project.attached}
+                  <span class="attach-badge attached" data-testid={`attached-${project.project_id}`}>Attached</span>
+                {:else}
+                  <span class="attach-badge detached" data-testid={`unattached-${project.project_id}`}>
+                    Not attached · has lanes here
+                  </span>
+                {/if}
+              </span>
               <span class="counts">
                 {#each Object.entries(project.counts_by_status) as [status, count] (status)}
                   <StatusBadge
@@ -319,8 +362,13 @@
                       {/if}
                     </a>
                   {/if}
-                  {#if lane.worker || lane.worktree_path || lane.base_sha}
+                  {#if lane.session_id || lane.worker || lane.worktree_path || lane.base_sha}
                     <div class="lane-detail meta">
+                      <!-- The session that opened the lane and the worker
+                           currently holding its lease are two different
+                           things, so they are labelled separately and never
+                           collapsed into one "who" field. -->
+                      {#if lane.session_id}<span>session {lane.session_id}</span>{/if}
                       {#if lane.worker}<span>worker {lane.worker}</span>{/if}
                       {#if lane.worktree_path}<span>worktree {lane.worktree_path}</span>{/if}
                       {#if lane.base_sha}<span>base {shortSha(lane.base_sha)}{lane.base_remote ? ` (${lane.base_remote})` : ""}</span>{/if}
@@ -381,9 +429,62 @@
     font-size: 0.8rem;
     min-width: 0;
   }
-  .meta .id {
+  .meta .id,
+  .references .id {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     overflow-wrap: anywhere;
+  }
+  .description {
+    margin: 0 0 1rem;
+    max-width: 68ch;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--color-text);
+    white-space: pre-wrap;
+  }
+  .references {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.25rem 0.7rem;
+    margin: 0 0 1rem;
+    font-size: 0.8rem;
+  }
+  .references dt {
+    color: var(--color-text-muted);
+  }
+  .references dd {
+    margin: 0;
+    min-width: 0;
+  }
+  .unset {
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+  .project-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .attach-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+  }
+  .attach-badge.attached {
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  }
+  .attach-badge.detached {
+    color: var(--color-text-muted);
+    background: var(--color-surface-subtle);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
   }
   section {
     margin-top: 1.6rem;

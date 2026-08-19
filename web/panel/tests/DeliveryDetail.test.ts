@@ -55,7 +55,12 @@ function orchestration(overrides: Record<string, unknown> = {}) {
 function baseView(overrides: Record<string, unknown> = {}) {
   return {
     orchestration: orchestration(),
-    projects: [{ project_id: "proj-a", lane_ids: ["lane-1", "lane-2"], counts_by_status: { runnable: 1, blocked: 1 } }],
+    // The view's title is always populated by the backend, derived from the
+    // delivery's requirement references when nobody supplied one.
+    title: "Migrate billing to v2",
+    projects: [
+      { project_id: "proj-a", attached: true, lane_ids: ["lane-1", "lane-2"], counts_by_status: { runnable: 1, blocked: 1 } },
+    ],
     lanes: [
       {
         lane_id: "lane-1",
@@ -260,5 +265,111 @@ describe("DeliveryDetail", () => {
 
     const evidenceLink = screen.getByRole("link", { name: /test evidence/ });
     expect(evidenceLink.getAttribute("href")).toBe("/api/v1/deliveries/orc-1/evidence/ev-1");
+  });
+
+  it("leads with the title and shows the description, session, and plan record when present", async () => {
+    const view = baseView({
+      description: "Move every billing caller onto the v2 pricing endpoint.",
+      session_id: "pkw:run/ws-1/billing-42",
+      plan_record_id: "rec-plan-7",
+    });
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(view);
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByText("Migrate billing to v2")).toBeTruthy());
+    expect(screen.getByTestId("delivery-description").textContent).toBe(
+      "Move every billing caller onto the v2 pricing endpoint.",
+    );
+    const references = screen.getByTestId("delivery-references");
+    expect(references.textContent).toContain("pkw:run/ws-1/billing-42");
+    expect(references.textContent).toContain("rec-plan-7");
+    expect(references.textContent).not.toContain("Not recorded");
+  });
+
+  it("omits the description entirely and says so plainly when the session and plan record are absent", async () => {
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(baseView());
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByTestId("delivery-references")).toBeTruthy());
+    expect(screen.queryByTestId("delivery-description")).toBeNull();
+
+    const references = screen.getByTestId("delivery-references");
+    expect(within(references).getAllByText("Not recorded")).toHaveLength(2);
+    expect(container.textContent).not.toContain("undefined");
+  });
+
+  it("distinguishes an attached project from one that only has lanes here", async () => {
+    const view = baseView({
+      projects: [
+        { project_id: "proj-a", attached: true, lane_ids: [], counts_by_status: {} },
+        { project_id: "proj-b", attached: false, lane_ids: ["lane-1"], counts_by_status: { accepted: 1 } },
+      ],
+      lanes: [{ lane_id: "lane-1", project_id: "proj-b", status: "accepted" }],
+      blockers: [],
+    });
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(view);
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByTestId("attached-proj-a")).toBeTruthy());
+    expect(screen.getByTestId("attached-proj-a").textContent).toContain("Attached");
+    expect(screen.queryByTestId("attached-proj-b")).toBeNull();
+    expect(screen.getByTestId("unattached-proj-b").textContent).toContain("Not attached");
+    // An attached project with no lanes is still listed, rather than dropping
+    // out of the view because nothing is running there yet.
+    expect(screen.getByText("No lanes yet.")).toBeTruthy();
+  });
+
+  it("shows the session that opened a lane separately from the worker holding its lease", async () => {
+    const view = baseView({
+      lanes: [
+        {
+          lane_id: "lane-1",
+          project_id: "proj-a",
+          status: "running",
+          session_id: "pkw:run/ws-1/billing-42",
+          worker: "worker-42",
+        },
+      ],
+      blockers: [],
+    });
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(view);
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByText("lane-1")).toBeTruthy());
+    expect(container.textContent).toContain("session pkw:run/ws-1/billing-42");
+    expect(container.textContent).toContain("worker worker-42");
+  });
+
+  it("leaves a lane's session out when it was opened without one", async () => {
+    const view = baseView({
+      lanes: [{ lane_id: "lane-1", project_id: "proj-a", status: "running", worker: "worker-42" }],
+      blockers: [],
+    });
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(view);
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByText("lane-1")).toBeTruthy());
+    expect(container.textContent).toContain("worker worker-42");
+    expect(container.textContent).not.toContain("session ");
   });
 });
