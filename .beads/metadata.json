@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "punokawan",
-  "project_id": "41e1a195-dc32-4a12-86be-62c93fb41461"
-}

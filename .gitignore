@@ -1,5 +1,6 @@
 
 # Beads / Dolt files (added by bd init)
+.beads/
 .dolt/
 *.db
 .beads-credential-key
@@ -14,4 +15,9 @@ packages/*/dist/
 packages/*/dist-test/
 
 # Claude Code runtime state
-.claude/scheduled_tasks.lock
+.claude/
+
+# Punakawan local state
+.punakawan/
+
+affiliate-platform-delivery-feedback-2026-08-07.md
