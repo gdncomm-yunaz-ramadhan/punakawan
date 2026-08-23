@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/storage"
@@ -39,27 +38,19 @@ func newRepo(t *testing.T) string {
 
 func newManager(t *testing.T, repo, workspace string) *gitops.WorktreeManager {
 	t.Helper()
-	sup := tools.New(repo, workspace)
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
+	worktreesDir, err := storage.WorktreesDir()
 	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
+		t.Fatalf("storage.WorktreesDir: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
-	store := approvals.New(db, "test-project")
-	return gitops.NewWorktreeManager(sup, func() (*approvals.Store, error) { return store, nil }, policy.Default())
+	sup := tools.New(repo, workspace, worktreesDir)
+	return gitops.NewWorktreeManager(sup, policy.Default())
 }
 
 func TestStartAndFinishTaskExecution(t *testing.T) {
 	repo := newRepo(t)
 	workspace := t.TempDir()
 	mgr := newManager(t, repo, workspace)
-
-	if _, err := mgr.RequestApproval("run-1", "repo-a", "task-1", "petruk"); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := mgr.Approve("repo-a", "task-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
 
 	sess, err := StartTaskExecution(context.Background(), mgr, workspace, repo, "repo-a", "run-1", "task-1")
 	if err != nil {
@@ -105,13 +96,6 @@ func TestFinishTaskExecutionRecordsBlockedAsFailure(t *testing.T) {
 	workspace := t.TempDir()
 	mgr := newManager(t, repo, workspace)
 
-	if _, err := mgr.RequestApproval("run-1", "repo-a", "task-2", "petruk"); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := mgr.Approve("repo-a", "task-2", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
-
 	sess, err := StartTaskExecution(context.Background(), mgr, workspace, repo, "repo-a", "run-1", "task-2")
 	if err != nil {
 		t.Fatalf("StartTaskExecution: %v", err)
@@ -130,12 +114,23 @@ func TestFinishTaskExecutionRecordsBlockedAsFailure(t *testing.T) {
 	}
 }
 
-func TestStartTaskExecutionRequiresApproval(t *testing.T) {
+// TestStartTaskExecutionSucceedsWithDirtyMainCheckout confirms that a
+// dirty main checkout does not block worktree creation (PR1 §3.2/§3.3):
+// the resolved base SHA, not the checkout's cleanliness, is the isolation
+// boundary, and creation requires no human approval record.
+func TestStartTaskExecutionSucceedsWithDirtyMainCheckout(t *testing.T) {
 	repo := newRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatalf("dirty the main checkout: %v", err)
+	}
 	workspace := t.TempDir()
 	mgr := newManager(t, repo, workspace)
 
-	if _, err := StartTaskExecution(context.Background(), mgr, workspace, repo, "repo-a", "run-1", "task-3"); err == nil {
-		t.Fatal("expected StartTaskExecution to fail without an approved worktree request")
+	sess, err := StartTaskExecution(context.Background(), mgr, workspace, repo, "repo-a", "run-1", "task-3")
+	if err != nil {
+		t.Fatalf("expected StartTaskExecution to succeed against a dirty main checkout: %v", err)
+	}
+	if info, err := os.Stat(sess.Worktree.Path); err != nil || !info.IsDir() {
+		t.Fatalf("expected worktree to exist at %s: %v", sess.Worktree.Path, err)
 	}
 }

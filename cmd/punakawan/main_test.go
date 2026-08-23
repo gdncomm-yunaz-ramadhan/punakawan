@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -114,28 +115,26 @@ func TestDoctor(t *testing.T) {
 	}
 }
 
-func TestWorktreeRequestApproveCreateRemove(t *testing.T) {
+// TestWorktreeCreateRemove confirms worktree creation requires no prior
+// approval (PR1 §3.3) and lives under Punakawan's central worktrees
+// directory rather than inside the workspace (PR1 §2/§3.1), and that
+// remove tears it down again.
+func TestWorktreeCreateRemove(t *testing.T) {
 	dir := newSmokeWorkspace(t)
 
-	out, err := runCLI(t, dir, "worktree", "request", "repo-a", "task-1")
-	if err != nil {
-		t.Fatalf("worktree request: %v\n%s", err, out)
-	}
-	if !strings.Contains(out, "pending") {
-		t.Fatalf("expected pending status, got: %s", out)
-	}
-
-	if _, err := runCLI(t, dir, "worktree", "approve", "repo-a", "task-1"); err != nil {
-		t.Fatalf("worktree approve: %v", err)
-	}
-
-	out, err = runCLI(t, dir, "worktree", "create", "repo-a", "task-1")
+	out, err := runCLI(t, dir, "worktree", "create", "repo-a", "task-1")
 	if err != nil {
 		t.Fatalf("worktree create: %v\n%s", err, out)
 	}
-	wantBranch := filepath.Join(dir, ".punakawan", "worktrees", "repo-a", "task-1")
+	wantBranch, err := gitops.WorktreePath("repo-a", "task-1")
+	if err != nil {
+		t.Fatalf("gitops.WorktreePath: %v", err)
+	}
 	if !strings.Contains(out, wantBranch) {
 		t.Fatalf("expected worktree path %q in output: %s", wantBranch, out)
+	}
+	if strings.Contains(wantBranch, dir) {
+		t.Fatalf("expected worktree path %q to live outside the workspace %q", wantBranch, dir)
 	}
 	if _, err := os.Stat(wantBranch); err != nil {
 		t.Fatalf("expected worktree directory to exist: %v", err)
@@ -149,18 +148,10 @@ func TestWorktreeRequestApproveCreateRemove(t *testing.T) {
 	}
 }
 
-func TestWorktreeCreateWithoutApprovalFailsFromCLI(t *testing.T) {
-	dir := newSmokeWorkspace(t)
-
-	if _, err := runCLI(t, dir, "worktree", "create", "repo-a", "task-2"); err == nil {
-		t.Fatal("expected worktree create to fail without a prior approval")
-	}
-}
-
 // TestApprovalsListApproveDeny exercises the generic approvals CLI against
-// an adapter-operation-shaped approval record, which "worktree
-// approve/deny" cannot resolve (it only knows the repo-id/task-id worktree
-// shape) - this is the surface a human uses to grant a pending Jira write.
+// an adapter-operation-shaped approval record - this is the surface a
+// human uses to grant a pending Jira write. Worktree creation itself no
+// longer goes through this at all (PR1 §3.3).
 func TestApprovalsListApproveDeny(t *testing.T) {
 	dir := newSmokeWorkspace(t)
 

@@ -2,16 +2,37 @@ package gitops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/policy"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// ErrWorktreeDirty is returned (wrapped in a *WorktreeDirtyError) by
+// WorktreeManager.Remove when the worktree has uncommitted changes:
+// removal is refused rather than forced, so the worktree stays on disk
+// and inspectable.
+var ErrWorktreeDirty = errors.New("gitops: worktree has uncommitted changes")
+
+// WorktreeDirtyError reports that Remove refused to delete a dirty
+// worktree, per §3.5: the worktree remains recoverable, and this error
+// carries the path/branch/base-SHA/current-HEAD detail needed to inspect
+// or manually clean it up.
+type WorktreeDirtyError struct {
+	Worktree    *Worktree
+	CurrentHEAD string
+}
+
+func (e *WorktreeDirtyError) Error() string {
+	return fmt.Sprintf("gitops: worktree %s (branch %s, base %s, head %s) has uncommitted changes; refusing to remove",
+		e.Worktree.Path, e.Worktree.Branch, e.Worktree.BaseSHA, e.CurrentHEAD)
+}
+
+func (e *WorktreeDirtyError) Unwrap() error { return ErrWorktreeDirty }
 
 // Worktree is an isolated git worktree created for a single task, per §11.1.
 type Worktree struct {
@@ -24,150 +45,49 @@ type Worktree struct {
 }
 
 // WorktreePath returns the canonical on-disk path for a task's worktree,
-// per §11.1's example layout (.punakawan/worktrees/<repoID>/<taskID>).
-// Exported so callers that need to address a running task's worktree (e.g.
-// file-editing tools) can derive the same path without duplicating the
-// formula.
-func WorktreePath(workspaceRoot, repoID, taskID string) string {
-	return filepath.Join(workspaceRoot, ".punakawan", "worktrees", repoID, taskID)
+// under Punakawan's central per-user worktrees directory rather than
+// inside the managed repository. Exported so callers that need to address
+// a running task's worktree (e.g. file-editing tools) can derive the same
+// path without duplicating the formula.
+func WorktreePath(repoID, taskID string) (string, error) {
+	dir, err := storage.WorktreesDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, repoID, taskID), nil
 }
 
-// WorktreeManager creates and removes isolated worktrees, gated by approval
-// (§16) and preceded by a workspace lock and clean-repository check (§11.1
-// steps 1-3, §3.1 "Workspace locking").
-//
-// The plan's approval categories (§16.1) do not enumerate a dedicated
-// worktree-creation category, so requests use
-// ApprovalRecordOperationDestructiveFilesystemAction as the closest existing
-// fit — creating a worktree mutates the filesystem outside the main working
-// tree, even though it is not destructive in the harmful sense.
+// WorktreeManager creates and removes isolated worktrees, preceded by a
+// workspace lock (§3.1 "Workspace locking"). Creation is internal
+// execution infrastructure and requires no human approval: the resolved
+// base commit, not the main checkout's cleanliness, is the isolation
+// boundary.
 type WorktreeManager struct {
 	sup       *tools.Supervisor
 	inspector *Inspector
-	// approvals lazily resolves the shared approval store on first use, so a
-	// manager built at app.Load never forces the SQLite kernel open until a
-	// worktree operation actually needs to read or record an approval.
-	approvals func() (*approvals.Store, error)
 	policy    *policy.Policy
 }
 
-// NewWorktreeManager constructs a WorktreeManager. store is a provider resolved
-// lazily the first time an approval is read or recorded, not at construction.
-func NewWorktreeManager(sup *tools.Supervisor, store func() (*approvals.Store, error), pol *policy.Policy) *WorktreeManager {
+// NewWorktreeManager constructs a WorktreeManager.
+func NewWorktreeManager(sup *tools.Supervisor, pol *policy.Policy) *WorktreeManager {
 	return &WorktreeManager{
 		sup:       sup,
 		inspector: NewInspector(sup),
-		approvals: store,
 		policy:    pol,
 	}
 }
 
-func approvalID(repoID, taskID string) string {
-	return fmt.Sprintf("approval-worktree-%s-%s", repoID, taskID)
-}
-
-// RequestApproval creates a pending approval record for creating a worktree
-// for taskID in repoID, or returns the existing record if one was already
-// requested (idempotent).
-func (m *WorktreeManager) RequestApproval(runID, repoID, taskID string, requestedBy protocol.ApprovalRecordRequestedBy) (protocol.ApprovalRecord, error) {
-	id := approvalID(repoID, taskID)
-
-	store, err := m.approvals()
-	if err != nil {
-		return protocol.ApprovalRecord{}, err
-	}
-	current, err := store.Current()
-	if err != nil {
-		return protocol.ApprovalRecord{}, err
-	}
-	if rec, ok := current[id]; ok {
-		return rec, nil
-	}
-
-	target := fmt.Sprintf("%s:%s", repoID, taskID)
-	reason := fmt.Sprintf("create isolated git worktree for task %s in repository %s", taskID, repoID)
-	rec := protocol.ApprovalRecord{
-		Id:          id,
-		RunId:       runID,
-		Operation:   protocol.ApprovalRecordOperationDestructiveFilesystemAction,
-		Target:      &target,
-		Reason:      &reason,
-		RequestedBy: requestedBy,
-		Status:      protocol.ApprovalRecordStatusPending,
-		CreatedAt:   time.Now().UTC(),
-	}
-	if err := store.Append(rec); err != nil {
-		return protocol.ApprovalRecord{}, err
-	}
-	return rec, nil
-}
-
-// Approve marks a pending worktree-creation request as approved.
-func (m *WorktreeManager) Approve(repoID, taskID, approvedBy string) error {
-	return m.resolve(repoID, taskID, protocol.ApprovalRecordStatusApproved, approvedBy)
-}
-
-// Deny marks a pending worktree-creation request as denied.
-func (m *WorktreeManager) Deny(repoID, taskID, approvedBy string) error {
-	return m.resolve(repoID, taskID, protocol.ApprovalRecordStatusDenied, approvedBy)
-}
-
-func (m *WorktreeManager) resolve(repoID, taskID string, status protocol.ApprovalRecordStatus, approvedBy string) error {
-	id := approvalID(repoID, taskID)
-	store, err := m.approvals()
-	if err != nil {
-		return err
-	}
-	current, err := store.Current()
-	if err != nil {
-		return err
-	}
-	rec, ok := current[id]
-	if !ok {
-		return fmt.Errorf("gitops: no approval request %q; call RequestApproval first", id)
-	}
-	if approvals.IsAgentRoleIdentifier(approvedBy) {
-		return fmt.Errorf("gitops: approved_by %q looks like an agent role, not a human identifying themselves; re-run with --by <your actual name>", approvedBy)
-	}
-
-	now := time.Now().UTC()
-	rec.Status = status
-	rec.ApprovedBy = &approvedBy
-	rec.ResolvedAt = &now
-	return store.Append(rec)
-}
-
-// Create creates an isolated worktree and task branch for repoID/taskID.
-// It requires a prior approved request (see RequestApproval/Approve),
-// acquires a per-repository lock, and refuses to proceed if the base
-// repository has uncommitted changes.
+// Create creates an isolated worktree and task branch for repoID/taskID,
+// forked from repoPath's current HEAD. It acquires a per-repository lock
+// but does not require repoPath itself to be clean: a dirty main checkout
+// is unrelated to a linked worktree created from a resolved commit, since
+// the base SHA is the isolation boundary.
 func (m *WorktreeManager) Create(ctx context.Context, workspaceRoot, repoPath, repoID, taskID string) (*Worktree, error) {
-	store, err := m.approvals()
-	if err != nil {
-		return nil, err
-	}
-	current, err := store.Current()
-	if err != nil {
-		return nil, err
-	}
-	rec, ok := current[approvalID(repoID, taskID)]
-	if !ok || rec.Status != protocol.ApprovalRecordStatusApproved {
-		return nil, fmt.Errorf("gitops: worktree creation for task %q in repository %q is not approved", taskID, repoID)
-	}
-
 	release, err := m.acquireLock(workspaceRoot, repoID)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-
-	status, err := m.inspector.Status(ctx, repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("gitops: check base repository is clean: %w", err)
-	}
-	if !status.Clean {
-		return nil, fmt.Errorf("gitops: repository %s has uncommitted changes; refusing to create a worktree", repoPath)
-	}
 
 	baseSHA, err := m.inspector.HeadSHA(ctx, repoPath)
 	if err != nil {
@@ -175,7 +95,10 @@ func (m *WorktreeManager) Create(ctx context.Context, workspaceRoot, repoPath, r
 	}
 
 	branch := "punakawan/" + taskID
-	worktreeDir := WorktreePath(workspaceRoot, repoID, taskID)
+	worktreeDir, err := WorktreePath(repoID, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("gitops: resolve worktree path: %w", err)
+	}
 	if err := os.MkdirAll(filepath.Dir(worktreeDir), 0o755); err != nil {
 		return nil, fmt.Errorf("gitops: create worktree parent directory: %w", err)
 	}
@@ -229,10 +152,24 @@ func (m *WorktreeManager) branchExists(ctx context.Context, repoPath, branch str
 }
 
 // Remove removes a previously created worktree from its base repository.
+// It refuses (returning ErrWorktreeDirty, wrapped with path/branch/base
+// SHA/current-HEAD detail) rather than forcing removal of a worktree with
+// uncommitted changes, leaving it on disk for manual recovery. A
+// successful removal is followed by "git worktree prune" so the base
+// repository's own worktree bookkeeping never accumulates stale entries.
 func (m *WorktreeManager) Remove(ctx context.Context, repoPath string, wt *Worktree) error {
+	status, err := m.inspector.Status(ctx, wt.Path)
+	if err != nil {
+		return fmt.Errorf("gitops: check worktree status: %w", err)
+	}
+	if !status.Clean {
+		head, _ := m.inspector.HeadSHA(ctx, wt.Path)
+		return &WorktreeDirtyError{Worktree: wt, CurrentHEAD: head}
+	}
+
 	res, err := m.sup.Run(ctx, tools.Spec{
 		Name: "git",
-		Args: []string{"worktree", "remove", "--force", wt.Path},
+		Args: []string{"worktree", "remove", wt.Path},
 		Dir:  repoPath,
 	})
 	if err != nil {
@@ -240,6 +177,18 @@ func (m *WorktreeManager) Remove(ctx context.Context, repoPath string, wt *Workt
 	}
 	if res.ExitCode != 0 {
 		return fmt.Errorf("gitops: git worktree remove failed: %s", res.Stderr)
+	}
+
+	pruneRes, err := m.sup.Run(ctx, tools.Spec{
+		Name: "git",
+		Args: []string{"worktree", "prune"},
+		Dir:  repoPath,
+	})
+	if err != nil {
+		return fmt.Errorf("gitops: git worktree prune: %w", err)
+	}
+	if pruneRes.ExitCode != 0 {
+		return fmt.Errorf("gitops: git worktree prune failed: %s", pruneRes.Stderr)
 	}
 	return nil
 }

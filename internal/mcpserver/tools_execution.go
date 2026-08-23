@@ -29,23 +29,13 @@ type StartTaskExecutionOutput struct {
 
 func startTaskExecutionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartTaskExecutionInput) (*mcp.CallToolResult, StartTaskExecutionOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in StartTaskExecutionInput) (*mcp.CallToolResult, StartTaskExecutionOutput, error) {
-		requestedBy, err := validateRequestedBy(in.RequestedBy)
-		if err != nil {
+		if _, err := validateRequestedBy(in.RequestedBy); err != nil {
 			return nil, StartTaskExecutionOutput{}, err
 		}
 
 		repoPath, err := a.RepoPath(in.RepoId)
 		if err != nil {
 			return nil, StartTaskExecutionOutput{}, fmt.Errorf("mcpserver: resolve repository %q: %w", in.RepoId, err)
-		}
-
-		// Idempotent: returns the existing request if start_task_execution
-		// was already called for this task. The actual approve/deny
-		// decision happens out-of-band (§16 is a human-in-the-loop gate, not
-		// something the same calling role can grant itself) -- Create below
-		// fails clearly if it has not been approved yet.
-		if _, err := a.Worktrees.RequestApproval(in.RunId, in.RepoId, in.TaskId, requestedBy); err != nil {
-			return nil, StartTaskExecutionOutput{}, fmt.Errorf("mcpserver: request worktree approval: %w", err)
 		}
 
 		sess, err := execution.StartTaskExecution(ctx, a.Worktrees, a.Workspace.Root, repoPath, in.RepoId, in.RunId, in.TaskId)
@@ -99,11 +89,15 @@ func finishTaskExecutionHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if err != nil {
 			return nil, finishTaskExecutionOutput{}, fmt.Errorf("mcpserver: open journal: %w", err)
 		}
+		worktreePath, err := gitops.WorktreePath(in.RepoId, in.TaskId)
+		if err != nil {
+			return nil, finishTaskExecutionOutput{}, fmt.Errorf("mcpserver: resolve worktree path: %w", err)
+		}
 		sess := &execution.Session{
 			RunID:    in.RunId,
 			TaskID:   in.TaskId,
 			RepoID:   in.RepoId,
-			Worktree: &gitops.Worktree{Path: gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)},
+			Worktree: &gitops.Worktree{Path: worktreePath},
 			Journal:  journal,
 		}
 

@@ -128,12 +128,6 @@ func TestPushTaskBranchHandlerRecordsDetectedGitCapabilities(t *testing.T) {
 	}
 	newLocalRemoteForRepo(t, repoPath)
 
-	if _, err := a.Worktrees.RequestApproval("run-1", "repo-a", "task-1", "petruk"); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := a.Worktrees.Approve("repo-a", "task-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
 	wt, err := a.Worktrees.Create(context.Background(), a.Workspace.Root, repoPath, "repo-a", "task-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)

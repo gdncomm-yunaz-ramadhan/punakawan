@@ -30,7 +30,10 @@ type CheckOpenAPICompatibilityInput struct {
 
 func checkOpenAPICompatibilityHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CheckOpenAPICompatibilityInput) (*mcp.CallToolResult, openapicheck.Result, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CheckOpenAPICompatibilityInput) (*mcp.CallToolResult, openapicheck.Result, error) {
-		worktreeRoot := gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)
+		worktreeRoot, err := gitops.WorktreePath(in.RepoId, in.TaskId)
+		if err != nil {
+			return nil, openapicheck.Result{}, fmt.Errorf("mcpserver: resolve worktree path: %w", err)
+		}
 		basePath, err := fileops.ResolveWithinRoot(worktreeRoot, in.BasePath)
 		if err != nil {
 			return nil, openapicheck.Result{}, fmt.Errorf("mcpserver: check_openapi_compatibility: base_path: %w", err)

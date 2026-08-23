@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -44,7 +45,10 @@ type WriteFilesOutput struct {
 
 func writeFilesHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, WriteFilesInput) (*mcp.CallToolResult, WriteFilesOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in WriteFilesInput) (*mcp.CallToolResult, WriteFilesOutput, error) {
-		worktreeRoot := gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)
+		worktreeRoot, err := gitops.WorktreePath(in.RepoId, in.TaskId)
+		if err != nil {
+			return nil, WriteFilesOutput{}, fmt.Errorf("mcpserver: resolve worktree path: %w", err)
+		}
 
 		specs := make([]fileops.FileSpec, len(in.Files))
 		for i, f := range in.Files {

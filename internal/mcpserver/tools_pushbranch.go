@@ -47,7 +47,10 @@ func pushTaskBranchHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 			remote = "origin"
 		}
 
-		worktreePath := gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)
+		worktreePath, err := gitops.WorktreePath(in.RepoId, in.TaskId)
+		if err != nil {
+			return nil, PushTaskBranchOutput{}, fmt.Errorf("mcpserver: resolve worktree path: %w", err)
+		}
 		caps, err := a.Inspector.DetectCapabilities(ctx, worktreePath, remote)
 		if err != nil {
 			return nil, PushTaskBranchOutput{}, fmt.Errorf("mcpserver: detect git capabilities: %w", err)

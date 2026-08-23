@@ -122,10 +122,9 @@ func TestSubmitTaskGraphAndListReadyTasks(t *testing.T) {
 }
 
 // TestTaskExecutionLifecycle exercises the full per-task execution loop
-// over the real MCP wire protocol: start_task_execution (after approving
-// the worktree request directly, since granting approval is a human
-// decision with no MCP tool of its own), write_files, check_diff,
-// commit_task, and finish_task_execution.
+// over the real MCP wire protocol: start_task_execution (no approval
+// required - creating a worktree is internal execution infrastructure),
+// write_files, check_diff, commit_task, and finish_task_execution.
 func TestTaskExecutionLifecycle(t *testing.T) {
 	a := newTestApp(t)
 	cs := connect(t, a)
@@ -133,13 +132,6 @@ func TestTaskExecutionLifecycle(t *testing.T) {
 	const runID = "run-1"
 	const taskID = "task-1"
 	const repoID = "repo-a"
-
-	if _, err := a.Worktrees.RequestApproval(runID, repoID, taskID, protocol.ApprovalRecordRequestedByPetruk); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := a.Worktrees.Approve(repoID, taskID, "test-human"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
 
 	var startOut StartTaskExecutionOutput
 	callTool(t, cs, "start_task_execution", map[string]any{

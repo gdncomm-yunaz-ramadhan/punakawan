@@ -125,7 +125,7 @@ func load(ws *workspace.Workspace) (*App, error) {
 		return nil, err
 	}
 
-	roots := make([]string, 0, len(ws.Repositories)+1)
+	roots := make([]string, 0, len(ws.Repositories)+2)
 	roots = append(roots, ws.Root)
 	for _, r := range ws.Repositories {
 		path, err := ws.RepositoryPath(r.ID)
@@ -134,6 +134,15 @@ func load(ws *workspace.Workspace) (*App, error) {
 		}
 		roots = append(roots, path)
 	}
+	// Task worktrees now live under Punakawan's central data dir rather
+	// than inside the workspace (PR1 project hygiene), so every git
+	// invocation this Supervisor makes against a worktree path needs that
+	// directory allowed too.
+	worktreesDir, err := storage.WorktreesDir()
+	if err != nil {
+		return nil, err
+	}
+	roots = append(roots, worktreesDir)
 	sup := tools.New(roots...)
 
 	wf, err := workflow.Open(ws.Root)
@@ -184,15 +193,17 @@ func load(ws *workspace.Workspace) (*App, error) {
 
 	// The approval store and sync queue now live in the shared SQLite kernel,
 	// opened lazily so a command that never touches an approval or records a
-	// failed adapter write never pays to open the kernel. The registry (and,
-	// for approvals, the worktree manager) therefore take a provider
-	// (a.OpenApprovals, a.OpenSyncQueue) rather than an already-opened store,
-	// deferring the open to the first operation that actually needs it.
+	// failed adapter write never pays to open the kernel. The registry
+	// therefore takes a provider (a.OpenApprovals, a.OpenSyncQueue) rather
+	// than an already-opened store, deferring the open to the first
+	// operation that actually needs it. The worktree manager needs no
+	// approval store at all: creating a worktree is internal execution
+	// infrastructure, not a human-approval-gated action.
 	registry := adapters.NewRegistry(specs, a.OpenApprovals)
 	registry.SetApprovalScope(pol.Approvals.Scope)
 	registry.SetSyncQueue(a.OpenSyncQueue)
 	a.AdapterRegistry = registry
-	a.Worktrees = gitops.NewWorktreeManager(sup, a.OpenApprovals, pol)
+	a.Worktrees = gitops.NewWorktreeManager(sup, pol)
 
 	return a, nil
 }
@@ -493,7 +504,11 @@ func (a *App) OpenSearchIndex() (*search.Index, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	ix, err := search.OpenIndex(filepath.Join(a.Workspace.Root, ".punakawan", "index", "bm25"))
+	indexesDir, err := storage.IndexesDir()
+	if err != nil {
+		return nil, err
+	}
+	ix, err := search.OpenIndex(filepath.Join(indexesDir, a.Workspace.ID, "bm25"))
 	if err != nil {
 		return nil, err
 	}

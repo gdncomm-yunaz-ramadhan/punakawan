@@ -357,6 +357,14 @@ func (s *Store) RemoveWorktree(ctx context.Context, idempotencyKey, orchestratio
 			return fmt.Errorf("delivery: git worktree remove: %s", res.Stderr)
 		}
 
+		pruneRes, err := sup.Run(ctx, tools.Spec{Name: "git", Args: []string{"worktree", "prune"}, Dir: *profile.LocalPath})
+		if err != nil {
+			return fmt.Errorf("delivery: git worktree prune: %w", err)
+		}
+		if pruneRes.ExitCode != 0 {
+			return fmt.Errorf("delivery: git worktree prune: %s", pruneRes.Stderr)
+		}
+
 		payload, err := json.Marshal(map[string]interface{}{"removed_path": worktreePath})
 		if err != nil {
 			return err

@@ -30,7 +30,10 @@ type CheckDiffOutput struct {
 
 func checkDiffHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CheckDiffInput) (*mcp.CallToolResult, CheckDiffOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CheckDiffInput) (*mcp.CallToolResult, CheckDiffOutput, error) {
-		worktreePath := gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)
+		worktreePath, err := gitops.WorktreePath(in.RepoId, in.TaskId)
+		if err != nil {
+			return nil, CheckDiffOutput{}, fmt.Errorf("mcpserver: resolve worktree path: %w", err)
+		}
 
 		bundle, err := newEvidenceBundle(a, in.RunId, in.TaskId)
 		if err != nil {

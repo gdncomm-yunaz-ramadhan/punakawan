@@ -35,7 +35,10 @@ type CommitTaskOutput struct {
 
 func commitTaskHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CommitTaskInput) (*mcp.CallToolResult, CommitTaskOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CommitTaskInput) (*mcp.CallToolResult, CommitTaskOutput, error) {
-		worktreePath := gitops.WorktreePath(a.Workspace.Root, in.RepoId, in.TaskId)
+		worktreePath, err := gitops.WorktreePath(in.RepoId, in.TaskId)
+		if err != nil {
+			return nil, CommitTaskOutput{}, fmt.Errorf("mcpserver: resolve worktree path: %w", err)
+		}
 
 		// Re-run the diff/secret check server-side rather than trusting the
 		// caller-supplied diff_allowed boolean (punokawan-97t). A nil evidence
