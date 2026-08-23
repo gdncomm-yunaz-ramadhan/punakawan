@@ -1,0 +1,57 @@
+internal/mcpserver/tools_execution.go
+  a330ccb60fead87e 32,92-95,100
+internal/mcpserver/tools_openapicheck.go
+  a330ccb60fead87e 33-36
+internal/daemon/daemon.go
+  a330ccb60fead87e 100-104
+internal/mcpserver/tools_execution_m6_test.go
+  a330ccb60fead87e 125-127
+internal/gitops/worktree.go
+  a330ccb60fead87e 5,11,15-35,48-57,60-64,71,80-84,98-101,155-159,161-169,172,181-191
+internal/mcpserver/tools_fileops.go
+  a330ccb60fead87e 5,48-51
+internal/execution/execution.go
+  a330ccb60fead87e 33-37
+internal/delivery/worktree.go
+  a330ccb60fead87e 360-367
+internal/app/app.go
+  a330ccb60fead87e 128,137-145,196-201,206,507-511
+internal/mcpserver/tools_pushbranch.go
+  a330ccb60fead87e 50-53
+internal/execution/execution_test.go
+  a330ccb60fead87e 41-42,44,46,117-121,123-125,129-134
+internal/mcpserver/tools_diffcheck.go
+  a330ccb60fead87e 33-36
+internal/storage/path.go
+  a330ccb60fead87e 45-74
+cmd/punakawan/worktree_cmd.go
+  a330ccb60fead87e 34,61-64,66
+internal/gitops/worktree_test.go
+  a330ccb60fead87e 5,8,36-39,42-43,45,47-48,51,58,67-71,73-74,78-79,83-87,91-92,96-98,101-102,104-105,108-110,114,119-122,124-125,127-137,139-140,142-143,146-147
+internal/delivery/janitor.go
+  a330ccb60fead87e 1-75
+cmd/punakawan/main_test.go
+  a330ccb60fead87e 13,118-122,125,127,129,131,136-138,152-154
+internal/mcpserver/tools_commit.go
+  a330ccb60fead87e 38-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "baabb50fcfdeae0140154cbaeeecd130f2bdc7f0",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 385,
+      "total_deletions": 375,
+      "accepted_lines": 364,
+      "overriden_lines": 0
+    }
+  }
+}
