@@ -129,13 +129,22 @@ type OrchestrationOptions struct {
 type OrchestrationDetails struct {
 	Title       *string
 	Description *string
-	// PlanRecordID is the id of the knowledge record holding the run's
-	// final plan, as returned by submit_final_plan. This package does not
-	// resolve it: the knowledge store has an entirely separate
-	// persistence lifecycle from this event log, the same reason
-	// workflow definitions are reached through an injected resolver
-	// rather than a direct dependency.
+	// PlanRecordID is deprecated: the id of the knowledge record holding
+	// the run's final plan, as returned by the old submit_final_plan
+	// write path. This package does not resolve it: the knowledge store
+	// has an entirely separate persistence lifecycle from this event
+	// log, the same reason workflow definitions are reached through an
+	// injected resolver rather than a direct dependency. New deliveries
+	// should set PlanID/PlanRevision instead (§4.4 - plans now live in
+	// internal/plan, not as knowledge records); this field is kept only
+	// so pre-existing references remain settable/readable.
 	PlanRecordID *string
+	// PlanID and PlanRevision together name the exact internal/plan
+	// revision this run is built from. Like PlanRecordID, this package
+	// does not resolve them - internal/plan has its own persistence
+	// lifecycle, reached the same way the knowledge store is.
+	PlanID       *string
+	PlanRevision *int
 	// SessionID is the id of the workflow run driving the delivery - the
 	// identifier a session is known by everywhere else in the system.
 	SessionID *string
@@ -143,7 +152,8 @@ type OrchestrationDetails struct {
 
 // set reports whether details asks for any change at all.
 func (d OrchestrationDetails) set() bool {
-	return d.Title != nil || d.Description != nil || d.PlanRecordID != nil || d.SessionID != nil
+	return d.Title != nil || d.Description != nil || d.PlanRecordID != nil ||
+		d.PlanID != nil || d.PlanRevision != nil || d.SessionID != nil
 }
 
 // payload renders details as an orchestration.details_updated payload
@@ -153,11 +163,14 @@ func (d OrchestrationDetails) payload() map[string]interface{} {
 	out := map[string]interface{}{}
 	for key, value := range map[string]*string{
 		"title": d.Title, "description": d.Description,
-		"plan_record_id": d.PlanRecordID, "session_id": d.SessionID,
+		"plan_record_id": d.PlanRecordID, "plan_id": d.PlanID, "session_id": d.SessionID,
 	} {
 		if value != nil {
 			out[key] = strings.TrimSpace(*value)
 		}
+	}
+	if d.PlanRevision != nil {
+		out["plan_revision"] = *d.PlanRevision
 	}
 	return out
 }

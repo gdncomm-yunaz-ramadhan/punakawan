@@ -20,6 +20,7 @@ import (
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/learning"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
@@ -64,6 +65,9 @@ type App struct {
 
 	taskStoreMu sync.Mutex
 	taskStore   *taskstore.Store
+
+	planMu    sync.Mutex
+	planStore *plan.Store
 
 	learningMu    sync.Mutex
 	learningStore *learning.Store
@@ -359,6 +363,28 @@ func (a *App) OpenTaskStore() (*taskstore.Store, error) {
 	}
 	a.taskStore = taskstore.New(db, a.Workspace.ID)
 	return a.taskStore, nil
+}
+
+// OpenPlan lazily opens the first-class Plan aggregate's store, memoizing
+// the result. Like internal/delivery.Store, it is not scoped to this
+// workspace's id: a Plan can name several ProjectIDs, so there is no
+// single project id to partition it by.
+func (a *App) OpenPlan() (*plan.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.planMu.Lock()
+	defer a.planMu.Unlock()
+
+	if a.planStore != nil {
+		return a.planStore, nil
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	a.planStore = plan.NewStore(db)
+	return a.planStore, nil
 }
 
 // OpenApprovals lazily opens the approval store, memoizing the result, scoped

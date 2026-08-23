@@ -61,8 +61,18 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_final_plan",
-		Description: "Validate and persist Semar's final implementation plan (§9.3) as durable knowledge, refused while blocking contradictions remain open. For a lane's Synthesis stage instead, use submit_lane_review with role semar.",
+		Description: "Validate and persist Semar's final implementation plan (§9.3) into the Plan domain (internal/plan), refused while blocking contradictions remain open. For a lane's Synthesis stage instead, use submit_lane_review with role semar. For general plan CRUD (multiple steps, project_ids, revisions), use plan_save/plan_get instead.",
 	}, submitFinalPlanHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "plan_save",
+		Description: "Save a new revision of a first-class Plan (§4). Reuse an existing plan's id to append a clarifying revision on top of it (immutable - the prior revision is never changed), or a fresh id to start a new plan lineage.",
+	}, planSaveHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "plan_get",
+		Description: "Fetch a Plan by id, optionally an exact past revision. Omit revision for the plan's current (highest) revision.",
+	}, planGetHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_workflow_run",

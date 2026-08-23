@@ -113,15 +113,22 @@ type DeliveryView struct {
 	// choose a fallback of its own.
 	Title string `json:"title"`
 
-	// Description, PlanRecordID, and SessionID unwrap the orchestration's
-	// own optional fields from their pointer form, the same way
-	// LaneSummary unwraps a lane's, so every consumer reads one flat
-	// shape instead of some fields here and others by reaching into
-	// Orchestration. Each is empty when never set. Unlike Title, none of
-	// them is ever derived: a run that never recorded prose, a plan, or a
-	// session simply reports none.
+	// Description, PlanRecordID, PlanID, PlanRevision, and SessionID
+	// unwrap the orchestration's own optional fields from their pointer
+	// form, the same way LaneSummary unwraps a lane's, so every consumer
+	// reads one flat shape instead of some fields here and others by
+	// reaching into Orchestration. Each is empty/zero when never set.
+	// Unlike Title, none of them is ever derived: a run that never
+	// recorded prose, a plan, or a session simply reports none.
+	//
+	// PlanRecordID is deprecated (§4.4): it names a knowledge record from
+	// the old plan-as-knowledge write path. New deliveries should report
+	// PlanID+PlanRevision instead, naming an exact internal/plan
+	// revision.
 	Description  string `json:"description,omitempty"`
 	PlanRecordID string `json:"plan_record_id,omitempty"`
+	PlanID       string `json:"plan_id,omitempty"`
+	PlanRevision int    `json:"plan_revision,omitempty"`
 	SessionID    string `json:"session_id,omitempty"`
 
 	Projects         []ProjectSummary             `json:"projects"`
@@ -234,6 +241,12 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	}
 	if orch.PlanRecordId != nil {
 		view.PlanRecordID = *orch.PlanRecordId
+	}
+	if orch.PlanId != nil {
+		view.PlanID = *orch.PlanId
+	}
+	if orch.PlanRevision != nil {
+		view.PlanRevision = *orch.PlanRevision
 	}
 	if orch.SessionId != nil {
 		view.SessionID = *orch.SessionId

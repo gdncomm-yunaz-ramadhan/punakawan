@@ -3851,9 +3851,21 @@ type DeliveryOrchestration struct {
 	// Filesystem-safe ULID (Crockford base32, 26 chars).
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
-	// Id of the knowledge record holding this run's final plan, as persisted by
-	// submit_final_plan. Absent until a plan has been recorded against the run.
+	// Id of the internal/plan lineage holding this run's plan, as persisted by
+	// submit_final_plan or plan_save. Absent until a plan has been recorded against
+	// the run.
+	PlanId *string `json:"plan_id,omitempty,omitzero" yaml:"plan_id,omitempty" mapstructure:"plan_id,omitempty"`
+
+	// Deprecated: id of the knowledge record holding this run's final plan, as
+	// persisted by the old submit_final_plan write path. New plans are recorded via
+	// plan_id/plan_revision instead (internal/plan); this stays only so pre-existing
+	// references remain resolvable.
 	PlanRecordId *string `json:"plan_record_id,omitempty,omitzero" yaml:"plan_record_id,omitempty" mapstructure:"plan_record_id,omitempty"`
+
+	// Exact revision of plan_id this run is built from. Set together with plan_id; a
+	// revision without an id (or vice versa) is meaningless, but the schema does not
+	// itself enforce that pairing.
+	PlanRevision *int `json:"plan_revision,omitempty,omitzero" yaml:"plan_revision,omitempty" mapstructure:"plan_revision,omitempty"`
 
 	// Projects explicitly attached to this run, in attachment order. Attachment is a
 	// deliberate statement that a run involves a project, kept separate from the

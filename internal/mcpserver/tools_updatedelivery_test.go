@@ -44,8 +44,9 @@ func TestUpdateDeliveryEditsEveryDescriptiveField(t *testing.T) {
 		t.Fatalf("view.description = %q, want the description supplied at creation", started.View.Description)
 	}
 
-	// A real plan record to point at, produced the way a caller would
-	// actually produce one.
+	// A real plan to point at, produced the way a caller would actually
+	// produce one - submit_final_plan now lands it in the Plan domain
+	// (§4.4), so its returned id is a plan_id, not a knowledge record id.
 	var plan SubmitOutput
 	callTool(t, cs, "submit_final_plan", map[string]any{
 		"id":         "run-1",
@@ -53,7 +54,7 @@ func TestUpdateDeliveryEditsEveryDescriptiveField(t *testing.T) {
 		"final_plan": map[string]any{"requirements": []string{"r1"}, "acceptance_criteria": []string{"a1"}},
 	}, &plan)
 	if plan.Id == "" {
-		t.Fatal("submit_final_plan returned no record id")
+		t.Fatal("submit_final_plan returned no plan id")
 	}
 
 	var updated DeliveryViewOutput
@@ -62,7 +63,8 @@ func TestUpdateDeliveryEditsEveryDescriptiveField(t *testing.T) {
 		"expected_revision": started.View.Orchestration.Revision,
 		"title":             "migrate checkout to the payments v2 API",
 		"description":       "v1 capture is retired in Q3; checkout is the last caller.",
-		"plan_record_id":    plan.Id,
+		"plan_id":           plan.Id,
+		"plan_revision":     1,
 		"session_id":        "pkw:run/smoke/adhoc-17",
 	}, &updated)
 
@@ -72,8 +74,11 @@ func TestUpdateDeliveryEditsEveryDescriptiveField(t *testing.T) {
 	if updated.View.Description != "v1 capture is retired in Q3; checkout is the last caller." {
 		t.Fatalf("view.description = %q, want the edited description", updated.View.Description)
 	}
-	if updated.View.PlanRecordID != plan.Id {
-		t.Fatalf("view.plan_record_id = %q, want %q", updated.View.PlanRecordID, plan.Id)
+	if updated.View.PlanID != plan.Id {
+		t.Fatalf("view.plan_id = %q, want %q", updated.View.PlanID, plan.Id)
+	}
+	if updated.View.PlanRevision != 1 {
+		t.Fatalf("view.plan_revision = %d, want 1", updated.View.PlanRevision)
 	}
 	if updated.View.SessionID != "pkw:run/smoke/adhoc-17" {
 		t.Fatalf("view.session_id = %q, want the recorded session", updated.View.SessionID)
@@ -83,7 +88,7 @@ func TestUpdateDeliveryEditsEveryDescriptiveField(t *testing.T) {
 	// rather than only reflected in the mutating call's own response.
 	var reread DeliveryViewOutput
 	callTool(t, cs, "get_delivery", map[string]any{"orchestration_id": started.OrchestrationId}, &reread)
-	if reread.View.Description != updated.View.Description || reread.View.PlanRecordID != plan.Id || reread.View.SessionID != updated.View.SessionID {
+	if reread.View.Description != updated.View.Description || reread.View.PlanID != plan.Id || reread.View.PlanRevision != 1 || reread.View.SessionID != updated.View.SessionID {
 		t.Fatalf("get_delivery view = %+v, want the edits persisted", reread.View)
 	}
 
@@ -106,6 +111,17 @@ func TestUpdateDeliveryEditsEveryDescriptiveField(t *testing.T) {
 	})
 	if !strings.Contains(msg, "no knowledge record") {
 		t.Fatalf("refusal = %q, want it to say the plan record does not exist", msg)
+	}
+
+	// Same refusal shape for the replacement plan_id/plan_revision pair.
+	msg = callToolExpectingError(t, cs, "update_delivery", map[string]any{
+		"orchestration_id":  started.OrchestrationId,
+		"expected_revision": reread.View.Orchestration.Revision,
+		"plan_id":           plan.Id,
+		"plan_revision":     99,
+	})
+	if !strings.Contains(msg, "no revision 99") {
+		t.Fatalf("refusal = %q, want it to say the plan revision does not exist", msg)
 	}
 
 	// A call that asks for nothing is refused rather than recorded as an

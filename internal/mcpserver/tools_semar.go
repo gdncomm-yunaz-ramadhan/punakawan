@@ -9,7 +9,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/contradiction"
-	"github.com/ygrip/punakawan/internal/roles"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -29,15 +29,17 @@ func contradictionTitles(cs []protocol.Contradiction) string {
 	return strings.Join(parts, ", ")
 }
 
+// submitFinalPlanHandler is a thin compatibility wrapper (§4.4) over
+// internal/plan.Store: it keeps submit_final_plan's existing
+// final_plan-shaped input and SubmitOutput{Id,Type} output so every
+// existing caller keeps working unchanged, but a submission now lands as
+// a Plan revision instead of a fresh knowledge.Store record. For a
+// caller that wants the fuller Plan shape (steps, project_ids,
+// revisions), use plan_save/plan_get directly.
 func submitFinalPlanHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitFinalPlanInput) (*mcp.CallToolResult, SubmitOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitFinalPlanInput) (*mcp.CallToolResult, SubmitOutput, error) {
 		if in.FinalPlan == nil {
 			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: submit_final_plan: final_plan is required")
-		}
-
-		store, err := a.OpenKnowledge()
-		if err != nil {
-			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
 
 		// CONTRA-008: Semar may not finalize a plan while blocking
@@ -50,10 +52,20 @@ func submitFinalPlanHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			}
 		}
 
-		rec, err := roles.SubmitFinalPlan(store, recordID(a, "plan", in.Id), in.Title, *in.FinalPlan)
+		p, err := plan.FromFinalPlanInput(recordID(a, "plan", in.Id), in.Title, *in.FinalPlan)
 		if err != nil {
 			return nil, SubmitOutput{}, err
 		}
-		return nil, SubmitOutput{Id: rec.Id, Type: rec.Type}, nil
+		p.CreatedBy = "punakawan-mcp"
+
+		planStore, err := a.OpenPlan()
+		if err != nil {
+			return nil, SubmitOutput{}, fmt.Errorf("mcpserver: open plan store: %w", err)
+		}
+		saved, err := planStore.Save(ctx, p)
+		if err != nil {
+			return nil, SubmitOutput{}, err
+		}
+		return nil, SubmitOutput{Id: saved.ID, Type: protocol.KnowledgeRecordTypeFinalPlan}, nil
 	}
 }
