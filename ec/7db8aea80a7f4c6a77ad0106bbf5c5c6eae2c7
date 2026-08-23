@@ -1,0 +1,59 @@
+internal/plan/plan.go
+  a330ccb60fead87e 1-109
+internal/mcpserver/tools_plan.go
+  a330ccb60fead87e 1-79
+internal/plan/store_test.go
+  a330ccb60fead87e 1-132
+internal/mcpserver/tools_updatedelivery.go
+  a330ccb60fead87e 21,43-48,64-65,73,114-116,119-120,145-178
+internal/mcpserver/tools_updatedelivery_test.go
+  a330ccb60fead87e 47-49,57,66-67,77-78,80-81,91,116-126
+protocol/deliveryorchestration.schema.json
+  a330ccb60fead87e 18-20
+internal/storage/migrations/0013_plans.sql
+  a330ccb60fead87e 1-15
+internal/mcpserver/tools.go
+  a330ccb60fead87e 64,67-75
+internal/delivery/store.go
+  a330ccb60fead87e 132-140,142-147,155-156,166,172-173
+internal/delivery/deliverydetails_test.go
+  a330ccb60fead87e 142-182
+internal/mcpserver/tools_plan_test.go
+  a330ccb60fead87e 1-64
+internal/plan/compat_test.go
+  a330ccb60fead87e 1-86
+internal/mcpserver/tools_semar.go
+  a330ccb60fead87e 12,32-38,55-57,59,61-65,69
+internal/plan/compat.go
+  a330ccb60fead87e 1-115
+internal/plan/plan_test.go
+  a330ccb60fead87e 1-48
+internal/delivery/deliveryview.go
+  a330ccb60fead87e 116-127,130-131,245-250
+internal/delivery/reduce.go
+  a330ccb60fead87e 66-67,634-653
+internal/plan/store.go
+  a330ccb60fead87e 1-206
+internal/app/app.go
+  a330ccb60fead87e 23,69-71,368-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ec7db8aea80a7f4c6a77ad0106bbf5c5c6eae2c7",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1099,
+      "total_deletions": 43,
+      "accepted_lines": 1092,
+      "overriden_lines": 0
+    }
+  }
+}
