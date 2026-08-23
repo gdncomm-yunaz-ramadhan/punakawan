@@ -3,15 +3,19 @@
   import {
     listProjectSessions,
     getProjectSession,
+    listProjectEvidence,
     type PanelSessionSummary,
     type SessionDetail,
     type TimelineEvent,
+    type EvidenceRecord,
   } from "../../lib/api/client";
   import { onPanelEvent } from "../../lib/events/sse.svelte";
   import { roleLabel } from "../../lib/roles";
   import DataTable from "../../lib/components/data/DataTable.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import EvidenceItem from "../../lib/components/EvidenceItem.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import type { Column, RowAction } from "../../lib/components/data/types";
 
   interface Props {
@@ -29,6 +33,7 @@
   let detail: SessionDetail | null = $state(null);
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
+  let evidence: EvidenceRecord[] = $state([]);
 
   async function load(id: string) {
     loading = true;
@@ -43,18 +48,42 @@
     }
   }
 
+  // A live refresh leaves `loading` alone so the table keeps its rows (and
+  // an open session dialog keeps its content) while the list updates
+  // underneath.
+  async function refresh(id: string) {
+    error = null;
+    try {
+      const res = await listProjectSessions(id);
+      sessions = res.items ?? [];
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  function closeDetail() {
+    selectedId = null;
+    detail = null;
+    evidence = [];
+  }
+
   async function open(sessionId: string) {
     if (selectedId === sessionId) {
-      selectedId = null;
-      detail = null;
+      closeDetail();
       return;
     }
     selectedId = sessionId;
     detail = null;
+    evidence = [];
     detailError = null;
     detailLoading = true;
     try {
-      detail = await getProjectSession(projectId, sessionId);
+      const [d, ev] = await Promise.all([
+        getProjectSession(projectId, sessionId),
+        listProjectEvidence(projectId, sessionId),
+      ]);
+      detail = d;
+      evidence = ev.items;
     } catch (e) {
       detailError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -62,10 +91,27 @@
     }
   }
 
+  // The columns are session lifecycle and active role, so only lifecycle
+  // events refetch. session.progress is left out on purpose: it fires
+  // continuously while a run works and would only ever move the "Updated"
+  // timestamp, which is not worth a full list refetch per frame - status,
+  // role, and completion all still arrive live.
+  const refreshOn = new Set([
+    "session.started",
+    "session.phase_changed",
+    "session.completed",
+    "session.failed",
+  ]);
+
   onMount(() => {
-    load(projectId);
-    return onPanelEvent(() => load(projectId));
+    return onPanelEvent((evt) => {
+      if (!refreshOn.has(evt.type)) return;
+      refresh(projectId);
+    });
   });
+  // Single trigger for the first load and for a project change - effects run
+  // after the first render too, so loading from onMount as well would fire
+  // the same request twice per open.
   $effect(() => {
     load(projectId);
   });
@@ -109,8 +155,8 @@
       emptyMessage="No sessions yet."
     />
 
-    {#if selectedId}
-      <div class="detail" data-testid="session-detail">
+    <Dialog open={selectedId !== null} title="Session detail" onclose={closeDetail}>
+      <div data-testid="session-detail">
         {#if detailLoading}
           <p>Loading session…</p>
         {:else if detailError}
@@ -136,35 +182,41 @@
             <div class="count-card"><strong>{detail.evidence_count ?? 0}</strong><span>Evidence</span></div>
           </div>
 
+          <h4>Evidence</h4>
+          {#if evidence.length === 0}
+            <p class="muted">No evidence recorded for this session.</p>
+          {:else}
+            <ul class="evidence">
+              {#each evidence as rec (rec.id)}
+                <EvidenceItem {projectId} record={rec} />
+              {/each}
+            </ul>
+          {/if}
+
           <h4>Phase timeline</h4>
           {#if !detail.Timeline || detail.Timeline.length === 0}
             <p class="muted">No events recorded yet.</p>
           {:else}
-            <ol class="timeline">
-              {#each detail.Timeline as e (e.id)}
-                <li class:failure={isFailure(e)}>
-                  <span class="time">{new Date(e.timestamp).toLocaleTimeString()}</span>
-                  <span class="op">{e.operation}</span>
-                  {#if e.role}<span class="role">{roleLabel(e.role)}</span>{/if}
-                  <span class="result result-{e.result}">{e.result}</span>
-                </li>
-              {/each}
-            </ol>
+            <div class="timeline-scroll">
+              <ol class="timeline">
+                {#each detail.Timeline as e (e.id)}
+                  <li class:failure={isFailure(e)}>
+                    <span class="time">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                    <span class="op">{e.operation}</span>
+                    {#if e.role}<span class="role">{roleLabel(e.role)}</span>{/if}
+                    <span class="result result-{e.result}">{e.result}</span>
+                  </li>
+                {/each}
+              </ol>
+            </div>
           {/if}
         {/if}
       </div>
-    {/if}
+    </Dialog>
   {/if}
 </section>
 
 <style>
-  .detail {
-    margin-top: 1rem;
-    padding: 1rem 1.1rem;
-    background: var(--color-surface-subtle);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-  }
   .detail-head {
     display: flex;
     align-items: center;
@@ -221,6 +273,16 @@
   .muted {
     color: var(--color-text-muted);
     font-size: 0.85rem;
+  }
+  ul.evidence {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    display: grid;
+    gap: 0.4rem;
+  }
+  .timeline-scroll {
+    overflow-x: auto;
   }
   ol.timeline {
     list-style: none;

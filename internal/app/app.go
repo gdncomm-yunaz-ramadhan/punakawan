@@ -7,21 +7,24 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/approvals"
-	"github.com/ygrip/punakawan/internal/capsule"
 	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/taskstore"
 	"github.com/ygrip/punakawan/internal/tools"
@@ -36,13 +39,10 @@ type App struct {
 	Workspace       *workspace.Workspace
 	Policy          *policy.Policy
 	Supervisor      *tools.Supervisor
-	Approvals       *approvals.Store
-	Capsules        *capsule.Store
 	Inspector       *gitops.Inspector
 	Worktrees       *gitops.WorktreeManager
 	Workflow        *workflow.Store
 	AdapterRegistry *adapters.Registry
-	SyncQueue       *syncqueue.Queue
 	PrReviews       *prreview.Store
 	ContextRequests *contextrequest.Store
 	// RoleConfig is the shared §47 role-configuration resolver: it maps a
@@ -56,8 +56,20 @@ type App struct {
 	knowledgeMu    sync.Mutex
 	knowledgeStore *knowledge.Store
 
+	storageMu sync.Mutex
+	storageDB *storage.DB
+
+	approvalsMu    sync.Mutex
+	approvalsStore *approvals.Store
+
 	taskStoreMu sync.Mutex
 	taskStore   *taskstore.Store
+
+	learningMu    sync.Mutex
+	learningStore *learning.Store
+
+	syncQueueMu sync.Mutex
+	syncQueue   *syncqueue.Queue
 
 	searchIndexMu sync.Mutex
 	searchIndex   *search.Index
@@ -74,15 +86,40 @@ type App struct {
 
 	jiraWorkflowMu     sync.Mutex
 	jiraWorkflowConfig *jiraworkflow.Config
+
+	// ephemeralRoot is set when Workspace.Ephemeral is true, so Close can
+	// remove the throwaway temp directory DiscoverOrEphemeral created for
+	// it. Empty for a real, discovered project.
+	ephemeralRoot string
 }
 
-// Load discovers the workspace containing startDir and wires up its services.
+// Load discovers the workspace containing startDir and wires up its
+// services. Fails if no project is found above startDir - see LoadOptional
+// for the one entrypoint (the MCP server) that must not require one.
 func Load(startDir string) (*App, error) {
 	ws, err := workspace.Discover(startDir)
 	if err != nil {
 		return nil, err
 	}
+	return load(ws)
+}
 
+// LoadOptional is Load, except that finding no project above startDir is
+// not an error: it wires up services against a throwaway ephemeral
+// workspace instead (see workspace.DiscoverOrEphemeral). Only the MCP
+// server uses this - every other entrypoint is inherently run against a
+// specific project checkout and should keep failing fast via Load.
+func LoadOptional(startDir string) (*App, error) {
+	ws, err := workspace.DiscoverOrEphemeral(startDir)
+	if err != nil {
+		return nil, err
+	}
+	return load(ws)
+}
+
+// load wires up an *App's services from an already-resolved workspace,
+// shared by Load and LoadOptional.
+func load(ws *workspace.Workspace) (*App, error) {
 	pol, err := policy.Load(ws.PolicyPath())
 	if err != nil {
 		return nil, err
@@ -98,16 +135,6 @@ func Load(startDir string) (*App, error) {
 		roots = append(roots, path)
 	}
 	sup := tools.New(roots...)
-
-	store, err := approvals.Open(ws.Root)
-	if err != nil {
-		return nil, err
-	}
-
-	capsules, err := capsule.OpenStore(ws.Root)
-	if err != nil {
-		return nil, err
-	}
 
 	wf, err := workflow.Open(ws.Root)
 	if err != nil {
@@ -129,11 +156,6 @@ func Load(startDir string) (*App, error) {
 		}
 	}
 
-	syncQueue, err := syncqueue.Open(ws.Root)
-	if err != nil {
-		return nil, err
-	}
-
 	prReviews, err := prreview.OpenStore(ws.Root)
 	if err != nil {
 		return nil, err
@@ -144,27 +166,35 @@ func Load(startDir string) (*App, error) {
 		return nil, err
 	}
 
-	registry := adapters.NewRegistry(specs, store)
-	registry.SetApprovalScope(pol.Approvals.Scope)
-	registry.SetSyncQueue(syncQueue)
-
 	roleResolver := newRoleResolver(ws)
 
-	return &App{
+	a := &App{
 		Workspace:       ws,
 		Policy:          pol,
 		Supervisor:      sup,
-		Approvals:       store,
-		Capsules:        capsules,
 		Inspector:       gitops.NewInspector(sup),
-		Worktrees:       gitops.NewWorktreeManager(sup, store, pol),
 		Workflow:        wf,
-		AdapterRegistry: registry,
-		SyncQueue:       syncQueue,
 		PrReviews:       prReviews,
 		ContextRequests: contextRequests,
 		RoleConfig:      roleResolver,
-	}, nil
+	}
+	if ws.Ephemeral {
+		a.ephemeralRoot = ws.Root
+	}
+
+	// The approval store and sync queue now live in the shared SQLite kernel,
+	// opened lazily so a command that never touches an approval or records a
+	// failed adapter write never pays to open the kernel. The registry (and,
+	// for approvals, the worktree manager) therefore take a provider
+	// (a.OpenApprovals, a.OpenSyncQueue) rather than an already-opened store,
+	// deferring the open to the first operation that actually needs it.
+	registry := adapters.NewRegistry(specs, a.OpenApprovals)
+	registry.SetApprovalScope(pol.Approvals.Scope)
+	registry.SetSyncQueue(a.OpenSyncQueue)
+	a.AdapterRegistry = registry
+	a.Worktrees = gitops.NewWorktreeManager(sup, a.OpenApprovals, pol)
+
+	return a, nil
 }
 
 // newRoleResolver builds the shared §47 role-configuration resolver for a
@@ -239,12 +269,12 @@ func (a *App) isClosed() bool {
 	return a.closed
 }
 
-// OpenKnowledge lazily starts the Dolt-backed knowledge store rooted at
-// .punakawan/knowledge under the workspace, memoizing the result. This is
-// deferred rather than wired eagerly in Load because it starts an external
-// Dolt server process: most commands (workspace show, git status, worktree
-// lifecycle, doctor) never touch durable knowledge and should not pay that
-// startup cost on every invocation.
+// OpenKnowledge lazily opens the durable knowledge store, memoizing the
+// result, scoped to this workspace's id within the shared storage kernel.
+// Like OpenTaskStore, it is a thin scope over the one
+// shared *storage.DB rather than a per-project server, so it starts nothing:
+// the deferral simply avoids opening the kernel for commands that never touch
+// durable knowledge.
 func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -261,19 +291,47 @@ func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	store, err := knowledge.Open(a.Supervisor, filepath.Join(a.Workspace.Root, ".punakawan", "knowledge"))
+	db, err := a.OpenStorage(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	a.knowledgeStore = store
-	return store, nil
+	a.knowledgeStore = knowledge.New(db, a.Workspace.ID)
+	return a.knowledgeStore, nil
 }
 
-// OpenTaskStore lazily opens the Beads-less fallback task store, memoizing the
-// result. It shares the knowledge store's Dolt connection (the task tables
-// live in the same per-project Punakawan database), so it implicitly opens
-// knowledge first. Used only for projects with no .beads directory; a
-// Beads-backed project reads/writes tasks through bd instead.
+// OpenStorage lazily opens the shared SQLite storage kernel, memoizing the
+// result. This is one database shared by every local project checkout on
+// this machine, including the one OpenKnowledge opens through it; callers
+// scope their own rows by project id.
+func (a *App) OpenStorage(ctx context.Context) (*storage.DB, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.storageMu.Lock()
+	defer a.storageMu.Unlock()
+
+	if a.storageDB != nil {
+		return a.storageDB, nil
+	}
+	path, err := storage.DBPath()
+	if err != nil {
+		return nil, err
+	}
+	if err := storage.CheckLocation(path); err != nil {
+		return nil, err
+	}
+	db, err := storage.Open(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	a.storageDB = db
+	return db, nil
+}
+
+// OpenTaskStore lazily opens the Beads-less fallback task store, memoizing
+// the result, scoped to this workspace's id within the shared storage
+// kernel. Used only for projects with no .beads directory; a Beads-backed
+// project reads/writes tasks through bd instead.
 func (a *App) OpenTaskStore() (*taskstore.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -284,16 +342,118 @@ func (a *App) OpenTaskStore() (*taskstore.Store, error) {
 	if a.taskStore != nil {
 		return a.taskStore, nil
 	}
-	k, err := a.OpenKnowledge()
+	db, err := a.OpenStorage(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	store := taskstore.New(k.DB())
-	if err := store.Migrate(); err != nil {
+	a.taskStore = taskstore.New(db, a.Workspace.ID)
+	return a.taskStore, nil
+}
+
+// OpenApprovals lazily opens the approval store, memoizing the result, scoped
+// to this workspace's id within the shared storage kernel. Like OpenTaskStore,
+// it is a thin scope over the one shared *storage.DB rather
+// than a per-project server, so it starts nothing: the deferral simply avoids
+// opening the kernel for commands that never touch an approval. The adapter
+// registry and worktree manager hold this method as a provider, so the kernel
+// opens on the first approval-gated operation, not at Load.
+func (a *App) OpenApprovals() (*approvals.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.approvalsMu.Lock()
+	defer a.approvalsMu.Unlock()
+
+	if a.approvalsStore != nil {
+		return a.approvalsStore, nil
+	}
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
 		return nil, err
 	}
-	a.taskStore = store
-	return store, nil
+	store := approvals.New(db, a.Workspace.ID)
+	// One-time import of any pre-kernel JSONL approvals file this workspace
+	// still has on disk. A failure is non-fatal: the store must still open,
+	// so the warning is logged rather than returned (losing old data beats a
+	// store that will not open). Runs once - OpenApprovals memoizes the store.
+	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
+		slog.Warn("approvals: legacy import failed; opening without imported data", "error", warn)
+	}
+	a.approvalsStore = store
+	return a.approvalsStore, nil
+}
+
+// OpenLearning lazily opens the learning-proposal side-store, memoizing the
+// result, scoped to this workspace's id within the shared storage kernel.
+// Like OpenApprovals, it is a thin scope over the one
+// shared *storage.DB rather than a per-project server, so it starts nothing:
+// the deferral simply avoids opening the kernel for commands that never touch
+// a learning proposal.
+func (a *App) OpenLearning() (*learning.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.learningMu.Lock()
+	defer a.learningMu.Unlock()
+
+	if a.learningStore != nil {
+		return a.learningStore, nil
+	}
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	store := learning.New(db, a.Workspace.ID)
+	// One-time import of any pre-kernel JSONL proposals file this workspace
+	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
+	// OpenLearning memoizes the store.
+	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
+		slog.Warn("learning: legacy import failed; opening without imported data", "error", warn)
+	}
+	a.learningStore = store
+	return a.learningStore, nil
+}
+
+// OpenSyncQueue lazily opens the outbound-adapter-write sync queue, memoizing
+// the result, scoped to this workspace's id within the shared storage kernel.
+// Like OpenApprovals, it is a thin scope over the one
+// shared *storage.DB rather than a per-project server, so it starts nothing:
+// the deferral simply avoids opening the kernel for commands that never record
+// or inspect a failed adapter write. The adapter registry holds this method as
+// a provider, so the kernel opens on the first adapter write that fails, not at
+// Load.
+func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.syncQueueMu.Lock()
+	defer a.syncQueueMu.Unlock()
+
+	if a.syncQueue != nil {
+		return a.syncQueue, nil
+	}
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	queue := syncqueue.New(db, a.Workspace.ID)
+	// One-time import of any pre-kernel JSONL sync-queue file this workspace
+	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
+	// OpenSyncQueue memoizes the queue.
+	if warn := queue.ImportLegacy(a.Workspace.Root); warn != nil {
+		slog.Warn("syncqueue: legacy import failed; opening without imported data", "error", warn)
+	}
+	a.syncQueue = queue
+	return a.syncQueue, nil
 }
 
 // JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
@@ -315,7 +475,7 @@ func (a *App) JiraWorkflow() (*jiraworkflow.Config, error) {
 	return cfg, nil
 }
 
-// OpenSearchIndex lazily opens the Bleve BM25F index rooted at
+// OpenSearchIndex lazily opens the SQLite FTS5 search index rooted at
 // .punakawan/index/bm25 under the workspace (§10.2), memoizing the result.
 // Per §11.11 the index is disposable and always rebuildable from
 // OpenKnowledge's Store, so callers searching it should call search.Rebuild
@@ -358,10 +518,11 @@ func (a *App) SearchKnowledge(store *knowledge.Store, ix *search.Index, req sear
 	return search.Search(store, ix, req)
 }
 
-// Close releases resources opened on demand (the knowledge store's Dolt
-// server and the BM25 search index, if OpenKnowledge/OpenSearchIndex were
-// ever called) and shuts down any adapter processes the AdapterRegistry has
-// started.
+// Close releases resources opened on demand (the shared storage kernel and
+// the BM25 search index, if they were ever opened) and shuts down any adapter
+// processes the AdapterRegistry has started. The knowledge store is only a
+// scope over the shared kernel, so it owns nothing to close - closing the
+// kernel (below) covers it; Close just drops the memoized reference.
 func (a *App) Close() error {
 	a.closedMu.Lock()
 	a.closed = true
@@ -379,22 +540,39 @@ func (a *App) Close() error {
 	}
 	a.searchIndexMu.Unlock()
 
-	a.knowledgeMu.Lock()
-	defer a.knowledgeMu.Unlock()
-
-	if a.knowledgeStore == nil {
-		if adapterErr != nil {
-			return adapterErr
-		}
-		return searchErr
+	a.storageMu.Lock()
+	var storageErr error
+	if a.storageDB != nil {
+		storageErr = a.storageDB.Close()
+		a.storageDB = nil
 	}
-	knowledgeErr := a.knowledgeStore.Close()
+	a.storageMu.Unlock()
+
+	a.knowledgeMu.Lock()
 	a.knowledgeStore = nil
+	a.knowledgeMu.Unlock()
+
+	a.approvalsMu.Lock()
+	a.approvalsStore = nil
+	a.approvalsMu.Unlock()
+
+	a.learningMu.Lock()
+	a.learningStore = nil
+	a.learningMu.Unlock()
+
+	a.syncQueueMu.Lock()
+	a.syncQueue = nil
+	a.syncQueueMu.Unlock()
+
+	if a.ephemeralRoot != "" {
+		os.RemoveAll(a.ephemeralRoot)
+	}
+
 	if adapterErr != nil {
 		return adapterErr
 	}
 	if searchErr != nil {
 		return searchErr
 	}
-	return knowledgeErr
+	return storageErr
 }

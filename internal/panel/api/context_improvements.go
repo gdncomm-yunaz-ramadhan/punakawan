@@ -35,9 +35,13 @@ type contextImprovement struct {
 // project, newest first, with each row's status overlaid from the live review
 // so acceptances/rejections/conflicts made through the review flow show up
 // without the side-store having to be kept in lockstep.
-func ContextImprovementsHandler(root string, reviews *artifact.ReviewStore) http.HandlerFunc {
+func ContextImprovementsHandler(learningStore func() (*learning.Store, error), reviews *artifact.ReviewStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		store, err := learning.Open(root)
+		if learningStore == nil {
+			writeError(w, http.StatusInternalServerError, errors.New("api: no learning store configured"))
+			return
+		}
+		store, err := learningStore()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return

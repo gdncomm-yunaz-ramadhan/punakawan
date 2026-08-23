@@ -1,13 +1,13 @@
 package recipe
 
 import (
-	"os/exec"
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
-	"github.com/ygrip/punakawan/internal/tools"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -16,22 +16,12 @@ import (
 // cleanup path instead of a parallel copy.
 func newTestStore(t testing.TB) *knowledge.Store {
 	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-
-	dir := t.TempDir()
-	sup := tools.New(dir)
-	store, err := knowledge.Open(sup, filepath.Join(dir, "knowledge"))
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Close: %v", err)
-		}
-	})
-	return store
+	t.Cleanup(func() { db.Close() })
+	return knowledge.New(db, "test-project")
 }
 
 // recipeFixture is a minimal, parameterized retrieval-recipe record for

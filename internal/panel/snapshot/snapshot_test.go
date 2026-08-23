@@ -213,3 +213,115 @@ func TestRefreshNilFuncReturnsCached(t *testing.T) {
 		t.Fatalf("Refresh = %+v, want cached RepositoryCount=5", got)
 	}
 }
+
+// TestGetOrRefreshSeedsFromPersistedSnapshot guards the fix for overview
+// being slow on every `punakawan panel` restart: a process-cold cache (no
+// in-memory entry yet) must serve a persisted snapshot instantly rather
+// than falling through to nil, while still triggering a background
+// refresh to bring it back up to date.
+func TestGetOrRefreshSeedsFromPersistedSnapshot(t *testing.T) {
+	var calls int32
+	persisted := &ProjectSnapshot{ProjectID: "p1", UpdatedAt: time.Unix(1000, 0), RepositoryCount: 7}
+	var loadCalls int32
+	c := New(
+		func(ctx context.Context, id string) (*ProjectSnapshot, error) {
+			atomic.AddInt32(&calls, 1)
+			return &ProjectSnapshot{ProjectID: id, RepositoryCount: 99}, nil
+		},
+		WithPersistence(
+			func(projectID string) (*ProjectSnapshot, bool) {
+				atomic.AddInt32(&loadCalls, 1)
+				if projectID != "p1" {
+					return nil, false
+				}
+				return persisted, true
+			},
+			func(*ProjectSnapshot) {},
+		),
+	)
+
+	got, stale := c.GetOrRefresh(context.Background(), "p1")
+	if got == nil || got.RepositoryCount != 7 {
+		t.Fatalf("GetOrRefresh = %+v, want persisted RepositoryCount=7", got)
+	}
+	if !stale {
+		t.Fatal("stale=false, want true (persisted snapshot is old and still triggers a refresh)")
+	}
+	if n := atomic.LoadInt32(&loadCalls); n != 1 {
+		t.Fatalf("load called %d times, want 1", n)
+	}
+
+	waitFor(t, func() bool {
+		s, _ := c.Get("p1")
+		return s != nil && s.RepositoryCount == 99
+	})
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("refresh called %d times, want 1", n)
+	}
+
+	// A second GetOrRefresh must not consult load again: the in-memory
+	// cache is now populated (first by the persisted seed, then by the
+	// background refresh), so load is only ever needed once per process.
+	c.GetOrRefresh(context.Background(), "p1")
+	if n := atomic.LoadInt32(&loadCalls); n != 1 {
+		t.Fatalf("load called %d times after a warm read, want still 1", n)
+	}
+}
+
+// TestSetPersistsSnapshot guards that every successful store - whether
+// from a background refresh or an eager Set (e.g. the project detail page
+// warming the cache) - is handed to the configured SavePersistedFunc, so a
+// later process can load it back.
+func TestSetPersistsSnapshot(t *testing.T) {
+	var saved []*ProjectSnapshot
+	c := New(nil, WithPersistence(nil, func(snap *ProjectSnapshot) {
+		saved = append(saved, snap)
+	}))
+
+	c.Set(&ProjectSnapshot{ProjectID: "p1", RepositoryCount: 3})
+	if len(saved) != 1 || saved[0].RepositoryCount != 3 {
+		t.Fatalf("saved = %+v, want one snapshot with RepositoryCount=3", saved)
+	}
+}
+
+// TestDoRefreshPersistsSuccessfulSnapshot guards that a background/
+// synchronous refresh's result is persisted, not just Set's direct
+// callers.
+func TestDoRefreshPersistsSuccessfulSnapshot(t *testing.T) {
+	var saved []*ProjectSnapshot
+	c := New(
+		func(ctx context.Context, id string) (*ProjectSnapshot, error) {
+			return &ProjectSnapshot{ProjectID: id, RepositoryCount: 5}, nil
+		},
+		WithPersistence(nil, func(snap *ProjectSnapshot) {
+			saved = append(saved, snap)
+		}),
+	)
+
+	if _, err := c.Refresh(context.Background(), "p1"); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if len(saved) != 1 || saved[0].RepositoryCount != 5 {
+		t.Fatalf("saved = %+v, want one snapshot with RepositoryCount=5", saved)
+	}
+}
+
+// TestRefreshErrorDoesNotPersist guards that a failed refresh - which
+// keeps the previous in-memory snapshot untouched - also does not
+// overwrite the previously persisted one with nothing.
+func TestRefreshErrorDoesNotPersist(t *testing.T) {
+	saveCalls := 0
+	c := New(
+		func(ctx context.Context, id string) (*ProjectSnapshot, error) {
+			return nil, errors.New("boom")
+		},
+		WithPersistence(nil, func(*ProjectSnapshot) { saveCalls++ }),
+	)
+
+	if _, err := c.Refresh(context.Background(), "p1"); err == nil {
+		t.Fatal("Refresh err = nil, want error")
+	}
+	if saveCalls != 0 {
+		t.Fatalf("save called %d times on a failed refresh, want 0", saveCalls)
+	}
+}

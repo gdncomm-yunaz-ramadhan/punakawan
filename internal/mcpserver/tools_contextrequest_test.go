@@ -11,13 +11,11 @@ func TestMissingContextRequestRoundTrip(t *testing.T) {
 	a := newTestApp(t)
 	cs := connect(t, a)
 
-	capsuleID := requestTestCapsule(t, cs, "bd-task-1", "petruk")
-
 	var submitted map[string]any
 	callTool(t, cs, "submit_missing_context_request", map[string]any{
-		"capsule_id": capsuleID,
+		"capsule_id": "cap-1",
 		"query":      "refund SLA policy",
-		"reason":     "capsule did not include the SLA requirement",
+		"reason":     "prior submission did not include the SLA requirement",
 		"blocking":   true,
 	}, &submitted)
 
@@ -42,7 +40,7 @@ func TestMissingContextRequestRoundTrip(t *testing.T) {
 		t.Fatalf("list_missing_context_requests = %+v, want %s listed as pending", listed, reqID)
 	}
 
-	revisedCapsuleID := requestTestCapsule(t, cs, "bd-task-1", "petruk")
+	revisedCapsuleID := "cap-2"
 
 	var resolved map[string]any
 	callTool(t, cs, "resolve_missing_context_request", map[string]any{
@@ -74,10 +72,9 @@ func TestResolveMissingContextRequestRejectsAddedToRevisionWithoutCapsuleId(t *t
 	a := newTestApp(t)
 	cs := connect(t, a)
 
-	capsuleID := requestTestCapsule(t, cs, "bd-task-1", "petruk")
 	var submitted map[string]any
 	callTool(t, cs, "submit_missing_context_request", map[string]any{
-		"capsule_id": capsuleID,
+		"capsule_id": "cap-1",
 		"query":      "x",
 		"reason":     "y",
 		"blocking":   false,
@@ -95,27 +92,5 @@ func TestResolveMissingContextRequestRejectsAddedToRevisionWithoutCapsuleId(t *t
 	}
 	if !res.IsError {
 		t.Fatal("expected an error resolving added_to_revision without revised_capsule_id")
-	}
-}
-
-func TestSubmitMissingContextRequestRejectsUnknownCapsule(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: "submit_missing_context_request",
-		Arguments: map[string]any{
-			"capsule_id": "no-such-capsule",
-			"query":      "x",
-			"reason":     "y",
-			"blocking":   false,
-		},
-	})
-	if err != nil {
-		t.Fatalf("CallTool: %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("expected an error citing a capsule that was never issued")
 	}
 }

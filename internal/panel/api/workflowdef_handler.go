@@ -25,7 +25,8 @@ type WorkflowRootResolver func(projectID string) (root string, err error)
 //   - resolveRoot: {projectId} -> workspace root (404 on unknown project).
 //   - caps: the registered capability set used to validate definitions and
 //     to re-check on invoke. Built with workflowdef.NewCapabilitySet(
-//     workflowdef.KnownMCPCapabilities(), adapterOps).
+//     mcpserver.CapabilityRegistry(a).Names(), adapterOps) - the live MCP
+//     tool registry, not a hand-maintained list.
 //   - newInvoker: builds an Invoker for a resolved (projectID, root). The
 //     integrator wires the RunCreator here so it can bind the workflow-run
 //     store for that project; it takes both the project id (the runtime pool's

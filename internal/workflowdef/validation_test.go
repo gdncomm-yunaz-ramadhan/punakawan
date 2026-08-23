@@ -5,8 +5,12 @@ import (
 	"testing"
 )
 
+// testMCPNames stands in for the live MCP tool registry in tests - just
+// enough distinct names to exercise membership/Len, not a full mirror.
+var testMCPNames = []string{"create_pr", "search_knowledge", "build_task_context"}
+
 func testCaps() CapabilitySet {
-	return NewCapabilitySet(KnownMCPCapabilities(), []string{"knowledge.search", "jira.issue.search"})
+	return NewCapabilitySet(testMCPNames, []string{"knowledge.search", "jira.issue.search"})
 }
 
 func validDef() Definition {
@@ -113,6 +117,26 @@ func TestValidateBadInputFrom(t *testing.T) {
 	}
 }
 
+func TestValidateRolesAndStepsConflict(t *testing.T) {
+	// A non-empty roles map routes invocation to the delivery engine, which
+	// never runs the step graph, so declaring both must be refused rather than
+	// silently dropping every step.
+	d := validDef()
+	d.Roles = map[string]RoleRestriction{"bagong": {Required: true}}
+	if !errors.Is(Validate(d, testCaps()), ErrRolesAndSteps) {
+		t.Fatalf("roles+steps conflict not caught")
+	}
+	// Either half on its own stays valid.
+	d.Steps = nil
+	d.AllowedCapabilities = nil
+	if err := Validate(d, testCaps()); err != nil {
+		t.Fatalf("roles-only def rejected: %v", err)
+	}
+	if err := Validate(validDef(), testCaps()); err != nil {
+		t.Fatalf("steps-only def rejected: %v", err)
+	}
+}
+
 func TestCapabilitySet(t *testing.T) {
 	caps := testCaps()
 	if !caps.Has("knowledge.search") || !caps.Has("create_pr") {
@@ -121,7 +145,7 @@ func TestCapabilitySet(t *testing.T) {
 	if caps.Has("nope") {
 		t.Fatalf("unexpected membership")
 	}
-	if caps.Len() != len(KnownMCPCapabilities())+2 {
+	if caps.Len() != len(testMCPNames)+2 {
 		t.Fatalf("Len mismatch: %d", caps.Len())
 	}
 }

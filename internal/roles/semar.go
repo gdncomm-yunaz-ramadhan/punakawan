@@ -27,8 +27,8 @@ func SubmitSemarSynthesis(store *knowledge.Store, id, title string, synthesis pr
 // SubmitFinalPlan validates and persists Semar's final implementation plan
 // (§9.3) as a final-plan knowledge record. This is a distinct artifact from
 // SubmitSemarSynthesis, produced at a later workflow stage once no further
-// clarification is required; the MCP submit_semar_synthesis tool (§28.4)
-// calls whichever of the two matches the payload the client submitted.
+// clarification is required; the MCP submit_final_plan tool calls this one,
+// while submit_lane_semar_synthesis calls SubmitSemarSynthesis.
 func SubmitFinalPlan(store *knowledge.Store, id, title string, plan protocol.KnowledgeRecordFinalPlan) (protocol.KnowledgeRecord, error) {
 	if len(plan.Requirements) == 0 {
 		return protocol.KnowledgeRecord{}, fmt.Errorf("roles: final plan %s: requirements must have at least one entry", id)

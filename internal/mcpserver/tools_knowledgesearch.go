@@ -28,6 +28,17 @@ type SearchKnowledgeInput struct {
 
 	IncludeRelated bool `json:"include_related,omitempty" jsonschema:"expand one hop of directly related records (§11.9), bounded to 10 items"`
 	Limit          int  `json:"limit,omitempty" jsonschema:"maximum results to return, default 20"`
+
+	// ProjectId is ADR-0020's hub project filter - which project's knowledge
+	// store to search, distinct from the record-level "project" scope field
+	// above (a ranking bonus on individual records' own provenance, not a
+	// database selector). Always pass your own calling project's id
+	// explicitly; omitting it also defaults to it, so cross-project access
+	// only happens when a caller deliberately names a different project.
+	// Naming a project other than your own falls back to a plain substring
+	// scan of that project's records (no ranked BM25 index spans projects),
+	// and only works when that project shares this one's hub.
+	ProjectId string `json:"project_id,omitempty" jsonschema:"which project's knowledge store to search (ADR-0020) - defaults to the calling project; name another project's id to deliberately search it via a lower-fidelity cross-project scan"`
 }
 
 // SearchKnowledgeMatch is §11.12's KnowledgeSearchResult.match.
@@ -61,6 +72,31 @@ func searchKnowledgeHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 		if err != nil {
 			return nil, SearchKnowledgeOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
+
+		// A project_id naming a different project than this workspace's own
+		// bypasses the BM25 index entirely (it is built only from this
+		// workspace's own project and cannot rank another project's records) in
+		// favor of a plain cross-project substring scan.
+		if in.ProjectId != "" && in.ProjectId != a.Workspace.ID {
+			records, err := store.SearchInProject(in.ProjectId, in.Query, in.Types, in.Limit)
+			if err != nil {
+				return nil, SearchKnowledgeOutput{}, fmt.Errorf("mcpserver: search knowledge in project %q: %w", in.ProjectId, err)
+			}
+			out := make([]SearchKnowledgeResult, len(records))
+			for i, rec := range records {
+				out[i] = SearchKnowledgeResult{
+					Id:    rec.Id,
+					Title: rec.Title,
+					Type:  string(rec.Type),
+					Match: SearchKnowledgeMatch{Kind: "cross_project_scan"},
+					Explanation: []string{
+						fmt.Sprintf("Cross-project substring scan of %q (no ranked index spans projects)", in.ProjectId),
+					},
+				}
+			}
+			return nil, SearchKnowledgeOutput{Results: out}, nil
+		}
+
 		ix, err := a.OpenSearchIndex()
 		if err != nil {
 			return nil, SearchKnowledgeOutput{}, fmt.Errorf("mcpserver: open search index: %w", err)

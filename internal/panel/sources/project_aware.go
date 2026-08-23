@@ -116,6 +116,39 @@ func (p ProjectSessionReader) Get(ctx context.Context, workspaceID, sessionID st
 	return out, err
 }
 
+// ProjectEvidenceReader is a contract.EvidenceReader resolved per project id.
+type ProjectEvidenceReader struct{ *AppResolver }
+
+func (p ProjectEvidenceReader) List(ctx context.Context, workspaceID, sessionID string) ([]protocol.EvidenceRecord, error) {
+	var out []protocol.EvidenceRecord
+	err := p.with(ctx, workspaceID, func(a *app.App) error {
+		var e error
+		out, e = (&EvidenceSource{App: a}).List(ctx, workspaceID, sessionID)
+		return e
+	})
+	return out, err
+}
+
+func (p ProjectEvidenceReader) Get(ctx context.Context, workspaceID, evidenceID string) (protocol.EvidenceRecord, error) {
+	var out protocol.EvidenceRecord
+	err := p.with(ctx, workspaceID, func(a *app.App) error {
+		var e error
+		out, e = (&EvidenceSource{App: a}).Get(ctx, workspaceID, evidenceID)
+		return e
+	})
+	return out, err
+}
+
+func (p ProjectEvidenceReader) Preview(ctx context.Context, workspaceID, evidenceID string, offset, limit int64) (contract.EvidencePreview, error) {
+	var out contract.EvidencePreview
+	err := p.with(ctx, workspaceID, func(a *app.App) error {
+		var e error
+		out, e = (&EvidenceSource{App: a}).Preview(ctx, workspaceID, evidenceID, offset, limit)
+		return e
+	})
+	return out, err
+}
+
 // ProjectApprovalReader is a contract.ApprovalReader resolved per project id,
 // so the panel can list a non-primary project's approvals (via the runtime
 // pool) rather than only the workspace it was started for. This is what makes

@@ -4,6 +4,7 @@
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
 
   interface Props {
     projectId: string;
@@ -38,11 +39,15 @@
     }
   }
 
+  function closeDetail() {
+    selectedId = null;
+    detail = null;
+  }
+
   async function select(id: string) {
     if (selectedId === id) {
-      // Toggle the detail closed on a second click.
-      selectedId = null;
-      detail = null;
+      // Toggle the modal closed on a second click of the same row.
+      closeDetail();
       return;
     }
     selectedId = id;
@@ -59,6 +64,15 @@
   }
 
   onMount(load);
+
+  // The dialog's title bar needs a string before the detail payload has
+  // loaded (or if it fails), so it falls back to the plan id rather than
+  // sitting blank.
+  let dialogTitle = $derived.by(() => {
+    const m = detail?.manifest;
+    if (m) return m.title || m.id;
+    return selectedId ?? "Plan detail";
+  });
 
   // Plan status is a free-form string, not an Availability value, so it
   // renders through StatusBadge's generic variant mode. Unknown statuses
@@ -127,53 +141,48 @@
         </tbody>
       </table>
     </div>
-
-    {#if selectedId}
-      <div class="detail" data-testid="plan-detail">
-        {#if detailLoading}
-          <p>Loading plan…</p>
-        {:else if detailError}
-          <ErrorStateCard title="Failed to load plan" message={detailError} />
-        {:else if detail}
-          {@const m = detail.manifest}
-          <header class="detail-head">
-            <h3>{m.title || m.id}</h3>
-            <StatusBadge variant={statusVariant(m.status)} label={m.status} />
-          </header>
-          {#if m.description}<p class="description">{m.description}</p>{/if}
-
-          <dl class="meta">
-            <dt>Plan ID</dt>
-            <dd><code>{m.id}</code></dd>
-            <dt>Current version</dt>
-            <dd>{m.current_version || "—"}</dd>
-            {#if m.related_tasks?.length}
-              <dt>Related tasks</dt>
-              <dd>{m.related_tasks.join(", ")}</dd>
-            {/if}
-            {#if m.derived_from?.knowledge?.length}
-              <dt>Derived from knowledge</dt>
-              <dd>{m.derived_from.knowledge.join(", ")}</dd>
-            {/if}
-            {#if m.derived_from?.workflows?.length}
-              <dt>Derived from workflows</dt>
-              <dd>{m.derived_from.workflows.join(", ")}</dd>
-            {/if}
-            {#if m.derived_from?.metadata?.length}
-              <dt>Derived from metadata</dt>
-              <dd>{m.derived_from.metadata.join(", ")}</dd>
-            {/if}
-          </dl>
-
-          {#if detail.current_version_content}
-            <h4>Current version content</h4>
-            <pre class="content">{detail.current_version_content}</pre>
-          {/if}
-        {/if}
-      </div>
-    {/if}
   {/if}
 </section>
+
+<Dialog open={selectedId !== null} title={dialogTitle} onclose={closeDetail}>
+  {#if detailLoading}
+    <p>Loading plan…</p>
+  {:else if detailError}
+    <ErrorStateCard title="Failed to load plan" message={detailError} />
+  {:else if detail}
+    {@const m = detail.manifest}
+    <StatusBadge variant={statusVariant(m.status)} label={m.status} />
+    {#if m.description}<p class="description">{m.description}</p>{/if}
+
+    <dl class="meta">
+      <dt>Plan ID</dt>
+      <dd><code>{m.id}</code></dd>
+      <dt>Current version</dt>
+      <dd>{m.current_version || "—"}</dd>
+      {#if m.related_tasks?.length}
+        <dt>Related tasks</dt>
+        <dd>{m.related_tasks.join(", ")}</dd>
+      {/if}
+      {#if m.derived_from?.knowledge?.length}
+        <dt>Derived from knowledge</dt>
+        <dd>{m.derived_from.knowledge.join(", ")}</dd>
+      {/if}
+      {#if m.derived_from?.workflows?.length}
+        <dt>Derived from workflows</dt>
+        <dd>{m.derived_from.workflows.join(", ")}</dd>
+      {/if}
+      {#if m.derived_from?.metadata?.length}
+        <dt>Derived from metadata</dt>
+        <dd>{m.derived_from.metadata.join(", ")}</dd>
+      {/if}
+    </dl>
+
+    {#if detail.current_version_content}
+      <h4>Current version content</h4>
+      <pre class="content">{detail.current_version_content}</pre>
+    {/if}
+  {/if}
+</Dialog>
 
 <style>
   .table-scroll {
@@ -220,23 +229,6 @@
   td.tasks {
     color: var(--color-text-muted);
     word-break: break-word;
-  }
-  .detail {
-    margin-top: 1rem;
-    padding: 1rem 1.1rem;
-    background: var(--color-surface-subtle);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-  }
-  .detail-head {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-  }
-  .detail-head h3 {
-    margin: 0;
-    font-size: 1.05rem;
   }
   .description {
     margin: 0.4rem 0 0;

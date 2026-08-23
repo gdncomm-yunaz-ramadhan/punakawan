@@ -34,6 +34,15 @@ export const FIXTURE_ISSUE_COMMENTS = [
   { id: 601, user: { login: 'reviewer2' }, body: 'LGTM once the rounding is fixed.', created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:00:00Z' },
 ];
 
+export const FIXTURE_REPOSITORY = {
+  private: true,
+  default_branch: 'main',
+  permissions: { admin: false, maintain: false, push: true, pull: true, triage: false },
+};
+
+/** A repository slug the fake REST server 404s for, simulating a private repo the configured credential cannot see. */
+export const INACCESSIBLE_REPO = 'acme/no-access';
+
 export const FIXTURE_REVIEW_THREADS = [
   {
     id: 'thread-unresolved-1',
@@ -93,6 +102,13 @@ export function createFakeGitHubRest(): FakeGitHubRest {
       const threadId = typeof variables.threadId === 'string' ? variables.threadId : '';
       resolvedThreadIds.push(threadId);
       return json({ data: { resolveReviewThread: { thread: { id: threadId, isResolved: true } } } });
+    }
+
+    const repoMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)$/);
+    if (repoMatch && method === 'GET') {
+      const repo = `${repoMatch[1]}/${repoMatch[2]}`;
+      if (repo === INACCESSIBLE_REPO) return json({ message: 'Not Found' }, 404);
+      return json(FIXTURE_REPOSITORY);
     }
 
     const prMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/);

@@ -16,6 +16,22 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 log() { printf '\n==> %s\n' "$1"; }
 warn() { printf '\nWARNING: %s\n' "$1" >&2; }
 
+# --- Global config location (matches Go's os.UserConfigDir) -----------------
+# os.UserConfigDir() resolves to ~/Library/Application Support on macOS and
+# $XDG_CONFIG_HOME (or ~/.config) on Linux - mirror that here so the installer
+# writes where the binary reads. Resolved before the build below so the
+# built binary can be copied straight into GLOBAL_DIR/bin rather than left
+# referenced in place inside this checkout (see the build step's comment).
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  GLOBAL_DIR="$HOME/Library/Application Support/punakawan"
+else
+  GLOBAL_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/punakawan"
+fi
+mkdir -p "$GLOBAL_DIR"
+GLOBAL_CONFIG="$GLOBAL_DIR/config.yaml"
+GLOBAL_ENV="$GLOBAL_DIR/.env"
+
 # --- 0. Platform detection --------------------------------------------------
 # macOS installs via Homebrew; Linux uses the distro package manager (apt /
 # dnf / yum / pacman / zypper) with tool-specific fallbacks for anything not
@@ -278,17 +294,34 @@ fi
 log "Building Punakawan (go build + pnpm -r build)"
 (cd "$REPO_ROOT" && make bootstrap && make build && make package)
 
-PUNAKAWAN_BIN="$REPO_ROOT/dist/punakawan"
+BUILT_BIN="$REPO_ROOT/dist/punakawan"
 ADAPTER_ATLASSIAN_ENTRY="$REPO_ROOT/packages/adapter-atlassian/dist/run.js"
 
-if [[ ! -x "$PUNAKAWAN_BIN" ]]; then
-  echo "Build did not produce $PUNAKAWAN_BIN" >&2
+if [[ ! -x "$BUILT_BIN" ]]; then
+  echo "Build did not produce $BUILT_BIN" >&2
   exit 1
 fi
 if [[ ! -f "$ADAPTER_ATLASSIAN_ENTRY" ]]; then
   echo "Build did not produce $ADAPTER_ATLASSIAN_ENTRY" >&2
   exit 1
 fi
+
+# Copy the built binary into GLOBAL_DIR/bin rather than pointing run-mcp.sh
+# (below) at $BUILT_BIN in place: every MCP client on this machine, in every
+# project, execs whatever run-mcp.sh names, and that dev checkout's dist/
+# gets overwritten by every future `go build`/`make package` a developer runs
+# while iterating - a rebuild mid-write (or a moved/deleted checkout) would
+# break every other session's punakawan tools with no clear error. Copying
+# to a stable path decouples "a session is using punakawan" from "someone is
+# rebuilding it in this checkout right now"; re-run this installer to pick
+# up a new build. The copy-to-temp-then-rename keeps a concurrently
+# starting MCP client from ever execing a half-written file.
+mkdir -p "$GLOBAL_DIR/bin"
+PUNAKAWAN_BIN="$GLOBAL_DIR/bin/punakawan"
+cp -f "$BUILT_BIN" "$PUNAKAWAN_BIN.tmp"
+chmod +x "$PUNAKAWAN_BIN.tmp"
+mv -f "$PUNAKAWAN_BIN.tmp" "$PUNAKAWAN_BIN"
+log "Installed $PUNAKAWAN_BIN (copied from $BUILT_BIN)"
 
 LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
@@ -299,21 +332,7 @@ case ":$PATH:" in
   *) echo "Note: $LOCAL_BIN is not on your PATH. Add it in your shell profile." ;;
 esac
 
-# --- 3. Global config location (matches Go's os.UserConfigDir) --------------
-# os.UserConfigDir() resolves to ~/Library/Application Support on macOS and
-# $XDG_CONFIG_HOME (or ~/.config) on Linux - mirror that here so the installer
-# writes where the binary reads.
-
-if [[ "$PLATFORM" == "macos" ]]; then
-  GLOBAL_DIR="$HOME/Library/Application Support/punakawan"
-else
-  GLOBAL_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/punakawan"
-fi
-mkdir -p "$GLOBAL_DIR"
-GLOBAL_CONFIG="$GLOBAL_DIR/config.yaml"
-GLOBAL_ENV="$GLOBAL_DIR/.env"
-
-# --- 4. Atlassian credentials (written once, globally) ----------------------
+# --- 3. Atlassian credentials (written once, globally) ----------------------
 
 if [[ -f "$GLOBAL_ENV" ]]; then
   if grep -q '^ATLASSIAN_MCP_TOKEN=' "$GLOBAL_ENV" && ! grep -q '^ATLASSIAN_API_TOKEN=' "$GLOBAL_ENV"; then
@@ -386,7 +405,7 @@ EOF
   log "Wrote credentials to $GLOBAL_ENV (chmod 600, outside any git-tracked directory)"
 fi
 
-# --- 5. Global adapter config (workspace.GlobalConfig) ----------------------
+# --- 4. Global adapter config (workspace.GlobalConfig) ----------------------
 
 if [[ -f "$GLOBAL_CONFIG" ]]; then
   if grep -q 'ATLASSIAN_MCP_TOKEN' "$GLOBAL_CONFIG"; then
@@ -426,7 +445,7 @@ fi
 echo "Any project can still add its own .punakawan/workspace.yaml with an"
 echo "adapters: section to override this - that remains fully optional."
 
-# --- 6. Wrapper script + agent-client integration wizard --------------------
+# --- 5. Wrapper script + agent-client integration wizard --------------------
 
 RUN_SCRIPT="$GLOBAL_DIR/run-mcp.sh"
 cat > "$RUN_SCRIPT" <<SCRIPT
@@ -447,7 +466,7 @@ log "Wrote $RUN_SCRIPT"
 
 "$SCRIPT_DIR/configure-agent.sh" "$RUN_SCRIPT"
 
-# --- 7. Verify ----------------------------------------------------------------
+# --- 6. Verify ----------------------------------------------------------------
 
 log "Running punakawan doctor"
 "$PUNAKAWAN_BIN" doctor || echo "doctor reported issues above - resolve before using punakawan"

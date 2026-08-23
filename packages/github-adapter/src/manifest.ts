@@ -24,6 +24,7 @@ export const manifest: AdapterManifest = {
     secrets: ['GITHUB_TOKEN'],
   },
   operations: {
+    'github.getRepository': { side_effect: false },
     'github.getPullRequest': { side_effect: false },
     'github.getPullRequestFiles': { side_effect: false },
     'github.getPullRequestChecks': { side_effect: false },

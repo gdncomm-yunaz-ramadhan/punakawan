@@ -46,6 +46,7 @@ func newWorkspaceRegisterCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer reg.Close()
 			entry, err := reg.Register(a.Workspace.ID, a.Workspace.Root, a.Workspace.Name, time.Now().UTC())
 			if err != nil {
 				return err
@@ -66,6 +67,7 @@ func newWorkspaceListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer reg.Close()
 			entries, err := reg.List()
 			if err != nil {
 				return err
@@ -101,6 +103,7 @@ func newWorkspaceRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer reg.Close()
 			return reg.Remove(args[0])
 		},
 	}
@@ -116,6 +119,7 @@ func newWorkspacePinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer reg.Close()
 			return reg.SetPinned(args[0], true)
 		},
 	}
@@ -131,6 +135,7 @@ func newWorkspaceUnpinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer reg.Close()
 			return reg.SetPinned(args[0], false)
 		},
 	}

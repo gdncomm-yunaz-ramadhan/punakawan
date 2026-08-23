@@ -2,9 +2,13 @@ package mcpserver
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/ygrip/punakawan/internal/deliverysummary"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -37,7 +41,7 @@ func TestUpdateJiraTaskProgressDerivesEstimateFromStoryPoints(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", StoryPoints: &points, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{Estimation: jiraworkflow.EstimationConfig{PointsToHours: 4}}
 
-	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -69,7 +73,7 @@ func TestUpdateJiraTaskProgressExplicitEstimateOverridesPoints(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", StoryPoints: &points, OriginalEstimateHours: &explicit, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{Estimation: jiraworkflow.EstimationConfig{PointsToHours: 4}}
 
-	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -90,7 +94,7 @@ func TestUpdateJiraTaskProgressNoEstimateWhenRatioUnconfigured(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", StoryPoints: &points, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{} // points_to_hours not configured
 
-	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -114,7 +118,7 @@ func TestUpdateJiraTaskProgressRemainingEstimateSubtractsSameCallWorklog(t *test
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", OriginalEstimateHours: &explicit, WorklogHours: &worklog, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -137,7 +141,7 @@ func TestUpdateJiraTaskProgressRemainingEstimateClampsAtZeroWhenWorklogExceedsEs
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", OriginalEstimateHours: &explicit, WorklogHours: &worklog, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -159,7 +163,7 @@ func TestUpdateJiraTaskProgressWorklogAndComment(t *testing.T) {
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, Comment: "Done", RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress: %v", err)
 	}
@@ -193,13 +197,57 @@ func TestUpdateJiraTaskProgressWorklogAndComment(t *testing.T) {
 	}
 }
 
+// TestUpdateJiraTaskProgressCommentCarriesCanonicalSummary proves that
+// when a run has canonical evidence/commit/risk data, the posted comment
+// carries it verbatim from deliverysummary, appended to (not replacing) the
+// caller's
+// own narrative comment.
+func TestUpdateJiraTaskProgressCommentCarriesCanonicalSummary(t *testing.T) {
+	gate, fc := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
+	approveOp(t, gate, "run-1", "atlassian.addJiraComment")
+
+	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", Comment: "Implementation done.", PrUrl: "https://github.com/acme/widgets/pull/43", RequestedBy: "petruk"}
+	cfg := &jiraworkflow.Config{}
+	summary := deliverysummary.Build(deliverysummary.Input{
+		RunId: "run-1",
+		Risks: []protocol.ReviewFinding{
+			{Id: "f1", Severity: protocol.ReviewFindingSeverityMajor, Explanation: "missing rollback"},
+		},
+		PrUrl: in.PrUrl,
+	})
+
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, summary, in)
+	if err != nil {
+		t.Fatalf("updateJiraTaskProgress: %v", err)
+	}
+	if !out.CommentPosted {
+		t.Fatalf("out = %+v, want CommentPosted=true", out)
+	}
+
+	var commentBody string
+	for _, c := range fc.calls {
+		if c["op"] == "atlassian.addJiraComment" {
+			commentBody, _ = c["commentBody"].(string)
+		}
+	}
+	if !strings.Contains(commentBody, "Implementation done.") {
+		t.Errorf("commentBody = %q, want the caller's narrative preserved", commentBody)
+	}
+	if !strings.Contains(commentBody, "missing rollback") {
+		t.Errorf("commentBody = %q, want the canonical risk included", commentBody)
+	}
+	if !strings.Contains(commentBody, "https://github.com/acme/widgets/pull/43") {
+		t.Errorf("commentBody = %q, want the canonical PR URL included", commentBody)
+	}
+}
+
 func TestUpdateJiraTaskProgressFailsWithoutApproval(t *testing.T) {
 	gate, _ := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
 	worklog := 1.0
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in); err == nil {
+	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in); err == nil {
 		t.Fatal("expected an error when addWorklog has not been approved")
 	}
 }
@@ -209,17 +257,19 @@ func TestUpdateJiraTaskProgressEnqueuesFailureForRetry(t *testing.T) {
 	approveOp(t, gate, "run-1", "atlassian.addWorklog")
 	fc.failOps = map[string]bool{"atlassian.addWorklog": true}
 
-	queue, err := syncqueue.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("syncqueue.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	gate.SetSyncQueue(queue)
+	t.Cleanup(func() { db.Close() })
+	queue := syncqueue.New(db, "test-project")
+	gate.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
 
 	worklog := 1.0
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in); err == nil {
+	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in); err == nil {
 		t.Fatal("expected the simulated adapter failure to surface")
 	}
 
@@ -246,7 +296,7 @@ func TestUpdateJiraTaskProgressReturnsPartialSuccessOnLaterFailure(t *testing.T)
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", OriginalEstimateHours: &explicit, WorklogHours: &worklog, Comment: "done", RequestedBy: "petruk"}
 	cfg := &jiraworkflow.Config{}
 
-	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, in)
+	out, err := updateJiraTaskProgress(context.Background(), nil, gate, cfg, deliverysummary.Summary{}, in)
 	if err != nil {
 		t.Fatalf("updateJiraTaskProgress returned an error, want a non-error partial-success result: %v", err)
 	}
@@ -267,7 +317,7 @@ func TestUpdateJiraTaskProgressRejectsInvalidRequestedBy(t *testing.T) {
 	gate, _ := newJiraClarifyTestGateWithManifest(t, progressTestManifest())
 	worklog := 1.0
 	in := UpdateJiraTaskProgressInput{RunId: "run-1", IssueIdOrKey: "PAY-1", WorklogHours: &worklog, RequestedBy: "boss"}
-	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, &jiraworkflow.Config{}, in); err == nil {
+	if _, err := updateJiraTaskProgress(context.Background(), nil, gate, &jiraworkflow.Config{}, deliverysummary.Summary{}, in); err == nil {
 		t.Fatal("expected an error for an invalid requested_by")
 	}
 }

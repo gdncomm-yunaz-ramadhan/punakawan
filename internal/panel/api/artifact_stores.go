@@ -41,6 +41,14 @@ type ArtifactStores struct {
 	// knowledge adapter opens the Dolt-backed store.
 	Root      string
 	Knowledge func() (*knowledge.Store, error)
+
+	// Learning yields the project's learning-proposal side-store, backed by
+	// the shared SQLite kernel scoped to the project id rather than a
+	// per-workspace JSONL file. It is the
+	// Context Improvements inbox's read source. Lazy like Knowledge/Recipes so a
+	// request that never opens the inbox never opens the kernel; a nil factory
+	// degrades only that inbox.
+	Learning func() (*learning.Store, error)
 }
 
 // resolveArtifactType maps a {type} path segment to the matching store,

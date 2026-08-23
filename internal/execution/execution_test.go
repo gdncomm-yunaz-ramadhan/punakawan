@@ -10,6 +10,7 @@ import (
 	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/policy"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 )
 
@@ -39,11 +40,13 @@ func newRepo(t *testing.T) string {
 func newManager(t *testing.T, repo, workspace string) *gitops.WorktreeManager {
 	t.Helper()
 	sup := tools.New(repo, workspace)
-	store, err := approvals.Open(workspace)
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	return gitops.NewWorktreeManager(sup, store, policy.Default())
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
+	return gitops.NewWorktreeManager(sup, func() (*approvals.Store, error) { return store, nil }, policy.Default())
 }
 
 func TestStartAndFinishTaskExecution(t *testing.T) {

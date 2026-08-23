@@ -23,7 +23,8 @@
         "contradiction.detected", "contradiction.updated", "contradiction.resolved",
         "impact.snapshot_updated",
         "dossier.created", "dossier.status_changed", "dossier.finalized",
-        "handoff.created", "handoff.validated", "handoff.superseded"
+        "handoff.created", "handoff.validated", "handoff.superseded",
+        "delivery.updated"
       ]
     },
     "occurred_at": { "type": "string", "format": "date-time" },

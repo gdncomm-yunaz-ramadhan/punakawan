@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -14,7 +15,14 @@ import (
 // cannot set a custom header: a fresh connection has no prior state to
 // resume from anyway, so this only matters for callers using a plain
 // fetch-based reconnect) before streaming new events live.
-func SSEHandler(hub *Hub) http.HandlerFunc {
+//
+// shutdownCtx is the server's own shutdown signal (distinct from r.Context(),
+// which only ends when this one client disconnects). Without it, an open SSE
+// connection is "active" from http.Server.Shutdown's point of view for as
+// long as the client keeps it open - which for a browser tab is indefinitely
+// - so Shutdown's connection-draining would block until the client goes away
+// on its own rather than when the server actually asks it to.
+func SSEHandler(hub *Hub, shutdownCtx context.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -59,6 +67,12 @@ func SSEHandler(hub *Hub) http.HandlerFunc {
 		for {
 			select {
 			case <-r.Context().Done():
+				return
+			case <-shutdownCtx.Done():
+				// The server is stopping. Return now rather than waiting for
+				// this client to disconnect on its own, so http.Server.Shutdown's
+				// connection-draining finishes within its own deadline instead of
+				// blocking on every browser tab that still has the panel open.
 				return
 			case evt, ok := <-ch:
 				if !ok {

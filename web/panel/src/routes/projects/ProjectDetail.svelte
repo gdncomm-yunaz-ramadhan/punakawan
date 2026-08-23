@@ -13,10 +13,6 @@
   import ProjectRoles from "./ProjectRoles.svelte";
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
-  import ProjectContradictions from "./ProjectContradictions.svelte";
-  import ProjectImpact from "./ProjectImpact.svelte";
-  import ProjectDossiers from "./ProjectDossiers.svelte";
-  import ProjectHandoffs from "./ProjectHandoffs.svelte";
   import ProjectHealth from "./ProjectHealth.svelte";
   import ProjectTasks from "./ProjectTasks.svelte";
   import ProjectSessions from "./ProjectSessions.svelte";
@@ -43,10 +39,6 @@
     "knowledge",
     "tasks",
     "plans",
-    "contradictions",
-    "impact",
-    "dossiers",
-    "handoffs",
     "sessions",
     "approvals",
     "health",
@@ -59,10 +51,6 @@
     { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
     { id: "tasks", label: "Tasks", icon: "list" as IconName },
     { id: "plans", label: "Plans", icon: "file" as IconName },
-    { id: "contradictions", label: "Contradictions", icon: "alert" as IconName },
-    { id: "impact", label: "Impact", icon: "git-branch" as IconName },
-    { id: "dossiers", label: "Change Dossiers", icon: "file" as IconName },
-    { id: "handoffs", label: "Handoffs", icon: "comment" as IconName },
     { id: "sessions", label: "Sessions", icon: "activity" as IconName },
     { id: "approvals", label: "Approvals", icon: "approval" as IconName },
     { id: "health", label: "Health", icon: "heart" as IconName },
@@ -98,10 +86,50 @@
     }
   }
 
+  // A live refresh reuses the same request but leaves `loading` and the
+  // already-rendered project alone, so an incoming event updates the header
+  // and the counts in place instead of tearing the page down to a spinner.
+  async function refresh(id: string) {
+    error = null;
+    try {
+      project = await getProject(id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // The summary this view renders spans several entity types at once -
+  // repository and metadata counts, open/blocked task counts, active session
+  // count, knowledge count, availability - so the filter is deliberately
+  // broader than a single entity's events. It still excludes every event that
+  // cannot move any of those numbers (approvals, evidence, deliveries,
+  // adapter health, contradictions, dossiers, handoffs) and the
+  // high-frequency session.progress/session.phase_changed frames, which
+  // report progress inside one session without changing how many are active.
+  const refreshOn = new Set([
+    "workspace.updated",
+    "workspace.availability_changed",
+    "task.created",
+    "task.updated",
+    "task.blocked",
+    "task.completed",
+    "session.started",
+    "session.completed",
+    "session.failed",
+    "knowledge.created",
+    "knowledge.updated",
+    "knowledge.superseded",
+  ]);
+
   onMount(() => {
-    load(projectId);
-    return onPanelEvent(() => load(projectId));
+    return onPanelEvent((evt) => {
+      if (!refreshOn.has(evt.type)) return;
+      refresh(projectId);
+    });
   });
+  // The effect is the single trigger for both the first load and any later
+  // projectId change - effects also run after the first render, so loading
+  // from onMount as well would fire the very same request twice per open.
   $effect(() => {
     load(projectId);
   });
@@ -191,22 +219,6 @@
   {:else if activeId === "plans"}
     <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">
       <ProjectPlans {projectId} />
-    </div>
-  {:else if activeId === "contradictions"}
-    <div id="tabpanel-contradictions" role="tabpanel" aria-labelledby="tab-contradictions">
-      <ProjectContradictions {projectId} />
-    </div>
-  {:else if activeId === "impact"}
-    <div id="tabpanel-impact" role="tabpanel" aria-labelledby="tab-impact">
-      <ProjectImpact {projectId} />
-    </div>
-  {:else if activeId === "dossiers"}
-    <div id="tabpanel-dossiers" role="tabpanel" aria-labelledby="tab-dossiers">
-      <ProjectDossiers {projectId} />
-    </div>
-  {:else if activeId === "handoffs"}
-    <div id="tabpanel-handoffs" role="tabpanel" aria-labelledby="tab-handoffs">
-      <ProjectHandoffs {projectId} />
     </div>
   {:else if activeId === "approvals"}
     <div id="tabpanel-approvals" role="tabpanel" aria-labelledby="tab-approvals">

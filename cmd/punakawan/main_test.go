@@ -17,6 +17,7 @@ import (
 // repository at <dir>/repo-a and returns dir.
 func newSmokeWorkspace(t *testing.T) string {
 	t.Helper()
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 	dir := t.TempDir()
 
 	repoDir := filepath.Join(dir, "repo-a")
@@ -177,7 +178,11 @@ func TestApprovalsListApproveDeny(t *testing.T) {
 		Status:      protocol.ApprovalRecordStatusPending,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := a.Approvals.Append(rec); err != nil {
+	store, err := a.OpenApprovals()
+	if err != nil {
+		t.Fatalf("OpenApprovals: %v", err)
+	}
+	if err := store.Append(rec); err != nil {
 		t.Fatalf("seed pending approval: %v", err)
 	}
 
@@ -204,7 +209,7 @@ func TestApprovalsListApproveDeny(t *testing.T) {
 	// Deny requires a fresh pending record; the first is already resolved.
 	rec2 := rec
 	rec2.Id = "approval-adapter-atlassian-atlassian.transitionJiraIssue-run-1"
-	if err := a.Approvals.Append(rec2); err != nil {
+	if err := store.Append(rec2); err != nil {
 		t.Fatalf("seed second pending approval: %v", err)
 	}
 	if _, err := runCLI(t, dir, "approvals", "deny", rec2.Id, "--by", "ygrip"); err != nil {
@@ -236,10 +241,14 @@ func TestApprovalsApproveMultipleIDsInOneCall(t *testing.T) {
 	}
 	recB := recA
 	recB.Id = "approval-adapter-atlassian-atlassian.addWorklog-run-1"
-	if err := a.Approvals.Append(recA); err != nil {
+	store, err := a.OpenApprovals()
+	if err != nil {
+		t.Fatalf("OpenApprovals: %v", err)
+	}
+	if err := store.Append(recA); err != nil {
 		t.Fatalf("seed recA: %v", err)
 	}
-	if err := a.Approvals.Append(recB); err != nil {
+	if err := store.Append(recB); err != nil {
 		t.Fatalf("seed recB: %v", err)
 	}
 

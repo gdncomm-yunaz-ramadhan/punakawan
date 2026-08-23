@@ -8,7 +8,7 @@ import "github.com/ygrip/punakawan/pkg/protocol"
 // modify_files. Order is preserved (slice, not set) because it drives the order
 // of toggles rendered in the Panel and listed in the prompt block.
 var ownedCapabilities = map[Role][]string{
-	Semar:  {"workflows", "clarification", "coordinate_roles", "change_dossier", "handoff_capsule"},
+	Semar:  {"workflows", "clarification", "coordinate_roles", "change_dossier"},
 	Gareng: {"contradictions", "cross_repository_impact", "security_checks", "blocking_risks", "change_dossier"},
 	Petruk: {"plans", "tasks", "modify_files", "cross_repository_changes", "create_pull_request", "change_dossier"},
 	Bagong: {"plan_verification", "rerun_checks", "cross_repository_verification", "challenge_dossier", "block_completion", "review_pull_request"},

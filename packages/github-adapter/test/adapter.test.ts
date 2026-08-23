@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHandlers } from '../src/adapter.js';
 import { manifest } from '../src/manifest.js';
 import { AdapterManifestSchema } from '@punakawan/schema-types';
-import { createFakeGitHubRest, FIXTURE_PR_NUMBER, FIXTURE_REPO, type FakeGitHubRest } from './fakeGitHubRest.js';
+import { createFakeGitHubRest, FIXTURE_PR_NUMBER, FIXTURE_REPO, INACCESSIBLE_REPO, type FakeGitHubRest } from './fakeGitHubRest.js';
 
 function fakeHandlers(): { handlers: ReturnType<typeof createHandlers>; rest: FakeGitHubRest } {
   const rest = createFakeGitHubRest();
@@ -25,7 +25,7 @@ describe('manifest', () => {
   });
 
   test('declares every read operation as side-effect free', () => {
-    const readOps = ['github.getPullRequest', 'github.getPullRequestFiles', 'github.getPullRequestChecks', 'github.listPullRequestComments', 'github.listUnresolvedReviewThreads'];
+    const readOps = ['github.getRepository', 'github.getPullRequest', 'github.getPullRequestFiles', 'github.getPullRequestChecks', 'github.listPullRequestComments', 'github.listUnresolvedReviewThreads'];
     for (const op of readOps) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
     }
@@ -33,6 +33,28 @@ describe('manifest', () => {
 });
 
 describe('createHandlers().execute', () => {
+  test('github.getRepository normalizes access for a visible repository', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!({ op: 'github.getRepository', repository: FIXTURE_REPO }, new AbortController().signal)) as {
+      normalized: { accessible: boolean; private: boolean | null; permissions: { push: boolean } | null; defaultBranch: string | null };
+    };
+    assert.equal(result.normalized.accessible, true);
+    assert.equal(result.normalized.private, true);
+    assert.equal(result.normalized.permissions?.push, true);
+    assert.equal(result.normalized.defaultBranch, 'main');
+  });
+
+  test('github.getRepository normalizes a 404 to an inaccessible result instead of throwing', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!({ op: 'github.getRepository', repository: INACCESSIBLE_REPO }, new AbortController().signal)) as {
+      normalized: { accessible: boolean; private: boolean | null; permissions: unknown; defaultBranch: string | null };
+    };
+    assert.equal(result.normalized.accessible, false);
+    assert.equal(result.normalized.private, null);
+    assert.equal(result.normalized.permissions, null);
+    assert.equal(result.normalized.defaultBranch, null);
+  });
+
   test('github.getPullRequest normalizes the PR payload', async () => {
     const { handlers } = fakeHandlers();
     const result = (await handlers.execute!({ op: 'github.getPullRequest', repository: FIXTURE_REPO, pullRequestNumber: FIXTURE_PR_NUMBER }, new AbortController().signal)) as {

@@ -16,6 +16,9 @@ import (
 type fakeProjectReader struct {
 	summaries map[string]contract.ProjectSummary
 	projects  map[string]*project.Project
+	// primaryID stands in for the workspace this panel instance was loaded
+	// for, which Deregister must refuse.
+	primaryID string
 }
 
 func newFakeProjectReader() *fakeProjectReader {
@@ -29,6 +32,18 @@ func newFakeProjectReader() *fakeProjectReader {
 			}},
 		},
 	}
+}
+
+func (f *fakeProjectReader) Deregister(ctx context.Context, id string) error {
+	if id == f.primaryID {
+		return contract.ErrPrimaryProject
+	}
+	if _, ok := f.summaries[id]; !ok {
+		return contract.ErrWorkspaceUnavailable
+	}
+	delete(f.summaries, id)
+	delete(f.projects, id)
+	return nil
 }
 
 func (f *fakeProjectReader) List(ctx context.Context) ([]contract.ProjectSummary, error) {
@@ -137,6 +152,51 @@ func TestProjectHandlerReturnsDetail(t *testing.T) {
 	}
 	if detail.RepositoryCount != 2 {
 		t.Fatalf("RepositoryCount = %d, want 2 (from summary)", detail.RepositoryCount)
+	}
+}
+
+func doProjectDelete(t *testing.T, projectID string, reader contract.ProjectReader) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil)
+	req.SetPathValue("projectId", projectID)
+	rec := httptest.NewRecorder()
+	ProjectDeleteHandler(reader)(rec, req)
+	return rec
+}
+
+func TestProjectDeleteHandlerDeregisters(t *testing.T) {
+	reader := newFakeProjectReader()
+	rec := doProjectDelete(t, "proj-a", reader)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("body = %q, want empty", rec.Body.String())
+	}
+	if _, ok := reader.summaries["proj-a"]; ok {
+		t.Fatalf("proj-a still registered after delete")
+	}
+}
+
+func TestProjectDeleteHandlerUnknownReturns404(t *testing.T) {
+	rec := doProjectDelete(t, "nope", newFakeProjectReader())
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProjectDeleteHandlerRefusesPrimary(t *testing.T) {
+	reader := newFakeProjectReader()
+	reader.primaryID = "proj-a"
+	rec := doProjectDelete(t, "proj-a", reader)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if _, ok := reader.summaries["proj-a"]; !ok {
+		t.Fatalf("primary project was removed despite the 409")
 	}
 }
 

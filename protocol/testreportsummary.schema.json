@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/testreportsummary.schema.json",
+  "title": "TestReportSummary",
+  "description": "A bounded, causal-first projection of one test invocation's output, concise enough for a continuous agent loop while the full stdout/stderr remains available, unmodified, as the referenced EvidenceArtifact. Never returned instead of the full log - only alongside it.",
+  "type": "object",
+  "required": ["command", "exit_code", "duration_ms", "tail", "truncated", "artifact_id"],
+  "additionalProperties": false,
+  "properties": {
+    "command": { "type": "string" },
+    "exit_code": { "type": "integer" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "total_tests": { "type": "integer", "minimum": 0 },
+    "passed": { "type": "integer", "minimum": 0 },
+    "failed": { "type": "integer", "minimum": 0 },
+    "skipped": { "type": "integer", "minimum": 0 },
+    "first_causal_failure": { "type": "string", "description": "The deepest \"Caused by:\" line, or the first recognized failure signature, extracted from the combined output." },
+    "tail": { "type": "string", "description": "Bounded, retry-noise-deduplicated tail of combined stdout+stderr." },
+    "truncated": { "type": "boolean" },
+    "artifact_id": { "type": "string", "description": "EvidenceArtifact id of the full, untruncated combined log." }
+  }
+}

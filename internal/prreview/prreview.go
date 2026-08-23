@@ -1,10 +1,10 @@
 // Package prreview persists review_pr's final output - a run of Semar-
 // deduplicated protocol.ReviewFindings for one PR - as append-only JSONL,
 // per punakawan-architecture-enhancement-plan.md §8.2's "return final
-// review" workflow step. Unlike internal/capsule or internal/approvals,
-// there is no fold-latest-per-id concept here: reviewing the same PR twice
-// (e.g. after pushing new changes) is two independent, equally valid
-// records, not a correction of the first.
+// review" workflow step. Unlike internal/approvals, there is no
+// fold-latest-per-id concept here: reviewing the same PR twice (e.g. after
+// pushing new changes) is two independent, equally valid records, not a
+// correction of the first.
 package prreview
 
 import (
@@ -93,6 +93,25 @@ func (s *Store) List() ([]Record, error) {
 		return nil, fmt.Errorf("prreview: scan %s: %w", s.path, err)
 	}
 	return records, nil
+}
+
+// ForRun returns every record for runID, in append order. Unlike
+// ForPullRequest (keyed by repo+PR number, which a caller may not have on
+// hand yet - e.g. before a PR exists), every review submission already
+// carries the run_id it happened under, so this is the lookup a caller with
+// only a run id can use.
+func (s *Store) ForRun(runID string) ([]Record, error) {
+	all, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	var out []Record
+	for _, rec := range all {
+		if rec.RunId == runID {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
 }
 
 // ForPullRequest returns every record for repoID/prNumber, in append order.

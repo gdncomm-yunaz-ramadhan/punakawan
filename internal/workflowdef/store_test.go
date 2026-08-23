@@ -18,8 +18,6 @@ func sampleDef(id string) Definition {
 		Inputs:              []Input{{Name: "include_subtasks", Type: "boolean", Required: false, Default: false}},
 		Steps:               []Step{{ID: "s1", Capability: "search_knowledge", Intent: "x"}},
 		AllowedCapabilities: []string{"search_knowledge"},
-		Approval:            ApprovalPolicy{RequiredFor: []string{"external_write"}},
-		Output:              OutputSpec{Type: "jira_issue_list"},
 	}
 }
 

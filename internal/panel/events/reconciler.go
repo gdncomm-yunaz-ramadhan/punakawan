@@ -23,9 +23,9 @@ const DefaultInterval = 1 * time.Second
 const DefaultAvailabilityInterval = 15 * time.Second
 
 // DefaultSubsystemInterval is how often the medium tier (tier 3) polls the
-// four project-scoped subsystems (Contradiction Ledger, Impact Graph,
-// Change Dossiers, Handoff Capsules), per the role-config distinguished
-// improvements plan §46. Their reads are per-project file loads over the
+// three project-scoped subsystems (Contradiction Ledger, Impact Graph,
+// Change Dossiers), per the role-config distinguished improvements plan §46.
+// Their reads are per-project file loads over the
 // .punakawan tree - cheaper than the deep Workspace.List probe but heavier
 // than the in-memory session/approval checks, and their state changes on
 // human/agent cadence (contradictions detected, dossiers finalized), not
@@ -44,8 +44,8 @@ const DefaultSubsystemInterval = 2 * time.Second
 //   - Tier 1 (Interval, default 1s): session + approval change detection.
 //   - Tier 2 (AvailabilityInterval, default 15s): workspace availability
 //     change detection, which triggers the deep per-workspace probes.
-//   - Tier 3 (SubsystemInterval, default 2s): contradiction/impact/dossier/
-//     handoff change detection over the per-project .punakawan tree (§46).
+//   - Tier 3 (SubsystemInterval, default 2s): contradiction/impact/dossier
+//     change detection over the per-project .punakawan tree (§46).
 type Reconciler struct {
 	Hub         *Hub
 	Readers     panel.Readers
@@ -58,14 +58,16 @@ type Reconciler struct {
 	// DefaultSubsystemInterval.
 	SubsystemInterval time.Duration
 
-	prevSessions   map[string]protocol.PanelSessionSummary
-	prevApprovals  map[string]protocol.ApprovalRecordStatus
+	prevSessions map[string]protocol.PanelSessionSummary
+	// prevApprovals is keyed by project id, then approval id, so polling more
+	// than one project (see reconcileFast) cannot collide two projects'
+	// approval ids in one shared map.
+	prevApprovals  map[string]map[string]protocol.ApprovalRecordStatus
 	prevWorkspaces map[string]protocol.PanelSourceHealthAvailability
 
 	// Tier-3 (subsystem) prev-state maps, one per project-scoped subsystem.
 	prevContradictions map[string]protocol.ContradictionStatus
 	prevDossiers       map[string]protocol.ChangeDossierStatus
-	prevHandoffs       map[string]bool // id -> superseded
 	// prevImpactCount is the last observed impact node count. -1 means the
 	// impact graph has not been polled yet (priming), so the first sighting
 	// records the count without emitting a spurious snapshot_updated.
@@ -121,11 +123,10 @@ func (r *Reconciler) Run(ctx context.Context) {
 // maps.
 func (r *Reconciler) initState() {
 	r.prevSessions = map[string]protocol.PanelSessionSummary{}
-	r.prevApprovals = map[string]protocol.ApprovalRecordStatus{}
+	r.prevApprovals = map[string]map[string]protocol.ApprovalRecordStatus{}
 	r.prevWorkspaces = map[string]protocol.PanelSourceHealthAvailability{}
 	r.prevContradictions = map[string]protocol.ContradictionStatus{}
 	r.prevDossiers = map[string]protocol.ChangeDossierStatus{}
-	r.prevHandoffs = map[string]bool{}
 	r.prevImpactCount = -1
 }
 
@@ -164,24 +165,54 @@ func (r *Reconciler) reconcileFast(ctx context.Context) {
 		}
 	}
 
-	if pending, err := r.Readers.Approval.List(ctx, r.WorkspaceID, contract.ApprovalFilter{}); err == nil {
-		seen := make(map[string]bool, len(pending))
-		for _, a := range pending {
-			seen[a.Id] = true
-			prevStatus, existed := r.prevApprovals[a.Id]
-			if !existed && a.Status == protocol.ApprovalRecordStatusPending {
-				r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalRequested, OccurredAt: now, WorkspaceId: strPtr(r.WorkspaceID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
-			} else if existed && prevStatus != a.Status && a.Status != protocol.ApprovalRecordStatusPending {
-				r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalResolved, OccurredAt: now, WorkspaceId: strPtr(r.WorkspaceID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
-			}
-			r.prevApprovals[a.Id] = a.Status
+	// Poll the primary plus whichever non-primary projects are already warm
+	// in the runtime pool: a non-primary project's own CLI
+	// approval resolution previously only reached the panel UI via an
+	// unrelated ambient event, since this tier only ever polled the primary.
+	// Piggybacking on already-loaded runtimes (rather than force-Acquiring
+	// every registered project every tick) keeps the bounded-pool design
+	// intact - a project nobody has opened in the panel recently still gets
+	// no targeted push, but that also means nothing is rendering its
+	// approvals list right now to need one.
+	projects := []string{r.WorkspaceID}
+	if r.Readers.Runtime != nil {
+		projects = append(projects, r.Readers.Runtime.ActiveNonPrimaryIDs()...)
+	}
+	for _, projectID := range projects {
+		r.reconcileApprovalsForProject(ctx, now, projectID)
+	}
+}
+
+// reconcileApprovalsForProject polls one project's approvals and publishes
+// approval.requested/approval.resolved for whatever changed since the last
+// poll of that project, tracked in r.prevApprovals[projectID].
+func (r *Reconciler) reconcileApprovalsForProject(ctx context.Context, now time.Time, projectID string) {
+	pending, err := r.Readers.Approval.List(ctx, projectID, contract.ApprovalFilter{})
+	if err != nil {
+		return
+	}
+	prev, ok := r.prevApprovals[projectID]
+	if !ok {
+		prev = map[string]protocol.ApprovalRecordStatus{}
+	}
+
+	seen := make(map[string]bool, len(pending))
+	for _, a := range pending {
+		seen[a.Id] = true
+		prevStatus, existed := prev[a.Id]
+		if !existed && a.Status == protocol.ApprovalRecordStatusPending {
+			r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalRequested, OccurredAt: now, WorkspaceId: strPtr(projectID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
+		} else if existed && prevStatus != a.Status && a.Status != protocol.ApprovalRecordStatusPending {
+			r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeApprovalResolved, OccurredAt: now, WorkspaceId: strPtr(projectID), SessionId: strPtr(a.RunId), EntityId: strPtr(a.Id)})
 		}
-		for id := range r.prevApprovals {
-			if !seen[id] {
-				delete(r.prevApprovals, id)
-			}
+		prev[a.Id] = a.Status
+	}
+	for id := range prev {
+		if !seen[id] {
+			delete(prev, id)
 		}
 	}
+	r.prevApprovals[projectID] = prev
 }
 
 // reconcileAvailability is tier 2: workspace availability change
@@ -201,12 +232,11 @@ func (r *Reconciler) reconcileAvailability(ctx context.Context) {
 	}
 }
 
-// reconcileSubsystems is tier 3: change detection for the four
+// reconcileSubsystems is tier 3: change detection for the three
 // project-scoped subsystems (Contradiction Ledger, Impact Graph, Change
-// Dossiers, Handoff Capsules), per the role-config distinguished
-// improvements plan §46. Project id == workspace id (a project shares its
-// id with the workspace it is rooted in), so r.WorkspaceID is the project
-// id passed to each reader.
+// Dossiers), per the role-config distinguished improvements plan §46.
+// Project id == workspace id (a project shares its id with the workspace it
+// is rooted in), so r.WorkspaceID is the project id passed to each reader.
 //
 // Every reader call is guarded with `if ..., err := ...; err == nil` so a
 // project without one of these stores (or a workspace whose .punakawan tree
@@ -217,10 +247,7 @@ func (r *Reconciler) reconcileAvailability(ctx context.Context) {
 // intentionally collapsed into a single impact.snapshot_updated here: the
 // poll model only sees whole snapshots, not per-node/edge deltas, so the
 // cheapest honest signal is "the node count changed since last poll" (the
-// ImpactReader exposes ImpactNodes but no standalone edge list). Likewise
-// handoff.validated has no polled state to diff (validation is an on-demand
-// action, not a stored field), so it is defined in the enum but never
-// emitted from this tier.
+// ImpactReader exposes ImpactNodes but no standalone edge list).
 func (r *Reconciler) reconcileSubsystems(ctx context.Context) {
 	now := time.Now().UTC()
 	ws := r.WorkspaceID
@@ -233,9 +260,6 @@ func (r *Reconciler) reconcileSubsystems(ctx context.Context) {
 	}
 	if r.prevDossiers == nil {
 		r.prevDossiers = map[string]protocol.ChangeDossierStatus{}
-	}
-	if r.prevHandoffs == nil {
-		r.prevHandoffs = map[string]bool{}
 		r.prevImpactCount = -1
 	}
 
@@ -291,31 +315,6 @@ func (r *Reconciler) reconcileSubsystems(ctx context.Context) {
 			for id := range r.prevDossiers {
 				if !seen[id] {
 					delete(r.prevDossiers, id)
-				}
-			}
-		}
-	}
-
-	// Handoffs: created on first sighting; superseded when the superseded
-	// flag flips true.
-	if r.Readers.Handoff != nil {
-		if list, err := r.Readers.Handoff.ListHandoffs(ctx, ws); err == nil {
-			seen := make(map[string]bool, len(list))
-			for _, h := range list {
-				seen[h.Id] = true
-				superseded := h.Superseded != nil && *h.Superseded
-				prev, existed := r.prevHandoffs[h.Id]
-				switch {
-				case !existed:
-					r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeHandoffCreated, OccurredAt: now, WorkspaceId: strPtr(ws), EntityId: strPtr(h.Id)})
-				case !prev && superseded:
-					r.Hub.Publish(protocol.PanelEvent{Type: protocol.PanelEventTypeHandoffSuperseded, OccurredAt: now, WorkspaceId: strPtr(ws), EntityId: strPtr(h.Id)})
-				}
-				r.prevHandoffs[h.Id] = superseded
-			}
-			for id := range r.prevHandoffs {
-				if !seen[id] {
-					delete(r.prevHandoffs, id)
 				}
 			}
 		}

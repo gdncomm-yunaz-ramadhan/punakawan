@@ -1,18 +1,29 @@
 package approvals
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-func TestAppendListCurrentPending(t *testing.T) {
-	root := t.TempDir()
-	store, err := Open(root)
+// newTestStore opens the shared SQLite storage kernel in a temp dir and scopes
+// a Store to a fixed test project id, mirroring taskstore's test setup.
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	return New(db, "test-project")
+}
+
+func TestAppendListCurrentPending(t *testing.T) {
+	store := newTestStore(t)
 
 	req := protocol.ApprovalRecord{
 		Id:          "approval-1",
@@ -71,10 +82,7 @@ func TestAppendListCurrentPending(t *testing.T) {
 }
 
 func TestResolveApprovesAndDenies(t *testing.T) {
-	store, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	store := newTestStore(t)
 	req := protocol.ApprovalRecord{
 		Id:          "approval-1",
 		RunId:       "run-1",
@@ -108,20 +116,14 @@ func TestResolveApprovesAndDenies(t *testing.T) {
 }
 
 func TestResolveUnknownIDFails(t *testing.T) {
-	store, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	store := newTestStore(t)
 	if err := store.Resolve("does-not-exist", protocol.ApprovalRecordStatusApproved, "ygrip"); err == nil {
 		t.Fatal("expected an error resolving an unknown id")
 	}
 }
 
 func TestResolveAlreadyResolvedFails(t *testing.T) {
-	store, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	store := newTestStore(t)
 	req := protocol.ApprovalRecord{
 		Id:          "approval-1",
 		RunId:       "run-1",
@@ -142,10 +144,7 @@ func TestResolveAlreadyResolvedFails(t *testing.T) {
 }
 
 func TestResolveRejectsAgentRoleAsApprover(t *testing.T) {
-	store, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	store := newTestStore(t)
 	req := protocol.ApprovalRecord{
 		Id:          "approval-1",
 		RunId:       "run-1",
@@ -181,15 +180,66 @@ func TestResolveRejectsAgentRoleAsApprover(t *testing.T) {
 }
 
 func TestListOnEmptyStore(t *testing.T) {
-	store, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	store := newTestStore(t)
 	records, err := store.List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if records != nil {
 		t.Fatalf("expected nil for empty store, got %+v", records)
+	}
+}
+
+// TestProjectScopingPreventsLeakage confirms two Stores over one *storage.DB
+// with distinct project ids never see each other's records on any read path.
+func TestProjectScopingPreventsLeakage(t *testing.T) {
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	a := New(db, "project-a")
+	b := New(db, "project-b")
+
+	rec := protocol.ApprovalRecord{
+		Id:          "approval-1",
+		RunId:       "run-1",
+		Operation:   protocol.ApprovalRecordOperationGitPush,
+		RequestedBy: protocol.ApprovalRecordRequestedByPetruk,
+		Status:      protocol.ApprovalRecordStatusPending,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := a.Append(rec); err != nil {
+		t.Fatalf("Append in A: %v", err)
+	}
+
+	// List/Current/Pending in B must not see A's record.
+	if list, err := b.List(); err != nil || len(list) != 0 {
+		t.Fatalf("project B List = %+v (err %v), want empty", list, err)
+	}
+	if cur, err := b.Current(); err != nil || len(cur) != 0 {
+		t.Fatalf("project B Current = %+v (err %v), want empty", cur, err)
+	}
+	if pend, err := b.Pending(); err != nil || len(pend) != 0 {
+		t.Fatalf("project B Pending = %+v (err %v), want empty", pend, err)
+	}
+
+	// A still sees its own record.
+	if list, err := a.List(); err != nil || len(list) != 1 {
+		t.Fatalf("project A List = %+v (err %v), want 1", list, err)
+	}
+
+	// B resolving A's id must fail (not found in B's scope), and must not
+	// mutate A's record.
+	if err := b.Resolve("approval-1", protocol.ApprovalRecordStatusApproved, "ygrip"); err == nil {
+		t.Fatal("project B Resolve of A's id: expected not-found error")
+	}
+	curA, err := a.Current()
+	if err != nil {
+		t.Fatalf("Current in A: %v", err)
+	}
+	if curA["approval-1"].Status != protocol.ApprovalRecordStatusPending {
+		t.Fatalf("project A record status = %q, want still pending", curA["approval-1"].Status)
 	}
 }

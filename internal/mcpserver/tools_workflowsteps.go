@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/deliverysummary"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -190,9 +191,24 @@ func recordWorkOutcomeHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		}
 
 		outcome := protocol.WorkflowRunOutcome{Status: status, EvidenceIds: in.EvidenceIds, OutputRefs: in.OutputRefs}
-		if in.Summary != "" {
-			s := in.Summary
-			outcome.Summary = &s
+		// The canonical block is appended to (not instead of) the caller's own
+		// summary prose, so test counts/commits/risks/links come from this
+		// run's actual records rather than the caller restating them.
+		// prURL/jiraURL are recovered from OutputRefs
+		// rather than a new field: a caller recording an outcome already
+		// names its PR/Jira URLs there for an unrelated reason.
+		prURL, jiraURL := deliverysummary.URLsFromRefs(in.OutputRefs)
+		summary := buildDeliverySummary(ctx, a, in.RunId, "", "", "", prURL, jiraURL)
+		outcomeSummary := in.Summary
+		if section := summary.Section("###"); section != "" {
+			if outcomeSummary != "" {
+				outcomeSummary += "\n\n" + section
+			} else {
+				outcomeSummary = section
+			}
+		}
+		if outcomeSummary != "" {
+			outcome.Summary = &outcomeSummary
 		}
 		for _, d := range in.Deviations {
 			elem := protocol.WorkflowRunOutcomeDeviationsElem{StepId: d.StepId, Reason: d.Reason}

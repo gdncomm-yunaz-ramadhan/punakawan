@@ -40,7 +40,11 @@ type ListPendingApprovalsOutput struct {
 // what is still pending and proceed without blindly retrying a write.
 func listPendingApprovalsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ListPendingApprovalsInput) (*mcp.CallToolResult, ListPendingApprovalsOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in ListPendingApprovalsInput) (*mcp.CallToolResult, ListPendingApprovalsOutput, error) {
-		out, err := listPendingApprovals(a.Approvals, in)
+		store, err := a.OpenApprovals()
+		if err != nil {
+			return nil, ListPendingApprovalsOutput{}, fmt.Errorf("mcpserver: open approvals: %w", err)
+		}
+		out, err := listPendingApprovals(store, in)
 		return nil, out, err
 	}
 }

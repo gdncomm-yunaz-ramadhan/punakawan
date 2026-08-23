@@ -3,9 +3,11 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,8 +19,14 @@ import (
 // newTestApp builds a real *app.App rooted at a throwaway workspace with
 // one git repository, mirroring cmd/punakawan/main_test.go's
 // newSmokeWorkspace.
+//
+// PUNAKAWAN_DATA_DIR is set to an isolated temp directory so any call
+// through a.OpenStorage never touches this machine's real, shared
+// database - without this override, every test using it would open the
+// same on-disk database this developer's real Punakawan install uses.
 func newTestApp(t *testing.T) *app.App {
 	t.Helper()
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo-a")
@@ -65,8 +73,43 @@ func runGit(t *testing.T, dir string, args ...string) {
 }
 
 // connect builds the server for a and connects a client to it over an
-// in-memory transport, returning the client session.
+// in-memory transport, returning the client session. Deliberately uses
+// assembleServer (every tool live) rather than newServer (hidden down to
+// the default facade) - the vast majority of this package's tests exercise
+// a specific worker tool's behavior, not find_tool's visibility feature
+// itself, and making them all call find_tool first to unhide their target
+// tool would be pure noise. TestFindToolRevealsAndDefaultVisibility below
+// covers newServer's actual hide/reveal behavior directly.
 func connect(t *testing.T, a *app.App) *mcp.ClientSession {
+	t.Helper()
+	ctx := context.Background()
+
+	server, _, err := assembleServer(a)
+	if err != nil {
+		t.Fatalf("assembleServer: %v", err)
+	}
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server.Connect: %v", err)
+	}
+	t.Cleanup(func() { serverSession.Close() })
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.1"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	t.Cleanup(func() { clientSession.Close() })
+
+	return clientSession
+}
+
+// connectHidden is connect, except it goes through newServer's real
+// hide-down-to-the-facade path instead of assembleServer's every-tool-live
+// path - for tests that exercise the visibility feature itself.
+func connectHidden(t *testing.T, a *app.App) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 
@@ -90,6 +133,86 @@ func connect(t *testing.T, a *app.App) *mcp.ClientSession {
 	t.Cleanup(func() { clientSession.Close() })
 
 	return clientSession
+}
+
+// listToolNames returns cs's currently visible tool names.
+func listToolNames(t *testing.T, cs *mcp.ClientSession) map[string]bool {
+	t.Helper()
+	res, err := cs.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	names := make(map[string]bool, len(res.Tools))
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	return names
+}
+
+// TestDefaultToolListIsTheFacade guards find_tool's whole point: a freshly
+// connected client should see only the small default facade, not the full
+// ~100-tool worker-side surface.
+func TestDefaultToolListIsTheFacade(t *testing.T) {
+	a := newTestApp(t)
+	cs := connectHidden(t, a)
+
+	names := listToolNames(t, cs)
+	if len(names) != len(facadeTools) {
+		t.Fatalf("default tools/list = %d tools %v, want exactly the %d-tool facade %v", len(names), names, len(facadeTools), facadeTools)
+	}
+	for name := range facadeTools {
+		if !names[name] {
+			t.Errorf("facade tool %q missing from default tools/list", name)
+		}
+	}
+	if names["search_knowledge"] {
+		t.Error("search_knowledge (a worker-side tool) should not be visible by default")
+	}
+}
+
+// TestFindToolRevealsAndDefaultVisibility checks find_tool actually makes a
+// hidden tool callable, not just listed: search_knowledge is absent from
+// the default facade, becomes visible after a matching find_tool call, and
+// is genuinely callable afterward (not just present in tools/list).
+func TestFindToolRevealsAndDefaultVisibility(t *testing.T) {
+	requireDolt(t)
+	a := newTestApp(t)
+	cs := connectHidden(t, a)
+
+	if names := listToolNames(t, cs); names["search_knowledge"] {
+		t.Fatal("search_knowledge should not be visible before find_tool reveals it")
+	}
+
+	var out FindToolOutput
+	callTool(t, cs, "find_tool", map[string]any{"query": "select:search_knowledge"}, &out)
+	if len(out.Matches) != 1 || out.Matches[0].Name != "search_knowledge" || !out.Matches[0].NewlyLive {
+		t.Fatalf("find_tool(select:search_knowledge) = %+v, want exactly one newly-live match", out.Matches)
+	}
+
+	if names := listToolNames(t, cs); !names["search_knowledge"] {
+		t.Fatal("expected search_knowledge to be listed after find_tool revealed it")
+	}
+
+	var searchOut map[string]any
+	callTool(t, cs, "search_knowledge", map[string]any{"query": "anything"}, &searchOut)
+}
+
+// TestFindToolSelectSyntaxMatchesExactNames checks the select:a,b,c mode
+// matches only those exact names, not a substring search over them.
+func TestFindToolSelectSyntaxMatchesExactNames(t *testing.T) {
+	a := newTestApp(t)
+	cs := connectHidden(t, a)
+
+	var out FindToolOutput
+	callTool(t, cs, "find_tool", map[string]any{"query": "select:search_knowledge,commit_task"}, &out)
+
+	got := make(map[string]bool, len(out.Matches))
+	for _, m := range out.Matches {
+		got[m.Name] = true
+	}
+	if len(got) != 2 || !got["search_knowledge"] || !got["commit_task"] {
+		t.Fatalf("find_tool select: = %+v, want exactly search_knowledge and commit_task", out.Matches)
+	}
 }
 
 // callTool invokes a tool and decodes its structured output into out.
@@ -141,6 +264,20 @@ func TestServerInstructionsCoverApprovalAndPipeline(t *testing.T) {
 	}
 }
 
+// TestServerInstructionsCarryARevisionMarker guards AC3: a client can tell
+// whether the guidance it cached from a prior session still matches this
+// daemon's without any dedicated tool, since InitializeResult.Instructions
+// is already fetched exactly once per session by every MCP client.
+func TestServerInstructionsCarryARevisionMarker(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+	instructions := cs.InitializeResult().Instructions
+
+	if !strings.Contains(instructions, "Instructions revision: "+serverInstructionsRevision) {
+		t.Fatalf("Instructions missing its revision marker %q:\n%s", serverInstructionsRevision, instructions)
+	}
+}
+
 // TestServerInstructionsStateGroundedPrinciple guards the product principle and
 // the pointer to the shared communication rules, and asserts the instructions
 // do NOT re-list those rules (they live once in the role prompts).
@@ -157,6 +294,145 @@ func TestServerInstructionsStateGroundedPrinciple(t *testing.T) {
 	if strings.Contains(instructions, "## Communication rules") {
 		t.Error("Instructions should not restate the shared communication-rules block")
 	}
+}
+
+// TestToolListSchemasHaveNoBareBooleanSubschemas guards against a regression
+// that made every tool invisible to Claude Code's ToolSearch even though the
+// server's wire response was byte-for-byte valid MCP: a Go `any`/`interface{}`
+// field with no jsonschema tag (e.g. SetProjectMetadataOutput.Value) makes
+// jsonschema-go emit a bare JSON boolean (true) for that property instead of
+// an object schema - spec-legal, but rejected by Claude Code's client
+// ("Invalid input (at tools.N.outputSchema.properties.value)"), which fails
+// the whole tools/list response, not just the one offending tool. This walks
+// every registered tool's full input/output schema tree (not just top-level
+// properties - the same defect can recur nested under items/properties/etc)
+// looking for a raw JSON boolean anywhere a schema is expected.
+func TestToolListSchemasHaveNoBareBooleanSubschemas(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	res, err := cs.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	if len(res.Tools) == 0 {
+		t.Fatal("ListTools returned no tools")
+	}
+
+	for _, tool := range res.Tools {
+		for _, schema := range []any{tool.InputSchema, tool.OutputSchema} {
+			if schema == nil {
+				continue
+			}
+			raw, err := json.Marshal(schema)
+			if err != nil {
+				t.Fatalf("%s: marshal schema: %v", tool.Name, err)
+			}
+			var decoded any
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatalf("%s: unmarshal schema: %v", tool.Name, err)
+			}
+			if hits := findBoolSchemaNodes(decoded, ""); len(hits) > 0 {
+				t.Errorf("%s: bare-boolean schema node(s) found: %v", tool.Name, hits)
+			}
+		}
+	}
+}
+
+// maxToolDescriptionWords caps every tool description at 80 words. A
+// long description bloats every client's tools/list context and, per
+// report, gets silently trimmed by at least one MCP client rather than
+// rejected - so the failure mode is quiet degradation, not a loud error,
+// which is exactly what a regression test needs to catch instead of a
+// human happening to notice.
+const maxToolDescriptionWords = 80
+
+// TestToolDescriptionsStayUnderWordCap guards the word cap: no registered
+// tool's description may exceed it. Walks the live tools/list response
+// rather than re-parsing source, so it catches a regression regardless
+// of which file a tool is registered from.
+func TestToolDescriptionsStayUnderWordCap(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	res, err := cs.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	if len(res.Tools) == 0 {
+		t.Fatal("ListTools returned no tools")
+	}
+
+	for _, tool := range res.Tools {
+		if n := len(strings.Fields(tool.Description)); n > maxToolDescriptionWords {
+			t.Errorf("%s: description is %d words, want <= %d", tool.Name, n, maxToolDescriptionWords)
+		}
+	}
+}
+
+// singleSchemaKeys are JSON Schema keywords whose value is exactly one
+// (sub)schema - Claude Code's client requires an object there, not a bare
+// boolean, even though a bare boolean is spec-legal shorthand for it.
+var singleSchemaKeys = map[string]bool{
+	"items": true, "additionalItems": true, "contains": true,
+	"unevaluatedItems": true, "additionalProperties": true,
+	"propertyNames": true, "unevaluatedProperties": true,
+	"not": true, "if": true, "then": true, "else": true,
+	"contentSchema": true,
+}
+
+// mapOfSchemaKeys are keywords whose value is a map from name to subschema.
+var mapOfSchemaKeys = map[string]bool{
+	"properties": true, "patternProperties": true,
+	"dependentSchemas": true, "$defs": true, "definitions": true,
+}
+
+// listOfSchemaKeys are keywords whose value is a list of subschemas.
+var listOfSchemaKeys = map[string]bool{
+	"allOf": true, "anyOf": true, "oneOf": true, "prefixItems": true,
+}
+
+// findBoolSchemaNodes recursively finds every raw JSON boolean found at a
+// schema-valued position in a decoded schema tree (properties, items,
+// additionalProperties, ...), returning each occurrence's path for a
+// legible failure message. Keys like "uniqueItems" or "deprecated" hold
+// real, harmless JSON booleans and are deliberately not schema positions,
+// so they are never flagged.
+func findBoolSchemaNodes(node any, path string) []string {
+	m, ok := node.(map[string]any)
+	if !ok {
+		return nil
+	}
+	var hits []string
+	for k, v := range m {
+		switch {
+		case singleSchemaKeys[k]:
+			hits = append(hits, checkSchema(v, path+"."+k)...)
+		case mapOfSchemaKeys[k]:
+			if sub, ok := v.(map[string]any); ok {
+				for name, child := range sub {
+					hits = append(hits, checkSchema(child, path+"."+k+"."+name)...)
+				}
+			}
+		case listOfSchemaKeys[k]:
+			if list, ok := v.([]any); ok {
+				for i, child := range list {
+					hits = append(hits, checkSchema(child, fmt.Sprintf("%s.%s[%d]", path, k, i))...)
+				}
+			}
+		}
+	}
+	return hits
+}
+
+// checkSchema reports v's own path if v is a bare boolean, and always
+// recurses to find further nested schema-valued positions when v is an
+// object schema.
+func checkSchema(v any, path string) []string {
+	if b, ok := v.(bool); ok {
+		return []string{path + "=" + strconv.FormatBool(b)}
+	}
+	return findBoolSchemaNodes(v, path)
 }
 
 func TestSemarPromptServesEmbeddedTemplate(t *testing.T) {
@@ -246,77 +522,21 @@ func requireDolt(t *testing.T) {
 	}
 }
 
-// requestTestCapsule calls request_capsule for role/taskID and returns its id.
-func requestTestCapsule(t *testing.T, cs *mcp.ClientSession, taskID, role string) string {
-	t.Helper()
-	var cap map[string]any
-	callTool(t, cs, "request_capsule", map[string]any{
-		"task_id":   taskID,
-		"role":      role,
-		"objective": "test objective",
-	}, &cap)
-	id, _ := cap["id"].(string)
-	if id == "" {
-		t.Fatalf("request_capsule returned no id: %+v", cap)
-	}
-	return id
-}
-
-func TestSubmitGarengReviewPersists(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	cs := connect(t, a)
-	capsuleID := requestTestCapsule(t, cs, "bd-task-1", "gareng")
-
-	var out map[string]any
-	callTool(t, cs, "submit_gareng_review", map[string]any{
-		"id":         "run-1",
-		"capsule_id": capsuleID,
-		"title":      "Gareng review",
-		"review": map[string]any{
-			"verdict":           "clarification_required",
-			"blocking_findings": []string{"no rollback plan"},
-			"required_evidence": []string{"prod incident runbook shows no rollback path"},
-		},
-	}, &out)
-
-	if out["type"] != "gareng-review" {
-		t.Fatalf("type = %v, want gareng-review", out["type"])
-	}
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	rec, err := store.Get(out["id"].(string))
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if rec.GarengReview == nil || *rec.GarengReview.Verdict != "clarification_required" {
-		t.Fatalf("GarengReview = %+v, want verdict clarification_required", rec.GarengReview)
-	}
-}
-
-func TestSubmitSemarSynthesisRejectsBothPayloads(t *testing.T) {
+func TestSubmitFinalPlanRequiresFinalPlan(t *testing.T) {
 	requireDolt(t)
 	a := newTestApp(t)
 	cs := connect(t, a)
 
 	ctx := context.Background()
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
-		Name: "submit_semar_synthesis",
+	_, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "submit_final_plan",
 		Arguments: map[string]any{
-			"id":         "run-1",
-			"title":      "synthesis",
-			"synthesis":  map[string]any{"goal": "ship it"},
-			"final_plan": map[string]any{"requirements": []string{"r1"}, "acceptance_criteria": []string{"a1"}},
+			"id":    "run-1",
+			"title": "final plan",
 		},
 	})
-	if err != nil {
-		t.Fatalf("CallTool: %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("expected an error result when both synthesis and final_plan are set")
+	if err == nil {
+		t.Fatal("expected an error when final_plan is omitted (rejected by the required-field schema)")
 	}
 }
 

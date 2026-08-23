@@ -7,20 +7,22 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/artifact"
+	"github.com/ygrip/punakawan/internal/daemon"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
+	"github.com/ygrip/punakawan/internal/panel/deliverysource"
 	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/session"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/recipe"
-	"github.com/ygrip/punakawan/internal/revision"
 	"github.com/ygrip/punakawan/internal/workcontext"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -44,6 +46,15 @@ type Options struct {
 	// (OR'd in when Start builds the middleware chain), so a developer can
 	// flip it without a code change.
 	ServerTiming bool
+	// DaemonClient, when set, is this panel instance's connection to the
+	// daemon's delivery data (internal/daemon/delivery.go); nil leaves the
+	// delivery routes wired but answering 503, exactly like a project
+	// missing the Contradiction/Impact/Dossier subsystems already degrades.
+	// Resolving this (daemon.DiscoverDefault or similar) is the caller's
+	// job, not New/Start's: a test building a Server should never risk
+	// spawning or talking to a real system-wide daemon process just by
+	// starting a server under test.
+	DaemonClient *daemon.Client
 }
 
 // Server is the Punakawan Panel's loopback HTTP server.
@@ -58,7 +69,17 @@ type Server struct {
 	hub                *events.Hub
 	stopReconciliation context.CancelFunc
 	reconcileDone      chan struct{}
+	stopDeliveryWatch  context.CancelFunc
+	deliveryWatchDone  chan struct{}
 	stopRuntimeSweep   context.CancelFunc
+
+	// shutdownCtx/cancelShutdown are the server's shutdown signal, separate
+	// from any one request's context: it is cancelled once, at the very start
+	// of Shutdown, so every long-lived handler (currently just the SSE
+	// stream) can stop waiting on its own client and return immediately
+	// instead of holding httpServer.Shutdown's connection-draining open.
+	shutdownCtx    context.Context
+	cancelShutdown context.CancelFunc
 
 	sessions     *session.Manager
 	bootstrapURL string
@@ -69,7 +90,7 @@ type Server struct {
 
 // New builds a Server for a, without starting it. reg is the global
 // workspace registry (New requires a caller to have already opened one,
-// per registry.Open/OpenAt).
+// per registry.Open).
 func New(a *app.App, reg *registry.Store, opts Options) *Server {
 	if opts.Host == "" {
 		opts.Host = "127.0.0.1"
@@ -81,14 +102,21 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	readers := panel.NewReaders(a, reg)
+	if opts.DaemonClient != nil {
+		readers.Delivery = &deliverysource.Source{Client: opts.DaemonClient}
+	}
+	shutdownCtx, cancelShutdown := context.WithCancel(context.Background())
 	return &Server{
-		app:      a,
-		registry: reg,
-		readers:  panel.NewReaders(a, reg),
-		opts:     opts,
-		logger:   logger,
-		hub:      events.NewHub(),
-		sessions: session.NewManager(),
+		app:            a,
+		registry:       reg,
+		readers:        readers,
+		opts:           opts,
+		logger:         logger,
+		hub:            events.NewHub(),
+		sessions:       session.NewManager(),
+		shutdownCtx:    shutdownCtx,
+		cancelShutdown: cancelShutdown,
 	}
 }
 
@@ -154,57 +182,42 @@ func (s *Server) Start() error {
 		BoundAddr:        listener.Addr().String(),
 		StartedAt:        s.startedAt,
 	}
-	plans := &artifact.PlanStore{WorkspaceRoot: s.app.Workspace.Root}
-	reviews := &artifact.ReviewStore{WorkspaceRoot: s.app.Workspace.Root}
-	dispatcher := &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: s.app.Workspace.Root}
-
 	// Recipes is resolved lazily (see ArtifactStores' own doc comment):
 	// opening the knowledge store starts an external Dolt server process,
 	// which every plan-only request (the overwhelming majority) should
 	// never pay for. App.OpenKnowledge memoizes its own result, so this
 	// closure only actually starts Dolt once, on the first
 	// retrieval_recipe-typed request this server instance receives.
-	stores := api.ArtifactStores{
-		Plans: plans,
-		Recipes: func() (*recipe.RecipeStore, error) {
-			knowledgeStore, err := s.app.OpenKnowledge()
-			if err != nil {
-				return nil, err
-			}
-			return &recipe.RecipeStore{Repo: &recipe.Repository{Store: knowledgeStore}}, nil
-		},
-		Root:      s.app.Workspace.Root,
-		Knowledge: s.app.OpenKnowledge,
+	recipesFactory := func() (*recipe.RecipeStore, error) {
+		knowledgeStore, err := s.app.OpenKnowledge()
+		if err != nil {
+			return nil, err
+		}
+		return &recipe.RecipeStore{Repo: &recipe.Repository{Store: knowledgeStore}}, nil
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
 	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
 	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
-	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub))
-	// /workspaces is the pre-project-model name for the same registry entries
-	// now surfaced canonically under /projects (§14). The list and single-entry
-	// reads are kept as deprecated aliases (marked with Deprecation/Link headers
-	// pointing at their /projects successor) during migration; the
-	// /workspaces/{id}/{sub} routes below have no /projects equivalent yet and
-	// are not deprecated.
-	mux.HandleFunc("GET /api/v1/workspaces", deprecatedAlias("/api/v1/projects", api.WorkspacesHandler(s.readers.Workspace)))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}", deprecatedAlias("/api/v1/projects/{projectId}", api.WorkspaceHandler(s.readers.Workspace)))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions", api.SessionsHandler(s.readers.Session))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}", api.SessionHandler(s.readers.Session))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/capsules", api.CapsulesHandler(s.app.Capsules))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks", api.TasksHandler(s.readers.Task))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/tasks/{taskId}", api.TaskHandler(s.readers.Task))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/task-graph", api.TaskGraphHandler(s.readers.Task))
+	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub, s.shutdownCtx))
 	mux.HandleFunc("GET /api/v1/search", api.GlobalSearchHandler(s.readers.GlobalSearch))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/knowledge", api.KnowledgeListHandler(s.readers.Knowledge))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/knowledge/{knowledgeRest...}", api.KnowledgeDetailHandler(s.readers.Knowledge))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/sessions/{sessionId}/evidence", api.EvidenceListHandler(s.readers.Evidence))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(s.readers.Evidence))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(s.readers.Evidence))
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/approvals", api.ApprovalsHandler(s.readers.Approval))
+
+	// Delivery orchestrations: served straight from the daemon's own
+	// delivery.Store over its authenticated loopback transport
+	// (internal/daemon/delivery.go), not through storage.Open/*app.App -
+	// s.readers.Delivery is nil when no daemon connection was available at
+	// startup, and every handler here degrades to 503 rather than panicking.
+	mux.HandleFunc("GET /api/v1/deliveries", api.ListDeliveriesHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}", api.DeliveryViewHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}", api.DeliveryEvidenceHandler(s.readers.Delivery))
+	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/answer-question", session.RequireSession(s.sessions, api.AnswerDeliveryQuestionHandler(s.readers.Delivery)))
+	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/approve", session.RequireSession(s.sessions, api.ApproveProjectDeliveryHandler(s.readers.Delivery)))
+	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/cancel", session.RequireSession(s.sessions, api.CancelDeliveryHandler(s.readers.Delivery)))
 
 	mux.HandleFunc("GET /api/v1/projects", api.ProjectsHandler(s.readers.Project))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}", api.ProjectHandler(s.readers.Project))
+	mux.HandleFunc("DELETE /api/v1/projects/{projectId}", session.RequireSession(s.sessions, api.ProjectDeleteHandler(s.readers.Project)))
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/metadata", api.MetadataListHandler(s.readers.Project))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/metadata", session.RequireSession(s.sessions, api.MetadataCreateHandler(s.readers.Project)))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/metadata/{key}", session.RequireSession(s.sessions, api.MetadataUpdateHandler(s.readers.Project)))
@@ -213,45 +226,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/roles", api.RolesListHandler(s.readers.Roles))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/roles/{role}", session.RequireSession(s.sessions, api.RoleUpdateHandler(s.readers.Roles)))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/roles/{role}/reset", session.RequireSession(s.sessions, api.RoleResetHandler(s.readers.Roles)))
-
-	// Contradiction Ledger (plan section 21). GET reads are unwrapped; the
-	// create and lifecycle mutations require a mutation session.
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/contradictions", api.ContradictionsListHandler(s.readers.Contradiction))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions", session.RequireSession(s.sessions, api.ContradictionCreateHandler(s.readers.Contradiction)))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/contradictions/{id}", api.ContradictionGetHandler(s.readers.Contradiction))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions/{id}/propose-resolution", session.RequireSession(s.sessions, api.ContradictionProposeResolutionHandler(s.readers.Contradiction)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions/{id}/resolve", session.RequireSession(s.sessions, api.ContradictionResolveHandler(s.readers.Contradiction)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/contradictions/{id}/accept-divergence", session.RequireSession(s.sessions, api.ContradictionAcceptDivergenceHandler(s.readers.Contradiction)))
-
-	// Cross-Repository Impact Graph (plan section 29). Node reads are unwrapped;
-	// query is a read but POST (it carries a body); refresh mutates.
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/impact/nodes", api.ImpactNodesHandler(s.readers.Impact))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/impact/nodes/{nodeId}", api.ImpactNodeHandler(s.readers.Impact))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/impact/query", api.ImpactQueryHandler(s.readers.Impact))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/impact/refresh", session.RequireSession(s.sessions, api.ImpactRefreshHandler(s.readers.Impact)))
-
-	// Change Dossiers (plan section 37). GET reads (list/detail/exports) are
-	// unwrapped; create, claim/evidence mutations, and finalize require a session.
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers", api.DossiersListHandler(s.readers.Dossier))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers", session.RequireSession(s.sessions, api.DossierCreateHandler(s.readers.Dossier)))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}", api.DossierGetHandler(s.readers.Dossier))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/claims", session.RequireSession(s.sessions, api.DossierAddClaimHandler(s.readers.Dossier)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/claims/{claimId}/verify", session.RequireSession(s.sessions, api.DossierVerifyClaimHandler(s.readers.Dossier)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/claims/{claimId}/dispute", session.RequireSession(s.sessions, api.DossierDisputeClaimHandler(s.readers.Dossier)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/evidence", session.RequireSession(s.sessions, api.DossierAddEvidenceHandler(s.readers.Dossier)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/dossiers/{id}/finalize", session.RequireSession(s.sessions, api.DossierFinalizeHandler(s.readers.Dossier)))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}/export.md", api.DossierExportMarkdownHandler(s.readers.Dossier))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/dossiers/{id}/export.json", api.DossierExportJSONHandler(s.readers.Dossier))
-
-	// Handoff Capsules (plan section 43). GET reads are unwrapped; create,
-	// validate, resume, and supersede require a mutation session (validate and
-	// resume are POST: they run a validation pass and resume gates on its verdict).
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/handoffs", api.HandoffsListHandler(s.readers.Handoff))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs", session.RequireSession(s.sessions, api.HandoffCreateHandler(s.readers.Handoff)))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/handoffs/{id}", api.HandoffGetHandler(s.readers.Handoff))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/validate", session.RequireSession(s.sessions, api.HandoffValidateHandler(s.readers.Handoff)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/resume", session.RequireSession(s.sessions, api.HandoffResumeHandler(s.readers.Handoff)))
-	mux.HandleFunc("POST /api/v1/projects/{projectId}/handoffs/{id}/supersede", session.RequireSession(s.sessions, api.HandoffSupersedeHandler(s.readers.Handoff)))
 
 	// Project-scoped plans (Phase 7), workflow definitions (Phase 6), and
 	// cached health (Phase 8). All resolve a {projectId} to its workspace
@@ -343,12 +317,13 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/health", api.HealthHandler(healthCache))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/health/refresh", session.RequireSession(s.sessions, api.HealthRefreshHandler(healthCache)))
 
-	// Project-scoped Tasks / Sessions / Knowledge reads. These resolve the
-	// backing *app.App per project id through the runtime pool (the primary is
-	// used directly), so a project's Tasks/Knowledge/Sessions tabs work for any
-	// registered project, not only the startup workspace. The {workspaceId}
-	// path-value name is intentional: it lets the existing workspace-scoped
-	// handlers be reused verbatim over a project-aware reader.
+	// Project-scoped Tasks / Sessions / Evidence / Knowledge reads. These
+	// resolve the backing *app.App per project id through the runtime pool
+	// (the primary is used directly), so a project's Tasks/Knowledge/Sessions
+	// tabs (including a session's evidence) work for any registered project,
+	// not only the startup workspace. The {workspaceId} path-value name is
+	// intentional: it lets the existing workspace-scoped handlers be reused
+	// verbatim over a project-aware reader.
 	projResolver := &sources.AppResolver{
 		PrimaryID: s.app.Workspace.ID,
 		Primary:   s.app,
@@ -359,79 +334,35 @@ func (s *Server) Start() error {
 	projSessions := sources.ProjectSessionReader{AppResolver: projResolver}
 	projKnowledge := sources.ProjectKnowledgeReader{AppResolver: projResolver}
 	projApprovals := sources.ProjectApprovalReader{AppResolver: projResolver}
+	projEvidence := sources.ProjectEvidenceReader{AppResolver: projResolver}
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/approvals", api.ApprovalsHandler(projApprovals))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks", api.TasksHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks/{taskId}", api.TaskHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/task-graph", api.TaskGraphHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions", api.SessionsHandler(projSessions))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}", api.SessionHandler(projSessions))
+	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}/evidence", api.EvidenceListHandler(projEvidence))
+	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(projEvidence))
+	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(projEvidence))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge", api.KnowledgeListHandler(projKnowledge))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge/{knowledgeRest...}", api.KnowledgeDetailHandler(projKnowledge))
 
 	mux.HandleFunc("POST /api/v1/session/exchange", session.ExchangeHandler(s.sessions))
 
-	mux.HandleFunc("GET /api/v1/artifacts/{type}/{id}/current", api.ArtifactCurrentHandler(stores))
-	mux.HandleFunc("POST /api/v1/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, api.CreateReviewHandler(stores, reviews, s.app.Workspace.ID)))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}", api.ReviewHandler(reviews))
-	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}", session.RequireSession(s.sessions, api.UpdateReviewHandler(reviews)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/comments", session.RequireSession(s.sessions, api.CreateCommentHandler(reviews, stores)))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/comments", api.CommentsHandler(reviews))
-	mux.HandleFunc("PATCH /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.UpdateCommentHandler(reviews)))
-	mux.HandleFunc("DELETE /api/v1/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, api.DeleteCommentHandler(reviews)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/submit", session.RequireSession(s.sessions, api.SubmitHandler(reviews, dispatcher)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/cancel", session.RequireSession(s.sessions, api.CancelHandler(reviews)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/fail", session.RequireSession(s.sessions, api.FailHandler(reviews, s.logger)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/rebase", session.RequireSession(s.sessions, api.RebaseHandler(reviews, stores)))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/timeline", api.TimelineHandler(reviews))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals", session.RequireSession(s.sessions, api.CreateProposalHandler(reviews, stores)))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals", api.ListProposalsHandler(reviews))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}", api.ProposalHandler(reviews))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/diff", api.ProposalDiffHandler(reviews, stores))
-	mux.HandleFunc("GET /api/v1/reviews/{reviewId}/proposals/{proposalId}/validation", api.ProposalValidationHandler(reviews, stores))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/accept", session.RequireSession(s.sessions, api.AcceptProposalHandler(reviews, stores)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/reject", session.RequireSession(s.sessions, api.RejectProposalHandler(reviews)))
-	mux.HandleFunc("POST /api/v1/reviews/{reviewId}/proposals/{proposalId}/request-changes", session.RequireSession(s.sessions, api.RequestChangesHandler(reviews, dispatcher)))
-
-	// Project-scoped mirror of the artifact review/proposal protocol (Phase 7):
-	// each handler resolves its Plan/Review stores for {projectId} via the same
-	// artifact.ProjectStores resolver used by /projects/.../plans, so a review
-	// created under a project writes into that project's .punakawan tree rather
-	// than always the primary. The flat /artifacts and /reviews routes above
-	// remain for review-by-id operations and backward compatibility.
-	recipesFactory := stores.Recipes
+	// Project-scoped Context Improvements inbox (agent-context plan §8): the
+	// artifact review/proposal protocol it used to be part of is gone, but this
+	// endpoint still resolves per-project Plan/Learning stores via the same
+	// artifact.ProjectStores resolver used by /projects/.../plans.
 	projectArtifacts := api.NewProjectArtifactStores(
 		projectStores,
 		recipesFactory,
 		s.app.OpenKnowledge,
-		func(projectID string) revision.Dispatcher {
-			root, _ := s.resolveRoot(projectID)
-			return &revision.BDDispatcher{Supervisor: s.app.Supervisor, WorkspaceRoot: root}
-		},
-		s.logger,
+		s.app.OpenLearning,
 	)
 	pa := "/api/v1/projects/{projectId}"
 	mux.HandleFunc("GET "+pa+"/context-improvements", projectArtifacts.ContextImprovements())
-	mux.HandleFunc("GET "+pa+"/artifacts/{type}/{id}/current", projectArtifacts.ArtifactCurrent())
-	mux.HandleFunc("POST "+pa+"/artifacts/{type}/{id}/reviews", session.RequireSession(s.sessions, projectArtifacts.CreateReview()))
-	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}", projectArtifacts.Review())
-	mux.HandleFunc("PATCH "+pa+"/reviews/{reviewId}", session.RequireSession(s.sessions, projectArtifacts.UpdateReview()))
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/cancel", session.RequireSession(s.sessions, projectArtifacts.Cancel()))
-	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/timeline", projectArtifacts.Timeline())
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/submit", session.RequireSession(s.sessions, projectArtifacts.Submit()))
-	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/comments", projectArtifacts.Comments())
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/comments", session.RequireSession(s.sessions, projectArtifacts.CreateComment()))
-	mux.HandleFunc("PATCH "+pa+"/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, projectArtifacts.UpdateComment()))
-	mux.HandleFunc("DELETE "+pa+"/reviews/{reviewId}/comments/{commentId}", session.RequireSession(s.sessions, projectArtifacts.DeleteComment()))
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals", session.RequireSession(s.sessions, projectArtifacts.CreateProposal()))
-	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals", projectArtifacts.ListProposals())
-	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals/{proposalId}", projectArtifacts.Proposal())
-	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals/{proposalId}/diff", projectArtifacts.ProposalDiff())
-	mux.HandleFunc("GET "+pa+"/reviews/{reviewId}/proposals/{proposalId}/validation", projectArtifacts.ProposalValidation())
 	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/accept", session.RequireSession(s.sessions, projectArtifacts.AcceptProposal()))
 	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/reject", session.RequireSession(s.sessions, projectArtifacts.RejectProposal()))
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/request-changes", session.RequireSession(s.sessions, projectArtifacts.RequestChanges()))
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/rebase", session.RequireSession(s.sessions, projectArtifacts.Rebase()))
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/fail", session.RequireSession(s.sessions, projectArtifacts.Fail()))
 
 	mux.Handle("/", static)
 
@@ -460,6 +391,19 @@ func (s *Server) Start() error {
 	go func() {
 		defer close(s.reconcileDone)
 		reconciler.Run(reconcileCtx)
+	}()
+
+	// DeliveryWatcher long-polls the daemon per orchestration instead of
+	// ticking over every entity like Reconciler's tiers do, so it runs as
+	// its own goroutine rather than a fourth Reconciler tier (see its own
+	// doc comment). A nil s.readers.Delivery makes Run an immediate no-op.
+	deliveryCtx, cancelDelivery := context.WithCancel(context.Background())
+	s.stopDeliveryWatch = cancelDelivery
+	s.deliveryWatchDone = make(chan struct{})
+	watcher := &events.DeliveryWatcher{Hub: s.hub, Reader: s.readers.Delivery}
+	go func() {
+		defer close(s.deliveryWatchDone)
+		watcher.Run(deliveryCtx)
 	}()
 
 	// Periodically close project runtimes that have gone idle, so the pool does
@@ -505,6 +449,12 @@ func (s *Server) Start() error {
 // sql-server process writing into a directory the caller believes is now
 // quiescent (root cause of punokawan-q9r.6.1's flaky TempDir cleanup).
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Fire the shutdown signal first, before anything else: this is what lets
+	// an open SSE connection's handler goroutine (events.SSEHandler) notice
+	// shutdown has begun and return right away, instead of blocking
+	// s.httpServer.Shutdown below on a client that only disconnects on its
+	// own initiative (which, for a browser tab left open, may be never).
+	s.cancelShutdown()
 	s.sessions.InvalidateAll()
 	if s.stopReconciliation != nil {
 		s.stopReconciliation()
@@ -512,6 +462,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.reconcileDone != nil {
 		select {
 		case <-s.reconcileDone:
+		case <-ctx.Done():
+		}
+	}
+	if s.stopDeliveryWatch != nil {
+		s.stopDeliveryWatch()
+	}
+	if s.deliveryWatchDone != nil {
+		select {
+		case <-s.deliveryWatchDone:
 		case <-ctx.Done():
 		}
 	}
@@ -530,26 +489,28 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-// deprecatedAlias wraps a handler that is being kept only for backward
-// compatibility, stamping the standard Deprecation header and a Link to the
-// successor route (§14's migration aliases) so clients can detect and migrate
-// off it without the endpoint disappearing mid-migration.
-func deprecatedAlias(successor string, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Deprecation", "true")
-		w.Header().Set("Link", "<"+successor+">; rel=\"successor-version\"")
-		next(w, r)
-	}
-}
-
 // loggingMiddleware writes one structured log line per request, per
 // §27's observability expectations, without logging request bodies or
 // headers that might carry secrets.
+//
+// An SSE handler (events.SSEHandler) does not return until the client
+// disconnects, so ServeHTTP blocks for the connection's whole lifetime -
+// often minutes - rather than the time spent doing work. Logging that
+// under the same "panel request"/duration_ms shape as every other route
+// makes it read as a multi-minute stall, when nothing was actually slow.
+// Detecting the response's Content-Type (set by the handler before this
+// middleware ever logs) lets this stay handler-agnostic - it labels any
+// streaming response this way, not just today's one SSE route.
 func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		logger.Info("panel request", "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(start).Milliseconds())
+		duration := time.Since(start).Milliseconds()
+		if strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream") {
+			logger.Info("panel stream closed", "method", r.Method, "path", r.URL.Path, "connection_duration_ms", duration)
+			return
+		}
+		logger.Info("panel request", "method", r.Method, "path", r.URL.Path, "duration_ms", duration)
 	})
 }
 

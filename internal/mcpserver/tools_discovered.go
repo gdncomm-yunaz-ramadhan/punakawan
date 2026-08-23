@@ -37,7 +37,12 @@ func reportDiscoveredTaskHandler(a *app.App) func(context.Context, *mcp.CallTool
 			return nil, protocol.TaskContract{}, fmt.Errorf("mcpserver: load requirement %q: %w", in.RequirementId, err)
 		}
 
-		contract, err := tasks.ReportDiscoveredWork(ctx, a.Supervisor, a.Workspace.Root, store, parentReq, in.DiscoveredFromTaskId, tasks.NewTaskContractInput{
+		db, err := a.OpenStorage(ctx)
+		if err != nil {
+			return nil, protocol.TaskContract{}, fmt.Errorf("mcpserver: open storage kernel: %w", err)
+		}
+
+		contract, err := tasks.ReportDiscoveredWork(ctx, a.Supervisor, a.Workspace.Root, store, db, a.Workspace.ID, parentReq, in.DiscoveredFromTaskId, tasks.NewTaskContractInput{
 			TaskID:             in.TaskId,
 			Repository:         in.Repository,
 			Scope:              in.Scope,

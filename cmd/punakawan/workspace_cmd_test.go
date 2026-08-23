@@ -1,21 +1,11 @@
 package main
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// setTestRegistry redirects the panel workspace registry to a throwaway
-// file for the duration of the test, so these tests never touch the
-// developer's real ~/.config/punakawan (or platform equivalent).
-func setTestRegistry(t *testing.T) {
-	t.Helper()
-	t.Setenv("PUNAKAWAN_PANEL_REGISTRY_PATH", filepath.Join(t.TempDir(), "workspaces.yaml"))
-}
-
 func TestWorkspaceRegisterAndList(t *testing.T) {
-	setTestRegistry(t)
 	dir := newSmokeWorkspace(t)
 
 	out, err := runCLI(t, dir, "workspace", "register", ".")
@@ -36,7 +26,6 @@ func TestWorkspaceRegisterAndList(t *testing.T) {
 }
 
 func TestWorkspaceListEmptyRegistry(t *testing.T) {
-	setTestRegistry(t)
 	dir := newSmokeWorkspace(t)
 
 	out, err := runCLI(t, dir, "workspace", "list")
@@ -49,7 +38,6 @@ func TestWorkspaceListEmptyRegistry(t *testing.T) {
 }
 
 func TestWorkspacePinUnpinAndRemove(t *testing.T) {
-	setTestRegistry(t)
 	dir := newSmokeWorkspace(t)
 
 	if _, err := runCLI(t, dir, "workspace", "register", "."); err != nil {
@@ -91,7 +79,6 @@ func TestWorkspacePinUnpinAndRemove(t *testing.T) {
 }
 
 func TestWorkspaceRemoveUnknownIDErrors(t *testing.T) {
-	setTestRegistry(t)
 	dir := newSmokeWorkspace(t)
 
 	if _, err := runCLI(t, dir, "workspace", "remove", "no-such-id"); err == nil {

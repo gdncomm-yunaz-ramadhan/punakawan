@@ -22,5 +22,3 @@ steps:
     intent: retrieve
     input_from:
       - dossier
-output:
-  type: context-dossier

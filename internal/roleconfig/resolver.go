@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -148,9 +149,14 @@ func Authorize(eff EffectiveRoleConfig, capability string, needed protocol.RoleC
 
 // PromptBlock renders the compact role-configuration block injected into a
 // role's prompt (§48). It lists style, mode, enabled and disabled capabilities
-// (sorted for determinism), and a one-line mode reminder. This is guidance for
-// the model; Authorize is the enforcement.
-func PromptBlock(role Role, eff EffectiveRoleConfig) string {
+// (sorted for determinism), and a one-line mode reminder, followed by a
+// "Learned project facts" section rendering proposals - detected facts, user
+// corrections, or reviewer-approved conventions - that are currently
+// accepted. proposals is typically a project's learning.Store.List()
+// output; it is filtered and gated internally (see
+// LearnedFactsBlock), so callers may pass the store's raw, unfiltered list.
+// This is guidance for the model; Authorize is the enforcement.
+func PromptBlock(role Role, eff EffectiveRoleConfig, proposals []learning.Proposal) string {
 	var enabled, disabled []string
 	for k, v := range eff.Capabilities {
 		if v {
@@ -180,7 +186,53 @@ func PromptBlock(role Role, eff EffectiveRoleConfig) string {
 		}
 	}
 	b.WriteString("- " + modeReminder(eff.Mode))
+
+	if facts := LearnedFactsBlock(proposals); facts != "" {
+		b.WriteString("\n\n")
+		b.WriteString(facts)
+	}
 	return b.String()
+}
+
+// LearnedFactsBlock renders the subset of proposals that are currently
+// accepted (Status == learning.StatusAccepted) into a compact section
+// matching PromptBlock's heading/list style, or "" when there is nothing to
+// show. A proposal folds to exactly one Status per id (learning.Store.List's
+// fold-to-latest semantics), so pending, rejected, and rolled-back proposals -
+// including one that was accepted and later rolled back - are excluded by
+// this single check without any separate "rolled back" filter: a rollback
+// appends a fresh row whose Status is StatusRolledBack, which folds over the
+// prior accepted row. This is the literal AC4 gate: an inferred convention
+// (or any other proposal) stays invisible to a role's context until it is
+// accepted, and disappears again if later rolled back.
+func LearnedFactsBlock(proposals []learning.Proposal) string {
+	accepted := make([]learning.Proposal, 0, len(proposals))
+	for _, p := range proposals {
+		if p.Status == learning.StatusAccepted {
+			accepted = append(accepted, p)
+		}
+	}
+	if len(accepted) == 0 {
+		return ""
+	}
+	// Newest-updated first, tie-broken by id for determinism.
+	sort.Slice(accepted, func(i, j int) bool {
+		if !accepted[i].UpdatedAt.Equal(accepted[j].UpdatedAt) {
+			return accepted[i].UpdatedAt.After(accepted[j].UpdatedAt)
+		}
+		return accepted[i].Id < accepted[j].Id
+	})
+
+	var b strings.Builder
+	b.WriteString("Learned project facts:\n")
+	for _, p := range accepted {
+		detail := p.Rationale
+		if detail == "" {
+			detail = p.TargetId
+		}
+		fmt.Fprintf(&b, "  - [%s] %s\n", p.ArtifactType, detail)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func modeReminder(m protocol.RoleConfigMode) string {

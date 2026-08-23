@@ -6,6 +6,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/learning"
+	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/prompts"
 )
 
@@ -33,9 +36,16 @@ var roleDescriptions = map[string]string{
 const sharedPromptPath = "shared/communication.md"
 
 // registerPrompts adds the four role prompts (§28.4). Each served prompt is the
-// shared communication guidance followed by that role's own template, composed
-// here so the shared half is not duplicated in source.
-func registerPrompts(server *mcp.Server) error {
+// shared communication guidance and that role's own template - both static,
+// composed once here so the shared half is not duplicated in source - followed
+// by a per-request role-configuration block (roleconfig.PromptBlock) rendered
+// fresh on every GetPrompt call from a's live role config and accepted
+// learning proposals. That block is what actually varies per invocation: it is
+// how an accepted learning proposal reaches a live Petruk/Bagong/Gareng/
+// Semar role, since this GetPrompt handler - not
+// roleconfig.PromptBlock's own (previously callerless) unit test - is the real
+// prompt a connected MCP client fetches before reasoning as a role.
+func registerPrompts(server *mcp.Server, a *app.App) error {
 	sharedBytes, err := prompts.FS.ReadFile(sharedPromptPath)
 	if err != nil {
 		return fmt.Errorf("mcpserver: read embedded prompt %s: %w", sharedPromptPath, err)
@@ -48,18 +58,45 @@ func registerPrompts(server *mcp.Server) error {
 			return fmt.Errorf("mcpserver: read embedded prompt %s: %w", path, err)
 		}
 		text := shared + "\n\n---\n\n" + string(content)
+		role := roleconfig.Role(name)
 
 		server.AddPrompt(&mcp.Prompt{
 			Name:        name,
 			Description: roleDescriptions[name],
 		}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			full := text
+			if block := roleConfigPromptBlock(a, role); block != "" {
+				full = full + "\n\n---\n\n" + block
+			}
 			return &mcp.GetPromptResult{
 				Description: roleDescriptions[name],
 				Messages: []*mcp.PromptMessage{
-					{Role: "user", Content: &mcp.TextContent{Text: text}},
+					{Role: "user", Content: &mcp.TextContent{Text: full}},
 				},
 			}, nil
 		})
 	}
 	return nil
+}
+
+// roleConfigPromptBlock renders role's live configuration and currently
+// accepted learning proposals via roleconfig.PromptBlock, for appending to a
+// served role prompt. It fails soft (returns "") rather than blocking a role
+// invocation: a nil resolver (no roles.yaml wiring, e.g. minimal test apps), a
+// role-config read failure, or a learning-store read failure all just mean the
+// dynamic block is omitted, mirroring authorizeRoleSubmit's existing
+// resilience posture toward these same two lookups.
+func roleConfigPromptBlock(a *app.App, role roleconfig.Role) string {
+	if a == nil || a.RoleConfig == nil {
+		return ""
+	}
+	eff, err := a.RoleConfig.Effective("", "", role)
+	if err != nil {
+		return ""
+	}
+	var proposals []learning.Proposal
+	if store, err := a.OpenLearning(); err == nil {
+		proposals, _ = store.List()
+	}
+	return roleconfig.PromptBlock(role, eff, proposals)
 }

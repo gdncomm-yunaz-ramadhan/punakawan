@@ -38,6 +38,39 @@ func TestDiscoverNotFound(t *testing.T) {
 	}
 }
 
+func TestDiscoverOrEphemeralFallsBackWhenNothingFound(t *testing.T) {
+	ws, err := DiscoverOrEphemeral(t.TempDir())
+	if err != nil {
+		t.Fatalf("DiscoverOrEphemeral: %v", err)
+	}
+	if !ws.Ephemeral {
+		t.Fatal("expected Ephemeral=true when no project was found")
+	}
+	if ws.Root == "" {
+		t.Fatal("expected a real, non-empty ephemeral root")
+	}
+	if info, err := os.Stat(ws.Root); err != nil || !info.IsDir() {
+		t.Fatalf("expected ws.Root to be a real, existing directory: %v", err)
+	}
+	if len(ws.Repositories) != 0 {
+		t.Fatalf("expected no fabricated repositories, got %v", ws.Repositories)
+	}
+	os.RemoveAll(ws.Root)
+}
+
+func TestDiscoverOrEphemeralPrefersARealProject(t *testing.T) {
+	ws, err := DiscoverOrEphemeral(fixtureRoot)
+	if err != nil {
+		t.Fatalf("DiscoverOrEphemeral: %v", err)
+	}
+	if ws.Ephemeral {
+		t.Fatal("expected a real project to win over the ephemeral fallback")
+	}
+	if ws.ID != "fixture-workspace" {
+		t.Fatalf("unexpected id: %q", ws.ID)
+	}
+}
+
 // TestDiscoverFallsBackToImplicitWorkspaceForPlainGitRepo confirms punakawan
 // can attach to any git-tracked project with zero .punakawan/ scaffolding.
 func TestDiscoverFallsBackToImplicitWorkspaceForPlainGitRepo(t *testing.T) {

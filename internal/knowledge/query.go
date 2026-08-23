@@ -6,18 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// Count returns the total number of knowledge records in the store. It is the
-// cheap path for the panel's corpus size: a single aggregate that never
-// decodes a JSON blob, replacing the old "load everything, then len()" cost
-// (punokawan-rit, Phase 4 §11).
+// Count returns the total number of knowledge records in this project. It is
+// the cheap path for the panel's corpus size: a single aggregate that never
+// decodes a JSON blob (punokawan-rit, Phase 4 §11).
 func (s *Store) Count(ctx context.Context) (int, error) {
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_records`).Scan(&n); err != nil {
+	if err := s.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM knowledge_records WHERE project_id = ?`, s.projectID).Scan(&n); err != nil {
 		return 0, fmt.Errorf("knowledge: count records: %w", err)
 	}
 	return n, nil
@@ -25,12 +23,12 @@ func (s *Store) Count(ctx context.Context) (int, error) {
 
 // KnowledgeListQuery narrows and paginates ListRecords. Empty string fields
 // mean "no filter" for that column (via the `? = '' OR col = ?` pattern, so
-// the same prepared statement serves filtered and unfiltered browses). Type,
-// Status and ValidityState map to indexed columns; Repository and Source are
-// filtered against the record's JSON payload (scope.repository and
-// source.provider respectively). Limit <= 0 means unbounded. Cursor is an
-// opaque token returned as ListRecords' nextCursor; pass it back to fetch the
-// following page.
+// the same query serves filtered and unfiltered browses). Type, Status and
+// ValidityState map to indexed columns; Repository and Source are filtered
+// against the record's JSON payload (scope.repository and source.provider
+// respectively). Limit <= 0 means unbounded. Cursor is an opaque token
+// returned as ListRecords' nextCursor; pass it back to fetch the following
+// page.
 type KnowledgeListQuery struct {
 	Type          string
 	Status        string
@@ -54,8 +52,10 @@ type KnowledgeListQuery struct {
 // page exists; if so, nextCursor is non-empty and points at the last returned
 // record. An empty nextCursor means the final page was returned.
 func (s *Store) ListRecords(ctx context.Context, q KnowledgeListQuery) (records []protocol.KnowledgeRecord, nextCursor string, err error) {
-	var where []string
-	var args []any
+	// Every query is scoped to this project first; the shared kernel holds
+	// every project's rows in one table.
+	where := []string{"project_id = ?"}
+	args := []any{s.projectID}
 
 	addEq := func(col, val string) {
 		where = append(where, fmt.Sprintf("(? = '' OR %s = ?)", col))
@@ -65,12 +65,12 @@ func (s *Store) ListRecords(ctx context.Context, q KnowledgeListQuery) (records 
 	addEq("status", q.Status)
 	addEq("validity_state", q.ValidityState)
 	// Repository and Source live only in the JSON payload, not in a dedicated
-	// column, so they are extracted per row. JSON_UNQUOTE strips the quotes
-	// JSON_EXTRACT would otherwise return, letting the value compare as a plain
-	// string; a missing path yields SQL NULL, which never equals a non-empty
-	// filter value - exactly the "record has no repository" case.
-	addEq("JSON_UNQUOTE(JSON_EXTRACT(data, '$.scope.repository'))", q.Repository)
-	addEq("JSON_UNQUOTE(JSON_EXTRACT(data, '$.source.provider'))", q.Source)
+	// column, so they are extracted per row. SQLite's json_extract already
+	// returns a JSON string value unquoted as SQL text; a missing path yields
+	// SQL NULL, which never equals a non-empty filter value - exactly the
+	// "record has no repository" case.
+	addEq("json_extract(data, '$.scope.repository')", q.Repository)
+	addEq("json_extract(data, '$.source.provider')", q.Source)
 
 	if q.Cursor != "" {
 		cursorTime, cursorID, decErr := decodeKnowledgeCursor(q.Cursor)
@@ -83,17 +83,14 @@ func (s *Store) ListRecords(ctx context.Context, q KnowledgeListQuery) (records 
 		args = append(args, cursorTime, cursorTime, cursorID)
 	}
 
-	query := `SELECT id, data, updated_at FROM knowledge_records`
-	if len(where) > 0 {
-		query += " WHERE " + strings.Join(where, " AND ")
-	}
+	query := `SELECT id, data, updated_at FROM knowledge_records WHERE ` + strings.Join(where, " AND ")
 	query += " ORDER BY updated_at DESC, id ASC"
 	if q.Limit > 0 {
 		// Over-fetch by one to learn whether another page follows.
 		query += fmt.Sprintf(" LIMIT %d", q.Limit+1)
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("knowledge: list records: %w", err)
 	}
@@ -102,7 +99,7 @@ func (s *Store) ListRecords(ctx context.Context, q KnowledgeListQuery) (records 
 	type scanned struct {
 		id        string
 		data      []byte
-		updatedAt time.Time
+		updatedAt string
 	}
 	var raw []scanned
 	for rows.Next() {
@@ -134,26 +131,23 @@ func (s *Store) ListRecords(ctx context.Context, q KnowledgeListQuery) (records 
 }
 
 // encodeKnowledgeCursor packs a row's keyset position (updated_at, id) into an
-// opaque, URL-safe token. Both components come from a prior DB read, so their
-// precision already matches what a follow-up comparison will see.
-func encodeKnowledgeCursor(updatedAt time.Time, id string) string {
-	payload := updatedAt.UTC().Format(time.RFC3339Nano) + "\x00" + id
+// opaque, URL-safe token. updatedAt is the fixed-width TimeLayout text already
+// stored on the row, so the seek comparison a follow-up page runs against it
+// is exact.
+func encodeKnowledgeCursor(updatedAt, id string) string {
+	payload := updatedAt + "\x00" + id
 	return base64.RawURLEncoding.EncodeToString([]byte(payload))
 }
 
 // decodeKnowledgeCursor reverses encodeKnowledgeCursor.
-func decodeKnowledgeCursor(cursor string) (time.Time, string, error) {
+func decodeKnowledgeCursor(cursor string) (updatedAt, id string, err error) {
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return time.Time{}, "", fmt.Errorf("knowledge: invalid cursor: %w", err)
+		return "", "", fmt.Errorf("knowledge: invalid cursor: %w", err)
 	}
 	parts := strings.SplitN(string(raw), "\x00", 2)
 	if len(parts) != 2 {
-		return time.Time{}, "", fmt.Errorf("knowledge: invalid cursor payload")
+		return "", "", fmt.Errorf("knowledge: invalid cursor payload")
 	}
-	t, err := time.Parse(time.RFC3339Nano, parts[0])
-	if err != nil {
-		return time.Time{}, "", fmt.Errorf("knowledge: invalid cursor timestamp: %w", err)
-	}
-	return t, parts[1], nil
+	return parts[0], parts[1], nil
 }

@@ -2,35 +2,22 @@ package taskstore
 
 import (
 	"context"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"github.com/ygrip/punakawan/internal/knowledge"
-	"github.com/ygrip/punakawan/internal/tools"
+	"github.com/ygrip/punakawan/internal/storage"
 )
 
-// newTestStore opens a real Dolt-backed knowledge store (the taskstore shares
-// its connection) in a temp dir, mirroring internal/knowledge's own test
-// bootstrap.
+// newTestStore opens the shared SQLite storage kernel in a temp dir and
+// scopes a Store to a fixed test project id.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-	dir := t.TempDir()
-	sup := tools.New(dir)
-	k, err := knowledge.Open(sup, filepath.Join(dir, "knowledge"))
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("knowledge.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() { _ = k.Close() })
-
-	s := New(k.DB())
-	if err := s.Migrate(); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	return s
+	t.Cleanup(func() { db.Close() })
+	return New(db, "test-project")
 }
 
 func TestCreateListGet(t *testing.T) {
@@ -121,5 +108,37 @@ func TestGetNotFound(t *testing.T) {
 	s := newTestStore(t)
 	if _, err := s.Get(context.Background(), "nope"); err == nil {
 		t.Fatal("expected error for missing task")
+	}
+}
+
+func TestProjectScopingPreventsLeakage(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "storage.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	a := New(db, "project-a")
+	b := New(db, "project-b")
+
+	if _, err := a.Create(ctx, CreateInput{Title: "only in A"}); err != nil {
+		t.Fatalf("create in A: %v", err)
+	}
+
+	issuesA, _, err := a.List(ctx)
+	if err != nil {
+		t.Fatalf("list A: %v", err)
+	}
+	if len(issuesA) != 1 {
+		t.Fatalf("project A: want 1 issue, got %d", len(issuesA))
+	}
+
+	issuesB, _, err := b.List(ctx)
+	if err != nil {
+		t.Fatalf("list B: %v", err)
+	}
+	if len(issuesB) != 0 {
+		t.Fatalf("project B must not see project A's tasks, got %d", len(issuesB))
 	}
 }

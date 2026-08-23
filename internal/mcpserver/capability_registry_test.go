@@ -12,8 +12,8 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 	reg := CapabilityRegistry(a)
 
 	// A tool present in both the mirror and the registry (baseline).
-	if !reg.Has("write_file") {
-		t.Fatalf("registry missing a core registered tool: write_file")
+	if !reg.Has("write_files") {
+		t.Fatalf("registry missing a core registered tool: write_files")
 	}
 
 	// Tools that were registered but ABSENT from the old mirror. Before this
@@ -22,8 +22,8 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 	for _, name := range []string{
 		"submit_contradiction",
 		"analyze_impact",
-		"create_change_dossier",
-		"create_handoff_capsule",
+		"record_impact_edge",
+		"start_delivery",
 		"jira_assign_issue",
 		"list_pending_approvals",
 	} {

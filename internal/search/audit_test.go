@@ -40,31 +40,25 @@ func TestBuildIdentifierQueryNilWithoutIdentifiers(t *testing.T) {
 	}
 }
 
-func TestStoredDocFieldParsing(t *testing.T) {
-	fields := map[string]interface{}{
-		"title":   "one",
-		"aliases": "solo",
-		"symbols": []interface{}{"A", "B"},
-		"num":     3,
+// TestStoredRowParsing proves the stored-field round trip through the
+// knowledge_search table: raw text comes back verbatim and JSON array columns
+// parse back into slices, which is what scoring and explainability read.
+func TestStoredRowParsing(t *testing.T) {
+	if got := parseJSONArray("[]"); len(got) != 0 {
+		t.Fatalf("parseJSONArray([]) = %v, want empty", got)
 	}
-	if got := stringField(fields, "title"); got != "one" {
-		t.Fatalf("stringField(title) = %q, want %q", got, "one")
+	if got := parseJSONArray(`["A","B"]`); len(got) != 2 || got[0] != "A" || got[1] != "B" {
+		t.Fatalf("parseJSONArray = %v, want [A B]", got)
 	}
-	if got := stringField(fields, "num"); got != "" {
-		t.Fatalf("stringField(num) = %q, want empty for a non-string value", got)
+	if got := jsonArray(nil); got != "[]" {
+		t.Fatalf("jsonArray(nil) = %q, want []", got)
 	}
-	if got := stringSliceField(fields, "aliases"); len(got) != 1 || got[0] != "solo" {
-		t.Fatalf("stringSliceField(aliases) = %v, want [solo]", got)
-	}
-	if got := stringSliceField(fields, "symbols"); len(got) != 2 || got[0] != "A" || got[1] != "B" {
-		t.Fatalf("stringSliceField(symbols) = %v, want [A B]", got)
-	}
-	if got := stringSliceField(fields, "missing"); got != nil {
-		t.Fatalf("stringSliceField(missing) = %v, want nil", got)
+	if got := jsonArray([]string{"x"}); got != `["x"]` {
+		t.Fatalf("jsonArray([x]) = %q, want [\"x\"]", got)
 	}
 }
 
-// --- dolt-backed integration tests ---
+// --- storage-backed integration tests ---
 
 // TestRebuildSkipsWhenStoreUnchanged proves the watermark gate
 // (punokawan-77q): once synced, a Rebuild with an unchanged store is a no-op,
@@ -82,10 +76,11 @@ func TestRebuildSkipsWhenStoreUnchanged(t *testing.T) {
 		t.Fatalf("first Rebuild: %v", err)
 	}
 
-	// Drift the index out-of-band. A watermark-gated Rebuild against an
-	// unchanged store must NOT repair this - it should short-circuit.
-	if err := ix.bleve.Delete(rec.Id); err != nil {
-		t.Fatalf("bleve.Delete: %v", err)
+	// Drift the index out-of-band. DeleteRecord removes the entry without
+	// touching the watermark, so a watermark-gated Rebuild against an unchanged
+	// store must NOT repair this - it should short-circuit.
+	if err := ix.DeleteRecord(rec.Id); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
 	}
 	if err := Rebuild(store, ix); err != nil {
 		t.Fatalf("no-op Rebuild: %v", err)

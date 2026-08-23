@@ -13,6 +13,14 @@
 // Nothing here is canonical: a ProjectSnapshot is a presentation-only
 // cached view. On a refresh error the previous snapshot is retained (the
 // UI keeps showing the last-known-good counts) rather than being cleared.
+//
+// The in-memory cache alone is only warm within one process: every
+// `punakawan panel` restart starts empty, so the first read for each
+// project still pays the full recompute. WithPersistence closes that gap -
+// each successful refresh is durably saved, and a cold in-memory miss loads
+// that saved value first, so a restart serves an instant (if briefly
+// stale) read instead of blocking, and a background refresh brings it back
+// to date.
 package snapshot
 
 import (
@@ -43,6 +51,19 @@ type ProjectSnapshot struct {
 // fully unit-testable with a fake.
 type RefreshFunc func(ctx context.Context, projectID string) (*ProjectSnapshot, error)
 
+// LoadPersistedFunc loads a snapshot a previous process already computed
+// and persisted for projectID, if any. ok is false when nothing is
+// persisted (or persistence is unavailable), in which case the cache
+// behaves exactly as it would with no persistence configured at all.
+type LoadPersistedFunc func(projectID string) (snap *ProjectSnapshot, ok bool)
+
+// SavePersistedFunc durably stores a freshly computed snapshot so a later
+// process - a brand new `punakawan panel` invocation, which always starts
+// with an empty in-memory cache - can seed itself from disk instead of
+// recomputing from scratch. Persistence is best-effort: a failure here
+// must never fail the refresh that produced snap.
+type SavePersistedFunc func(snap *ProjectSnapshot)
+
 // DefaultTTL is how long a cached snapshot is served as fresh before a
 // background refresh is triggered on the next read.
 const DefaultTTL = 10 * time.Second
@@ -54,6 +75,8 @@ const DefaultTTL = 10 * time.Second
 type Cache struct {
 	ttl     time.Duration
 	refresh RefreshFunc
+	load    LoadPersistedFunc
+	save    SavePersistedFunc
 	now     func() time.Time
 
 	mu   sync.RWMutex
@@ -95,6 +118,20 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
+// WithPersistence gives the cache a durable backing store: load seeds a
+// cold (never-yet-cached-this-process) project from whatever an earlier
+// process last saved, so a fresh `punakawan panel` restart serves an
+// instant (if momentarily stale) read instead of blocking on a full
+// recompute; save is called after every successful refresh so the next
+// restart has something to load. Either func may be nil to disable that
+// half (e.g. a read-only cache that never persists).
+func WithPersistence(load LoadPersistedFunc, save SavePersistedFunc) Option {
+	return func(c *Cache) {
+		c.load = load
+		c.save = save
+	}
+}
+
 // New builds a Cache. refresh may be nil (GetOrRefresh then behaves like
 // Get), though callers normally inject one.
 func New(refresh RefreshFunc, opts ...Option) *Cache {
@@ -128,13 +165,31 @@ func (c *Cache) Get(projectID string) (*ProjectSnapshot, bool) {
 // snapshot is stale or absent (i.e. a refresh was triggered), so callers
 // can distinguish a served-fresh hit from a served-stale one.
 //
-// When nothing is cached yet, GetOrRefresh returns (nil, true) and the
-// first successful background refresh populates the cache for the next
-// read - it never blocks the caller on the expensive recompute.
+// When nothing is cached yet in this process and no persisted snapshot can
+// be loaded either, GetOrRefresh returns (nil, true) and the first
+// successful refresh populates the cache for the next read - it never
+// blocks the caller on the expensive recompute. When a persisted snapshot
+// *is* available (WithPersistence), that seeds the in-memory cache first,
+// so a cold process restart still returns instantly (serving a possibly
+// stale value) instead of falling through to nil.
 func (c *Cache) GetOrRefresh(ctx context.Context, projectID string) (*ProjectSnapshot, bool) {
 	c.mu.RLock()
 	s, ok := c.snap[projectID]
 	c.mu.RUnlock()
+
+	if !ok && c.load != nil {
+		if loaded, loadOK := c.load(projectID); loadOK && loaded != nil {
+			c.mu.Lock()
+			if cur, already := c.snap[projectID]; already {
+				s = cur
+			} else {
+				c.snap[projectID] = loaded
+				s = loaded
+			}
+			c.mu.Unlock()
+			ok = true
+		}
+	}
 
 	stale := !ok || c.now().Sub(s.UpdatedAt) >= c.ttl
 	if stale && c.refresh != nil {
@@ -143,7 +198,8 @@ func (c *Cache) GetOrRefresh(ctx context.Context, projectID string) (*ProjectSna
 	return s, stale
 }
 
-// Set stores snap as the latest snapshot for its ProjectID. UpdatedAt is
+// Set stores snap as the latest snapshot for its ProjectID, and persists it
+// (WithPersistence) so a later process can load it back. UpdatedAt is
 // stamped (from the cache clock) if the caller left it zero.
 func (c *Cache) Set(snap *ProjectSnapshot) {
 	if snap == nil {
@@ -155,6 +211,9 @@ func (c *Cache) Set(snap *ProjectSnapshot) {
 	c.mu.Lock()
 	c.snap[snap.ProjectID] = snap
 	c.mu.Unlock()
+	if c.save != nil {
+		c.save(snap)
+	}
 }
 
 // Invalidate drops any cached snapshot for projectID, forcing the next
@@ -197,14 +256,8 @@ func (c *Cache) doRefresh(projectID string, cl *call) {
 		return
 	}
 	snap.ProjectID = projectID
-	if snap.UpdatedAt.IsZero() {
-		snap.UpdatedAt = c.now()
-	}
 	cl.snap = snap
-
-	c.mu.Lock()
-	c.snap[projectID] = snap
-	c.mu.Unlock()
+	c.Set(snap)
 }
 
 // Refresh synchronously refreshes projectID, deduplicating against any

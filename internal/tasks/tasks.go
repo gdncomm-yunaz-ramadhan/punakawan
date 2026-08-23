@@ -26,6 +26,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/taskstore"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -105,8 +106,8 @@ type NewTaskContractInput struct {
 // sup and dir are the Supervisor and working directory used to invoke the
 // bd CLI (dir must contain an initialized bd project); store is the
 // knowledge Store the tracked-by relation is persisted into.
-func CreateTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, req protocol.KnowledgeRecord, in NewTaskContractInput) (protocol.TaskContract, error) {
-	return createTaskForRequirement(ctx, sup, dir, store, req, in)
+func CreateTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, db *storage.DB, projectID string, req protocol.KnowledgeRecord, in NewTaskContractInput) (protocol.TaskContract, error) {
+	return createTaskForRequirement(ctx, sup, dir, store, db, projectID, req, in)
 }
 
 // ReportDiscoveredWork records newly discovered work found mid-execution of
@@ -131,7 +132,7 @@ func CreateTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir st
 //     M3 architecture) can then find every discovered task via
 //     `bd list --label needs-semar-review` without this package needing to
 //     build a dedicated review-queue subsystem.
-func ReportDiscoveredWork(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, req protocol.KnowledgeRecord, discoveredFromTaskID string, in NewTaskContractInput) (protocol.TaskContract, error) {
+func ReportDiscoveredWork(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, db *storage.DB, projectID string, req protocol.KnowledgeRecord, discoveredFromTaskID string, in NewTaskContractInput) (protocol.TaskContract, error) {
 	if discoveredFromTaskID == "" {
 		return protocol.TaskContract{}, fmt.Errorf("tasks: discovered-from task id is required")
 	}
@@ -141,7 +142,7 @@ func ReportDiscoveredWork(ctx context.Context, sup *tools.Supervisor, dir string
 	in.DiscoveredFrom = &discoveredFromTaskID
 	in.BeadsLabels = appendMissingLabels(in.BeadsLabels, "discovered", "needs-semar-review")
 
-	return createTaskForRequirement(ctx, sup, dir, store, req, in)
+	return createTaskForRequirement(ctx, sup, dir, store, db, projectID, req, in)
 }
 
 // appendMissingLabels returns labels with each of extra appended, skipping
@@ -170,7 +171,7 @@ func appendMissingLabels(labels []string, extra ...string) []string {
 // tracked-by relation. See CreateTaskForRequirement's doc comment for the
 // full behavior; ReportDiscoveredWork's callers reach this after adjusting
 // in.DiscoveredFrom and in.BeadsLabels.
-func createTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, req protocol.KnowledgeRecord, in NewTaskContractInput) (protocol.TaskContract, error) {
+func createTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, db *storage.DB, projectID string, req protocol.KnowledgeRecord, in NewTaskContractInput) (protocol.TaskContract, error) {
 	if req.Type != protocol.KnowledgeRecordTypeRequirement {
 		return protocol.TaskContract{}, fmt.Errorf("tasks: %s: expected a requirement record, got type %q", req.Id, req.Type)
 	}
@@ -219,7 +220,7 @@ func createTaskForRequirement(ctx context.Context, sup *tools.Supervisor, dir st
 	if beads.ProjectInitialized(dir) {
 		beadsID, err = beads.CreateTask(ctx, sup, dir, req.Title, description, opts)
 	} else {
-		ts, terr := fallbackTaskStore(store)
+		ts, terr := fallbackTaskStore(db, projectID)
 		if terr != nil {
 			return protocol.TaskContract{}, terr
 		}
@@ -292,7 +293,7 @@ type GraphResult struct {
 // DependsOn (using each target's own Input.TaskID as the contract-level
 // reference) so callers do not have to state the same edges twice; an
 // explicitly supplied Input.Dependencies is left untouched.
-func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, items []GraphItem) ([]GraphResult, error) {
+func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store *knowledge.Store, db *storage.DB, projectID string, items []GraphItem) ([]GraphResult, error) {
 	byKey := make(map[string]*GraphItem, len(items))
 	for i := range items {
 		item := &items[i]
@@ -335,7 +336,7 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 		if err != nil {
 			return nil, fmt.Errorf("tasks: item %q: load requirement %q: %w", item.LocalKey, item.RequirementID, err)
 		}
-		contract, err := createTaskForRequirement(ctx, sup, dir, store, req, item.Input)
+		contract, err := createTaskForRequirement(ctx, sup, dir, store, db, projectID, req, item.Input)
 		if err != nil {
 			return nil, fmt.Errorf("tasks: item %q: %w", item.LocalKey, err)
 		}
@@ -348,7 +349,7 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 	var ts *taskstore.Store
 	if !beads.ProjectInitialized(dir) {
 		var err error
-		if ts, err = fallbackTaskStore(store); err != nil {
+		if ts, err = fallbackTaskStore(db, projectID); err != nil {
 			return nil, err
 		}
 	}
@@ -382,15 +383,14 @@ func GenerateGraph(ctx context.Context, sup *tools.Supervisor, dir string, store
 	return results, nil
 }
 
-// fallbackTaskStore builds a taskstore over the knowledge store's shared Dolt
-// connection (the fallback task tables live in the same Punakawan database).
-// Migrate is idempotent, so calling this per write is safe and cheap.
-func fallbackTaskStore(store *knowledge.Store) (*taskstore.Store, error) {
-	ts := taskstore.New(store.DB())
-	if err := ts.Migrate(); err != nil {
-		return nil, fmt.Errorf("tasks: open fallback task store: %w", err)
+// fallbackTaskStore builds a taskstore over the shared SQLite storage
+// kernel, scoped to projectID. Schema migration is handled once, centrally,
+// by the kernel itself when db was opened.
+func fallbackTaskStore(db *storage.DB, projectID string) (*taskstore.Store, error) {
+	if db == nil {
+		return nil, fmt.Errorf("tasks: open fallback task store: no storage kernel available")
 	}
-	return ts, nil
+	return taskstore.New(db, projectID), nil
 }
 
 // WireDependency creates a Beads dependency edge matching a

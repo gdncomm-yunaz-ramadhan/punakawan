@@ -29,6 +29,7 @@ Apply these to every role output, generated summary, and clarification:
 8. Distinguish fact, inference, decision, and uncertainty.
 9. Keep summaries short; leave detail in artifacts or references.
 10. Do not repeat the same finding across sections or roles.
+11. Write in plain language everywhere this output lands - Jira tickets/comments, git commit messages, dossiers, all of it: short sentences, everyday words, no jargon, no filler, no hype.
 
 Where a free-form summary fits, prefer:
 

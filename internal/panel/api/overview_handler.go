@@ -128,7 +128,11 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 		}
 
 		stopSessions := timing.Probe(ctx, "sessions")
-		sessions, err := readers.Session.List(ctx, workspaceID, contract.SessionFilter{})
+		// Overview needs every run's status (for active/stale/failed
+		// detection below) but never displays a run's evidence/warning/error
+		// counts, so SkipCounts avoids the ledger+journal file scan that
+		// otherwise costs one per run in the whole workspace's history.
+		sessions, err := readers.Session.List(ctx, workspaceID, contract.SessionFilter{SkipCounts: true})
 		stopSessions()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)

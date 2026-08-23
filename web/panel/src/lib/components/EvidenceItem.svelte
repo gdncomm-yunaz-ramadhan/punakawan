@@ -1,17 +1,17 @@
 <script lang="ts">
   import {
-    evidencePreviewUrl,
-    getEvidenceTextPreview,
+    getProjectEvidenceTextPreview,
     isBinaryEvidence,
+    projectEvidencePreviewUrl,
     type EvidenceRecord,
     type EvidenceTextPreview,
   } from "../api/client";
 
   interface Props {
-    workspaceId: string;
+    projectId: string;
     record: EvidenceRecord;
   }
-  let { workspaceId, record }: Props = $props();
+  let { projectId, record }: Props = $props();
 
   let expanded = $state(false);
   let preview: EvidenceTextPreview | null = $state(null);
@@ -25,7 +25,7 @@
     error = null;
     try {
       const offset = preview ? preview.offset + preview.text.length : 0;
-      const next = await getEvidenceTextPreview(workspaceId, record.id, { offset, limit: PAGE_BYTES });
+      const next = await getProjectEvidenceTextPreview(projectId, record.id, { offset, limit: PAGE_BYTES });
       preview = preview ? { ...next, text: preview.text + next.text } : next;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -51,7 +51,7 @@
 
   {#if expanded}
     {#if isBinaryEvidence(record.type)}
-      <img class="screenshot" src={evidencePreviewUrl(workspaceId, record.id)} alt={record.summary ?? record.type} />
+      <img class="screenshot" src={projectEvidencePreviewUrl(projectId, record.id)} alt={record.summary ?? record.type} />
     {:else if error}
       <p role="alert" class="error">Failed to load preview: {error}</p>
     {:else if preview}
@@ -95,7 +95,7 @@
   }
   .type {
     font-size: 0.75rem;
-    color: #666;
+    color: var(--color-text-muted);
     text-transform: uppercase;
   }
   .summary {
@@ -104,12 +104,13 @@
   }
   .created {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--color-text-muted);
   }
   .text {
     margin: 0.4rem 0 0;
     font-size: 0.75rem;
-    background: #f7f7f7;
+    background: var(--color-surface-subtle);
+    color: var(--color-text);
     padding: 0.5rem;
     border-radius: 4px;
     overflow-x: auto;
@@ -120,31 +121,31 @@
   .diff-summary {
     margin: 0.4rem 0 0;
     font-size: 0.8rem;
-    color: #3949ab;
+    color: var(--color-accent);
   }
   .size {
     margin: 0.2rem 0 0;
     font-size: 0.7rem;
-    color: #999;
+    color: var(--color-text-muted);
   }
   .load-more {
     margin-top: 0.3rem;
     font-size: 0.78rem;
     padding: 0.25rem 0.6rem;
-    border: 1px solid #3949ab;
-    background: white;
-    color: #3949ab;
+    border: 1px solid var(--color-accent);
+    background: var(--color-surface);
+    color: var(--color-accent);
     border-radius: 6px;
     cursor: pointer;
   }
   .screenshot {
     margin-top: 0.4rem;
     max-width: 100%;
-    border: 1px solid #ddd;
+    border: 1px solid var(--color-border);
     border-radius: 4px;
   }
   .error {
-    color: #b00020;
+    color: var(--color-danger);
     font-size: 0.8rem;
   }
 </style>

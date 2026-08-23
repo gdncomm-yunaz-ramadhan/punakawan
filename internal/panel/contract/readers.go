@@ -14,8 +14,9 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/beads"
+	"github.com/ygrip/punakawan/internal/daemon"
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/dossier"
-	"github.com/ygrip/punakawan/internal/handoff"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/project"
@@ -24,12 +25,6 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// ErrHandoffSuperseded is returned by HandoffReader.ResumeHandoff when the
-// capsule (or its dossier) has been superseded: a superseded capsule must not
-// resume silently (handoff §43), so resume is refused rather than returning a
-// stale context. Handlers detect it with errors.Is and answer 409.
-var ErrHandoffSuperseded = errors.New("handoff: capsule is superseded and cannot resume")
-
 // ErrWorkspaceUnavailable is returned by the non-workspace sources
 // (session, task, knowledge, evidence, approval) when asked for a
 // workspace other than the single one the panel's *app.App was loaded
@@ -37,6 +32,14 @@ var ErrHandoffSuperseded = errors.New("handoff: capsule is superseded and cannot
 // other is the caller's mistake (a 4xx), not a server fault: HTTP handlers
 // detect this with errors.Is and answer 404 rather than 500.
 var ErrWorkspaceUnavailable = errors.New("workspace is not available on this panel instance")
+
+// ErrPrimaryProject is returned when a caller tries to deregister the
+// primary workspace - the one this panel instance's *app.App was loaded
+// for. Removing its registry row would not actually remove it: every id
+// resolution falls back to the primary root, so the panel would keep
+// listing and serving it while the registry claimed otherwise. Refusing is
+// the honest answer; the panel is stopped or pointed elsewhere instead.
+var ErrPrimaryProject = errors.New("the primary workspace cannot be removed from this panel instance")
 
 // WorkspaceSummary is one workspace's panel-facing overview, per
 // punakawan-panel-implementation-plan.md §14.2's workspace card. JSON tags
@@ -86,6 +89,14 @@ type SessionFilter struct {
 	TaskID     string
 	Repository string
 	Limit      int
+	// SkipCounts omits each session's EvidenceCount/WarningCount/ErrorCount,
+	// which otherwise cost one evidence-ledger and one event-journal file
+	// scan per returned run. Set this when the caller does not render those
+	// fields (e.g. the Overview page, which needs every run's status for
+	// its active/stale/failed detection but never displays per-run counts) -
+	// paying for a per-run file scan that nothing shows on screen was the
+	// dominant cost of a slow overview load.
+	SkipCounts bool
 }
 
 // SessionDetail extends the compact PanelSessionSummary with its raw event
@@ -311,6 +322,14 @@ type ProjectReader interface {
 	List(ctx context.Context) ([]ProjectSummary, error)
 	Summary(ctx context.Context, projectID string) (ProjectSummary, error)
 	Get(ctx context.Context, projectID string) (*project.Project, error)
+	// Deregister drops the project's row from the panel's workspace
+	// registry so the panel stops listing and serving it. It is a registry
+	// operation only: the workspace directory, its .punakawan tree,
+	// knowledge database, tasks, and repositories are all left untouched on
+	// disk, and re-registering the same path restores it. Returns
+	// ErrWorkspaceUnavailable for an unknown id and ErrPrimaryProject for
+	// the primary workspace.
+	Deregister(ctx context.Context, projectID string) error
 	AddMetadata(ctx context.Context, projectID string, entry project.MetadataEntry, baseRevision int) (*project.Project, error)
 	UpdateMetadata(ctx context.Context, projectID, key string, newDescription *string, newValue any, baseRevision int) (*project.Project, error)
 	DeleteMetadata(ctx context.Context, projectID, key string, baseRevision int) (*project.Project, error)
@@ -400,17 +419,30 @@ type DossierReader interface {
 	ExportDossierJSON(ctx context.Context, projectID, id string) ([]byte, error)
 }
 
-// HandoffReader reads, mutates, and validates a project's Handoff Capsules, per
-// the plan Part V §40-43. ListHandoffs/GetHandoff never mutate. ValidateHandoff
-// builds the internal/handoff.ValidationDeps from the project's own stores and
-// returns the resulting ValidationResult. ResumeHandoff refuses a superseded
-// capsule with ErrHandoffSuperseded (handlers 409); otherwise it returns the
-// smallest necessary resume context.
-type HandoffReader interface {
-	ListHandoffs(ctx context.Context, projectID string) ([]protocol.HandoffCapsule, error)
-	GetHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
-	CreateHandoff(ctx context.Context, projectID string, h protocol.HandoffCapsule) (protocol.HandoffCapsule, error)
-	ValidateHandoff(ctx context.Context, projectID, id string) (handoff.ValidationResult, error)
-	ResumeHandoff(ctx context.Context, projectID, id string) (map[string]any, error)
-	SupersedeHandoff(ctx context.Context, projectID, id string) (protocol.HandoffCapsule, error)
+// DeliveryReader reads and mutates delivery orchestrations by proxying to
+// the daemon's own delivery.Store (internal/daemon/delivery.go) over its
+// authenticated loopback transport - the daemon, not this panel instance,
+// is the only process allowed to open delivery.Store's storage directly
+// (see internal/daemon.Daemon's own doc comment). The three mutators and
+// GetDeliveryView/WatchDeliveryView mirror daemon.Client's own methods
+// exactly; this interface exists only so HTTP handlers and the events
+// watcher depend on a narrow contract instead of the concrete *daemon.Client,
+// matching every other reader in this package.
+type DeliveryReader interface {
+	ListDeliveries(ctx context.Context) ([]*protocol.DeliveryOrchestration, error)
+	// GetDeliveryView returns orchestrationID's current view immediately.
+	// sinceSeq mirrors delivery.BuildDeliveryViewSince: pass a prior
+	// response's LatestSeq to populate NewlyRunnableLaneIDs.
+	GetDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int) (*delivery.DeliveryView, error)
+	// WatchDeliveryView is GetDeliveryView, except the daemon blocks
+	// server-side for up to waitSeconds waiting for LatestSeq to advance
+	// past sinceSeq - the events package's DeliveryWatcher is this
+	// method's only caller, long-polling it in a loop per orchestration.
+	WatchDeliveryView(ctx context.Context, orchestrationID string, sinceSeq, waitSeconds int) (*delivery.DeliveryView, error)
+	AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in daemon.AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error)
+	ApproveProjectDelivery(ctx context.Context, orchestrationID string, in daemon.ApproveProjectDeliveryRequest) (*delivery.DeliveryView, error)
+	CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error)
+	// GetDeliveryEvidence fetches one lane-scoped evidence artifact's raw
+	// bytes and media type by id, scoped to orchestrationID.
+	GetDeliveryEvidence(ctx context.Context, orchestrationID, evidenceID string) ([]byte, string, error)
 }

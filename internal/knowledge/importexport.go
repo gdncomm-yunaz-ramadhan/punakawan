@@ -16,8 +16,8 @@ import (
 // types, as JSONL: one protocol.KnowledgeRecord JSON object per line. Records
 // are ordered by id so that repeated exports of an unchanged store are
 // byte-identical, keeping the output diffable and suitable for backup or
-// transport, per §7.5 ("Import and export"; "JSONL is not the canonical
-// relation graph" - Dolt remains canonical, this is a transport format).
+// transport, per §7.5 ("Import and export"; JSONL is a transport format, not
+// the canonical relation graph).
 func (s *Store) Export(w io.Writer) error {
 	records, err := s.allRecords()
 	if err != nil {
@@ -36,7 +36,7 @@ func (s *Store) Export(w io.Writer) error {
 // allRecords returns every knowledge record currently in the store, ordered
 // by id, shared by Export and ExportYAML so both formats stay in sync.
 func (s *Store) allRecords() ([]protocol.KnowledgeRecord, error) {
-	rows, err := s.db.Query(`SELECT data FROM knowledge_records ORDER BY id`)
+	rows, err := s.db.Reader().Query(`SELECT data FROM knowledge_records WHERE project_id = ? ORDER BY id`, s.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: export query: %w", err)
 	}
@@ -61,7 +61,7 @@ func (s *Store) allRecords() ([]protocol.KnowledgeRecord, error) {
 }
 
 // RecordWithUpdatedAt pairs a KnowledgeRecord with the updated_at timestamp
-// Dolt tracks on its row - not itself part of the JSON payload - for
+// the store tracks on its row - not itself part of the JSON payload - for
 // callers like internal/search that need recency as a ranking signal.
 type RecordWithUpdatedAt struct {
 	Record    protocol.KnowledgeRecord
@@ -69,9 +69,9 @@ type RecordWithUpdatedAt struct {
 }
 
 // AllWithUpdatedAt returns every knowledge record currently in the store,
-// ordered by id, alongside its Dolt-tracked updated_at.
+// ordered by id, alongside its stored updated_at.
 func (s *Store) AllWithUpdatedAt() ([]RecordWithUpdatedAt, error) {
-	rows, err := s.db.Query(`SELECT data, updated_at FROM knowledge_records ORDER BY id`)
+	rows, err := s.db.Reader().Query(`SELECT data, updated_at FROM knowledge_records WHERE project_id = ? ORDER BY id`, s.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: export query: %w", err)
 	}
@@ -80,15 +80,19 @@ func (s *Store) AllWithUpdatedAt() ([]RecordWithUpdatedAt, error) {
 	var out []RecordWithUpdatedAt
 	for rows.Next() {
 		var data []byte
-		var updatedAt time.Time
+		var updatedAt string
 		if err := rows.Scan(&data, &updatedAt); err != nil {
 			return nil, fmt.Errorf("knowledge: export scan record: %w", err)
+		}
+		ts, err := time.Parse(TimeLayout, updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("knowledge: parse updated_at: %w", err)
 		}
 		var rec protocol.KnowledgeRecord
 		if err := json.Unmarshal(data, &rec); err != nil {
 			return nil, fmt.Errorf("knowledge: export decode record: %w", err)
 		}
-		out = append(out, RecordWithUpdatedAt{Record: rec, UpdatedAt: updatedAt})
+		out = append(out, RecordWithUpdatedAt{Record: rec, UpdatedAt: ts})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("knowledge: export iterate records: %w", err)
@@ -149,7 +153,7 @@ func (s *Store) ImportYAML(r io.Reader) error {
 // validation, Import stops and returns an error identifying the 1-based
 // line number, the record id (when it could be parsed), and how many
 // records were successfully imported before the failure. Store does not
-// expose a cross-Put transaction (each Put is its own Dolt transaction), so
+// expose a cross-Put transaction (each Put is its own kernel transaction), so
 // a partial import is possible when Import fails partway through; the error
 // message reports the count so the caller knows how far it got. A
 // skip-and-continue mode was considered and rejected: silently dropping

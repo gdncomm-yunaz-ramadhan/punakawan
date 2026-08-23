@@ -139,6 +139,46 @@ export function normalizeGraphQLReviewComment(payload: Record<string, unknown>):
   };
 }
 
+export interface NormalizedRepositoryPermissions {
+  admin: boolean;
+  maintain: boolean;
+  push: boolean;
+  pull: boolean;
+  triage: boolean;
+}
+
+export interface NormalizedRepositoryAccess {
+  /** False when the repository 404s for the configured credential - a private repo the caller cannot see 404s, not 403s, so this is diagnostic rather than an error. */
+  accessible: boolean;
+  private: boolean | null;
+  permissions: NormalizedRepositoryPermissions | null;
+  defaultBranch: string | null;
+}
+
+export function normalizeRepositoryAccess(payload: Record<string, unknown>): NormalizedRepositoryAccess {
+  const permissions = asRecord(payload.permissions);
+  return {
+    accessible: true,
+    private: asBoolean(payload.private) ?? null,
+    permissions: {
+      admin: asBoolean(permissions.admin) ?? false,
+      maintain: asBoolean(permissions.maintain) ?? false,
+      push: asBoolean(permissions.push) ?? false,
+      pull: asBoolean(permissions.pull) ?? false,
+      triage: asBoolean(permissions.triage) ?? false,
+    },
+    defaultBranch: asString(payload.default_branch) ?? null,
+  };
+}
+
+/** The normalized shape returned in place of a real repository when it 404s for the configured credential. */
+export const INACCESSIBLE_REPOSITORY: NormalizedRepositoryAccess = {
+  accessible: false,
+  private: null,
+  permissions: null,
+  defaultBranch: null,
+};
+
 export function normalizeIssueComment(payload: Record<string, unknown>): NormalizedComment {
   const user = asRecord(payload.user);
   return {

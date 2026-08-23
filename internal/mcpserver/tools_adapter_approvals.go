@@ -30,7 +30,11 @@ type RespondToAdapterApprovalOutput struct {
 
 func respondToAdapterApprovalHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RespondToAdapterApprovalInput) (*mcp.CallToolResult, RespondToAdapterApprovalOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in RespondToAdapterApprovalInput) (*mcp.CallToolResult, RespondToAdapterApprovalOutput, error) {
-		out, err := respondToAdapterApproval(a.Approvals, in)
+		store, err := a.OpenApprovals()
+		if err != nil {
+			return nil, RespondToAdapterApprovalOutput{}, fmt.Errorf("mcpserver: open approvals: %w", err)
+		}
+		out, err := respondToAdapterApproval(store, in)
 		return nil, out, err
 	}
 }

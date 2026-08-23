@@ -3,6 +3,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,6 +87,12 @@ type Workspace struct {
 
 	// Root is the directory containing .punakawan/. Not part of the YAML.
 	Root string `yaml:"-"`
+
+	// Ephemeral marks a workspace DiscoverOrEphemeral fabricated because no
+	// real project was found - Root is a throwaway temp directory, not a
+	// checkout, and Repositories is deliberately empty (there is no
+	// repository to claim one exists). Not part of the YAML.
+	Ephemeral bool `yaml:"-"`
 }
 
 // Discover walks upward from startDir looking for .punakawan/workspace.yaml,
@@ -117,9 +124,54 @@ func Discover(startDir string) (*Workspace, error) {
 
 	gitRoot, err := findGitRoot(dir)
 	if err != nil {
-		return nil, fmt.Errorf("workspace: no %s/%s found above %s, and no git repository found either", dirName, configFile, startDir)
+		return nil, fmt.Errorf("%w above %s", ErrNotFound, startDir)
 	}
 	return implicitWorkspace(gitRoot), nil
+}
+
+// ErrNotFound is Discover's error when neither a workspace.yaml nor a .git
+// directory is found above startDir. DiscoverOrEphemeral matches against it
+// to know when to fall back rather than fail.
+var ErrNotFound = errors.New("workspace: no workspace.yaml or git repository found")
+
+// DiscoverOrEphemeral is Discover, except that finding no project at all is
+// not an error: it falls back to a fresh, throwaway workspace rooted at a
+// new temp directory instead. This is for entrypoints that must be able to
+// start with no project in scope at all - the daemon and the MCP server
+// (punakawan mcp serve), whose whole premise is one project-independent
+// process a client attaches to before naming any project - as opposed to
+// every other CLI command, which is inherently run against a specific
+// project checkout and should keep failing fast via Discover when there
+// isn't one. The returned Workspace's Root is real and writable (so every
+// existing Load side effect - policy defaults, workflow/prreview/
+// contextrequest store creation - behaves exactly as it does for a real
+// project, just scoped to a directory nothing else will ever read), but it
+// is not a real project: category-c tools that need an actual git
+// repository there (worktree/branch/PR operations) fail naturally and
+// clearly, the same way they would against any empty directory, rather than
+// through special-cased nil checks. The caller owns cleaning it up (see
+// App.Close).
+func DiscoverOrEphemeral(startDir string) (*Workspace, error) {
+	ws, err := Discover(startDir)
+	if err == nil {
+		return ws, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	root, mkErr := os.MkdirTemp("", "punakawan-noproject-")
+	if mkErr != nil {
+		return nil, fmt.Errorf("workspace: create ephemeral root: %w", mkErr)
+	}
+	id := filepath.Base(root)
+	return &Workspace{
+		Version:   SupportedVersion,
+		ID:        id,
+		Name:      id,
+		Root:      root,
+		Ephemeral: true,
+	}, nil
 }
 
 // findGitRoot walks upward from dir looking for .git (a directory for a

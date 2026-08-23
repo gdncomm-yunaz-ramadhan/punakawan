@@ -43,10 +43,6 @@ export interface SourceHealth {
   checked_at: string;
 }
 
-export interface WorkspaceDetail extends WorkspaceSummary {
-  health: SourceHealth[];
-}
-
 export interface PanelSessionSummary {
   id: string;
   workspace_id: string;
@@ -210,44 +206,8 @@ export function updatePanelSettings(patch: Partial<PanelSettings>): Promise<Pane
   });
 }
 
-export function listWorkspaces(): Promise<{ items: WorkspaceSummary[] }> {
-  return getJSON<{ items: WorkspaceSummary[] }>("/workspaces");
-}
-
-export function getWorkspace(id: string): Promise<WorkspaceDetail> {
-  return getJSON<WorkspaceDetail>(`/workspaces/${encodeURIComponent(id)}`);
-}
-
 export function getOverview(): Promise<Overview> {
   return getJSON<Overview>("/overview");
-}
-
-export interface SessionFilter {
-  status?: string;
-  workflow?: string;
-  role?: string;
-  limit?: number;
-}
-
-export function listSessions(
-  workspaceId: string,
-  filter: SessionFilter = {},
-): Promise<{ items: PanelSessionSummary[] }> {
-  const params = new URLSearchParams();
-  if (filter.status) params.set("status", filter.status);
-  if (filter.workflow) params.set("workflow", filter.workflow);
-  if (filter.role) params.set("role", filter.role);
-  if (filter.limit) params.set("limit", String(filter.limit));
-  const qs = params.toString();
-  return getJSON<{ items: PanelSessionSummary[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/sessions${qs ? `?${qs}` : ""}`,
-  );
-}
-
-export function getSession(workspaceId: string, sessionId: string): Promise<SessionDetail> {
-  return getJSON<SessionDetail>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`,
-  );
 }
 
 export function listCapsules(workspaceId: string, taskId: string): Promise<{ items: ContextCapsule[] }> {
@@ -345,18 +305,6 @@ function taskListQuery(filter: TaskFilter): string {
   if (filter.limit) params.set("limit", String(filter.limit));
   const qs = params.toString();
   return qs ? `?${qs}` : "";
-}
-
-export function listTasks(workspaceId: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
-  return getJSON<{ items: TaskSummary[] }>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks${taskListQuery(filter)}`);
-}
-
-export function getTask(workspaceId: string, taskId: string): Promise<TaskDetail> {
-  return getJSON<TaskDetail>(`/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`);
-}
-
-export function getTaskGraph(workspaceId: string): Promise<TaskGraph> {
-  return getJSON<TaskGraph>(`/workspaces/${encodeURIComponent(workspaceId)}/task-graph`);
 }
 
 export interface KnowledgeRelation {
@@ -552,32 +500,6 @@ function buildKnowledgeQuery(filter: KnowledgeFilter): string {
   return params.toString();
 }
 
-export async function listKnowledge(
-  workspaceId: string,
-  filter: KnowledgeFilter = {},
-): Promise<{ items: (KnowledgeRecord | SearchResult)[] }> {
-  const qs = buildKnowledgeQuery(filter);
-  return getJSON<{ items: (KnowledgeRecord | SearchResult)[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge${qs ? `?${qs}` : ""}`,
-  );
-}
-
-export function getKnowledge(workspaceId: string, knowledgeId: string): Promise<KnowledgeRecord> {
-  return getJSON<KnowledgeRecord>(`/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}`);
-}
-
-export function getKnowledgeRelations(workspaceId: string, knowledgeId: string): Promise<{ items: KnowledgeRecord[] }> {
-  return getJSON<{ items: KnowledgeRecord[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}/relations`,
-  );
-}
-
-export function getKnowledgeHistory(workspaceId: string, knowledgeId: string): Promise<{ items: KnowledgeEvent[] }> {
-  return getJSON<{ items: KnowledgeEvent[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${encodeURIComponent(knowledgeId)}/history`,
-  );
-}
-
 export interface GlobalSearchResult {
   workspace_id: string;
   result: SearchResult;
@@ -638,37 +560,48 @@ export interface EvidenceTextPreview {
 
 // binaryEvidenceTypes mirrors internal/panel/sources/evidence_source.go's
 // binaryEvidenceTypes: these are served as a raw blob (an <img> can point
-// straight at evidencePreviewUrl), never as the JSON text-preview shape.
+// straight at projectEvidencePreviewUrl), never as the JSON text-preview
+// shape.
 const binaryEvidenceTypes: ReadonlySet<EvidenceRecordType> = new Set(["screenshot", "playwright-trace"]);
 
 export function isBinaryEvidence(type: EvidenceRecordType): boolean {
   return binaryEvidenceTypes.has(type);
 }
 
-export function listEvidence(workspaceId: string, sessionId: string): Promise<{ items: EvidenceRecord[] }> {
+// listProjectEvidence/getProjectEvidence/projectEvidencePreviewUrl are
+// project-scoped, mounted under /projects/{id}/... the same way
+// listProjectSessions/getProjectSession mirror the session reads below -
+// they let any registered project's session evidence load, not only the
+// startup workspace's.
+
+export function listProjectEvidence(id: string, sessionId: string): Promise<{ items: EvidenceRecord[] }> {
   return getJSON<{ items: EvidenceRecord[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}/evidence`,
+    `/projects/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}/evidence`,
   );
 }
 
-export function getEvidence(workspaceId: string, evidenceId: string): Promise<EvidenceRecord> {
-  return getJSON<EvidenceRecord>(`/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}`);
+export function getProjectEvidence(id: string, evidenceId: string): Promise<EvidenceRecord> {
+  return getJSON<EvidenceRecord>(`/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}`);
 }
 
-// evidencePreviewUrl builds the preview URL directly (rather than
-// fetching through getJSON) so callers can hand it straight to an <img
-// src> for binary evidence (screenshots) without round-tripping the
+// projectEvidencePreviewUrl mirrors evidencePreviewUrl: built directly
+// (rather than through getJSON) so callers can hand it straight to an
+// <img src> for binary evidence (screenshots) without round-tripping the
 // bytes through JS.
-export function evidencePreviewUrl(workspaceId: string, evidenceId: string, opts: { offset?: number; limit?: number } = {}): string {
+export function projectEvidencePreviewUrl(
+  id: string,
+  evidenceId: string,
+  opts: { offset?: number; limit?: number } = {},
+): string {
   const params = new URLSearchParams();
   if (opts.offset) params.set("offset", String(opts.offset));
   if (opts.limit) params.set("limit", String(opts.limit));
   const qs = params.toString();
-  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`;
+  return `/api/v1/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`;
 }
 
-export function getEvidenceTextPreview(
-  workspaceId: string,
+export function getProjectEvidenceTextPreview(
+  id: string,
   evidenceId: string,
   opts: { offset?: number; limit?: number } = {},
 ): Promise<EvidenceTextPreview> {
@@ -677,7 +610,7 @@ export function getEvidenceTextPreview(
   if (opts.limit) params.set("limit", String(opts.limit));
   const qs = params.toString();
   return getJSON<EvidenceTextPreview>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`,
+    `/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`,
   );
 }
 
@@ -811,6 +744,21 @@ export async function deleteMetadata(id: string, key: string, baseRevision: numb
   }
 }
 
+// deleteProject removes a project from this panel's workspace registry, so
+// the panel stops listing and serving it. It deletes nothing the project
+// owns: the workspace directory, its .punakawan tree, knowledge database,
+// tasks, evidence, and repositories all stay on disk, and registering the
+// same path again brings it back. Registry rows carry no revision, so there
+// is no base_revision to send. Answers 204; 404 for an unknown id and 409
+// for the primary workspace, which cannot be removed.
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetchWithCsrf(`/api/v1/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
+    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
+  }
+}
+
 // --- Project Roles (role configuration) ----------------------------------
 //
 // A project's four Punakawan roles (Semar/Gareng/Petruk/Bagong) each carry
@@ -927,12 +875,6 @@ export interface WorkflowDefinition {
   inputs?: WorkflowInput[];
   steps: WorkflowStep[];
   allowed_capabilities?: string[];
-  approval?: {
-    required_for?: string[];
-  };
-  output?: {
-    type: string;
-  };
   revision: number;
 }
 
@@ -1118,235 +1060,18 @@ export function getProjectKnowledgeHistory(id: string, knowledgeId: string): Pro
   );
 }
 
-// --- Project Contradictions (plan §22) -----------------------------------
+// --- Project Change Dossiers ---------------------------------------------
 //
-// A contradiction records two or more conflicting claims about the same
-// subject (a metadata key, a requirement, a plan clause, …). It is
-// read-heavy from the panel: list + detail with each claim shown
-// side-by-side, plus two lightweight resolution actions (record a resolved
-// statement, or accept the divergence as intentional). Mutations go through
-// mutateJSON so they carry the session CSRF header.
-
-export type ContradictionSeverity = "informational" | "minor" | "material" | "critical";
-export type ContradictionStatus =
-  | "detected"
-  | "triaged"
-  | "needs_clarification"
-  | "resolution_proposed"
-  | "resolved"
-  | "accepted_divergence"
-  | "superseded";
-
-export interface ContradictionSubject {
-  type: string;
-  key: string;
-}
-
-export interface ContradictionClaim {
-  source: { type: string; ref: string };
-  statement: string;
-  evidence?: string[];
-}
-
-export interface ContradictionResolution {
-  proposed_statement?: string;
-  rationale?: string;
-  requires_human_confirmation?: boolean;
-  resolved_statement?: string;
-}
-
-export interface Contradiction {
-  id: string;
-  title: string;
-  severity: ContradictionSeverity;
-  status: ContradictionStatus;
-  blocking?: boolean;
-  subject: ContradictionSubject;
-  claims: ContradictionClaim[];
-  resolution?: ContradictionResolution;
-  updated_at?: string;
-}
-
-export function listContradictions(id: string): Promise<{ items: Contradiction[] }> {
-  return getJSON<{ items: Contradiction[] }>(`/projects/${encodeURIComponent(id)}/contradictions`);
-}
-
-export function getContradiction(id: string, contradictionId: string): Promise<Contradiction> {
-  return getJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}`,
-  );
-}
-
-export function resolveContradiction(
-  id: string,
-  contradictionId: string,
-  body: { statement: string; by: string },
-): Promise<Contradiction> {
-  return mutateJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/resolve`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
-export function acceptDivergence(
-  id: string,
-  contradictionId: string,
-  body: { by: string },
-): Promise<Contradiction> {
-  return mutateJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/accept-divergence`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
-export function proposeContradictionResolution(
-  id: string,
-  contradictionId: string,
-  body: { proposed_statement: string; rationale: string; requires_human_confirmation: boolean },
-): Promise<Contradiction> {
-  return mutateJSON<Contradiction>(
-    `/projects/${encodeURIComponent(id)}/contradictions/${encodeURIComponent(contradictionId)}/propose-resolution`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
-// --- Project Impact (plan §30) -------------------------------------------
+// A change dossier is the assembled, human-readable case for a change: its
+// objective, requirement coverage, cross-repo impact, plan conformance, and
+// the verified claims backing it. No screen consumes any of this today: the
+// JSON list/detail/finalize wrappers were removed as dead, and the Markdown
+// export below is kept deliberately unwired, as the one piece a future
+// "download the dossier" affordance would need.
 //
-// The impact query walks the project's dependency/coverage graph from a
-// subject node and returns the blast radius as READABLE LISTS (plan §30
-// prefers lists over a graph): affected repositories/tests/deployments,
-// owners, missing coverage, and any related contradictions. `listImpactNodes`
-// backs the subject picker; `refreshImpact` forces the graph to rebuild.
-
-export interface ImpactNode {
-  id: string;
-  type: string;
-  label?: string;
-  repository?: string;
-}
-
-export interface ImpactResult {
-  direct_impact: ImpactNode[];
-  transitive_impact: ImpactNode[];
-  affected_repositories: string[];
-  affected_tests: ImpactNode[];
-  deployment_artifacts: ImpactNode[];
-  owners: ImpactNode[];
-  missing_coverage: ImpactNode[];
-  related_contradictions: string[];
-}
-
-export interface ImpactQueryRequest {
-  subject_id: string;
-  depth: number;
-  include: string[];
-}
-
-export function queryImpact(id: string, body: ImpactQueryRequest): Promise<ImpactResult> {
-  return mutateJSON<ImpactResult>(`/projects/${encodeURIComponent(id)}/impact/query`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export function listImpactNodes(id: string): Promise<{ items: ImpactNode[] }> {
-  return getJSON<{ items: ImpactNode[] }>(`/projects/${encodeURIComponent(id)}/impact/nodes`);
-}
-
-export function refreshImpact(id: string): Promise<{ ok: true }> {
-  return mutateJSON<{ ok: true }>(`/projects/${encodeURIComponent(id)}/impact/refresh`, { method: "POST" });
-}
-
-// --- Project Change Dossiers (plan §38) ----------------------------------
-//
-// A change dossier is the assembled, human-readable case for a change:
-// its objective, requirement coverage, contradiction state, cross-repo
-// impact, plan conformance, and the verified claims backing it. The panel
-// lists dossiers with their summary indicators, shows one in detail, and
-// can finalize it or export the Markdown rendering.
-
-export interface DossierRequirements {
-  covered: number;
-  uncovered: number;
-}
-
-export interface DossierContradictions {
-  resolved: number;
-  unresolved: number;
-}
-
-export interface DossierImpact {
-  repositories?: string[];
-  excluded_repositories?: string[];
-  missing_coverage?: string[];
-}
-
-export interface DossierPlanConformance {
-  implemented: number;
-  partial: number;
-  missing: number;
-}
-
-export interface ChangeDossier {
-  id: string;
-  title: string;
-  status: string;
-  objective: { statement: string };
-  requirements?: DossierRequirements;
-  contradictions?: DossierContradictions;
-  impact?: DossierImpact;
-  plan_conformance?: DossierPlanConformance;
-  claims?: string[];
-  evidence?: string[];
-  blocking?: boolean;
-}
-
-// DossierClaim mirrors protocol/dossierclaim.schema.json. A claim always has a
-// producer role; a verification (by a different role) records whether it was
-// verified or disputed — the independent-check attribution the dossier exists
-// to make visible.
-export interface DossierClaim {
-  id: string;
-  type: string;
-  statement: string;
-  producer: { role: string };
-  status: string;
-  evidence?: string[];
-  verification?: {
-    role: string;
-    result: "verified" | "disputed";
-    note?: string;
-    at?: string;
-  };
-}
-
-// DossierDetail is the GET-one dossier response: the dossier summary plus its
-// structured claims and evidence ids (internal/panel/api/dossiers_handler.go
-// DossierGetHandler).
-export interface DossierDetail {
-  dossier: ChangeDossier;
-  claims: DossierClaim[];
-  evidence: string[];
-}
-
-export function listDossiers(id: string): Promise<{ items: ChangeDossier[] }> {
-  return getJSON<{ items: ChangeDossier[] }>(`/projects/${encodeURIComponent(id)}/dossiers`);
-}
-
-export function getDossier(id: string, dossierId: string): Promise<DossierDetail> {
-  return getJSON<DossierDetail>(`/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}`);
-}
-
-export function finalizeDossier(id: string, dossierId: string): Promise<ChangeDossier> {
-  return mutateJSON<ChangeDossier>(
-    `/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}/finalize`,
-    { method: "POST" },
-  );
-}
-
-// The Markdown export is served as text, not JSON, so it is fetched
-// directly rather than through getJSON. Callers hand the string to a
-// download/preview; a non-2xx still surfaces as an ApiError.
+// The export is served as text, not JSON, so it is fetched directly rather
+// than through getJSON. Callers hand the string to a download/preview; a
+// non-2xx still surfaces as an ApiError.
 export async function exportDossierMarkdown(id: string, dossierId: string): Promise<string> {
   const res = await fetch(
     `/api/v1/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}/export.md`,
@@ -1357,56 +1082,6 @@ export async function exportDossierMarkdown(id: string, dossierId: string): Prom
     throw new ApiError(res.status, body.error ?? res.statusText);
   }
   return res.text();
-}
-
-// --- Project Handoffs (handoff capsules) ---------------------------------
-//
-// A handoff capsule is a resumable snapshot of an in-flight run: its
-// objective, current phase/task, who created it, and the dossier it hangs
-// off. `validateHandoff` re-checks it against current state and answers
-// whether it is still resumable (and if not, what changed / must be
-// refreshed); `supersedeHandoff` retires it.
-
-export interface HandoffCapsule {
-  id: string;
-  run_id: string;
-  current_phase: string;
-  objective: { statement: string };
-  current_task?: { id: string; next_action: string };
-  created_by?: { role: string; agent_client: string };
-  superseded?: boolean;
-  created_at?: string;
-  dossier?: { id: string; status: string };
-}
-
-export type HandoffValidationStatus = "resumable" | "refresh_required" | "blocked" | "superseded" | "invalid";
-
-export interface HandoffValidation {
-  status: HandoffValidationStatus;
-  changes_since_handoff?: string[];
-  required_refresh?: string[];
-}
-
-export function listHandoffs(id: string): Promise<{ items: HandoffCapsule[] }> {
-  return getJSON<{ items: HandoffCapsule[] }>(`/projects/${encodeURIComponent(id)}/handoffs`);
-}
-
-export function getHandoff(id: string, handoffId: string): Promise<HandoffCapsule> {
-  return getJSON<HandoffCapsule>(`/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}`);
-}
-
-export function validateHandoff(id: string, handoffId: string): Promise<HandoffValidation> {
-  return mutateJSON<HandoffValidation>(
-    `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}/validate`,
-    { method: "POST" },
-  );
-}
-
-export function supersedeHandoff(id: string, handoffId: string): Promise<HandoffCapsule> {
-  return mutateJSON<HandoffCapsule>(
-    `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(handoffId)}/supersede`,
-    { method: "POST" },
-  );
 }
 
 // --- Context Improvements (agent-context plan §8) ------------------------
@@ -1475,4 +1150,214 @@ export function acceptContextImprovement(projectId: string, reviewId: string, pr
 
 export function rejectContextImprovement(projectId: string, reviewId: string, proposalAttempt: number): Promise<void> {
   return resolveContextImprovement(projectId, reviewId, proposalAttempt, "reject");
+}
+
+// --- Deliveries (multi-project orchestration) ----------------------------
+//
+// A DeliveryOrchestration coordinates one lane per parent task across
+// however many projects it touches. DeliveryView (internal/delivery
+// /deliveryview.go) is the single read model every delivery endpoint
+// returns; its Projects/Lanes/Blockers are reduced summaries derived from
+// protocol.DeliveryLane, not that full struct.
+
+export type DeliveryOrchestrationStatus = "pending" | "active" | "cancelled" | "completed";
+
+export interface DeliveryOrchestration {
+  id: string;
+  // Optional because orchestrations stored before titles existed carry none.
+  // A delivery's id is an opaque hash, so the UI must always be able to
+  // derive a readable label instead of depending on this being set.
+  title?: string;
+  revision: number;
+  status: DeliveryOrchestrationStatus;
+  unresolved_inputs: unknown[];
+  created_at: string;
+  updated_at: string;
+  workflow_definition_id?: string;
+}
+
+export type DeliveryLaneStatus = "accepted" | "blocked" | "failed" | "leased" | "review" | "runnable" | "running" | "waiting";
+
+export interface DeliveryProjectSummary {
+  project_id: string;
+  // Distinguishes the two ways a project shows up here. True means the
+  // delivery explicitly attached it, so it is listed even with no lanes at
+  // all. False means it only appears because some lane names it - including a
+  // project detached after its lanes finished, whose completed work the
+  // delivery still reports. Always sent, so the UI never has to guess.
+  attached: boolean;
+  // Always sent, empty rather than absent, for a project with no lanes.
+  lane_ids: string[];
+  counts_by_status: Partial<Record<DeliveryLaneStatus, number>>;
+}
+
+export interface DeliveryEvidenceRef {
+  id: string;
+  kind: string;
+  media_type: string;
+  byte_size: number;
+  content_hash: string;
+}
+
+export interface DeliveryLaneSummary {
+  lane_id: string;
+  project_id: string;
+  parent_task_id?: string;
+  status: DeliveryLaneStatus;
+  blocked_by?: string[];
+  pr_url?: string;
+  pr_number?: number;
+  pr_provider?: string;
+  worker?: string;
+  worktree_path?: string;
+  base_sha?: string;
+  base_remote?: string;
+  semar_record_id?: string;
+  gareng_record_id?: string;
+  petruk_record_id?: string;
+  bagong_record_id?: string;
+  attempt?: number;
+  repair_cycle_count?: number;
+  escalated_at?: string;
+  // The session that opened this lane. Deliberately a different question from
+  // `worker`, which is whoever holds the lane's lease right now - the two are
+  // never interchangeable and must not be shown as one thing.
+  session_id?: string;
+  evidence?: DeliveryEvidenceRef[];
+}
+
+export interface DeliveryBlockerSummary {
+  lane_id: string;
+  parent_task_id?: string;
+  blocked_by: string[];
+}
+
+export type ApprovalManifestStatus = "pending" | "approved" | "rejected";
+
+export interface ApprovalManifestCheck {
+  name: string;
+  status: string;
+  classification: string;
+  detail?: string;
+}
+
+export interface ApprovalManifestWorklogEntry {
+  bucket: string;
+  hours: number;
+  subtask_key: string;
+  subtask_name?: string;
+}
+
+export interface ApprovalManifest {
+  id: string;
+  orchestration_id: string;
+  project_id: string;
+  parent_task_ids: string[];
+  planned_base_ref: string;
+  planned_branches?: string[];
+  checks: ApprovalManifestCheck[];
+  expects_commits?: boolean;
+  expects_jira_writes?: boolean;
+  expects_prs?: boolean;
+  expects_pushes?: boolean;
+  proposed_worklog?: ApprovalManifestWorklogEntry[];
+  proposed_worklog_total_hours?: number;
+  proposed_worklog_unmapped_hours?: number;
+  status: ApprovalManifestStatus;
+  approved_by?: string;
+  created_at: string;
+  decided_at?: string;
+  revision: number;
+}
+
+export interface DeliveryView {
+  orchestration: DeliveryOrchestration;
+  // Never empty: whatever title the delivery was started with, or one derived
+  // from its own requirement references when it was started without one. The
+  // UI can show it directly instead of choosing a fallback of its own.
+  title: string;
+  // None of these three is ever derived, so an absent one honestly means
+  // nobody recorded it: no prose was written, no final plan was submitted, no
+  // session drove the delivery.
+  description?: string;
+  plan_record_id?: string;
+  session_id?: string;
+  projects: DeliveryProjectSummary[];
+  lanes: DeliveryLaneSummary[];
+  blockers: DeliveryBlockerSummary[];
+  pending_approvals: ApprovalManifest[];
+  pending_questions: string[];
+  next_action: string;
+  latest_seq: number;
+  newly_runnable_lane_ids: string[];
+}
+
+export function listDeliveries(): Promise<{ items: DeliveryOrchestration[] }> {
+  return getJSON<{ items: DeliveryOrchestration[] }>("/deliveries");
+}
+
+export function getDeliveryView(orchestrationId: string, sinceSeq?: number): Promise<DeliveryView> {
+  const qs = sinceSeq ? `?since_seq=${encodeURIComponent(String(sinceSeq))}` : "";
+  return getJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}${qs}`);
+}
+
+// deliveryEvidenceUrl builds a lane evidence artifact's raw-bytes URL
+// directly (mirroring evidencePreviewUrl above), so callers can hand it
+// straight to a plain <a href> link without round-tripping the bytes
+// through JS.
+export function deliveryEvidenceUrl(orchestrationId: string, evidenceId: string): string {
+  return `/api/v1/deliveries/${encodeURIComponent(orchestrationId)}/evidence/${encodeURIComponent(evidenceId)}`;
+}
+
+// answerDeliveryQuestion resolves one entry from DeliveryView.pending_questions
+// - reference is that entry's exact string. Set provider (+ external_id/url/
+// title/summary) to resolve it as a requirement source, or parent_task_id +
+// project_id to route it directly to a task instead (deliveries_handler.go's
+// answerDeliveryQuestionBody documents both shapes).
+export interface AnswerDeliveryQuestionRequest {
+  reference: string;
+  expected_revision?: number;
+  provider?: string;
+  external_id?: string;
+  url?: string;
+  title?: string;
+  summary?: string;
+  parent_task_id?: string;
+  project_id?: string;
+}
+
+export function answerDeliveryQuestion(orchestrationId: string, body: AnswerDeliveryQuestionRequest): Promise<DeliveryView> {
+  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/answer-question`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// approveProjectDelivery resolves one project's ApprovalManifest
+// independently of any other project's - reject:false approves,
+// reject:true rejects. There is no project_id field: manifest_id alone
+// identifies which project's approval this decides.
+export interface ApproveProjectDeliveryRequest {
+  manifest_id: string;
+  approved_by: string;
+  reject?: boolean;
+}
+
+export function approveProjectDelivery(orchestrationId: string, body: ApproveProjectDeliveryRequest): Promise<DeliveryView> {
+  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/approve`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export interface CancelDeliveryRequest {
+  expected_revision: number;
+  reason?: string;
+}
+
+export function cancelDelivery(orchestrationId: string, body: CancelDeliveryRequest): Promise<DeliveryView> {
+  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }

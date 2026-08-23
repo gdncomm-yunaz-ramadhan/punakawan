@@ -43,6 +43,15 @@ export const FIXTURE_EXISTING_SUBTASKS = [
   { key: 'PROJ-203', fields: { summary: 'Fix flaky CI job', status: { name: 'Done' }, updated: '2026-07-10T00:00:00.000+0000' } },
 ];
 
+export const FIXTURE_BOARDS = [
+  { id: 42, name: 'PROJ board', type: 'scrum' },
+];
+
+export const FIXTURE_SPRINTS = [
+  { id: 1, name: 'Sprint 1', state: 'closed', originBoardId: 42, startDate: '2026-06-01T00:00:00.000Z', endDate: '2026-06-15T00:00:00.000Z', goal: 'Ship refunds' },
+  { id: 2, name: 'Sprint 2', state: 'active', originBoardId: 42, startDate: '2026-06-15T00:00:00.000Z', endDate: '2026-06-29T00:00:00.000Z' },
+];
+
 export const FIXTURE_ISSUE_TYPE_FIELD_META = {
   fields: {
     summary: { required: true, name: 'Summary', key: 'summary' },
@@ -236,6 +245,22 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
 
     if (path === '/rest/api/3/issueLink' && method === 'POST') {
       return new Response(null, { status: 201 });
+    }
+
+    if (path === '/rest/agile/1.0/board' && method === 'GET') {
+      const projectKeyOrId = url.searchParams.get('projectKeyOrId');
+      return json({ values: projectKeyOrId && projectKeyOrId !== 'PROJ' ? [] : FIXTURE_BOARDS, isLast: true });
+    }
+
+    const sprintMatch = path.match(/^\/rest\/agile\/1\.0\/board\/([^/]+)\/sprint$/);
+    if (sprintMatch && method === 'GET') {
+      const boardId = decodeURIComponent(sprintMatch[1] ?? '');
+      if (boardId !== String(FIXTURE_BOARDS[0]?.id)) {
+        return json({ errorMessages: [`The board does not support sprints: ${boardId}`] }, 400);
+      }
+      const state = url.searchParams.get('state');
+      const values = state ? FIXTURE_SPRINTS.filter((sprint) => sprint.state === state) : FIXTURE_SPRINTS;
+      return json({ values, isLast: true });
     }
 
     if (path === `/wiki/rest/api/content/${FIXTURE_CONFLUENCE_PAGE.id}` && method === 'GET') {

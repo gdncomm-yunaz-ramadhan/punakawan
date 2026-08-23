@@ -5,11 +5,15 @@
 // Motivation: the panel's non-primary workspace reads (WorkspaceSource.Get
 // / summaryFor, GlobalSearchSource.Search) previously did a fresh
 // app.Load(path) + Close() on every request. app.Load discovers the
-// workspace and opens small JSONL stores; a shared, reused App is safe for
-// concurrent reads because the heavy resources (the Dolt-backed knowledge
-// store and the BM25 search index) are lazily memoized on the App behind
-// mutexes (App.OpenKnowledge / App.OpenSearchIndex). Reloading per request
-// throws that memoization away and repays the discovery + store-open cost
+// workspace and wires up its per-project state (policy, git inspector,
+// worktree manager, and the JSONL-backed workflow/PR-review/context-request
+// stores); knowledge, tasks, approvals, learning, and the sync queue are
+// thin scopes over one shared SQLite storage kernel rather than per-project
+// stores, so they do not need this pooling. What genuinely benefits from
+// staying warm across requests is workspace discovery itself and, above
+// all, the per-project SQLite FTS5 search index, which is lazily memoized
+// on the App behind a mutex (App.OpenSearchIndex). Reloading per request
+// throws that memoization (and the discovery work) away and repays the cost
 // every time. ProjectRuntimeManager keeps a bounded set of these Apps warm
 // and hands them out under reference counting so a busy project is loaded
 // once and reused.
@@ -240,6 +244,24 @@ func (m *ProjectRuntimeManager) Acquire(ctx context.Context, projectID, path str
 	return rt, m.releaseFunc(projectID), nil
 }
 
+// ActiveNonPrimaryIDs returns the project ids currently pooled (loaded),
+// excluding the primary. It never Acquires or loads anything - it is a
+// cheap snapshot for callers that want to piggyback on whichever projects
+// are already warm (e.g. the tier-1 reconciler polling non-primary
+// approvals) without forcing a cold project into the pool or evicting
+// another one just to poll it.
+func (m *ProjectRuntimeManager) ActiveNonPrimaryIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ids := make([]string, 0, len(m.pool))
+	for id, rt := range m.pool {
+		if !rt.primary {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // MaxActive returns the current pool cap (including the primary).
 func (m *ProjectRuntimeManager) MaxActive() int {
 	m.mu.Lock()
@@ -249,8 +271,7 @@ func (m *ProjectRuntimeManager) MaxActive() int {
 
 // SetMaxActive changes the pool cap at runtime (configurable via the system
 // panel). Values < 1 are ignored. Lowering the cap immediately evicts the LRU
-// idle, non-primary runtimes now over the new cap — each closed App stops its
-// project's dolt sql-server — so shrinking the cap frees resources at once
+// idle, non-primary runtimes now over the new cap, freeing resources at once
 // rather than only on the next admission. Runtimes still in use are never
 // evicted; the pool may stay temporarily over cap until they are released.
 func (m *ProjectRuntimeManager) SetMaxActive(n int) {

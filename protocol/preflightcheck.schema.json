@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/preflightcheck.schema.json",
+  "title": "PreflightCheck",
+  "description": "One capability check result computed for a ProjectDeliveryProfile before code mutation is allowed. status=skipped means the check was not actually evaluated (e.g. no adapter yet implements it) - it is never reported as passed without being run.",
+  "type": "object",
+  "required": ["name", "status", "classification"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string" },
+    "status": { "type": "string", "enum": ["pass", "fail", "skipped"] },
+    "classification": { "type": "string", "enum": ["required", "optional", "delegated-to-ci"] },
+    "detail": { "type": "string" }
+  }
+}

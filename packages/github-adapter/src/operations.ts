@@ -1,10 +1,12 @@
-import type { GitHubRestClient } from './restClient.js';
+import { GitHubRestError, type GitHubRestClient } from './restClient.js';
 import {
+  INACCESSIBLE_REPOSITORY,
   normalizeCheckRun,
   normalizeGraphQLReviewComment,
   normalizeIssueComment,
   normalizePullRequest,
   normalizePullRequestFile,
+  normalizeRepositoryAccess,
   normalizeReviewComment,
   type NormalizedReviewThread,
 } from './normalize.js';
@@ -50,6 +52,31 @@ export async function getPullRequestFiles(client: GitHubRestClient, params: GetP
     query: { per_page: 100 },
   });
   return { normalized: asArray(raw.data).map((entry) => normalizePullRequestFile(asRecord(entry))) };
+}
+
+export type GetRepositoryParams = RepoRef;
+
+/**
+ * Checks whether the configured credential can even see repository, and if
+ * so what access it has - used by the delivery preflight's
+ * private-repository-identity and pr-permissions checks. A 404 is
+ * normalized to an inaccessible result rather than thrown: a private repo
+ * the caller has no access to also 404s (GitHub never distinguishes "does
+ * not exist" from "exists but you can't see it" for a repo lookup), so
+ * this is diagnostic information for the caller to report, not a failed
+ * call.
+ */
+export async function getRepository(client: GitHubRestClient, params: GetRepositoryParams) {
+  const { owner, repo } = splitRepo(params.repository);
+  try {
+    const raw = await client.request<Record<string, unknown>>(`/repos/${owner}/${repo}`);
+    return { normalized: normalizeRepositoryAccess(raw.data) };
+  } catch (error) {
+    if (error instanceof GitHubRestError && error.status === 404) {
+      return { normalized: INACCESSIBLE_REPOSITORY };
+    }
+    throw error;
+  }
 }
 
 export interface GetPullRequestChecksParams extends RepoRef {

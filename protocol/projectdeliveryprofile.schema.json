@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/projectdeliveryprofile.schema.json",
+  "title": "ProjectDeliveryProfile",
+  "description": "Versioned, per-project delivery configuration: local path, canonical remote, branch policy, build/test commands, required services, and CI/worker policy. Explicit repository configuration takes precedence over global detected or learned defaults; this record only stores the merged, effective values a preflight run and approval manifest are computed against.",
+  "type": "object",
+  "required": ["id", "project_id", "base_branch", "revision"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "project_id": { "type": "string" },
+    "local_path": { "type": "string", "description": "Absolute path to an existing local checkout, if one is already known; absent when only the remote is known and a worktree has not been created yet." },
+    "canonical_remote": { "type": "string", "description": "Remote name (e.g. \"origin\") preflight and worktree creation fetch from." },
+    "base_branch": { "type": "string" },
+    "provider": { "type": "string", "enum": ["github", "gitlab", "bitbucket", "generic"] },
+    "build_command": { "type": "string" },
+    "test_command": { "type": "string" },
+    "required_executables": { "type": "array", "items": { "type": "string" } },
+    "required_services": { "type": "array", "items": { "type": "string" }, "description": "Names of external services (referenced by capability status only, per this task's boundary - never a credential value)." },
+    "quality_rules": { "type": "array", "items": { "type": "string" } },
+    "ci_adapter": { "type": "string" },
+    "verification_gates": { "type": "array", "items": { "type": "string" } },
+    "max_concurrent_workers": { "type": "integer", "minimum": 1 },
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every update." }
+  }
+}

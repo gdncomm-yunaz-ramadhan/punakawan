@@ -13,13 +13,17 @@ import (
 func TestListJiraSyncQueueHandlerFiltersByRunAndDefaultsToPending(t *testing.T) {
 	a := newTestApp(t)
 
-	if _, err := a.SyncQueue.Enqueue(syncqueue.Entry{Id: "sync-1", RunId: "run-1", Adapter: "atlassian", Op: "atlassian.addWorklog", Error: "timeout"}); err != nil {
+	queue, err := a.OpenSyncQueue()
+	if err != nil {
+		t.Fatalf("OpenSyncQueue: %v", err)
+	}
+	if _, err := queue.Enqueue(syncqueue.Entry{Id: "sync-1", RunId: "run-1", Adapter: "atlassian", Op: "atlassian.addWorklog", Error: "timeout"}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if _, err := a.SyncQueue.Enqueue(syncqueue.Entry{Id: "sync-2", RunId: "run-2", Adapter: "atlassian", Op: "atlassian.addWorklog", Error: "timeout"}); err != nil {
+	if _, err := queue.Enqueue(syncqueue.Entry{Id: "sync-2", RunId: "run-2", Adapter: "atlassian", Op: "atlassian.addWorklog", Error: "timeout"}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if err := a.SyncQueue.Resolve("sync-2", syncqueue.StatusResolved); err != nil {
+	if err := queue.Resolve("sync-2", syncqueue.StatusResolved); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 
@@ -49,10 +53,14 @@ func TestRetryJiraSyncEntryHandlerRejectsUnknownEntry(t *testing.T) {
 
 func TestRetryJiraSyncEntryHandlerRejectsAlreadyResolvedEntry(t *testing.T) {
 	a := newTestApp(t)
-	if _, err := a.SyncQueue.Enqueue(syncqueue.Entry{Id: "sync-1", RunId: "run-1", Adapter: "atlassian", Op: "atlassian.addWorklog", Error: "timeout"}); err != nil {
+	queue, err := a.OpenSyncQueue()
+	if err != nil {
+		t.Fatalf("OpenSyncQueue: %v", err)
+	}
+	if _, err := queue.Enqueue(syncqueue.Entry{Id: "sync-1", RunId: "run-1", Adapter: "atlassian", Op: "atlassian.addWorklog", Error: "timeout"}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if err := a.SyncQueue.Resolve("sync-1", syncqueue.StatusResolved); err != nil {
+	if err := queue.Resolve("sync-1", syncqueue.StatusResolved); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 
@@ -69,11 +77,15 @@ func TestRetryJiraSyncEntryHandlerResolvesOnSuccess(t *testing.T) {
 	a := newTestApp(t)
 	registry := adapters.NewRegistry(map[string]adapters.AdapterSpec{
 		"prototype": {Command: "node", Args: []string{prototypeAdapterTestPath}},
-	}, a.Approvals)
-	registry.SetSyncQueue(a.SyncQueue)
+	}, a.OpenApprovals)
+	registry.SetSyncQueue(a.OpenSyncQueue)
 	a.AdapterRegistry = registry
 
-	if _, err := a.SyncQueue.Enqueue(syncqueue.Entry{
+	queue, err := a.OpenSyncQueue()
+	if err != nil {
+		t.Fatalf("OpenSyncQueue: %v", err)
+	}
+	if _, err := queue.Enqueue(syncqueue.Entry{
 		Id: "sync-1", RunId: "run-1", Adapter: "prototype", Op: "sleep",
 		Params: map[string]any{"ms": 0}, Error: "simulated prior failure",
 	}); err != nil {
@@ -90,7 +102,7 @@ func TestRetryJiraSyncEntryHandlerResolvesOnSuccess(t *testing.T) {
 		t.Fatal("Resolved = false, want true")
 	}
 
-	current, err := a.SyncQueue.Current()
+	current, err := queue.Current()
 	if err != nil {
 		t.Fatalf("Current: %v", err)
 	}

@@ -1,0 +1,143 @@
+version: punakawan.workflow/v1
+id: feature-delivery
+name: Feature Delivery
+description: >-
+  Deliver one Jira-sourced feature end to end in a single invocation instead of
+  hand-chaining a dozen separate calls: ingest the requirement so it exists as a
+  knowledge record, decompose it into wired tasks, claim one, build its bounded
+  context, record the agreed plan, open an isolated worktree, write the change,
+  prove it with tests and a policy-checked diff, verify impact coverage, commit,
+  push, open the pull request, report progress back to Jira, tear the worktree
+  down, and turn what was learned into a reviewed proposal. Requires the
+  project's test command to be known up front, and the Jira issue key as input.
+enabled: true
+revision: 1
+selectors:
+  - capability: feature
+    intent: deliver
+required_metadata:
+  - test.command
+inputs:
+  - name: jira_issue_key
+    type: string
+    required: true
+allowed_capabilities:
+  - ingest_jira_requirement
+  - submit_task_graph
+  - claim_ready_task
+  - build_task_context
+  - submit_final_plan
+  - create_worktree
+  - write_files
+  - run_tests
+  - check_diff
+  - verify_impact_coverage
+  - commit_task
+  - push_task_branch
+  - create_pr
+  - update_jira_task_progress
+  - finish_task_execution
+  - propose_project_learning
+steps:
+  # The requirement must exist as a knowledge record before anything downstream
+  # can reference it: both the decomposition and the per-task context hard-require
+  # a requirement id that has already been ingested.
+  - id: requirement
+    capability: ingest_jira_requirement
+    intent: ingest
+  - id: decompose
+    capability: submit_task_graph
+    intent: decompose
+    input_from:
+      - requirement
+  - id: claim
+    capability: claim_ready_task
+    intent: claim
+    input_from:
+      - decompose
+  - id: context
+    capability: build_task_context
+    intent: assemble
+    input_from:
+      - requirement
+      - claim
+  # The plan is persisted as durable knowledge before any file is written, so the
+  # implementation has something reviewable to be measured against afterwards.
+  - id: plan
+    capability: submit_final_plan
+    intent: plan
+    input_from:
+      - context
+  # Every write, diff, commit and push below is confined to this worktree, so it
+  # has to exist before the change is made and must outlive the push.
+  - id: worktree
+    capability: create_worktree
+    intent: isolate
+    input_from:
+      - claim
+  - id: implement
+    capability: write_files
+    intent: change
+    input_from:
+      - plan
+      - worktree
+  - id: tests
+    capability: run_tests
+    intent: verify
+    input_from:
+      - implement
+  - id: diff
+    capability: check_diff
+    intent: verify
+    input_from:
+      - implement
+  # Independent verification: walk the impact graph out from what changed and
+  # confirm nothing reachable is left untested or in dispute. Runs on the
+  # recorded test and diff evidence rather than on a summary of the work.
+  - id: verify
+    capability: verify_impact_coverage
+    intent: verify
+    input_from:
+      - tests
+      - diff
+  # The commit is refused unless the diff check has passed, so it waits on both
+  # that evidence and the verification built from it.
+  - id: commit
+    capability: commit_task
+    intent: commit
+    input_from:
+      - diff
+      - verify
+  - id: push
+    capability: push_task_branch
+    intent: publish
+    input_from:
+      - commit
+  # The pull request body is written from the test evidence as well as the pushed
+  # branch, so the verification section reflects what actually ran.
+  - id: pull_request
+    capability: create_pr
+    intent: publish
+    input_from:
+      - push
+      - tests
+  - id: jira
+    capability: update_jira_task_progress
+    intent: report
+    input_from:
+      - pull_request
+  # Tearing the worktree down removes it, so this deliberately trails the push
+  # and the pull request rather than racing them.
+  - id: finish
+    capability: finish_task_execution
+    intent: close
+    input_from:
+      - pull_request
+  # Whatever this delivery taught becomes a reviewed proposal, never a direct
+  # canonical write; a human accepts or rejects it afterwards.
+  - id: learning
+    capability: propose_project_learning
+    intent: propose
+    input_from:
+      - jira
+      - finish

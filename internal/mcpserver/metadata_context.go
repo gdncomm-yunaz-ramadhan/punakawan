@@ -22,7 +22,7 @@ import (
 type MetadataContextEntry struct {
 	Key         string `json:"key"`
 	Description string `json:"description,omitempty"`
-	Value       any    `json:"value,omitempty"`
+	Value       any    `json:"value,omitempty" jsonschema:"the metadata value, of whatever type it was stored as"`
 	Rendered    string `json:"rendered"`
 }
 
@@ -72,28 +72,6 @@ func toDossierMetadata(entries []MetadataContextEntry) []protocol.KnowledgeRecor
 	out := make([]protocol.KnowledgeRecordContextDossierProjectMetadataElem, len(entries))
 	for i, e := range entries {
 		out[i] = protocol.KnowledgeRecordContextDossierProjectMetadataElem{
-			Key:      e.Key,
-			Value:    e.Value,
-			Rendered: e.Rendered,
-		}
-		if e.Description != "" {
-			d := e.Description
-			out[i].Description = &d
-		}
-	}
-	return out
-}
-
-// toCapsuleMetadata is toDossierMetadata's sibling for the ContextCapsule
-// codegen type; the two element structs are identical in shape but distinct
-// Go types, so each needs its own converter.
-func toCapsuleMetadata(entries []MetadataContextEntry) []protocol.ContextCapsuleProjectMetadataElem {
-	if len(entries) == 0 {
-		return nil
-	}
-	out := make([]protocol.ContextCapsuleProjectMetadataElem, len(entries))
-	for i, e := range entries {
-		out[i] = protocol.ContextCapsuleProjectMetadataElem{
 			Key:      e.Key,
 			Value:    e.Value,
 			Rendered: e.Rendered,

@@ -1,36 +1,6 @@
 package mcpserver
 
-import (
-	"context"
-	"strings"
-	"testing"
-)
-
-// TestRequestCapsulePopulatesRoleGuidance verifies ROLE-011: a capsule built
-// for a role carries the effective role-configuration guidance block, injected
-// post-digest so it never changes capsule identity.
-func TestRequestCapsulePopulatesRoleGuidance(t *testing.T) {
-	a := newTestApp(t)
-
-	_, c, err := requestCapsuleHandler(a)(context.Background(), nil, RequestCapsuleInput{
-		TaskId:    "task-1",
-		Role:      "gareng",
-		Objective: "review the requirement",
-	})
-	if err != nil {
-		t.Fatalf("request_capsule: %v", err)
-	}
-
-	if c.RoleGuidance == nil {
-		t.Fatal("expected capsule.RoleGuidance to be populated for role gareng")
-	}
-	if !strings.Contains(*c.RoleGuidance, "Role configuration (gareng)") {
-		t.Errorf("role guidance = %q, want it to name the gareng role configuration", *c.RoleGuidance)
-	}
-	if !strings.Contains(*c.RoleGuidance, "Mode:") {
-		t.Errorf("role guidance = %q, want it to render the mode line", *c.RoleGuidance)
-	}
-}
+import "testing"
 
 // TestCreateWorkflowRunStampsRoleConfig verifies ROLE-012: a newly created run
 // carries the role-config revision and an effective-role settings snapshot for

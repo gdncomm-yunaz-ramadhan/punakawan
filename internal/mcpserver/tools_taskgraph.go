@@ -101,7 +101,11 @@ func submitTaskGraphHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			}
 		}
 
-		results, err := tasks.GenerateGraph(ctx, a.Supervisor, a.Workspace.Root, store, items)
+		db, err := a.OpenStorage(ctx)
+		if err != nil {
+			return nil, SubmitTaskGraphOutput{}, fmt.Errorf("mcpserver: open storage kernel: %w", err)
+		}
+		results, err := tasks.GenerateGraph(ctx, a.Supervisor, a.Workspace.Root, store, db, a.Workspace.ID, items)
 		if err != nil {
 			return nil, SubmitTaskGraphOutput{}, fmt.Errorf("mcpserver: generate task graph: %w", err)
 		}

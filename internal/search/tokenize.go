@@ -1,7 +1,8 @@
 // Package search implements the local, embeddings-free knowledge search
 // pipeline from punakawan-architecture-enhancement-plan.md §11: a technical
-// tokenizer (§11.6), exact-identifier recognition (§11.3), and a Bleve-backed
-// BM25F index (§11.4/§11.11) over internal/knowledge.Store's records.
+// tokenizer (§11.6), exact-identifier recognition (§11.3), and a SQLite
+// FTS5-backed BM25F index (§11.4/§11.11) over internal/knowledge.Store's
+// records.
 package search
 
 import "regexp"

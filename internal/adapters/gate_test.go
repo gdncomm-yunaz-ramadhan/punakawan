@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/approvals"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -65,10 +67,12 @@ func testManifest() protocol.AdapterManifest {
 
 func newTestGate(t *testing.T) (*Gate, *fakeCaller) {
 	t.Helper()
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	fc := &fakeCaller{}
 	return NewGate("atlassian", testManifest(), fc, store), fc
 }
@@ -194,10 +198,12 @@ func TestGateApprovalCoversEveryWriteInRun(t *testing.T) {
 }
 
 func TestGateApprovalCoversDifferentAdaptersInSameRun(t *testing.T) {
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	firstCaller := &fakeCaller{}
 	secondCaller := &fakeCaller{}
 	first := NewGate("atlassian", testManifest(), firstCaller, store)
@@ -257,18 +263,17 @@ func TestGateRunScopeIsTheDefaultAndDoesNotShareAcrossRunIDs(t *testing.T) {
 }
 
 func TestCallEnqueuesFailureWhenSyncQueueIsSet(t *testing.T) {
-	store, err := approvals.Open(t.TempDir())
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
+	store := approvals.New(db, "test-project")
 	fc := &fakeCaller{failOps: map[string]bool{"atlassian.getJiraIssue": true}}
 	g := NewGate("atlassian", testManifest(), fc, store)
 
-	queue, err := syncqueue.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("syncqueue.Open: %v", err)
-	}
-	g.SetSyncQueue(queue)
+	queue := syncqueue.New(db, "test-project")
+	g.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
 
 	if _, err := g.Call(context.Background(), "run-1", "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
 		t.Fatal("expected the simulated adapter failure to surface")

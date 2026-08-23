@@ -10,6 +10,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/deliverysummary"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -73,19 +74,20 @@ func createPrHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, Cre
 			return nil, CreatePrOutput{}, fmt.Errorf("mcpserver: resolve repository %q: %w", in.RepoId, err)
 		}
 
-		out, err := createPr(ctx, req, a.Inspector, a.AdapterRegistry, repoPath, in)
+		summary := buildDeliverySummary(ctx, a, in.RunId, repoPath, in.BaseBranch, in.HeadBranch, "", "")
+		out, err := createPr(ctx, req, a.Inspector, a.AdapterRegistry, repoPath, summary, in)
 		return nil, out, err
 	}
 }
 
 // createPr is createPrHandler's core logic: detect the repository's real
 // git capabilities, then delegate to createPrFromCapabilities.
-func createPr(ctx context.Context, req *mcp.CallToolRequest, inspector *gitops.Inspector, registry adapterGateProvider, repoPath string, in CreatePrInput) (CreatePrOutput, error) {
+func createPr(ctx context.Context, req *mcp.CallToolRequest, inspector *gitops.Inspector, registry adapterGateProvider, repoPath string, summary deliverysummary.Summary, in CreatePrInput) (CreatePrOutput, error) {
 	caps, err := inspector.DetectCapabilities(ctx, repoPath, "origin")
 	if err != nil {
 		return CreatePrOutput{}, fmt.Errorf("mcpserver: detect git capabilities: %w", err)
 	}
-	return createPrFromCapabilities(ctx, req, caps, registry, in)
+	return createPrFromCapabilities(ctx, req, caps, registry, summary, in)
 }
 
 // createPrFromCapabilities is createPr's logic once caps is already known,
@@ -94,7 +96,7 @@ func createPr(ctx context.Context, req *mcp.CallToolRequest, inspector *gitops.I
 // built from a fake adapter caller (mirroring
 // internal/mcpserver/tools_jiraprogress.go's updateJiraTaskProgress split)
 // instead of a real spawned GitHub adapter process.
-func createPrFromCapabilities(ctx context.Context, req *mcp.CallToolRequest, caps protocol.GitCapabilities, registry adapterGateProvider, in CreatePrInput) (CreatePrOutput, error) {
+func createPrFromCapabilities(ctx context.Context, req *mcp.CallToolRequest, caps protocol.GitCapabilities, registry adapterGateProvider, summary deliverysummary.Summary, in CreatePrInput) (CreatePrOutput, error) {
 	if reason := unavailableReason(caps); reason != "" {
 		return CreatePrOutput{Created: false, Reason: reason}, nil
 	}
@@ -126,7 +128,7 @@ func createPrFromCapabilities(ctx context.Context, req *mcp.CallToolRequest, cap
 		"baseBranch": in.BaseBranch,
 		"headBranch": in.HeadBranch,
 		"title":      title,
-		"body":       buildPrBody(in),
+		"body":       buildPrBody(in, summary),
 		"draft":      in.Draft,
 	}, protocol.ApprovalRecordRequestedBy(in.RequestedBy))
 	if err != nil {
@@ -188,10 +190,15 @@ func unavailableReason(caps protocol.GitCapabilities) string {
 }
 
 // buildPrBody templates in's caller-supplied sections into §8.1's required
-// PR body structure. It performs no reasoning of its own - every section's
-// content is either verbatim caller input or a mechanical listing of ids
-// the caller already supplied.
-func buildPrBody(in CreatePrInput) string {
+// PR body structure. It performs no reasoning of its own - every narrative
+// section's content is either verbatim caller input or a mechanical listing
+// of ids the caller already supplied. summary supplements that narrative
+// with a canonical block (test counts, commits, risks) so
+// those facts come from this run's actual records rather than the calling
+// agent restating them; it renders nothing when summary carries no content
+// (deliverysummary.Summary.HasContent is false), leaving the body identical
+// to before this existed for a run with no evidence/git/review data yet.
+func buildPrBody(in CreatePrInput, summary deliverysummary.Summary) string {
 	fallback := func(s string) string {
 		if s == "" {
 			return "None."
@@ -222,5 +229,8 @@ func buildPrBody(in CreatePrInput) string {
 		fmt.Fprintf(&b, "## Jira references\n\n%s\n\n", bulletList(in.JiraKeys))
 	}
 	fmt.Fprintf(&b, "## Durable knowledge updates\n\n%s\n", bulletList(in.KnowledgeIds))
+	if section := summary.Section("##"); section != "" {
+		fmt.Fprintf(&b, "\n%s", section)
+	}
 	return b.String()
 }

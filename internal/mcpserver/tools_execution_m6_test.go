@@ -124,7 +124,7 @@ func TestSubmitTaskGraphAndListReadyTasks(t *testing.T) {
 // TestTaskExecutionLifecycle exercises the full per-task execution loop
 // over the real MCP wire protocol: start_task_execution (after approving
 // the worktree request directly, since granting approval is a human
-// decision with no MCP tool of its own), write_file, check_diff,
+// decision with no MCP tool of its own), write_files, check_diff,
 // commit_task, and finish_task_execution.
 func TestTaskExecutionLifecycle(t *testing.T) {
 	a := newTestApp(t)
@@ -153,14 +153,18 @@ func TestTaskExecutionLifecycle(t *testing.T) {
 		t.Fatalf("expected worktree to exist at %s: %v", startOut.WorktreePath, err)
 	}
 
-	var writeOut WriteFileOutput
-	callTool(t, cs, "write_file", map[string]any{
+	var writeOut WriteFilesOutput
+	callTool(t, cs, "write_files", map[string]any{
 		"repo_id": repoID,
 		"task_id": taskID,
-		"path":    "new_file.txt",
-		"content": "hello from petruk\n",
+		"files": []map[string]any{
+			{"path": "new_file.txt", "content": "hello from petruk\n"},
+		},
 	}, &writeOut)
 
+	if len(writeOut.Results) != 1 || writeOut.Results[0].Error != "" {
+		t.Fatalf("expected one clean write result, got %+v", writeOut.Results)
+	}
 	if _, err := os.Stat(filepath.Join(startOut.WorktreePath, "new_file.txt")); err != nil {
 		t.Fatalf("expected new_file.txt to exist: %v", err)
 	}

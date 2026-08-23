@@ -17,6 +17,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/runtime"
+	"github.com/ygrip/punakawan/internal/workspace"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -69,7 +70,7 @@ var activeStates = map[protocol.WorkflowRunState]bool{
 
 func (w *WorkspaceSource) List(ctx context.Context) ([]contract.WorkspaceSummary, error) {
 	if w.Registry == nil {
-		detail, err := w.describe(ctx, w.App, nil)
+		detail, err := w.describe(ctx, w.App, nil, true)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +82,7 @@ func (w *WorkspaceSource) List(ctx context.Context) ([]contract.WorkspaceSummary
 		return nil, fmt.Errorf("sources: list workspaces: %w", err)
 	}
 	if len(entries) == 0 {
-		detail, err := w.describe(ctx, w.App, nil)
+		detail, err := w.describe(ctx, w.App, nil, true)
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +115,7 @@ func (w *WorkspaceSource) List(ctx context.Context) ([]contract.WorkspaceSummary
 
 func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract.WorkspaceDetail, error) {
 	if workspaceID == w.App.Workspace.ID {
-		return w.describe(ctx, w.App, nil)
+		return w.describe(ctx, w.App, nil, false)
 	}
 	if w.Registry == nil {
 		return contract.WorkspaceDetail{}, fmt.Errorf("sources: workspace %q is not available (only %q is): %w", workspaceID, w.App.Workspace.ID, contract.ErrWorkspaceUnavailable)
@@ -131,7 +132,7 @@ func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract
 			return unavailableDetail(entry, err), nil
 		}
 		defer release()
-		return w.describe(ctx, rt.App, &entry)
+		return w.describe(ctx, rt.App, &entry, false)
 	}
 
 	other, err := app.Load(entry.Path)
@@ -139,14 +140,14 @@ func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract
 		return unavailableDetail(entry, err), nil
 	}
 	defer other.Close()
-	return w.describe(ctx, other, &entry)
+	return w.describe(ctx, other, &entry, false)
 }
 
 // summaryFor degrades to an Unavailable summary instead of returning an
 // error, since List must isolate one broken workspace from the rest.
 func (w *WorkspaceSource) summaryFor(ctx context.Context, entry protocol.PanelWorkspaceRegistryEntry) contract.WorkspaceSummary {
 	if entry.Id == w.App.Workspace.ID {
-		detail, err := w.describe(ctx, w.App, &entry)
+		detail, err := w.describe(ctx, w.App, &entry, true)
 		if err != nil {
 			return unavailableDetail(entry, err).WorkspaceSummary
 		}
@@ -159,7 +160,7 @@ func (w *WorkspaceSource) summaryFor(ctx context.Context, entry protocol.PanelWo
 			return unavailableDetail(entry, err).WorkspaceSummary
 		}
 		defer release()
-		detail, err := w.describe(ctx, rt.App, &entry)
+		detail, err := w.describe(ctx, rt.App, &entry, true)
 		if err != nil {
 			return unavailableDetail(entry, err).WorkspaceSummary
 		}
@@ -172,7 +173,7 @@ func (w *WorkspaceSource) summaryFor(ctx context.Context, entry protocol.PanelWo
 	}
 	defer other.Close()
 
-	detail, err := w.describe(ctx, other, &entry)
+	detail, err := w.describe(ctx, other, &entry, true)
 	if err != nil {
 		return unavailableDetail(entry, err).WorkspaceSummary
 	}
@@ -203,17 +204,25 @@ func unavailableDetail(entry protocol.PanelWorkspaceRegistryEntry, err error) co
 // describe builds a WorkspaceDetail for a. entry, when non-nil, supplies
 // registry metadata (display name override, pinned) that a itself does
 // not know about.
-func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *protocol.PanelWorkspaceRegistryEntry) (contract.WorkspaceDetail, error) {
+//
+// skipGit, when true, omits the per-repository `git status` probe (see
+// gitHealth): List (and so the overview page) aggregates every registered
+// workspace, and per-repo git status is exactly the kind of per-project
+// scan that made that page scale linearly with project count for a signal
+// the overview never displays - per-repo git state belongs on the project
+// detail page (Get), which always passes false and keeps the full detail.
+func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *protocol.PanelWorkspaceRegistryEntry, skipGit bool) (contract.WorkspaceDetail, error) {
 	now := time.Now().UTC()
 
-	// The four heavy probe groups below are mutually independent - knowledge
-	// opens a Dolt store, beads shells out to `bd list` + `bd ready`, and git
-	// shells out to `git status` per repo - so running them sequentially made a
-	// single describe() the sum of all three's latency (~6s for the overview,
-	// which describes only the primary workspace). Fan them out and assemble
-	// their health slices back in a fixed order afterwards so the output stays
-	// deterministic (tests and the health board depend on ordering). adapter
-	// health is a cheap PATH lookup, left inline.
+	// The heavy probe groups below are mutually independent - knowledge opens
+	// a Dolt store, beads shells out to `bd list` + `bd ready`, and (unless
+	// skipGit) git shells out to `git status` per repo - so running them
+	// sequentially made a single describe() the sum of their latency (~6s
+	// for the overview, which describes only the primary workspace). Fan
+	// them out and assemble their health slices back in a fixed order
+	// afterwards so the output stays deterministic (tests and the health
+	// board depend on ordering). adapter health is a cheap PATH lookup, left
+	// inline.
 	var (
 		knowledgeCount  int
 		knowledgeHealth []protocol.PanelSourceHealth
@@ -321,11 +330,13 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		gitH = gitHealth(ctx, a, now)
-	}()
+	if !skipGit {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			gitH = gitHealth(ctx, a, now)
+		}()
+	}
 
 	wg.Wait()
 
@@ -370,33 +381,52 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 // status command fails is reported unavailable rather than failing the
 // whole workspace describe call, matching every other per-source health
 // check here.
+//
+// One `git status` subprocess per repository is independent of every other
+// repository's, so - mirroring List's and describe's own bounded worker
+// pool - they run concurrently instead of one after another; a workspace
+// with several repositories previously paid their sum, not their max,
+// purely from this loop being sequential.
 func gitHealth(ctx context.Context, a *app.App, now time.Time) []protocol.PanelSourceHealth {
-	health := make([]protocol.PanelSourceHealth, 0, len(a.Workspace.Repositories))
-	for _, repo := range a.Workspace.Repositories {
-		source := "git:" + repo.ID
-		path, err := a.RepoPath(repo.ID)
-		if err != nil {
-			health = append(health, healthDown(source, err, now))
-			continue
-		}
-		status, err := a.Inspector.Status(ctx, path)
-		if err != nil {
-			health = append(health, healthDown(source, err, now))
-			continue
-		}
-		branch := status.Branch
-		if branch == "" {
-			branch = "(detached)"
-		}
-		msg := fmt.Sprintf("branch=%s clean=%t changed_files=%d", branch, status.Clean, len(status.ChangedFiles))
-		health = append(health, protocol.PanelSourceHealth{
-			Source:       source,
-			Availability: protocol.PanelSourceHealthAvailabilityAvailable,
-			Message:      &msg,
-			CheckedAt:    now,
-		})
+	repos := a.Workspace.Repositories
+	health := make([]protocol.PanelSourceHealth, len(repos))
+	const maxConcurrent = 4
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	for i, repo := range repos {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, repo workspace.Repository) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			health[i] = oneRepoHealth(ctx, a, repo, now)
+		}(i, repo)
 	}
+	wg.Wait()
 	return health
+}
+
+func oneRepoHealth(ctx context.Context, a *app.App, repo workspace.Repository, now time.Time) protocol.PanelSourceHealth {
+	source := "git:" + repo.ID
+	path, err := a.RepoPath(repo.ID)
+	if err != nil {
+		return healthDown(source, err, now)
+	}
+	status, err := a.Inspector.Status(ctx, path)
+	if err != nil {
+		return healthDown(source, err, now)
+	}
+	branch := status.Branch
+	if branch == "" {
+		branch = "(detached)"
+	}
+	msg := fmt.Sprintf("branch=%s clean=%t changed_files=%d", branch, status.Clean, len(status.ChangedFiles))
+	return protocol.PanelSourceHealth{
+		Source:       source,
+		Availability: protocol.PanelSourceHealthAvailabilityAvailable,
+		Message:      &msg,
+		CheckedAt:    now,
+	}
 }
 
 // adapterHealth reports one protocol.PanelSourceHealth per configured

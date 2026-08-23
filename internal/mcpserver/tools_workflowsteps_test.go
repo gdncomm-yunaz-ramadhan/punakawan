@@ -2,8 +2,12 @@ package mcpserver
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/ygrip/punakawan/internal/evidence"
+	"github.com/ygrip/punakawan/internal/testrun"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -21,7 +25,7 @@ func saveStepDef(t *testing.T, root string) {
 		Name:    "Two Step",
 		Enabled: true,
 		Steps: []workflowdef.Step{
-			{ID: "a", Capability: "write_file"},
+			{ID: "a", Capability: "write_files"},
 			{ID: "b", Capability: "run_tests", InputFrom: []string{"a"}},
 		},
 	}); err != nil {
@@ -133,5 +137,62 @@ func TestCompleteStepRejectsAdHocRun(t *testing.T) {
 	_, _, err = completeWorkflowStepHandler(a)(context.Background(), nil, CompleteWorkflowStepInput{RunId: prep.RunId, StepId: "x", EvidenceIds: []string{"e"}})
 	if err == nil {
 		t.Fatal("completing a step on an ad hoc run should error")
+	}
+}
+
+// TestRecordWorkOutcomeAppendsCanonicalSummary proves that for
+// record_work_outcome, the persisted outcome summary carries this run's
+// canonical test counts and PR URL (recovered from output_refs), appended
+// to the caller's own narrative summary rather than restated by the caller.
+func TestRecordWorkOutcomeAppendsCanonicalSummary(t *testing.T) {
+	a := newTestApp(t)
+	_, prep, err := prepareWorkContextHandler(a)(context.Background(), nil, PrepareWorkContextInput{Objective: "ad hoc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := prep.RunId
+
+	bundle, err := evidence.NewBundle(a.Workspace.Root, runID, "task-1")
+	if err != nil {
+		t.Fatalf("NewBundle: %v", err)
+	}
+	report := testrun.Report{
+		AllPassed: false,
+		Results: []testrun.CommandResult{
+			{Command: testrun.Command{Name: "go", Args: []string{"test", "./..."}}, ExitCode: 1},
+		},
+	}
+	if err := testrun.WriteBundle(report, bundle); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, runID)
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	if _, err := evidence.RecordArtifact(ledger, runID, "task-1", protocol.EvidenceRecordTypeTestReport, bundle, "tests.json", time.Now().UTC()); err != nil {
+		t.Fatalf("RecordArtifact: %v", err)
+	}
+
+	_, run, err := recordWorkOutcomeHandler(a)(context.Background(), nil, RecordWorkOutcomeInput{
+		RunId:      runID,
+		Status:     "partial",
+		Summary:    "Ran the suite; one failure.",
+		OutputRefs: []string{"https://github.com/acme/widgets/pull/7"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Outcome == nil || run.Outcome.Summary == nil {
+		t.Fatalf("Outcome = %+v, want a non-nil Summary", run.Outcome)
+	}
+	summary := *run.Outcome.Summary
+	if !strings.Contains(summary, "Ran the suite; one failure.") {
+		t.Errorf("summary = %q, want the caller's narrative preserved", summary)
+	}
+	if !strings.Contains(summary, "Commands run: 0 / 1 passed") {
+		t.Errorf("summary = %q, want the canonical command count", summary)
+	}
+	if !strings.Contains(summary, "https://github.com/acme/widgets/pull/7") {
+		t.Errorf("summary = %q, want the canonical PR URL recovered from output_refs", summary)
 	}
 }

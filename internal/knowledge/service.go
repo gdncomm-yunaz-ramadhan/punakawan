@@ -1,17 +1,16 @@
 package knowledge
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
-
-// ErrNotFound is returned by Get when no record exists for the given id.
-var ErrNotFound = errors.New("knowledge: record not found")
 
 // Put creates or replaces a knowledge record, enforcing the §7.3/§7.4
 // provenance rules and keeping the knowledge_relations index in sync with
@@ -26,36 +25,36 @@ func (s *Store) Put(rec protocol.KnowledgeRecord) error {
 		return fmt.Errorf("knowledge: marshal record: %w", err)
 	}
 
-	if err := withConflictRetry(func() error {
-		tx, err := s.db.Begin()
-		if err != nil {
-			return fmt.Errorf("knowledge: begin tx: %w", err)
-		}
-		defer tx.Rollback()
+	ctx := context.Background()
+	key, err := writeKey()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(TimeLayout)
 
-		_, err = tx.Exec(`
-INSERT INTO knowledge_records (id, type, status, validity_state, data, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)
-ON DUPLICATE KEY UPDATE
-  type = VALUES(type), status = VALUES(status), validity_state = VALUES(validity_state),
-  data = VALUES(data), updated_at = VALUES(updated_at)`,
-			rec.Id, string(rec.Type), rec.Status, string(rec.Validity.State), data, time.Now().UTC())
-		if err != nil {
+	err = s.db.Write(ctx, key, "put knowledge "+rec.Id, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO knowledge_records (project_id, id, type, status, validity_state, data, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(project_id, id) DO UPDATE SET
+  type = excluded.type, status = excluded.status, validity_state = excluded.validity_state,
+  data = excluded.data, updated_at = excluded.updated_at`,
+			s.projectID, rec.Id, string(rec.Type), rec.Status, string(rec.Validity.State), string(data), now); err != nil {
 			return fmt.Errorf("knowledge: put %s: %w", rec.Id, err)
 		}
 
-		if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ?`, rec.Id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM knowledge_relations WHERE project_id = ? AND from_id = ?`, s.projectID, rec.Id); err != nil {
 			return fmt.Errorf("knowledge: clear relations for %s: %w", rec.Id, err)
 		}
 		for _, rel := range rec.Relations {
-			if _, err := tx.Exec(`INSERT INTO knowledge_relations (from_id, type, to_id) VALUES (?, ?, ?)`,
-				rec.Id, string(rel.Type), rel.Target); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO knowledge_relations (project_id, from_id, type, to_id) VALUES (?, ?, ?, ?)`,
+				s.projectID, rec.Id, string(rel.Type), rel.Target); err != nil {
 				return fmt.Errorf("knowledge: index relation %s -> %s: %w", rec.Id, rel.Target, err)
 			}
 		}
-
-		return tx.Commit()
-	}); err != nil {
+		return nil
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
 		return err
 	}
 
@@ -96,7 +95,7 @@ func (s *Store) Supersede(id, supersededBy string) error {
 // Get returns a single knowledge record by id.
 func (s *Store) Get(id string) (protocol.KnowledgeRecord, error) {
 	var data []byte
-	err := s.db.QueryRow(`SELECT data FROM knowledge_records WHERE id = ?`, id).Scan(&data)
+	err := s.db.Reader().QueryRow(`SELECT data FROM knowledge_records WHERE project_id = ? AND id = ?`, s.projectID, id).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return protocol.KnowledgeRecord{}, ErrNotFound
 	}
@@ -112,7 +111,7 @@ func (s *Store) Get(id string) (protocol.KnowledgeRecord, error) {
 
 // ListByType returns every knowledge record of the given type.
 func (s *Store) ListByType(recordType protocol.KnowledgeRecordType) ([]protocol.KnowledgeRecord, error) {
-	rows, err := s.db.Query(`SELECT data FROM knowledge_records WHERE type = ? ORDER BY id`, string(recordType))
+	rows, err := s.db.Reader().Query(`SELECT data FROM knowledge_records WHERE project_id = ? AND type = ? ORDER BY id`, s.projectID, string(recordType))
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: list by type %s: %w", recordType, err)
 	}
@@ -140,28 +139,28 @@ func (s *Store) ListByType(recordType protocol.KnowledgeRecordType) ([]protocol.
 // pointing to or from it. It does not error if the id does not exist.
 func (s *Store) Delete(id string) error {
 	var recordType string
-	err := s.db.QueryRow(`SELECT type FROM knowledge_records WHERE id = ?`, id).Scan(&recordType)
+	err := s.db.Reader().QueryRow(`SELECT type FROM knowledge_records WHERE project_id = ? AND id = ?`, s.projectID, id).Scan(&recordType)
 	existed := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("knowledge: delete %s: check existence: %w", id, err)
 	}
 
-	if err := withConflictRetry(func() error {
-		tx, err := s.db.Begin()
-		if err != nil {
-			return fmt.Errorf("knowledge: begin tx: %w", err)
-		}
-		defer tx.Rollback()
-
-		if _, err := tx.Exec(`DELETE FROM knowledge_records WHERE id = ?`, id); err != nil {
+	ctx := context.Background()
+	key, err := writeKey()
+	if err != nil {
+		return err
+	}
+	werr := s.db.Write(ctx, key, "delete knowledge "+id, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM knowledge_records WHERE project_id = ? AND id = ?`, s.projectID, id); err != nil {
 			return fmt.Errorf("knowledge: delete %s: %w", id, err)
 		}
-		if _, err := tx.Exec(`DELETE FROM knowledge_relations WHERE from_id = ? OR to_id = ?`, id, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM knowledge_relations WHERE project_id = ? AND (from_id = ? OR to_id = ?)`, s.projectID, id, id); err != nil {
 			return fmt.Errorf("knowledge: delete relations for %s: %w", id, err)
 		}
-		return tx.Commit()
-	}); err != nil {
-		return err
+		return nil
+	})
+	if werr != nil && !errors.Is(werr, storage.ErrDuplicateWrite) {
+		return werr
 	}
 
 	if !existed {
@@ -181,11 +180,11 @@ func (s *Store) Delete(id string) error {
 // finding which other records point at it requires the indexed
 // knowledge_relations table rather than a full scan.
 func (s *Store) Related(id string) ([]protocol.KnowledgeRecord, error) {
-	rows, err := s.db.Query(`
+	rows, err := s.db.Reader().Query(`
 SELECT r.data FROM knowledge_relations kr
-JOIN knowledge_records r ON r.id = kr.from_id
-WHERE kr.to_id = ?
-ORDER BY r.id`, id)
+JOIN knowledge_records r ON r.project_id = kr.project_id AND r.id = kr.from_id
+WHERE kr.project_id = ? AND kr.to_id = ?
+ORDER BY r.id`, s.projectID, id)
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: related %s: %w", id, err)
 	}

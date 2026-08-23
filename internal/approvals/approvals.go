@@ -1,17 +1,22 @@
-// Package approvals persists approval records as append-only JSONL, per
-// punakawan-go-typescript-detailed-plan.md §16.2, §6.1.
+// Package approvals persists approval records in the shared SQLite storage
+// kernel (internal/storage), scoped to one project. History is append-only:
+// resolving a request appends a new record with the same Id
+// rather than mutating the original, so Current folds to the latest record per
+// id while List returns the full history.
 package approvals
 
 import (
-	"bufio"
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -43,72 +48,84 @@ func IsAgentRoleIdentifier(approvedBy string) bool {
 	return agentRoleIdentifiers[strings.ToLower(strings.TrimSpace(approvedBy))]
 }
 
-// Store appends and reads approval records for a workspace. History is
-// append-only: resolving a request appends a new record with the same Id
-// rather than mutating the original, so Current folds to the latest record
-// per id while List returns full history.
+// Store appends and reads approval records for one project within the shared
+// storage kernel. Schema migration happens once, centrally, when the kernel
+// opens (internal/storage/migrations/0009_approvals.sql) - a Store never
+// creates its own tables. History is append-only: resolving a request appends
+// a new record with the same Id rather than mutating the original, so Current
+// folds to the latest record per id while List returns full history.
 type Store struct {
-	path string
-	mu   sync.Mutex
+	db        *storage.DB
+	projectID string
 }
 
-// Open ensures .punakawan/approvals/ exists under workspaceRoot and returns
-// a Store backed by approvals.jsonl within it.
-func Open(workspaceRoot string) (*Store, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "approvals")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("approvals: create %s: %w", dir, err)
+// New wraps db, scoping every read and write to projectID.
+func New(db *storage.DB, projectID string) *Store {
+	return &Store{db: db, projectID: projectID}
+}
+
+// writeKey returns a fresh random idempotency key. Append is a genuine append -
+// the same record id may be written more than once (a request, then its
+// resolution) and each such write must always take effect - so every call
+// wants a unique key rather than the kernel's replay dedup collapsing them.
+func writeKey() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("approvals: generate write key: %w", err)
 	}
-	return &Store{path: filepath.Join(dir, "approvals.jsonl")}, nil
+	return hex.EncodeToString(b[:]), nil
 }
 
 // Append writes a new approval record (a request, an approval, or a denial).
 func (s *Store) Append(rec protocol.ApprovalRecord) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	data, err := json.Marshal(rec)
 	if err != nil {
-		return fmt.Errorf("approvals: open %s: %w", s.path, err)
-	}
-	defer f.Close()
-
-	if err := json.NewEncoder(f).Encode(rec); err != nil {
 		return fmt.Errorf("approvals: encode record: %w", err)
+	}
+
+	ctx := context.Background()
+	key, err := writeKey()
+	if err != nil {
+		return err
+	}
+	err = s.db.Write(ctx, key, "append approval "+rec.Id, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO approvals (project_id, id, data) VALUES (?, ?, ?)`,
+			s.projectID, rec.Id, string(data)); err != nil {
+			return fmt.Errorf("approvals: append %s: %w", rec.Id, err)
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return err
 	}
 	return nil
 }
 
-// List returns the full append-only history of approval records.
+// List returns the full append-only history of approval records, in the order
+// they were written.
 func (s *Store) List() ([]protocol.ApprovalRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	f, err := os.Open(s.path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	rows, err := s.db.Reader().Query(
+		`SELECT data FROM approvals WHERE project_id = ? ORDER BY seq ASC`, s.projectID)
 	if err != nil {
-		return nil, fmt.Errorf("approvals: open %s: %w", s.path, err)
+		return nil, fmt.Errorf("approvals: list: %w", err)
 	}
-	defer f.Close()
+	defer rows.Close()
 
 	var records []protocol.ApprovalRecord
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, fmt.Errorf("approvals: scan record: %w", err)
 		}
 		var rec protocol.ApprovalRecord
-		if err := json.Unmarshal(line, &rec); err != nil {
+		if err := json.Unmarshal(data, &rec); err != nil {
 			return nil, fmt.Errorf("approvals: decode record: %w", err)
 		}
 		records = append(records, rec)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("approvals: scan %s: %w", s.path, err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("approvals: iterate records: %w", err)
 	}
 	return records, nil
 }

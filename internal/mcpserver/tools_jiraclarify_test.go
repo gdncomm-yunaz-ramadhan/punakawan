@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -65,10 +64,7 @@ func atlassianTestManifest() protocol.AdapterManifest {
 
 func newJiraClarifyTestGate(t *testing.T, transitionsJSON string) (*adapters.Gate, *fakeAtlassianCaller) {
 	t.Helper()
-	store, err := approvals.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("approvals.Open: %v", err)
-	}
+	store := newTestApprovalStore(t)
 	fc := &fakeAtlassianCaller{responses: map[string]string{"atlassian.getTransitionsForJiraIssue": transitionsJSON}}
 	return adapters.NewGate("atlassian", atlassianTestManifest(), fc, store), fc
 }

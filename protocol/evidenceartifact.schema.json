@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/evidenceartifact.schema.json",
+  "title": "EvidenceArtifact",
+  "description": "One immutable invocation record: a test, diff, API check, command, screenshot, or review produced exactly this content-addressed blob. Bytes are addressed by sha256 (never overwritten, never trusted from a caller - always server-computed); this record's own id is a ULID and is what gets referenced elsewhere, never a mutable path.",
+  "type": "object",
+  "required": ["id", "orchestration_id", "project_id", "kind", "content_hash", "media_type", "byte_size", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "orchestration_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "lane_id": { "type": "string" },
+    "parent_task_id": { "type": "string" },
+    "kind": { "type": "string", "enum": ["test", "diff", "api-check", "command", "screenshot", "review", "quality"] },
+    "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "media_type": { "type": "string" },
+    "byte_size": { "type": "integer", "minimum": 0 },
+    "producer": { "type": "string", "description": "What invoked this (e.g. \"go test\", \"petruk-plan\"), for provenance." },
+    "created_at": { "type": "string", "format": "date-time" },
+    "retain_until": { "type": "string", "format": "date-time", "description": "Retention horizon; absent means retained indefinitely." }
+  }
+}

@@ -1,5 +1,5 @@
 // Package scenario holds the plan's §68 end-to-end scenario as an executable
-// test that exercises all five distinguished subsystems together against real
+// test that exercises all four distinguished subsystems together against real
 // on-disk stores in a temp project root. It is the integration proof that the
 // per-subsystem stores compose into the intended feature-delivery flow:
 //
@@ -11,8 +11,6 @@
 //  6. Petruk records implementation claims; Bagong independently verifies them.
 //  7. Bagong marks repo-ui a deliberate, reasoned exclusion.
 //  8. The dossier reaches verified and finalizes clean.
-//  9. Semar assembles a handoff capsule from every role's contribution.
-//  10. Another agent resumes it; a superseded capsule refuses to resume.
 package scenario
 
 import (
@@ -22,7 +20,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/contradiction"
 	"github.com/ygrip/punakawan/internal/dossier"
-	"github.com/ygrip/punakawan/internal/handoff"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -36,11 +33,9 @@ func TestFeatureDeliveryEndToEnd(t *testing.T) {
 
 	// 1. Semar starts feature-delivery: role config resolves (defaults are
 	//    synthesized on a project that has never configured roles).
-	cfg, err := roleconfig.Load(root)
-	if err != nil {
+	if _, err := roleconfig.Load(root); err != nil {
 		t.Fatalf("load role config: %v", err)
 	}
-	roleRevision := cfg.Revision
 
 	// 2. Gareng detects conflicting retry values across two sources: a blocking,
 	//    critical contradiction.
@@ -204,65 +199,6 @@ func TestFeatureDeliveryEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(md, "repo-ui") || !strings.Contains(md, "no UI change needed") {
 		t.Fatalf("markdown export missing repo-ui exclusion reason:\n%s", md)
-	}
-
-	// 9. Semar assembles a handoff capsule from every role's contribution.
-	capsule := handoff.Assemble(projectID, "run-1842",
-		handoff.SemarContribution{
-			Objective:          handoff.Objective{Statement: "Unify payout retry policy across services."},
-			CurrentPhase:       "verification",
-			RoleConfigRevision: roleRevision,
-		},
-		&handoff.GarengContribution{
-			OpenContradictions: nil, // all resolved
-			ImpactSummary: &handoff.ImpactSummary{
-				RequiredRepositories: []string{"repo-api", "repo-e2e"},
-				ExcludedRepositories: []string{"repo-ui"},
-			},
-		},
-		&handoff.PetrukContribution{
-			ChangedRepositories: []string{"repo-api", "repo-e2e"},
-		},
-		&handoff.BagongContribution{
-			Dossier: &handoff.DossierRef{ID: d.Id, Status: string(protocol.ChangeDossierStatusCompleted)},
-		},
-	)
-	if _, err := handoff.Create(root, capsule); err != nil {
-		t.Fatalf("create handoff: %v", err)
-	}
-
-	// 10. Another agent resumes it. With every referenced object present and the
-	//     role revision unchanged, the verdict is resumable and the resume
-	//     context is non-empty (no transcript needed).
-	deps := handoff.ValidationDeps{
-		RoleConfigRevision: func() (int, error) { return roleRevision, nil },
-		DossierSuperseded:  func(id string) (bool, error) { return false, nil },
-	}
-	vr, err := handoff.Validate(root, capsule.Id, deps)
-	if err != nil {
-		t.Fatalf("validate handoff: %v", err)
-	}
-	if vr.Status != handoff.StatusResumable {
-		t.Fatalf("resume status = %s, want resumable (changes: %v)", vr.Status, vr.ChangesSinceHandoff)
-	}
-	ctx, err := handoff.ResumeContext(root, capsule.Id)
-	if err != nil {
-		t.Fatalf("resume context: %v", err)
-	}
-	if len(ctx) == 0 {
-		t.Fatal("resume context is empty; a resuming agent has nothing to work from")
-	}
-
-	// A superseded capsule must not resume silently (§43 acceptance).
-	if err := handoff.Supersede(root, capsule.Id); err != nil {
-		t.Fatalf("supersede handoff: %v", err)
-	}
-	vr, err = handoff.Validate(root, capsule.Id, deps)
-	if err != nil {
-		t.Fatalf("validate superseded handoff: %v", err)
-	}
-	if vr.Status != handoff.StatusSuperseded {
-		t.Fatalf("superseded capsule resume status = %s, want superseded", vr.Status)
 	}
 }
 

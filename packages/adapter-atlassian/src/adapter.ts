@@ -6,6 +6,7 @@ import {
   addJiraComment,
   addWorklog,
   createIssueLink,
+  createJiraIssue,
   createJiraSubtask,
   searchJiraUsers,
   deleteJiraAttachment,
@@ -20,6 +21,8 @@ import {
   getJiraRemoteLinks,
   getTransitionsForJiraIssue,
   listJiraAttachments,
+  listJiraBoards,
+  listJiraSprints,
   searchConfluence,
   searchJira,
   transitionJiraIssue,
@@ -168,6 +171,20 @@ export function createHandlers(options?: {
           }
           return getIssueTypeFieldMeta(getClient(), { projectIdOrKey, issueTypeId });
         }
+        case 'atlassian.createJiraIssue': {
+          const { projectKey, issueTypeName, summary, description, parent, additionalFields } = rest as {
+            projectKey: string;
+            issueTypeName: string;
+            summary: string;
+            description?: string;
+            parent?: string;
+            additionalFields?: Record<string, unknown>;
+          };
+          if (!projectKey || !issueTypeName || !summary) {
+            throw new Error('atlassian.createJiraIssue requires "projectKey", "issueTypeName", and "summary"');
+          }
+          return createJiraIssue(getClient(), { projectKey, issueTypeName, summary, description, parent, additionalFields });
+        }
         case 'atlassian.createJiraSubtask': {
           const { parentKey, projectKey, issueTypeName, candidates } = rest as {
             parentKey: string;
@@ -197,6 +214,19 @@ export function createHandlers(options?: {
             throw new Error('atlassian.createIssueLink requires "linkType", "inwardIssueKey", and "outwardIssueKey"');
           }
           return createIssueLink(getClient(), { linkType, inwardIssueKey, outwardIssueKey });
+        }
+        case 'atlassian.listJiraBoards': {
+          const { projectKeyOrId, type, maxResults } = rest as {
+            projectKeyOrId?: string;
+            type?: string;
+            maxResults?: number;
+          };
+          return listJiraBoards(getClient(), { projectKeyOrId, type, maxResults });
+        }
+        case 'atlassian.listJiraSprints': {
+          const { boardId, state, maxResults } = rest as { boardId: number; state?: string; maxResults?: number };
+          if (boardId === undefined || boardId === null) throw new Error('atlassian.listJiraSprints requires "boardId"');
+          return listJiraSprints(getClient(), { boardId, state, maxResults });
         }
         default:
           throw new Error(`Unsupported op: ${op}`);

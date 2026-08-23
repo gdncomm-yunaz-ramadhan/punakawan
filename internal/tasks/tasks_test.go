@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -22,20 +23,18 @@ func requireBinary(t *testing.T, name string) {
 	}
 }
 
-// newTestStore opens a Dolt-backed knowledge Store rooted at t.TempDir(),
-// never touching this repository's own .beads/ or knowledge data.
+// newTestStore opens a knowledge Store over the shared SQLite kernel rooted at
+// root, never touching this repository's own .beads/ or knowledge data. The
+// sup parameter is retained so callers keep passing the same supervisor they
+// use for bd; the knowledge store no longer needs it.
 func newTestStore(t *testing.T, sup *tools.Supervisor, root string) *knowledge.Store {
 	t.Helper()
-	store, err := knowledge.Open(sup, filepath.Join(root, "knowledge"))
+	db, err := storage.Open(context.Background(), filepath.Join(root, "storage.db"))
 	if err != nil {
-		t.Fatalf("knowledge.Open: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Store.Close: %v", err)
-		}
-	})
-	return store
+	t.Cleanup(func() { db.Close() })
+	return knowledge.New(db, "test-project")
 }
 
 // newTestBeadsProject initializes a throwaway bd project rooted at root.
@@ -109,7 +108,7 @@ func TestCreateTaskForRequirementRejectsNonRequirement(t *testing.T) {
 	rec := requirementRecord()
 	rec.Type = protocol.KnowledgeRecordTypeDecision
 
-	_, err := CreateTaskForRequirement(context.Background(), nil, "", nil, rec, NewTaskContractInput{
+	_, err := CreateTaskForRequirement(context.Background(), nil, "", nil, nil, "", rec, NewTaskContractInput{
 		TaskID:             "task-1",
 		AcceptanceCriteria: []string{"criterion"},
 	})
@@ -120,7 +119,7 @@ func TestCreateTaskForRequirementRejectsNonRequirement(t *testing.T) {
 
 func TestCreateTaskForRequirementRequiresAcceptanceCriteria(t *testing.T) {
 	rec := requirementRecord()
-	_, err := CreateTaskForRequirement(context.Background(), nil, "", nil, rec, NewTaskContractInput{
+	_, err := CreateTaskForRequirement(context.Background(), nil, "", nil, nil, "", rec, NewTaskContractInput{
 		TaskID: "task-1",
 	})
 	if err == nil {
@@ -130,7 +129,7 @@ func TestCreateTaskForRequirementRequiresAcceptanceCriteria(t *testing.T) {
 
 func TestCreateTaskForRequirementRequiresTaskID(t *testing.T) {
 	rec := requirementRecord()
-	_, err := CreateTaskForRequirement(context.Background(), nil, "", nil, rec, NewTaskContractInput{
+	_, err := CreateTaskForRequirement(context.Background(), nil, "", nil, nil, "", rec, NewTaskContractInput{
 		AcceptanceCriteria: []string{"criterion"},
 	})
 	if err == nil {
@@ -157,7 +156,7 @@ func TestCreateTaskForRequirementEndToEnd(t *testing.T) {
 	}
 
 	approvalRequired := true
-	contract, err := CreateTaskForRequirement(context.Background(), sup, root, store, req, NewTaskContractInput{
+	contract, err := CreateTaskForRequirement(context.Background(), sup, root, store, nil, "", req, NewTaskContractInput{
 		TaskID:                    "task-refund-api",
 		Repository:                "checkout-platform",
 		Scope:                     "Implement refund API behavior",
@@ -209,7 +208,7 @@ func TestCreateTaskForRequirementEndToEnd(t *testing.T) {
 	if err := store.Put(req2); err != nil {
 		t.Fatalf("seed second requirement Put: %v", err)
 	}
-	contract2, err := CreateTaskForRequirement(context.Background(), sup, root, store, req2, NewTaskContractInput{
+	contract2, err := CreateTaskForRequirement(context.Background(), sup, root, store, nil, "", req2, NewTaskContractInput{
 		TaskID:             "task-refund-migration",
 		Repository:         "checkout-platform",
 		Scope:              "Create database migration",
@@ -246,7 +245,7 @@ func TestCreateTaskForRequirementNonJiraSourceLeavesJiraKeyEmpty(t *testing.T) {
 		t.Fatalf("seed requirement Put: %v", err)
 	}
 
-	contract, err := CreateTaskForRequirement(context.Background(), sup, root, store, req, NewTaskContractInput{
+	contract, err := CreateTaskForRequirement(context.Background(), sup, root, store, nil, "", req, NewTaskContractInput{
 		TaskID:             "task-non-jira",
 		Repository:         "checkout-platform",
 		Scope:              "scope",
@@ -284,7 +283,7 @@ func TestReportDiscoveredWorkEndToEnd(t *testing.T) {
 	}
 
 	const discoveringTaskID = "task-refund-api"
-	contract, err := ReportDiscoveredWork(context.Background(), sup, root, store, req, discoveringTaskID, NewTaskContractInput{
+	contract, err := ReportDiscoveredWork(context.Background(), sup, root, store, nil, "", req, discoveringTaskID, NewTaskContractInput{
 		TaskID:             "task-refund-retry-handling",
 		Repository:         "checkout-platform",
 		Scope:              "Handle refund gateway timeouts discovered while implementing the refund API",
@@ -353,7 +352,7 @@ func TestGenerateGraphRejectsUnknownLocalKey(t *testing.T) {
 			DependsOn:     []GraphDependency{{LocalKey: "does-not-exist", Type: protocol.TaskContractDependenciesElemTypeBlocks}},
 		},
 	}
-	if _, err := GenerateGraph(context.Background(), nil, "", nil, items); err == nil {
+	if _, err := GenerateGraph(context.Background(), nil, "", nil, nil, "", items); err == nil {
 		t.Fatal("expected error for depends_on referencing an unknown local_key")
 	}
 }
@@ -365,7 +364,7 @@ func TestGenerateGraphRejectsDuplicateLocalKey(t *testing.T) {
 		{LocalKey: "api", RequirementID: "req-1", Input: NewTaskContractInput{TaskID: "task-1", AcceptanceCriteria: []string{"c"}}},
 		{LocalKey: "api", RequirementID: "req-1", Input: NewTaskContractInput{TaskID: "task-2", AcceptanceCriteria: []string{"c"}}},
 	}
-	if _, err := GenerateGraph(context.Background(), nil, "", nil, items); err == nil {
+	if _, err := GenerateGraph(context.Background(), nil, "", nil, nil, "", items); err == nil {
 		t.Fatal("expected error for duplicate local_key")
 	}
 }
@@ -417,7 +416,7 @@ func TestGenerateGraphEndToEnd(t *testing.T) {
 		},
 	}
 
-	results, err := GenerateGraph(context.Background(), sup, root, store, items)
+	results, err := GenerateGraph(context.Background(), sup, root, store, nil, "", items)
 	if err != nil {
 		t.Fatalf("GenerateGraph: %v", err)
 	}
@@ -484,7 +483,7 @@ func TestReportDiscoveredWorkRejectsConflictingDiscoveredFrom(t *testing.T) {
 	rec := requirementRecord()
 	conflicting := "some-other-task"
 
-	_, err := ReportDiscoveredWork(context.Background(), nil, "", nil, rec, "task-refund-api", NewTaskContractInput{
+	_, err := ReportDiscoveredWork(context.Background(), nil, "", nil, nil, "", rec, "task-refund-api", NewTaskContractInput{
 		TaskID:             "task-1",
 		AcceptanceCriteria: []string{"criterion"},
 		DiscoveredFrom:     &conflicting,

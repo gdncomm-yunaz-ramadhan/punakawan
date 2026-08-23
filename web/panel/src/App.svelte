@@ -6,17 +6,11 @@
   import Overview from "./routes/overview/Overview.svelte";
   import ProjectsList from "./routes/projects/ProjectsList.svelte";
   import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
-  import WorkspaceSummary from "./routes/workspaces/WorkspaceSummary.svelte";
-  import SessionsList from "./routes/sessions/SessionsList.svelte";
-  import SessionDetail from "./routes/sessions/SessionDetail.svelte";
-  import TasksPage from "./routes/tasks/TasksPage.svelte";
-  import KnowledgeList from "./routes/knowledge/KnowledgeList.svelte";
-  import KnowledgeDetail from "./routes/knowledge/KnowledgeDetail.svelte";
   import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
   import ContextImprovements from "./routes/improvements/ContextImprovements.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
-  import StartReview from "./routes/review/StartReview.svelte";
-  import ReviewMode from "./routes/review/ReviewMode.svelte";
+  import DeliveriesList from "./routes/deliveries/DeliveriesList.svelte";
+  import DeliveryDetail from "./routes/deliveries/DeliveryDetail.svelte";
 
   let system: SystemInfo | null = $state(null);
   let systemError: string | null = $state(null);
@@ -30,15 +24,8 @@
   });
 
   const projectDetailPath = /^\/projects\/([^/]+)$/;
-  const workspaceDetailPath = /^\/workspaces\/([^/]+)$/;
-  const sessionsListPath = /^\/workspaces\/([^/]+)\/sessions$/;
-  const sessionDetailPath = /^\/workspaces\/([^/]+)\/sessions\/([^/]+)$/;
-  const tasksPath = /^\/workspaces\/([^/]+)\/tasks$/;
-  const knowledgeListPath = /^\/workspaces\/([^/]+)\/knowledge$/;
-  const knowledgeDetailPath = /^\/workspaces\/([^/]+)\/knowledge\/([^/]+)$/;
   const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
-  const reviewModePath = /^\/reviews\/([^/]+)$/;
-  const startReviewPath = /^\/artifacts\/(plan|retrieval_recipe)\/review\/new$/;
+  const deliveryDetailPath = /^\/deliveries\/([^/]+)$/;
 </script>
 
 <AppShell {system}>
@@ -54,42 +41,17 @@
     <ContextImprovements />
   {:else if getPath() === "/system"}
     <SystemPage />
-  {:else if startReviewPath.exec(getPath())}
-    {@const match = startReviewPath.exec(getPath())}
-    <StartReview artifactType={(match?.[1] as "plan" | "retrieval_recipe") ?? "plan"} />
-  {:else if reviewModePath.exec(getPath())}
-    {@const match = reviewModePath.exec(getPath())}
-    <ReviewMode reviewId={decodeURIComponent(match?.[1] ?? "")} />
+  {:else if getPath() === "/deliveries"}
+    <DeliveriesList />
+  {:else if deliveryDetailPath.exec(getPath())}
+    {@const match = deliveryDetailPath.exec(getPath())}
+    <DeliveryDetail orchestrationId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if approvalsPath.exec(getPath())}
     {@const match = approvalsPath.exec(getPath())}
     <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if knowledgeDetailPath.exec(getPath())}
-    {@const match = knowledgeDetailPath.exec(getPath())}
-    <KnowledgeDetail
-      workspaceId={decodeURIComponent(match?.[1] ?? "")}
-      knowledgeId={decodeURIComponent(match?.[2] ?? "")}
-    />
-  {:else if knowledgeListPath.exec(getPath())}
-    {@const match = knowledgeListPath.exec(getPath())}
-    <KnowledgeList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if sessionDetailPath.exec(getPath())}
-    {@const match = sessionDetailPath.exec(getPath())}
-    <SessionDetail
-      workspaceId={decodeURIComponent(match?.[1] ?? "")}
-      sessionId={decodeURIComponent(match?.[2] ?? "")}
-    />
-  {:else if sessionsListPath.exec(getPath())}
-    {@const match = sessionsListPath.exec(getPath())}
-    <SessionsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if tasksPath.exec(getPath())}
-    {@const match = tasksPath.exec(getPath())}
-    <TasksPage workspaceId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if projectDetailPath.exec(getPath())}
     {@const match = projectDetailPath.exec(getPath())}
     <ProjectDetail projectId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if workspaceDetailPath.exec(getPath())}
-    {@const match = workspaceDetailPath.exec(getPath())}
-    <WorkspaceSummary workspaceId={decodeURIComponent(match?.[1] ?? "")} />
   {:else}
     <p>Not found.</p>
   {/if}

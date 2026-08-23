@@ -61,11 +61,15 @@ type ListJiraSyncQueueOutput struct {
 // lost the failure the moment the original tool call returned its error.
 func listJiraSyncQueueHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ListJiraSyncQueueInput) (*mcp.CallToolResult, ListJiraSyncQueueOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in ListJiraSyncQueueInput) (*mcp.CallToolResult, ListJiraSyncQueueOutput, error) {
+		queue, err := a.OpenSyncQueue()
+		if err != nil {
+			return nil, ListJiraSyncQueueOutput{}, fmt.Errorf("mcpserver: list sync queue: %w", err)
+		}
 		// Current folds the queue's append-only history to one record per
 		// id; List would return every historical record (a pending entry
 		// and, separately, the resolved record that superseded it), which
 		// is not what "list the queue" should mean here.
-		current, err := a.SyncQueue.Current()
+		current, err := queue.Current()
 		if err != nil {
 			return nil, ListJiraSyncQueueOutput{}, fmt.Errorf("mcpserver: list sync queue: %w", err)
 		}
@@ -101,7 +105,11 @@ type RetryJiraSyncEntryOutput struct {
 // already reflects that.
 func retryJiraSyncEntryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RetryJiraSyncEntryInput) (*mcp.CallToolResult, RetryJiraSyncEntryOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in RetryJiraSyncEntryInput) (*mcp.CallToolResult, RetryJiraSyncEntryOutput, error) {
-		current, err := a.SyncQueue.Current()
+		queue, err := a.OpenSyncQueue()
+		if err != nil {
+			return nil, RetryJiraSyncEntryOutput{}, fmt.Errorf("mcpserver: retry sync entry: %w", err)
+		}
+		current, err := queue.Current()
 		if err != nil {
 			return nil, RetryJiraSyncEntryOutput{}, fmt.Errorf("mcpserver: retry sync entry: %w", err)
 		}
@@ -121,7 +129,7 @@ func retryJiraSyncEntryHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 			return nil, RetryJiraSyncEntryOutput{}, fmt.Errorf("mcpserver: retry sync entry %q: %w", in.EntryId, err)
 		}
 
-		if err := a.SyncQueue.Resolve(in.EntryId, syncqueue.StatusResolved); err != nil {
+		if err := queue.Resolve(in.EntryId, syncqueue.StatusResolved); err != nil {
 			return nil, RetryJiraSyncEntryOutput{}, fmt.Errorf("mcpserver: mark sync entry %q resolved: %w", in.EntryId, err)
 		}
 		return nil, RetryJiraSyncEntryOutput{Resolved: true}, nil

@@ -365,9 +365,74 @@ func (a *KnowledgeAdapter) CreateVersion(id, workspaceID string, content []byte,
 	return a.reference(proposed)
 }
 
-// Compile-time assertions that all three adapters satisfy artifact.Store.
+// ---------------------------------------------------------------------------
+// Convention adapter
+// ---------------------------------------------------------------------------
+
+// conventionMetadataKey namespaces a convention id inside the project
+// metadata keyspace, so an accepted convention ("no-ternary") can never
+// collide with an unrelated genuine metadata entry that happens to share the
+// same short name.
+func conventionMetadataKey(id string) string { return "convention:" + id }
+
+// ConventionAdapter reviews a single proposed project convention (e.g. a
+// "no-ternary" example), keyed by a short convention id. It is deliberately
+// the thinnest adapter in this file: rather than
+// inventing a new canonical store, review type, and protocol enum value for
+// conventions, it delegates every call to a MetadataAdapter over the
+// namespaced key conventionMetadataKey(id) and simply presents the caller's
+// own id back on the resulting reference. This is intentionally
+// under-built for now: a convention accepted through this path materializes
+// exactly like an accepted metadata entry (readable back via
+// project.Project.MetadataFor), which is all AC4's vertical slice needs -
+// it does not attempt to represent a convention as its own richer type.
+type ConventionAdapter struct {
+	Root      string
+	locksOnce sync.Once
+	locks     *artifact.KeyedMutex
+}
+
+func (a *ConventionAdapter) LockArtifact(id string) func() {
+	a.locksOnce.Do(func() { a.locks = artifact.NewKeyedMutex() })
+	return a.locks.Lock(id)
+}
+
+// presentConventionRef rewrites a MetadataAdapter reference for the
+// namespaced key back onto the caller's own convention id, so a caller of
+// ConventionAdapter never sees the "convention:" prefix leak through.
+func presentConventionRef(id string, ref protocol.ArtifactReference) protocol.ArtifactReference {
+	ref.Id = id
+	return ref
+}
+
+func (a *ConventionAdapter) Current(id string) (protocol.ArtifactReference, error) {
+	ref, err := (&MetadataAdapter{Root: a.Root}).Current(conventionMetadataKey(id))
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return presentConventionRef(id, ref), nil
+}
+
+func (a *ConventionAdapter) Version(id string, version int) ([]byte, protocol.ArtifactReference, error) {
+	content, ref, err := (&MetadataAdapter{Root: a.Root}).Version(conventionMetadataKey(id), version)
+	if err != nil {
+		return nil, protocol.ArtifactReference{}, err
+	}
+	return content, presentConventionRef(id, ref), nil
+}
+
+func (a *ConventionAdapter) CreateVersion(id, workspaceID string, content []byte, now time.Time) (protocol.ArtifactReference, error) {
+	ref, err := (&MetadataAdapter{Root: a.Root}).CreateVersion(conventionMetadataKey(id), workspaceID, content, now)
+	if err != nil {
+		return protocol.ArtifactReference{}, err
+	}
+	return presentConventionRef(id, ref), nil
+}
+
+// Compile-time assertions that all four adapters satisfy artifact.Store.
 var (
 	_ artifact.Store = (*WorkflowAdapter)(nil)
 	_ artifact.Store = (*MetadataAdapter)(nil)
 	_ artifact.Store = (*KnowledgeAdapter)(nil)
+	_ artifact.Store = (*ConventionAdapter)(nil)
 )

@@ -7,8 +7,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ygrip/punakawan/internal/dossier"
-	"github.com/ygrip/punakawan/internal/handoff"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -96,144 +94,6 @@ func TestAnalyzeImpactReturnsResult(t *testing.T) {
 	}
 }
 
-// TestFinalizeDossierBlockedThenClean checks Finalize refuses while a claim is
-// disputed and succeeds once the dispute is cleared by verification.
-func TestFinalizeDossierBlockedThenClean(t *testing.T) {
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	var created ChangeDossierOutput
-	callTool(t, cs, "create_change_dossier", map[string]any{
-		"id":        "d1",
-		"title":     "refund flow change",
-		"objective": map[string]any{"statement": "ship refunds"},
-	}, &created)
-	if created.Dossier.Id != "d1" {
-		t.Fatalf("dossier id = %q, want d1", created.Dossier.Id)
-	}
-
-	// Walk the lifecycle to verified so Finalize is only gated by blocking
-	// findings, not the status edge (there is no Advance MCP tool).
-	for _, to := range []protocol.ChangeDossierStatus{
-		protocol.ChangeDossierStatusContextReady,
-		protocol.ChangeDossierStatusPlanned,
-		protocol.ChangeDossierStatusImplementing,
-		protocol.ChangeDossierStatusAwaitingVerification,
-		protocol.ChangeDossierStatusVerified,
-	} {
-		if err := dossier.Advance(a.Workspace.Root, "d1", to); err != nil {
-			t.Fatalf("Advance to %s: %v", to, err)
-		}
-	}
-
-	var claim DossierClaimOutput
-	callTool(t, cs, "add_dossier_claim", map[string]any{
-		"dossier_id": "d1",
-		"claim": map[string]any{
-			"id":        "c1",
-			"producer":  map[string]any{"role": "gareng"},
-			"type":      "implementation",
-			"statement": "implementation matches the plan",
-		},
-	}, &claim)
-
-	// Dispute by an independent role -> a blocking finding.
-	var disputed DossierClaimOutput
-	callTool(t, cs, "dispute_dossier_claim", map[string]any{
-		"dossier_id": "d1",
-		"claim_id":   "c1",
-		"by_role":    "bagong",
-	}, &disputed)
-	if disputed.Claim.Status != protocol.DossierClaimStatusDisputed {
-		t.Fatalf("claim status = %q, want disputed", disputed.Claim.Status)
-	}
-
-	// Finalize must be blocked while the dispute stands.
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "finalize_dossier",
-		Arguments: map[string]any{"dossier_id": "d1"},
-	})
-	if err != nil {
-		t.Fatalf("CallTool finalize (blocked): %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("finalize should be blocked by the disputed claim")
-	}
-
-	// Clear the dispute with a verification (latest claim line wins).
-	var verified DossierClaimOutput
-	callTool(t, cs, "verify_dossier_claim", map[string]any{
-		"dossier_id": "d1",
-		"claim_id":   "c1",
-		"by_role":    "bagong",
-	}, &verified)
-	if verified.Claim.Status != protocol.DossierClaimStatusVerified {
-		t.Fatalf("claim status = %q, want verified", verified.Claim.Status)
-	}
-
-	// Now finalize cleanly.
-	var final ChangeDossierOutput
-	callTool(t, cs, "finalize_dossier", map[string]any{"dossier_id": "d1"}, &final)
-	if final.Dossier.Status != protocol.ChangeDossierStatusCompleted {
-		t.Fatalf("finalized status = %q, want completed", final.Dossier.Status)
-	}
-}
-
-// TestHandoffValidateAndResume checks a fresh capsule is resumable and returns
-// the smallest verified context, and that a superseded capsule is rejected.
-func TestHandoffValidateAndResume(t *testing.T) {
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	var created HandoffCapsuleOutput
-	callTool(t, cs, "create_handoff_capsule", map[string]any{
-		"id":            "h1",
-		"run_id":        "run-1",
-		"objective":     map[string]any{"statement": "ship refunds"},
-		"current_phase": "implementation",
-	}, &created)
-	if created.Capsule.Id != "h1" {
-		t.Fatalf("capsule id = %q, want h1", created.Capsule.Id)
-	}
-
-	var validated ValidateHandoffCapsuleOutput
-	callTool(t, cs, "validate_handoff_capsule", map[string]any{"id": "h1"}, &validated)
-	if validated.Status != string(handoff.StatusResumable) {
-		t.Fatalf("validate status = %q, want resumable", validated.Status)
-	}
-
-	var resumed ResumeFromHandoffOutput
-	callTool(t, cs, "resume_from_handoff", map[string]any{"id": "h1"}, &resumed)
-	if resumed.Status != string(handoff.StatusResumable) {
-		t.Fatalf("resume status = %q, want resumable", resumed.Status)
-	}
-	if resumed.Context["objective"] != "ship refunds" {
-		t.Fatalf("resume context objective = %v, want 'ship refunds'", resumed.Context["objective"])
-	}
-
-	// Supersede the capsule directly, then it must not resume silently (§43).
-	if err := handoff.Supersede(a.Workspace.Root, "h1"); err != nil {
-		t.Fatalf("Supersede: %v", err)
-	}
-
-	var revalidated ValidateHandoffCapsuleOutput
-	callTool(t, cs, "validate_handoff_capsule", map[string]any{"id": "h1"}, &revalidated)
-	if revalidated.Status != string(handoff.StatusSuperseded) {
-		t.Fatalf("revalidate status = %q, want superseded", revalidated.Status)
-	}
-
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "resume_from_handoff",
-		Arguments: map[string]any{"id": "h1"},
-	})
-	if err != nil {
-		t.Fatalf("CallTool resume (superseded): %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("resume from a superseded capsule should be an error")
-	}
-}
-
 // TestSemarFinalizeBlockedByOpenContradiction checks CONTRA-008: Semar cannot
 // submit a final plan while a blocking contradiction is still open. A critical
 // contradiction is blocking by default (§19), so submitting one and then a
@@ -257,7 +117,7 @@ func TestSemarFinalizeBlockedByOpenContradiction(t *testing.T) {
 	}
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "submit_semar_synthesis",
+		Name: "submit_final_plan",
 		Arguments: map[string]any{
 			"id":         "run-1",
 			"title":      "final plan",
@@ -265,7 +125,7 @@ func TestSemarFinalizeBlockedByOpenContradiction(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("CallTool submit_semar_synthesis: %v", err)
+		t.Fatalf("CallTool submit_final_plan: %v", err)
 	}
 	if !res.IsError {
 		t.Fatal("final plan submission should be refused while a blocking contradiction is open")

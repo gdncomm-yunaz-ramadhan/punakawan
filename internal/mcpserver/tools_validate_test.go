@@ -31,20 +31,6 @@ func TestValidateWorkflowName(t *testing.T) {
 	}
 }
 
-func TestValidateCapsuleRole(t *testing.T) {
-	for _, v := range []string{"gareng", "petruk", "bagong"} {
-		if _, err := validateCapsuleRole(v); err != nil {
-			t.Errorf("validateCapsuleRole(%q) = %v, want nil", v, err)
-		}
-	}
-	// "semar" is a valid requested_by but NOT a valid context-capsule role.
-	for _, v := range []string{"", "semar", "Petruk", "reviewer"} {
-		if _, err := validateCapsuleRole(v); err == nil {
-			t.Errorf("validateCapsuleRole(%q) = nil, want an error", v)
-		}
-	}
-}
-
 func TestCheckOpenAPICompatibilityConfinesPathsToWorktree(t *testing.T) {
 	// punokawan-doe: base_path/head_path are resolved within the task worktree
 	// and cannot escape it via ".." or be absolute host paths.

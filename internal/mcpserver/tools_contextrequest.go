@@ -13,11 +13,13 @@ import (
 
 // SubmitMissingContextRequestInput is submit_missing_context_request's
 // input, per punakawan-architecture-enhancement-plan.md §6.4: a subagent
-// requesting context its capsule didn't include. Subagents may request
-// additional context, but may not search broadly themselves - this only
-// records the request; search_knowledge, request_capsule, and
+// requesting context an earlier submission didn't include. Subagents may
+// request additional context, but may not search broadly themselves - this
+// only records the request; search_knowledge and
 // resolve_missing_context_request are Semar's (the calling agent's) own
-// next moves, not something this tool decides.
+// next moves, not something this tool decides. CapsuleId is an opaque
+// reference to whichever context the caller is citing as incomplete; it is
+// recorded as given and not independently verified.
 type SubmitMissingContextRequestInput struct {
 	CapsuleId      string   `json:"capsule_id"`
 	Query          string   `json:"query"`
@@ -28,10 +30,6 @@ type SubmitMissingContextRequestInput struct {
 
 func submitMissingContextRequestHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitMissingContextRequestInput) (*mcp.CallToolResult, protocol.MissingContextRequest, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SubmitMissingContextRequestInput) (*mcp.CallToolResult, protocol.MissingContextRequest, error) {
-		if _, err := a.Capsules.Get(in.CapsuleId); err != nil {
-			return nil, protocol.MissingContextRequest{}, fmt.Errorf("mcpserver: capsule %q: %w; a missing-context request must cite the capsule it was raised from", in.CapsuleId, err)
-		}
-
 		rec := protocol.MissingContextRequest{
 			Id:             fmt.Sprintf("mcr-%s-%d", in.CapsuleId, time.Now().UnixNano()),
 			CapsuleId:      in.CapsuleId,
@@ -96,10 +94,10 @@ type ResolveMissingContextRequestInput struct {
 	Resolution string `json:"resolution" jsonschema:"one of added_to_revision|rejected|asked_user"`
 	Note       string `json:"note,omitempty"`
 
-	// RevisedCapsuleId is required when resolution is added_to_revision: the
-	// id of a new capsule (built via request_capsule, typically with
-	// retrieval_query set to search for the missing context) that
-	// supersedes this request's capsule with the missing context included.
+	// RevisedCapsuleId is required when resolution is added_to_revision: an
+	// opaque reference identifying the revised context that supersedes this
+	// request's cited context with the missing piece included. Recorded as
+	// given and not independently verified.
 	RevisedCapsuleId string `json:"revised_capsule_id,omitempty"`
 }
 
@@ -114,10 +112,7 @@ func resolveMissingContextRequestHandler(a *app.App) func(context.Context, *mcp.
 		switch status {
 		case protocol.MissingContextRequestStatusAddedToRevision:
 			if in.RevisedCapsuleId == "" {
-				return nil, protocol.MissingContextRequest{}, fmt.Errorf("mcpserver: resolution added_to_revision requires revised_capsule_id (build it with request_capsule first)")
-			}
-			if _, err := a.Capsules.Get(in.RevisedCapsuleId); err != nil {
-				return nil, protocol.MissingContextRequest{}, fmt.Errorf("mcpserver: revised capsule %q: %w", in.RevisedCapsuleId, err)
+				return nil, protocol.MissingContextRequest{}, fmt.Errorf("mcpserver: resolution added_to_revision requires revised_capsule_id")
 			}
 			rec.RevisedCapsuleId = &in.RevisedCapsuleId
 		case protocol.MissingContextRequestStatusRejected, protocol.MissingContextRequestStatusAskedUser:

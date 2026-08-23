@@ -1,16 +1,14 @@
 // Package taskstore is Punakawan's Beads-less fallback task graph: a
-// Dolt-backed store for projects that have no .beads directory. When a project
-// does not use Beads, the panel's task board and submit_task_graph persist to
-// and read from here instead, so tasks and their dependency graph are still
-// tracked - without mutating the project (no git init, no CLAUDE.md, no hooks
-// that `bd init` would write).
+// SQLite-backed store (internal/storage) for projects that have no .beads
+// directory. When a project does not use Beads, the panel's
+// task board and submit_task_graph persist to and read from here instead, so
+// tasks and their dependency graph are still tracked - without mutating the
+// project (no git init, no CLAUDE.md, no hooks that `bd init` would write).
 //
-// It deliberately reuses Punakawan's existing internal Dolt engine: rather
-// than clone knowledge's careful sql-server lifecycle (serverRegistry,
-// cross-process reuse, refcounted Close), a Store wraps a *sql.DB handed to it
-// by the already-open knowledge store (see app.OpenTaskStore). The task tables
-// simply live in the same per-project Punakawan Dolt database as knowledge;
-// that database is an internal implementation detail, not a human repository.
+// The kernel is one database shared by every local project checkout, so
+// every row is scoped by an explicit projectID (see internal/storage/
+// migrations/0003_taskstore.sql): two projects can mint the identical task
+// id without colliding or leaking into each other's List/Get results.
 //
 // The read/write shapes mirror internal/beads exactly (beads.ReadyIssue,
 // beads.Issue, beads.CreateTaskOptions) so the panel's TaskReader and the
@@ -24,12 +22,16 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/beads"
+	"github.com/ygrip/punakawan/internal/storage"
 )
+
+const timeLayout = time.RFC3339Nano
 
 // closedStatuses are the task statuses that count as "not blocking" when
 // deciding readiness, mirroring how bd treats a closed dependency as
@@ -41,54 +43,18 @@ var closedStatuses = map[string]bool{"closed": true, "done": true, "resolved": t
 // is "blocked by" its target). parent-child is structural, not blocking.
 var blockingDepTypes = map[string]bool{"blocks": true, "blocked-by": true, "requires": true}
 
-// Store is a Dolt-backed fallback task store over an injected *sql.DB. It does
-// not own the connection or the underlying dolt sql-server (the knowledge
-// store does); it only owns its two tables.
+// Store is a SQLite-backed fallback task store, scoped to one project within
+// the shared storage kernel. Schema migration happens once, centrally, when
+// the kernel opens (internal/storage/migrations/0003_taskstore.sql) - a
+// Store never creates its own tables.
 type Store struct {
-	db *sql.DB
+	db        *storage.DB
+	projectID string
 }
 
-// New wraps db in a Store. Callers must call Migrate once before use (App does
-// this in OpenTaskStore).
-func New(db *sql.DB) *Store {
-	return &Store{db: db}
-}
-
-// Migrate creates the task tables if they do not already exist. Idempotent, so
-// it is safe to call on every open (the tables share the knowledge database,
-// whose schema_migrations tracking is independent).
-func (s *Store) Migrate() error {
-	if _, err := s.db.Exec(`
-CREATE TABLE IF NOT EXISTS tasks (
-  id VARCHAR(255) PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT,
-  acceptance_criteria TEXT,
-  status VARCHAR(64) NOT NULL,
-  priority INT NOT NULL,
-  issue_type VARCHAR(64) NOT NULL,
-  owner VARCHAR(255),
-  assignee VARCHAR(255),
-  labels JSON,
-  parent VARCHAR(255),
-  external_ref VARCHAR(255),
-  created_at DATETIME NOT NULL,
-  created_by VARCHAR(255),
-  updated_at DATETIME NOT NULL,
-  closed_at DATETIME NULL
-)`); err != nil {
-		return fmt.Errorf("taskstore: create tasks table: %w", err)
-	}
-	if _, err := s.db.Exec(`
-CREATE TABLE IF NOT EXISTS task_deps (
-  from_id VARCHAR(255) NOT NULL,
-  to_id VARCHAR(255) NOT NULL,
-  type VARCHAR(64) NOT NULL,
-  PRIMARY KEY (from_id, to_id, type)
-)`); err != nil {
-		return fmt.Errorf("taskstore: create task_deps table: %w", err)
-	}
-	return nil
+// New wraps db, scoping every read and write to projectID.
+func New(db *storage.DB, projectID string) *Store {
+	return &Store{db: db, projectID: projectID}
 }
 
 // CreateInput describes a task to create. It mirrors the fields
@@ -122,33 +88,58 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("taskstore: marshal labels: %w", err)
 	}
-	now := time.Now().UTC()
-	if _, err := s.db.ExecContext(ctx, `
-INSERT INTO tasks (id, title, description, acceptance_criteria, status, priority, issue_type, owner, assignee, labels, parent, external_ref, created_at, created_by, updated_at, closed_at)
-VALUES (?, ?, ?, ?, 'open', ?, ?, '', '', ?, ?, ?, ?, 'punakawan', ?, NULL)`,
-		id, in.Title, in.Description, strings.Join(in.AcceptanceCriteria, "\n"), in.Priority, issueType,
-		string(labels), in.Parent, in.ExternalRef, now, now); err != nil {
-		return "", fmt.Errorf("taskstore: insert task: %w", err)
-	}
-	if in.Parent != "" {
-		// Record the hierarchy as a parent-child edge so the dependency graph
-		// mirrors what bd emits.
-		if err := s.AddDependency(ctx, id, in.Parent, "parent-child"); err != nil {
-			return "", err
+	now := time.Now().UTC().Format(timeLayout)
+
+	err = s.db.Write(ctx, "taskstore-create-"+s.projectID+"-"+id, "create task "+id, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO tasks (project_id, id, title, description, acceptance_criteria, status, priority, issue_type, owner, assignee, labels, parent, external_ref, created_at, created_by, updated_at, closed_at)
+VALUES (?, ?, ?, ?, ?, 'open', ?, ?, '', '', ?, ?, ?, ?, 'punakawan', ?, NULL)`,
+			s.projectID, id, in.Title, in.Description, strings.Join(in.AcceptanceCriteria, "\n"), in.Priority, issueType,
+			string(labels), in.Parent, in.ExternalRef, now, now); err != nil {
+			return fmt.Errorf("taskstore: insert task: %w", err)
 		}
+		if in.Parent != "" {
+			// Record the hierarchy as a parent-child edge so the dependency
+			// graph mirrors what bd emits.
+			if err := addDependencyTx(ctx, tx, s.projectID, id, in.Parent, "parent-child"); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return "", err
 	}
 	return id, nil
 }
 
 // AddDependency records that fromID depends on (is blocked by) toID, matching
-// beads.AddDependency's direction. Idempotent on the (from, to, type) key.
+// beads.AddDependency's direction. Idempotent on the (project, from, to,
+// type) key.
 func (s *Store) AddDependency(ctx context.Context, fromID, toID, depType string) error {
 	if depType == "" {
 		depType = "blocks"
 	}
-	if _, err := s.db.ExecContext(ctx, `
-INSERT INTO task_deps (from_id, to_id, type) VALUES (?, ?, ?)
-ON DUPLICATE KEY UPDATE type = VALUES(type)`, fromID, toID, depType); err != nil {
+	key := fmt.Sprintf("taskstore-dep-%s-%s-%s-%s", s.projectID, fromID, toID, depType)
+	err := s.db.Write(ctx, key, "add dependency "+fromID+" -> "+toID, func(tx *sql.Tx) error {
+		return addDependencyTx(ctx, tx, s.projectID, fromID, toID, depType)
+	})
+	if errors.Is(err, storage.ErrDuplicateWrite) {
+		return nil
+	}
+	return err
+}
+
+func addDependencyTx(ctx context.Context, tx *sql.Tx, projectID, fromID, toID, depType string) error {
+	// The primary key is (project_id, from_id, to_id, type): a differing
+	// type is a different row, not a conflict, so plain INSERT OR IGNORE
+	// (rather than an upsert) is the correct translation of the prior
+	// MySQL "ON DUPLICATE KEY UPDATE type = VALUES(type)", which could
+	// never actually change type either.
+	if _, err := tx.ExecContext(ctx,
+		`INSERT OR IGNORE INTO task_deps (project_id, from_id, to_id, type) VALUES (?, ?, ?, ?)`,
+		projectID, fromID, toID, depType,
+	); err != nil {
 		return fmt.Errorf("taskstore: add dependency %s -> %s: %w", fromID, toID, err)
 	}
 	return nil
@@ -159,13 +150,13 @@ type row struct {
 	id, title, description, acceptance, status, issueType, owner, assignee, labels, parent, externalRef, createdBy string
 	priority                                                                                                       int
 	createdAt, updatedAt                                                                                           time.Time
-	closedAt                                                                                                       sql.NullTime
+	closedAt                                                                                                       sql.NullString
 }
 
 func (s *Store) allRows(ctx context.Context) ([]row, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.Reader().QueryContext(ctx, `
 SELECT id, title, description, acceptance_criteria, status, priority, issue_type, owner, assignee, labels, parent, external_ref, created_at, created_by, updated_at, closed_at
-FROM tasks ORDER BY created_at ASC`)
+FROM tasks WHERE project_id = ? ORDER BY created_at ASC`, s.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("taskstore: query tasks: %w", err)
 	}
@@ -173,12 +164,17 @@ FROM tasks ORDER BY created_at ASC`)
 	var out []row
 	for rows.Next() {
 		var r row
-		var labels sql.NullString
+		var createdAt, updatedAt string
 		if err := rows.Scan(&r.id, &r.title, &r.description, &r.acceptance, &r.status, &r.priority, &r.issueType,
-			&r.owner, &r.assignee, &labels, &r.parent, &r.externalRef, &r.createdAt, &r.createdBy, &r.updatedAt, &r.closedAt); err != nil {
+			&r.owner, &r.assignee, &r.labels, &r.parent, &r.externalRef, &createdAt, &r.createdBy, &updatedAt, &r.closedAt); err != nil {
 			return nil, fmt.Errorf("taskstore: scan task: %w", err)
 		}
-		r.labels = labels.String
+		if r.createdAt, err = time.Parse(timeLayout, createdAt); err != nil {
+			return nil, fmt.Errorf("taskstore: parse created_at: %w", err)
+		}
+		if r.updatedAt, err = time.Parse(timeLayout, updatedAt); err != nil {
+			return nil, fmt.Errorf("taskstore: parse updated_at: %w", err)
+		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -186,7 +182,7 @@ FROM tasks ORDER BY created_at ASC`)
 
 // deps returns every dependency edge, grouped by from_id.
 func (s *Store) allDeps(ctx context.Context) (map[string][]beads.ReadyDependency, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT from_id, to_id, type FROM task_deps`)
+	rows, err := s.db.Reader().QueryContext(ctx, `SELECT from_id, to_id, type FROM task_deps WHERE project_id = ?`, s.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("taskstore: query deps: %w", err)
 	}
@@ -327,7 +323,11 @@ func (s *Store) Get(ctx context.Context, id string) (beads.Issue, error) {
 		ExternalRef:        self.externalRef,
 	}
 	if self.closedAt.Valid {
-		issue.ClosedAt = self.closedAt.Time.Format(time.RFC3339)
+		closedAt, err := time.Parse(timeLayout, self.closedAt.String)
+		if err != nil {
+			return beads.Issue{}, fmt.Errorf("taskstore: parse closed_at: %w", err)
+		}
+		issue.ClosedAt = closedAt.Format(time.RFC3339)
 	}
 	return issue, nil
 }

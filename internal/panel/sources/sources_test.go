@@ -15,7 +15,10 @@ import (
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
+	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/search"
+	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/internal/testrun"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -51,6 +54,9 @@ func runGit(t *testing.T, dir string, args ...string) {
 // mirroring internal/mcpserver/server_test.go's newTestApp.
 func newTestApp(t *testing.T) *app.App {
 	t.Helper()
+	// Isolate the shared SQLite kernel to a per-test temp dir so OpenKnowledge/
+	// OpenTaskStore never touch this machine's real, shared database.
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo-a")
@@ -147,11 +153,15 @@ func newTestRun(a *app.App, id string) protocol.WorkflowRun {
 
 func openTestRegistry(t *testing.T) *registry.Store {
 	t.Helper()
-	reg, err := registry.OpenAt(filepath.Join(t.TempDir(), "workspaces.yaml"))
+	// A dedicated, isolated storage kernel per call, so tests that do not
+	// otherwise set PUNAKAWAN_DATA_DIR never share (and leak entries through)
+	// this machine's real registry.
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "registry.db"))
 	if err != nil {
-		t.Fatalf("registry.OpenAt: %v", err)
+		t.Fatalf("storage.Open: %v", err)
 	}
-	return reg
+	t.Cleanup(func() { _ = db.Close() })
+	return registry.New(db)
 }
 
 func TestWorkspaceSourceListWithRegistryDescribesAllEntries(t *testing.T) {
@@ -313,6 +323,104 @@ func TestSessionSourceListFiltersByStatus(t *testing.T) {
 	}
 	if len(summaries) != 0 {
 		t.Fatalf("List with status=completed = %+v, want none", summaries)
+	}
+}
+
+// TestSessionSourceListSkipCountsOmitsEvidenceCounts proves SkipCounts
+// actually skips the per-run ledger/journal scan, rather than happening to
+// return zero counts anyway: a real evidence record is written for the run,
+// so a non-SkipCounts call must see it, and a SkipCounts call must not
+// (Overview's whole reason for this flag - it never renders these counts,
+// so paying for the scan was pure waste).
+func TestSessionSourceListSkipCountsOmitsEvidenceCounts(t *testing.T) {
+	a := newTestApp(t)
+	run := newTestRun(a, "run-test-1")
+	if err := a.Workflow.Append(run); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, run.Id)
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	if err := ledger.Append(protocol.EvidenceRecord{Id: "ev-1", RunId: run.Id, Type: protocol.EvidenceRecordTypeCommandOutput, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("ledger.Append: %v", err)
+	}
+
+	ss := &SessionSource{App: a}
+
+	withCounts, err := ss.List(context.Background(), a.Workspace.ID, contract.SessionFilter{})
+	if err != nil {
+		t.Fatalf("List (with counts): %v", err)
+	}
+	if len(withCounts) != 1 || withCounts[0].EvidenceCount == nil || *withCounts[0].EvidenceCount != 1 {
+		t.Fatalf("List (with counts) = %+v, want EvidenceCount=1", withCounts)
+	}
+
+	skipped, err := ss.List(context.Background(), a.Workspace.ID, contract.SessionFilter{SkipCounts: true})
+	if err != nil {
+		t.Fatalf("List (SkipCounts): %v", err)
+	}
+	if len(skipped) != 1 || skipped[0].EvidenceCount == nil || *skipped[0].EvidenceCount != 0 {
+		t.Fatalf("List (SkipCounts) = %+v, want EvidenceCount=0 (counts skipped, not computed)", skipped)
+	}
+}
+
+// TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks proves a run's
+// session summary reports the same failing-command and risk-finding counts a
+// PR body or Jira comment would render for that same run, because both read
+// the same deliverysummary.Build output rather than each deriving their own
+// answer.
+func TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks(t *testing.T) {
+	a := newTestApp(t)
+	run := newTestRun(a, "run-test-1")
+	if err := a.Workflow.Append(run); err != nil {
+		t.Fatalf("Workflow.Append: %v", err)
+	}
+
+	bundle, err := evidence.NewBundle(a.Workspace.Root, run.Id, "task-1")
+	if err != nil {
+		t.Fatalf("NewBundle: %v", err)
+	}
+	report := testrun.Report{
+		AllPassed: false,
+		Results: []testrun.CommandResult{
+			{Command: testrun.Command{Name: "go", Args: []string{"test", "./..."}}, ExitCode: 1},
+		},
+	}
+	if err := testrun.WriteBundle(report, bundle); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+	ledger, err := evidence.OpenLedger(a.Workspace.Root, run.Id)
+	if err != nil {
+		t.Fatalf("OpenLedger: %v", err)
+	}
+	if _, err := evidence.RecordArtifact(ledger, run.Id, "task-1", protocol.EvidenceRecordTypeTestReport, bundle, "tests.json", time.Now().UTC()); err != nil {
+		t.Fatalf("RecordArtifact: %v", err)
+	}
+	if err := a.PrReviews.Append(prreview.Record{
+		RunId: run.Id, RepoId: "repo-a", PullRequestNumber: 1,
+		Findings: []protocol.ReviewFinding{
+			{Id: "f1", Severity: protocol.ReviewFindingSeverityBlocker, Explanation: "unchecked error"},
+		},
+	}); err != nil {
+		t.Fatalf("PrReviews.Append: %v", err)
+	}
+
+	ss := &SessionSource{App: a}
+	summaries, err := ss.List(context.Background(), a.Workspace.ID, contract.SessionFilter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %+v, want 1", summaries)
+	}
+	got := summaries[0]
+	if got.ErrorCount == nil || *got.ErrorCount != 1 {
+		t.Fatalf("ErrorCount = %v, want 1 (the failing go test command)", got.ErrorCount)
+	}
+	if got.WarningCount == nil || *got.WarningCount != 1 {
+		t.Fatalf("WarningCount = %v, want 1 (the blocker-severity finding)", got.WarningCount)
 	}
 }
 
@@ -797,7 +905,11 @@ func TestApprovalSourceListFiltersByStatus(t *testing.T) {
 		Status:      protocol.ApprovalRecordStatusPending,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := a.Approvals.Append(rec); err != nil {
+	store, err := a.OpenApprovals()
+	if err != nil {
+		t.Fatalf("OpenApprovals: %v", err)
+	}
+	if err := store.Append(rec); err != nil {
 		t.Fatalf("Approvals.Append: %v", err)
 	}
 
@@ -846,6 +958,109 @@ func TestWorkspaceSourceGetIncludesGitHealth(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("Health = %+v, want a git:repo-a entry", detail.Health)
+	}
+}
+
+// TestWorkspaceSourceListSkipsGitHealth guards a fix for the overview
+// page's git-status cost scaling linearly with project count: List (used
+// by the multi-workspace overview aggregate) must not run gitHealth's
+// per-repository `git status` shell-out at all, since the overview never
+// displays per-repo git state (that only appears on the project detail
+// page, served by Get). Proven here by breaking repo-a's git status (its
+// directory is removed) and showing List's Availability is unaffected
+// while Get still surfaces the resulting git:repo-a failure.
+func TestWorkspaceSourceListSkipsGitHealth(t *testing.T) {
+	requireBd(t)
+	a := newTestApp(t)
+	if err := os.RemoveAll(filepath.Join(a.Workspace.Root, "repo-a")); err != nil {
+		t.Fatalf("RemoveAll repo-a: %v", err)
+	}
+	ws := &WorkspaceSource{App: a}
+
+	summaries, err := ws.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("List = %+v, want 1 entry", summaries)
+	}
+	if summaries[0].Availability != protocol.PanelSourceHealthAvailabilityAvailable {
+		t.Fatalf("List Availability = %s, want available (git health must not factor into List)", summaries[0].Availability)
+	}
+
+	detail, err := ws.Get(context.Background(), a.Workspace.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	foundBroken := false
+	for _, h := range detail.Health {
+		if h.Source == "git:repo-a" && h.Availability == protocol.PanelSourceHealthAvailabilityUnavailable {
+			foundBroken = true
+		}
+	}
+	if !foundBroken {
+		t.Fatalf("Get.Health = %+v, want a failing git:repo-a entry", detail.Health)
+	}
+}
+
+// TestGitHealthCoversEveryRepoInDeterministicOrder guards against a
+// regression now that gitHealth runs one `git status` per repository
+// concurrently (a bounded
+// worker pool, mirroring List's), so this proves the parallel fan-out still
+// reassembles results in the workspace's declared repository order, not
+// whatever order the goroutines happened to finish in - repeated across
+// several calls, since a race would not necessarily show up on the first
+// one.
+func TestGitHealthCoversEveryRepoInDeterministicOrder(t *testing.T) {
+	dir := t.TempDir()
+	repoIDs := []string{"repo-a", "repo-b", "repo-c"}
+	for _, id := range repoIDs {
+		repoDir := filepath.Join(dir, id)
+		if err := os.MkdirAll(repoDir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", id, err)
+		}
+		runGit(t, repoDir, "init", "-q", "-b", "main")
+		runGit(t, repoDir, "config", "user.email", "test@example.com")
+		runGit(t, repoDir, "config", "user.name", "Test User")
+		if err := os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte("hi\n"), 0o644); err != nil {
+			t.Fatalf("write f.txt: %v", err)
+		}
+		runGit(t, repoDir, "add", "f.txt")
+		runGit(t, repoDir, "commit", "-q", "-m", "init")
+	}
+
+	punakawanDir := filepath.Join(dir, ".punakawan")
+	if err := os.MkdirAll(punakawanDir, 0o755); err != nil {
+		t.Fatalf("mkdir .punakawan: %v", err)
+	}
+	workspaceYAML := "version: punakawan.workspace/v1\nid: multi-repo\nname: MultiRepo\nrepositories:\n" +
+		"  - id: repo-a\n    path: ./repo-a\n" +
+		"  - id: repo-b\n    path: ./repo-b\n" +
+		"  - id: repo-c\n    path: ./repo-c\n"
+	if err := os.WriteFile(filepath.Join(punakawanDir, "workspace.yaml"), []byte(workspaceYAML), 0o644); err != nil {
+		t.Fatalf("write workspace.yaml: %v", err)
+	}
+
+	a, err := app.Load(dir)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+
+	for attempt := 0; attempt < 20; attempt++ {
+		health := gitHealth(context.Background(), a, time.Now().UTC())
+		if len(health) != len(repoIDs) {
+			t.Fatalf("attempt %d: gitHealth returned %d entries, want %d", attempt, len(health), len(repoIDs))
+		}
+		for i, id := range repoIDs {
+			want := "git:" + id
+			if health[i].Source != want {
+				t.Fatalf("attempt %d: health[%d].Source = %q, want %q (order must match Workspace.Repositories)", attempt, i, health[i].Source, want)
+			}
+			if health[i].Availability != protocol.PanelSourceHealthAvailabilityAvailable {
+				t.Fatalf("attempt %d: %s availability = %s, want available", attempt, want, health[i].Availability)
+			}
+		}
 	}
 }
 

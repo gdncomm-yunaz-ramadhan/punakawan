@@ -20,7 +20,7 @@ import (
 // content for the target artifact; it becomes a reviewed proposal, never a
 // direct canonical write.
 type ProposeProjectLearningInput struct {
-	ArtifactType string         `json:"artifact_type" jsonschema:"one of workflow|project_metadata|knowledge"`
+	ArtifactType string         `json:"artifact_type" jsonschema:"one of workflow|project_metadata|knowledge|convention"`
 	TargetId     string         `json:"target_id" jsonschema:"the workflow id, metadata key, or knowledge record id being improved"`
 	Candidate    map[string]any `json:"candidate" jsonschema:"proposed canonical content for the target artifact"`
 	Rationale    string         `json:"rationale,omitempty"`
@@ -28,6 +28,15 @@ type ProposeProjectLearningInput struct {
 	SourceRunIds []string       `json:"source_run_ids,omitempty"`
 	Subject      string         `json:"subject,omitempty" jsonschema:"knowledge fingerprint subject; defaults to target_id"`
 	Title        string         `json:"title,omitempty"`
+	// Classification declares how this proposal was produced: one of
+	// detected_fact|user_correction|inferred (see learning.Classification*).
+	// Left unset, it defaults to inferred — the safe, reviewable-only choice;
+	// this tool never auto-accepts on the caller's say-so regardless of the
+	// value given here.
+	Classification string `json:"classification,omitempty" jsonschema:"one of detected_fact|user_correction|inferred; unset defaults to inferred (reviewable-only)"`
+	// Confidence is the proposer's best-effort estimate in [0.0, 1.0] of how
+	// sure it is; optional.
+	Confidence float64 `json:"confidence,omitempty" jsonschema:"best-effort confidence 0.0-1.0; optional"`
 }
 
 // ProposeProjectLearningOutput reports the resulting (or deduplicated)
@@ -44,11 +53,24 @@ type ProposeProjectLearningOutput struct {
 
 func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ProposeProjectLearningInput) (*mcp.CallToolResult, ProposeProjectLearningOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in ProposeProjectLearningInput) (*mcp.CallToolResult, ProposeProjectLearningOutput, error) {
-		if in.ArtifactType != learning.TypeWorkflow && in.ArtifactType != learning.TypeMetadata && in.ArtifactType != learning.TypeKnowledge {
-			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: artifact_type must be one of workflow|project_metadata|knowledge")
+		if in.ArtifactType != learning.TypeWorkflow && in.ArtifactType != learning.TypeMetadata && in.ArtifactType != learning.TypeKnowledge && in.ArtifactType != learning.TypeConvention {
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: artifact_type must be one of workflow|project_metadata|knowledge|convention")
 		}
 		if in.TargetId == "" {
 			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target_id is required")
+		}
+		// classification defaults to inferred (reviewable-only) when unset -
+		// the safe choice; a caller cannot get auto-accept just by leaving
+		// this field out.
+		classification := in.Classification
+		if classification == "" {
+			classification = learning.ClassificationInferred
+		}
+		if !learning.ValidClassification(classification) {
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: classification must be one of detected_fact|user_correction|inferred")
+		}
+		if in.Confidence < 0 || in.Confidence > 1 {
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: confidence must be between 0.0 and 1.0")
 		}
 
 		adapter, err := learningAdapterFor(a, in.ArtifactType)
@@ -65,7 +87,7 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, ProposeProjectLearningOutput{}, err
 		}
 
-		store, err := learning.Open(a.Workspace.Root)
+		store, err := a.OpenLearning()
 		if err != nil {
 			return nil, ProposeProjectLearningOutput{}, err
 		}
@@ -92,7 +114,7 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 		reviews := &artifact.ReviewStore{WorkspaceRoot: a.Workspace.Root}
 		baseRef, err := adapter.Current(in.TargetId)
 		if err != nil {
-			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target %q not found: %w", in.TargetId, err)
+			return nil, ProposeProjectLearningOutput{}, fmt.Errorf("propose_project_learning: target %q not found: %w; %s", in.TargetId, err, createPathHint(in.ArtifactType))
 		}
 		baseContent, _, err := adapter.Version(in.TargetId, baseRef.Version)
 		if err != nil {
@@ -109,7 +131,7 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			Artifact: protocol.ArtifactReviewArtifact{
 				Id:           in.TargetId,
 				RevisionHash: baseRef.RevisionHash,
-				Type:         protocol.ArtifactReviewArtifactType(in.ArtifactType),
+				Type:         reviewArtifactType(in.ArtifactType),
 				Version:      baseRef.Version,
 			},
 			Metadata: protocol.ArtifactReviewMetadata{
@@ -157,25 +179,53 @@ func proposeProjectLearningHandler(a *app.App) func(context.Context, *mcp.CallTo
 			return nil, ProposeProjectLearningOutput{}, err
 		}
 
+		// ProfileRevision is intentionally left at its zero value here: it
+		// records the project.Project.Revision a proposal was ACCEPTED
+		// against (see learning.Proposal), and this path only ever creates a
+		// pending proposal - status is overlaid live from the review at read
+		// time (ContextImprovementsHandler) rather than written back here, so
+		// there is no acceptance event in this codepath to record it against.
 		lp := learning.Proposal{
-			Id:           randomLocalID("learn"),
-			ArtifactType: in.ArtifactType,
-			TargetId:     in.TargetId,
-			Fingerprint:  fp,
-			Rationale:    in.Rationale,
-			EvidenceIds:  in.EvidenceIds,
-			SourceRunIds: in.SourceRunIds,
-			SupportCount: 1,
-			ReviewId:     reviewID,
-			Status:       learning.StatusPending,
-			CreatedBy:    "agent",
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			Id:             randomLocalID("learn"),
+			ArtifactType:   in.ArtifactType,
+			TargetId:       in.TargetId,
+			Fingerprint:    fp,
+			Rationale:      in.Rationale,
+			EvidenceIds:    in.EvidenceIds,
+			SourceRunIds:   in.SourceRunIds,
+			SupportCount:   1,
+			ReviewId:       reviewID,
+			Status:         learning.StatusPending,
+			Classification: classification,
+			Confidence:     in.Confidence,
+			CreatedBy:      "agent",
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
 		if err := store.Append(lp); err != nil {
 			return nil, ProposeProjectLearningOutput{}, err
 		}
 		return nil, ProposeProjectLearningOutput{ProposalId: lp.Id, ReviewId: reviewID, Fingerprint: fp, SupportCount: 1, Deduplicated: false, Status: lp.Status}, nil
+	}
+}
+
+// createPathHint tells a caller who passed a non-existent target_id where the
+// create-from-scratch path lives, since propose_project_learning only ever
+// proposes an improvement to an artifact that already exists - it is never the
+// tool that mints a brand-new one (that confusion was reported against the
+// knowledge pillar specifically).
+func createPathHint(artifactType string) string {
+	switch artifactType {
+	case learning.TypeKnowledge:
+		return "propose_project_learning only improves an existing knowledge record - to create a new one from scratch use create_knowledge_record (or a dedicated dossier/role/recipe tool for structured records), then improve that record's id here"
+	case learning.TypeWorkflow:
+		return "propose_project_learning only improves an existing workflow definition - to create a new one use save_workflow_definition, then propose improvements against its id here"
+	case learning.TypeMetadata:
+		return "propose_project_learning only improves an existing metadata entry - to create one use set_project_metadata, then propose improvements against its key here"
+	case learning.TypeConvention:
+		return "propose_project_learning only improves an existing convention proposal, not create one from scratch"
+	default:
+		return "propose_project_learning only improves an artifact that already exists; create it with its dedicated tool first"
 	}
 }
 
@@ -194,9 +244,28 @@ func learningAdapterFor(a *app.App, artifactType string) (artifact.Store, error)
 			return nil, fmt.Errorf("propose_project_learning: open knowledge store: %w", err)
 		}
 		return &learning.KnowledgeAdapter{Store: ks}, nil
+	case learning.TypeConvention:
+		return &learning.ConventionAdapter{Root: a.Workspace.Root}, nil
 	default:
 		return nil, fmt.Errorf("propose_project_learning: unknown artifact_type %q", artifactType)
 	}
+}
+
+// reviewArtifactType maps a learning pillar's ArtifactType onto the protocol
+// enum protocol.ArtifactReviewArtifactType tags a review's underlying
+// artifact kind with. This is a real mapping, not a passthrough cast: the
+// three original pillars' ArtifactType strings happen to equal their protocol
+// enum's value verbatim, but TypeConvention does not have (and, per this
+// vertical slice's deliberately minimal scope, does not get) its own protocol
+// enum value or review-artifact type - ConventionAdapter physically persists
+// an accepted convention as a project metadata entry (adapters.go), so its
+// review is tagged project_metadata, matching what CreateVersion actually
+// writes.
+func reviewArtifactType(artifactType string) protocol.ArtifactReviewArtifactType {
+	if artifactType == learning.TypeConvention {
+		return protocol.ArtifactReviewArtifactTypeProjectMetadata
+	}
+	return protocol.ArtifactReviewArtifactType(artifactType)
 }
 
 // learningFingerprint computes the deterministic dedup fingerprint for the
@@ -215,6 +284,8 @@ func learningFingerprint(projectID string, in ProposeProjectLearningInput, candi
 		return learning.WorkflowFingerprint(projectID, graph), nil
 	case learning.TypeMetadata:
 		return learning.MetadataFingerprint(projectID, in.TargetId), nil
+	case learning.TypeConvention:
+		return learning.ConventionFingerprint(projectID, in.TargetId), nil
 	case learning.TypeKnowledge:
 		var rec protocol.KnowledgeRecord
 		_ = json.Unmarshal(candidateBytes, &rec)

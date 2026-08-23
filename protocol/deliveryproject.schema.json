@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/deliveryproject.schema.json",
+  "title": "DeliveryProject",
+  "description": "A registered project binding in the canonical multi-project delivery control plane. One row per project the orchestrator is allowed to route work to; unknown project ids are never inferred from ambient working-directory scope.",
+  "type": "object",
+  "required": ["id", "slug", "repository_url", "status", "registered_at", "revision"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "slug": { "type": "string", "description": "Short, filesystem-safe, human-chosen project identifier used in worktree and lane paths." },
+    "repository_url": { "type": "string" },
+    "default_branch": { "type": "string" },
+    "status": { "type": "string", "enum": ["active", "disabled"] },
+    "registered_at": { "type": "string", "format": "date-time" },
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every update." }
+  }
+}

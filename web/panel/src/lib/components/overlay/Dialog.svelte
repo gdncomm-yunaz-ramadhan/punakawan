@@ -8,8 +8,12 @@
     title?: string;
     children: Snippet;
     onclose: () => void;
+    // "sm" keeps today's 520px default so existing callers are unaffected;
+    // "lg" is for content that's cramped at that width (tables, code blocks,
+    // embedded graphs).
+    size?: "sm" | "md" | "lg";
   }
-  let { open, title, children, onclose }: Props = $props();
+  let { open, title, children, onclose, size = "sm" }: Props = $props();
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
@@ -83,7 +87,14 @@
 {#if open}
   <div class="backdrop" role="presentation" onclick={onclose}></div>
   <div class="dialog-wrap" role="presentation">
-    <div class="dialog" role="dialog" aria-modal="true" aria-label={title ?? "Dialog"} tabindex="-1" bind:this={dialogEl}>
+    <div
+      class="dialog size-{size}"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title ?? "Dialog"}
+      tabindex="-1"
+      bind:this={dialogEl}
+    >
       <div class="dialog-head">
         {#if title}<h2>{title}</h2>{/if}
         <button type="button" class="close" onclick={onclose} aria-label="Close"><Icon name="x" size={18} /></button>
@@ -119,11 +130,19 @@
     border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
-    width: min(520px, 100%);
     max-height: calc(100vh - 2rem);
     overflow-y: auto;
     padding: 0;
     box-sizing: border-box;
+  }
+  .size-sm {
+    width: min(520px, 100%);
+  }
+  .size-md {
+    width: min(720px, 100%);
+  }
+  .size-lg {
+    width: min(960px, 100%);
   }
   .dialog-head {
     display: flex;

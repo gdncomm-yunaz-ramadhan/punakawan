@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/dependencyedge.schema.json",
+  "title": "DependencyEdge",
+  "description": "One typed edge in an orchestration's task dependency graph, from_task_id -> to_task_id meaning from_task_id depends on to_task_id. Only \"requires\" and \"produces-input-for\" block execution; \"serializes-with\" and \"informational\" are non-blocking. Explicit source/user origins outrank repository-fact, which outranks model-inference.",
+  "type": "object",
+  "required": ["id", "orchestration_id", "from_task_id", "to_task_id", "type", "origin", "confidence", "status", "created_at", "revision"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Filesystem-safe ULID (Crockford base32, 26 chars)." },
+    "orchestration_id": { "type": "string" },
+    "from_task_id": { "type": "string" },
+    "to_task_id": { "type": "string" },
+    "type": { "type": "string", "enum": ["requires", "produces-input-for", "serializes-with", "informational"] },
+    "evidence": { "type": "string", "description": "Why this edge exists: an explicit source link, a repository fact, or a model-inference rationale." },
+    "origin": { "type": "string", "enum": ["explicit-source", "user", "repository-fact", "model-inference"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "status": { "type": "string", "enum": ["active", "removed"] },
+    "removal_evidence": { "type": "string", "description": "Required to remove an edge from a task that has already been routed; not required before routing." },
+    "created_at": { "type": "string", "format": "date-time" },
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every applied event." }
+  }
+}
