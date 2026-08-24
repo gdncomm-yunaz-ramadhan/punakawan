@@ -17,11 +17,9 @@
 // protocol/knowledge.schema.json — Context is a plain Go struct, not a
 // protocol.KnowledgeRecord.
 //
-// §11.2's "task definition" itself is not sourced from here: Beads, not
-// the knowledge store, is the system of record for tasks
-// (protocol.TaskContract; see internal/tasks). Build has no way to look a
-// task up on its own, so the caller must pass the task's own key fields
-// (or the whole protocol.TaskContract) into BuildInput.
+// The task definition itself is not sourced from here: this package has no
+// system of record for tasks, so Build has no way to look a task up on its
+// own. The caller must pass the task's own key fields into BuildInput.
 package taskcontext
 
 import (
@@ -39,29 +37,26 @@ import (
 // BuildInput carries everything Build needs beyond what it can look up
 // itself in the knowledge store.
 //
-// The task definition (§11.2's first field) is not looked up here: Beads is
-// the system of record for tasks, not the knowledge store, so Punakawan's
-// own code has no way to derive it. Callers must supply the task's own key
-// fields (TaskID, Scope, AcceptanceCriteria, ...) directly, mirroring how
-// protocol.TaskContract already carries them (see internal/tasks.go). This
-// package accepts the individual fields it needs rather than a
-// protocol.TaskContract value so callers that only have a subset of a
-// contract (e.g. while building it) are not forced to construct one.
+// The task definition is not looked up here: this package has no system of
+// record for tasks, so it has no way to derive it. Callers must supply the
+// task's own key fields (TaskID, Scope, AcceptanceCriteria, ...) directly.
+// This package accepts the individual fields it needs rather than a single
+// task-contract value so callers that only have a subset of a task's
+// fields (e.g. while building it) are not forced to construct one.
 type BuildInput struct {
-	// TaskID is this task's stable id (protocol.TaskContract.Id). Required.
+	// TaskID is this task's stable id. Required.
 	TaskID string
 	// RequirementID is the id of the parent requirement knowledge record
-	// (protocol.TaskContract.RequirementId) that this task exists to
-	// satisfy. Required: Build uses it to look up the parent requirement
-	// via store.Get.
+	// that this task exists to satisfy. Required: Build uses it to look up
+	// the parent requirement via store.Get.
 	RequirementID string
 
 	// TaskScope, TaskAcceptanceCriteria, TaskDefinitionOfDone, and
-	// TaskExpectedFilesOrComponents are copies of the caller's own
-	// protocol.TaskContract fields for this task. Build does not validate
-	// or look these up; it copies them straight through into Context so
-	// that Context.TaskDefinition is self-contained without requiring the
-	// caller to hand over a full protocol.TaskContract value.
+	// TaskExpectedFilesOrComponents are copies of the caller's own task
+	// fields. Build does not validate or look these up; it copies them
+	// straight through into Context so that Context.TaskDefinition is
+	// self-contained without requiring the caller to hand over a separate
+	// task value.
 	TaskScope                     string
 	TaskAcceptanceCriteria        []string
 	TaskDefinitionOfDone          string
@@ -109,16 +104,16 @@ type BuildInput struct {
 	Previous *Context
 
 	// PreviousTaskOutputs are short caller-supplied summaries of what
-	// earlier tasks in this run produced (e.g. "task bd-a1: added
-	// RefundService.Settle"). Per §11.2, later tasks should not receive the
-	// full conversational history of earlier tasks — only a bounded
-	// summary — so this field intentionally takes short strings rather
-	// than, say, full evidence bundles or transcripts. Build also
-	// consults store.Related(in.TaskID) for any knowledge records that
-	// declare a relation onto this task id (e.g. a "supersedes" or
-	// "discovered-from" edge) and appends those, but the primary source is
-	// this caller-supplied list, since prior task outputs generally live
-	// in Beads/evidence bundles rather than the knowledge store.
+	// earlier tasks in this run produced (e.g. "task-1: added
+	// RefundService.Settle"). Later tasks should not receive the full
+	// conversational history of earlier tasks — only a bounded summary —
+	// so this field intentionally takes short strings rather than, say,
+	// full evidence bundles or transcripts. Build also consults
+	// store.Related(in.TaskID) for any knowledge records that declare a
+	// relation onto this task id (e.g. a "supersedes" or "discovered-from"
+	// edge) and appends those, but the primary source is this
+	// caller-supplied list, since prior task outputs generally live in
+	// evidence bundles rather than the knowledge store.
 	PreviousTaskOutputs []string
 }
 
@@ -127,10 +122,9 @@ type BuildInput struct {
 // task.yaml by WriteYAML, per §17.2) rather than a protocol.KnowledgeRecord:
 // see this package's doc comment for why.
 type Context struct {
-	// TaskDefinition mirrors the subset of the task's own
-	// protocol.TaskContract fields the caller supplied via BuildInput. The
-	// caller-owned TaskContract remains the source of truth in Beads; this
-	// is a bounded copy for this execution context.
+	// TaskDefinition mirrors the subset of the task's own fields the
+	// caller supplied via BuildInput. The caller owns the source of truth
+	// for the task; this is a bounded copy for this execution context.
 	TaskDefinition TaskDefinition `json:"task_definition" yaml:"task_definition"`
 
 	// ParentRequirement summarizes the requirement knowledge record this
@@ -163,9 +157,9 @@ type Context struct {
 	KnownConstraints []string `json:"known_constraints,omitempty" yaml:"known_constraints,omitempty"`
 }
 
-// TaskDefinition is the bounded, caller-supplied subset of a
-// protocol.TaskContract carried into a Context. See BuildInput's docstring
-// for why this package does not look up a task contract on its own.
+// TaskDefinition is the bounded, caller-supplied task fields carried into a
+// Context. See BuildInput's docstring for why this package does not look
+// up a task definition on its own.
 type TaskDefinition struct {
 	TaskID                    string   `json:"task_id" yaml:"task_id"`
 	RequirementID             string   `json:"requirement_id" yaml:"requirement_id"`

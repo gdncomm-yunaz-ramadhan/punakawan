@@ -27,11 +27,9 @@ type CheckJiraSkippableOutput struct {
 // requirement's raw status name is stored verbatim on its KnowledgeRecord
 // (adapter-atlassian's normalizeJiraIssue sets it from fields.status.name),
 // so this is a read against durable knowledge, not a live Jira call: the
-// calling role checks this before deciding whether to include a given
-// requirement in a submit_task_graph call, rather than internal/tasks.
-// GenerateGraph silently dropping items - that would complicate its
-// already-shipped dependency-wiring semantics for every caller, not just
-// Jira-sourced ones.
+// calling role checks this explicitly before deciding whether to act on a
+// given requirement, rather than relying on some later step to silently
+// drop it.
 func checkJiraSkippableHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CheckJiraSkippableInput) (*mcp.CallToolResult, CheckJiraSkippableOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CheckJiraSkippableInput) (*mcp.CallToolResult, CheckJiraSkippableOutput, error) {
 		store, err := a.OpenKnowledge()

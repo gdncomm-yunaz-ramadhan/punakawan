@@ -81,7 +81,7 @@
     },
     "plan_ref": {
       "type": "object",
-      "description": "Immutable reference to the internal/plan revision this run was instantiated from (project hygiene refactor plan §5.3's workflow -> plan -> delivery pipeline). Absent for a run predating this wiring. Present for a run created by invoking a workflow definition, mirroring definition_ref's shape.",
+      "description": "Immutable reference to the internal/plan revision this run was instantiated from. Absent for a run predating this wiring. Present for a run created by invoking a workflow definition, mirroring definition_ref's shape.",
       "required": ["id", "revision"],
       "additionalProperties": false,
       "properties": {

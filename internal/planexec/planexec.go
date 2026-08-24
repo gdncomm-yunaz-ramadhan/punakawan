@@ -1,14 +1,12 @@
 // Package planexec tracks the execution lifecycle of one plan step
 // (internal/plan.PlanStep), for a project that wants plan-native step
-// tracking instead of, or alongside, Beads or internal/taskstore. It is
-// additive: nothing here reads or writes Beads/taskstore/tasks data, and
-// nothing outside this package is required to use it.
+// tracking. It is additive: nothing outside this package is required to
+// use it.
 //
-// A step's readiness is computed the same way internal/taskstore computes
-// task readiness: client-side and deterministic, by reading the owning
-// plan's current steps (for each step's DependsOn list) and cross-
-// referencing the status of each dependency's own Execution row - no
-// external engine, no persisted "blocked" flag to keep in sync. Storage
+// A step's readiness is computed client-side and deterministically, by
+// reading the owning plan's current steps (for each step's DependsOn list)
+// and cross-referencing the status of each dependency's own Execution row -
+// no external engine, no persisted "blocked" flag to keep in sync. Storage
 // lives in the shared SQLite kernel (internal/storage, migration
 // 0015_plan_step_executions.sql), one row per (plan_id, step_id),
 // overwritten in place as the step's status transitions - unlike

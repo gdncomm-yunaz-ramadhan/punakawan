@@ -23,8 +23,9 @@ inputs:
     required: true
 allowed_capabilities:
   - ingest_jira_requirement
-  - submit_task_graph
-  - claim_ready_task
+  - plan_save
+  - plan_step_ready
+  - plan_step_claim
   - build_task_context
   - submit_final_plan
   - create_worktree
@@ -46,15 +47,20 @@ steps:
     capability: ingest_jira_requirement
     intent: ingest
   - id: decompose
-    capability: submit_task_graph
+    capability: plan_save
     intent: decompose
     input_from:
       - requirement
-  - id: claim
-    capability: claim_ready_task
+  - id: ready
+    capability: plan_step_ready
     intent: claim
     input_from:
       - decompose
+  - id: claim
+    capability: plan_step_claim
+    intent: claim
+    input_from:
+      - ready
   - id: context
     capability: build_task_context
     intent: assemble

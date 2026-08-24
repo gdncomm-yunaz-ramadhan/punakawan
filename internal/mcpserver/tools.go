@@ -74,30 +74,26 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 		Description: "Fetch a Plan by id, optionally an exact past revision. Omit revision for the plan's current (highest) revision.",
 	}, planGetHandler(a))
 
-	// internal/planexec: plan-native step execution tracking, an
-	// alternative to the Beads-backed list_ready_tasks/claim_ready_task/
-	// reopen_task tools below for a project that wants to track execution
-	// against a Plan's own steps instead of (or alongside) Beads issues.
-	// Not wired to replace those tools - a caller picks whichever backend
-	// fits the project it is working in.
+	// internal/planexec: plan-native step execution tracking, for a
+	// project that wants to track execution against a Plan's own steps.
 	addTool(server, reg, &mcp.Tool{
 		Name:        "plan_step_ready",
-		Description: "List a plan's steps that are ready to claim: not yet claimed or completed, and every step they depend on (PlanStep.depends_on) is already completed. An alternative to list_ready_tasks for a project tracking execution against a Plan's own steps instead of Beads issues - reads only Plan/execution state, never Beads or the taskstore fallback. Read-only.",
+		Description: "List a plan's steps that are ready to claim: not yet claimed or completed, and every step they depend on (PlanStep.depends_on) is already completed. Reads only Plan/execution state. Read-only.",
 	}, planStepReadyHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "plan_step_claim",
-		Description: "Claim one plan step's execution, recording who claimed it. Fails if the step is not ready (a dependency is not yet completed) or is already claimed by someone else. An alternative to claim_ready_task for a project tracking execution against a Plan's own steps instead of Beads issues.",
+		Description: "Claim one plan step's execution, recording who claimed it. Fails if the step is not ready (a dependency is not yet completed) or is already claimed by someone else.",
 	}, planStepClaimHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "plan_step_complete",
-		Description: "Mark one plan step's execution done, so any other step that depends on it can become ready. A project tracking execution against a Plan's own steps needs this explicit call because nothing else closes that record the way `bd close` closes a Beads issue outside MCP.",
+		Description: "Mark one plan step's execution done, so any other step that depends on it can become ready. A project tracking execution against a Plan's own steps needs this explicit call because nothing else closes that record automatically.",
 	}, planStepCompleteHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "plan_step_reopen",
-		Description: "Reopen a previously completed plan step's execution, recording why (e.g. a review found a regression in already-completed work). An alternative to reopen_task for a project tracking execution against a Plan's own steps instead of Beads issues.",
+		Description: "Reopen a previously completed plan step's execution, recording why (e.g. a review found a regression in already-completed work).",
 	}, planStepReopenHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -157,24 +153,8 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "ingest_jira_requirement",
-		Description: "Fetch a Jira issue and create (or refresh) its requirement knowledge record, so the requirement_id build_task_context and submit_task_graph both hard-require actually exists. Call this before either of those for any requirement_id not already ingested. Read-only against Jira; no approval needed.",
+		Description: "Fetch a Jira issue and create (or refresh) its requirement knowledge record, so the requirement_id build_task_context hard-requires actually exists. Call this before that for any requirement_id not already ingested. Read-only against Jira; no approval needed.",
 	}, ingestJiraRequirementHandler(a))
-
-	// Milestone 6: Plan-to-Beads and Petruk execution (§10, §11).
-	addTool(server, reg, &mcp.Tool{
-		Name:        "submit_task_graph",
-		Description: "Batch-create TaskContracts and wire their dependency edges into Beads. The calling role does the decomposition; this tool only creates and wires the result. Each item's requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested.",
-	}, submitTaskGraphHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "list_ready_tasks",
-		Description: "List Beads issues with no active blockers - the set Petruk can pick up next. Read-only. Returns at most `limit` issues (default 50).",
-	}, listReadyTasksHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "claim_ready_task",
-		Description: "Atomically claim the first ready Beads issue matching the filters. Mutates issue state, returning the single claimed issue. The optional assignee filters which candidate issues are considered; it is NOT the claimer - bd assigns the claimed issue to the invoking bd user itself.",
-	}, claimReadyTaskHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "build_task_context",
@@ -250,11 +230,6 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 		Name:        "resolve_review_thread",
 		Description: "Mark a review thread resolved. Requires allow=true - review threads are never resolved automatically." + approvalGateNote,
 	}, resolveReviewThreadHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "report_discovered_task",
-		Description: "Record newly discovered work found mid-execution as a discovered-from task, labeled for Semar's review.",
-	}, reportDiscoveredTaskHandler(a))
 
 	// Jira as source of truth: adapter invocation (§5.1-§5.3).
 	addTool(server, reg, &mcp.Tool{
@@ -350,11 +325,6 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 		Name:        "submit_jira_assessment",
 		Description: "Comment body format: Markdown (converts to ADF; not old wiki markup). Posts a Jira comment covering current state vs. needed changes, findings, and open questions, then creates subtasks with detailed plans. Each subtask's estimate is the AI-assisted implementation time. The agent does the assessment; this tool renders and persists it." + approvalGateNote,
 	}, submitJiraAssessmentHandler(a))
-
-	addTool(server, reg, &mcp.Tool{
-		Name:        "reopen_task",
-		Description: "Reopen a closed Beads issue, e.g. when Bagong's independent review finds a blocking regression in already-completed work. Pairs with report_discovered_task, which covers the 'create a new task' half of the same acceptance criterion.",
-	}, reopenTaskHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "search_knowledge",

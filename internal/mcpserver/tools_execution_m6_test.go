@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,23 +9,6 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
-
-// requireBd skips the test if bd is not installed, mirroring requireDolt.
-func requireBd(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not installed")
-	}
-}
-
-func initBdProject(t *testing.T, root string) {
-	t.Helper()
-	cmd := exec.Command("bd", "init", "--non-interactive", "--prefix", "test", "--skip-agents", "--skip-hooks", "-q")
-	cmd.Dir = root
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("bd init: %v\n%s", err, out)
-	}
-}
 
 func seedRequirement(t *testing.T, a *app.App, id, title string) {
 	t.Helper()
@@ -52,72 +34,6 @@ func seedRequirement(t *testing.T, a *app.App, id, title string) {
 	})
 	if err != nil {
 		t.Fatalf("seed requirement: %v", err)
-	}
-}
-
-// TestSubmitTaskGraphAndListReadyTasks exercises the task-graph generator
-// and ready-task selection tools end-to-end over the real MCP wire
-// protocol: a requirement is seeded, submit_task_graph creates two Beads
-// issues with a wired dependency, and list_ready_tasks confirms only the
-// unblocked one is claimable.
-func TestSubmitTaskGraphAndListReadyTasks(t *testing.T) {
-	requireDolt(t)
-	requireBd(t)
-
-	a := newTestApp(t)
-	initBdProject(t, a.Workspace.Root)
-	seedRequirement(t, a, "pkw:req/smoke/REQ-1", "Refund approved order")
-
-	cs := connect(t, a)
-
-	var graphOut SubmitTaskGraphOutput
-	callTool(t, cs, "submit_task_graph", map[string]any{
-		"items": []map[string]any{
-			{
-				"local_key":           "migration",
-				"requirement_id":      "pkw:req/smoke/REQ-1",
-				"task_id":             "task-migration",
-				"repository":          "repo-a",
-				"scope":               "Create database migration",
-				"acceptance_criteria": []string{"Migration applies cleanly"},
-				"definition_of_done":  "Migration merged",
-			},
-			{
-				"local_key":           "api",
-				"requirement_id":      "pkw:req/smoke/REQ-1",
-				"task_id":             "task-api",
-				"repository":          "repo-a",
-				"scope":               "Implement refund API",
-				"acceptance_criteria": []string{"Refund endpoint returns 200"},
-				"definition_of_done":  "API implemented and tested",
-				"depends_on": []map[string]any{
-					{"local_key": "migration", "type": "blocks"},
-				},
-			},
-		},
-	}, &graphOut)
-
-	if len(graphOut.Results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(graphOut.Results))
-	}
-
-	var readyOut ReadyTasksOutput
-	callTool(t, cs, "list_ready_tasks", map[string]any{}, &readyOut)
-
-	// createTaskForRequirement stores the requirement's title as the bd
-	// issue title and the task's scope as its description, so the two
-	// tasks are distinguished by Description here, not Title.
-	found := false
-	for _, issue := range readyOut.Issues {
-		if issue.Description == "Create database migration" {
-			found = true
-		}
-		if issue.Description == "Implement refund API" {
-			t.Fatalf("expected the api task to be blocked by migration, but it was listed as ready: %+v", issue)
-		}
-	}
-	if !found {
-		t.Fatalf("expected the migration task to be ready, got %+v", readyOut.Issues)
 	}
 }
 

@@ -28,7 +28,6 @@ import (
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
-	"github.com/ygrip/punakawan/internal/taskstore"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -63,9 +62,6 @@ type App struct {
 
 	approvalsMu    sync.Mutex
 	approvalsStore *approvals.Store
-
-	taskStoreMu sync.Mutex
-	taskStore   *taskstore.Store
 
 	planMu    sync.Mutex
 	planStore *plan.Store
@@ -290,10 +286,9 @@ func (a *App) isClosed() bool {
 
 // OpenKnowledge lazily opens the durable knowledge store, memoizing the
 // result, scoped to this workspace's id within the shared storage kernel.
-// Like OpenTaskStore, it is a thin scope over the one
-// shared *storage.DB rather than a per-project server, so it starts nothing:
-// the deferral simply avoids opening the kernel for commands that never touch
-// durable knowledge.
+// It is a thin scope over the one shared *storage.DB rather than a
+// per-project server, so it starts nothing: the deferral simply avoids
+// opening the kernel for commands that never touch durable knowledge.
 func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -347,28 +342,6 @@ func (a *App) OpenStorage(ctx context.Context) (*storage.DB, error) {
 	return db, nil
 }
 
-// OpenTaskStore lazily opens the Beads-less fallback task store, memoizing
-// the result, scoped to this workspace's id within the shared storage
-// kernel. Used only for projects with no .beads directory; a Beads-backed
-// project reads/writes tasks through bd instead.
-func (a *App) OpenTaskStore() (*taskstore.Store, error) {
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	a.taskStoreMu.Lock()
-	defer a.taskStoreMu.Unlock()
-
-	if a.taskStore != nil {
-		return a.taskStore, nil
-	}
-	db, err := a.OpenStorage(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	a.taskStore = taskstore.New(db, a.Workspace.ID)
-	return a.taskStore, nil
-}
-
 // OpenPlan lazily opens the first-class Plan aggregate's store, memoizing
 // the result. Like internal/delivery.Store, it is not scoped to this
 // workspace's id: a Plan can name several ProjectIDs, so there is no
@@ -392,12 +365,10 @@ func (a *App) OpenPlan() (*plan.Store, error) {
 }
 
 // OpenPlanExec lazily opens the plan-step execution domain's store,
-// memoizing the result: an alternative, additive way to track a plan
-// step's execution lifecycle (ready/claimed/committed/reopened) for a
-// project that wants plan-native step tracking instead of, or alongside,
-// Beads/OpenTaskStore. Like OpenPlan, it is not scoped to this
-// workspace's id, since a Plan (and its steps) is not scoped to one
-// workspace either.
+// memoizing the result: tracks a plan step's execution lifecycle
+// (ready/claimed/committed/reopened) for a project that wants plan-native
+// step tracking. Like OpenPlan, it is not scoped to this workspace's id,
+// since a Plan (and its steps) is not scoped to one workspace either.
 func (a *App) OpenPlanExec() (*planexec.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -421,12 +392,12 @@ func (a *App) OpenPlanExec() (*planexec.Store, error) {
 }
 
 // OpenApprovals lazily opens the approval store, memoizing the result, scoped
-// to this workspace's id within the shared storage kernel. Like OpenTaskStore,
-// it is a thin scope over the one shared *storage.DB rather
-// than a per-project server, so it starts nothing: the deferral simply avoids
-// opening the kernel for commands that never touch an approval. The adapter
-// registry and worktree manager hold this method as a provider, so the kernel
-// opens on the first approval-gated operation, not at Load.
+// to this workspace's id within the shared storage kernel. It is a thin
+// scope over the one shared *storage.DB rather than a per-project server,
+// so it starts nothing: the deferral simply avoids opening the kernel for
+// commands that never touch an approval. The adapter registry and
+// worktree manager hold this method as a provider, so the kernel opens on
+// the first approval-gated operation, not at Load.
 func (a *App) OpenApprovals() (*approvals.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed

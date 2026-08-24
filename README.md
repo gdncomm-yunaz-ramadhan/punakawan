@@ -69,10 +69,9 @@ the work while *you* stay in charge.
 Use Punakawan when you want an agent to work a real ticket **end to end** and you
 care that the result is trustworthy:
 
-- **You want durable, multi-session work.** The assessment, plan, task graph,
-  and review findings persist in a local SQLite kernel and a Beads task
-  graph — a later session or a teammate picks up where you left off instead of
-  starting from zero.
+- **You want durable, multi-session work.** The assessment, plan, and review
+  findings persist in a local SQLite kernel — a later session or a teammate
+  picks up where you left off instead of starting from zero.
 - **You want a safety gate on external writes.** Every Jira/Confluence write
   (comments, transitions, subtasks, estimates, worklogs, attachments) is
   approval-gated per run. One human approval covers the run; nothing hits your
@@ -109,7 +108,6 @@ flowchart LR
   PK --- Roles
   PK -->|normalize| ADP[TS adapters] -->|REST v3| Jira[(Jira / Confluence)]
   PK -->|FTS5| KN[(Knowledge store<br/>SQLite kernel)]
-  PK -->|task graph| BD[(Beads)]
   PK -->|compress cmd output| RTK[RTK]
   PK -->|embedded| Panel[[Panel UI]]
   PK -.->|approval gate| You
@@ -135,7 +133,6 @@ sequenceDiagram
   P-->>A: compact issue (no raw envelope)
   A->>P: semar/gareng prompts -> submit_jira_assessment
   A->>P: petruk prompt -> submit_lane_petruk_plan
-  A->>P: submit_task_graph (durable Beads work items)
   A->>P: sync_jira_subtasks (deduped) [WRITE]
   P-->>A: approval required (run-scoped)
   A->>U: Approve / Deny?
@@ -148,8 +145,8 @@ sequenceDiagram
 Concretely, ask your agent:
 
 > Use Punakawan to read PAY-123, assess feasibility and risks with Semar and
-> Gareng, produce an implementation plan with Petruk, create the Beads tasks and
-> non-duplicate Jira subtasks, and set the original estimates.
+> Gareng, produce an implementation plan with Petruk, create non-duplicate
+> Jira subtasks, and set the original estimates.
 
 Watch it happen in the [Panel](#the-panel), and approve the single write gate
 when prompted.
@@ -166,14 +163,14 @@ punakawan panel
   <img src="assets/panel-overview.png" alt="Punakawan Panel — Overview" width="820" />
 </p>
 
-It renders an overview of sessions, the Beads task graph and dependencies,
-knowledge records, pending approvals, and a review mode for diffs and plans —
+It renders an overview of sessions, knowledge records, pending approvals, and
+a review mode for diffs and plans —
 keyboard-accessible and served entirely from the Go binary (the Svelte frontend
 is embedded via `go:embed`). Nothing leaves your machine; the listener binds to
 loopback and mutating routes are session- and CSRF-gated.
 
 Each project drills into tabbed surfaces — Summary, Metadata, **Roles**,
-Workflows, Knowledge, Tasks, Plans, Sessions, Approvals, and Health — so the
+Workflows, Knowledge, Plans, Sessions, Approvals, and Health — so the
 four Punakawan roles, their open blockers, and run state all read from one
 place. A top-level **Deliveries** view lists and drills into cross-project
 delivery lanes alongside Overview, Projects, Context Improvements, and System.
@@ -192,7 +189,7 @@ both light and dark.
 
 ### Storage: embedded SQLite kernel
 
-Punakawan's durable state — knowledge, tasks, approvals, learning proposals,
+Punakawan's durable state — knowledge, plans, approvals, learning proposals,
 the adapter-write sync queue, and delivery-orchestration data (projects,
 lanes, worker leases, evidence, review conclusions) — lives in one embedded
 SQLite kernel (`internal/storage`), owned by exactly one daemon process per
@@ -222,19 +219,16 @@ project is browsed.
 
 Go core (orchestration, persistence, approval gates, MCP surface) + TypeScript
 adapters (Atlassian normalization) + a connected LLM agent (the reasoning
-engine) + an embedded SQLite kernel and Beads task graph (durable state,
-owned by a single daemon per OS user) + an embedded Svelte panel (visibility).
+engine) + an embedded SQLite kernel (durable state, owned by a single daemon
+per OS user) + an embedded Svelte panel (visibility).
 
 - **MCP surface:** `internal/mcpserver` exposes ~46 tools — `call_adapter_operation`
   for Jira/Confluence, the `semar`/`gareng`/`petruk`/`bagong` prompts and their
-  `submit_*` tools, `submit_task_graph`, `sync_jira_subtasks`,
-  `update_jira_task_progress`, `search_knowledge`, and the workflow pipeline.
+  `submit_*` tools, `sync_jira_subtasks`, `update_jira_task_progress`,
+  `search_knowledge`, and the workflow pipeline.
 - **Knowledge search:** BM25-ranked SQLite FTS5 with a technical tokenizer that
   preserves identifiers, and first-class indexing of **CVE / GHSA / Sonar-rule**
   identifiers (`internal/search`).
-- **Sync model:** issues live in a local Dolt DB; `bd dolt push/pull` syncs under
-  `refs/dolt/data` on your git remote. See [`AGENTS.md`](AGENTS.md) and the beads
-  [SYNC_CONCEPTS](https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md).
 
 See [`punakawan-go-typescript-detailed-plan.md`](punakawan-go-typescript-detailed-plan.md)
 for the full engineering plan, architecture, and milestone roadmap.
@@ -247,7 +241,6 @@ for the full engineering plan, architecture, and milestone roadmap.
 | Adapters | **TypeScript / Node 20+** (pnpm workspaces) — Atlassian normalization boundary |
 | Panel UI | **Svelte + Vite + TypeScript**, embedded via `go:embed` |
 | Knowledge store | **SQLite** (embedded kernel); **FTS5** for BM25-ranked search |
-| Task graph | **Beads (bd)** — durable, syncable issue tracker |
 | Protocol | **MCP (Model Context Protocol)** over STDIO; JSON-Schema-generated Go structs + TS/Zod types |
 | Token efficiency | **RTK (Rust Token Killer)** — compresses command output; installed by default and urged on the agent |
 | Integrations | **Jira Cloud REST v3** and **Confluence** direct (no Rovo MCP); roadmap: Sonar, Trivy, OSV |
@@ -364,15 +357,14 @@ Open the agent client selected during installation in any git repository and
 ask it to use Punakawan for a Jira issue, for example:
 
 > Use Punakawan to read PAY-123, assess feasibility and risks with Semar and
-> Gareng, produce an implementation plan with Petruk, create the Beads tasks
-> and non-duplicate Jira subtasks, and set the original estimates.
+> Gareng, produce an implementation plan with Petruk, create non-duplicate
+> Jira subtasks, and set the original estimates.
 
 The connected client can use these MCP surfaces:
 
 - `call_adapter_operation` for Jira/Confluence reads and advanced operations;
 - the `semar`, `gareng`, `petruk`, and `bagong` prompts plus their `submit_*`
   tools for durable assessment, planning, and review;
-- `submit_task_graph` for executable Beads work items;
 - `sync_jira_subtasks` for deduplicated Jira subtask creation; and
 - `update_jira_task_progress` for estimates, worklogs, and comments.
 

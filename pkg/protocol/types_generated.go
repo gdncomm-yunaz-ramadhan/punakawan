@@ -9237,185 +9237,6 @@ func (j *RoleConfiguration) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// A dependency-aware Beads work item generated from an approved plan. See
-// punakawan-go-typescript-detailed-plan.md §10.
-type TaskContract struct {
-	// AcceptanceCriteria corresponds to the JSON schema field "acceptance_criteria".
-	AcceptanceCriteria []string `json:"acceptance_criteria" yaml:"acceptance_criteria" mapstructure:"acceptance_criteria"`
-
-	// ApprovalRequired corresponds to the JSON schema field "approval_required".
-	ApprovalRequired *bool `json:"approval_required,omitempty,omitzero" yaml:"approval_required,omitempty" mapstructure:"approval_required,omitempty"`
-
-	// BeadsEpic corresponds to the JSON schema field "beads_epic".
-	BeadsEpic *string `json:"beads_epic,omitempty,omitzero" yaml:"beads_epic,omitempty" mapstructure:"beads_epic,omitempty"`
-
-	// DefinitionOfDone corresponds to the JSON schema field "definition_of_done".
-	DefinitionOfDone string `json:"definition_of_done" yaml:"definition_of_done" mapstructure:"definition_of_done"`
-
-	// Dependencies corresponds to the JSON schema field "dependencies".
-	Dependencies []TaskContractDependenciesElem `json:"dependencies,omitempty,omitzero" yaml:"dependencies,omitempty" mapstructure:"dependencies,omitempty"`
-
-	// DiscoveredFrom corresponds to the JSON schema field "discovered_from".
-	DiscoveredFrom *string `json:"discovered_from,omitempty,omitzero" yaml:"discovered_from,omitempty" mapstructure:"discovered_from,omitempty"`
-
-	// ExpectedFilesOrComponents corresponds to the JSON schema field
-	// "expected_files_or_components".
-	ExpectedFilesOrComponents []string `json:"expected_files_or_components,omitempty,omitzero" yaml:"expected_files_or_components,omitempty" mapstructure:"expected_files_or_components,omitempty"`
-
-	// Id corresponds to the JSON schema field "id".
-	Id string `json:"id" yaml:"id" mapstructure:"id"`
-
-	// JiraKey corresponds to the JSON schema field "jira_key".
-	JiraKey *string `json:"jira_key,omitempty,omitzero" yaml:"jira_key,omitempty" mapstructure:"jira_key,omitempty"`
-
-	// Repository corresponds to the JSON schema field "repository".
-	Repository string `json:"repository" yaml:"repository" mapstructure:"repository"`
-
-	// RequiredEvidence corresponds to the JSON schema field "required_evidence".
-	RequiredEvidence []string `json:"required_evidence,omitempty,omitzero" yaml:"required_evidence,omitempty" mapstructure:"required_evidence,omitempty"`
-
-	// RequirementId corresponds to the JSON schema field "requirement_id".
-	RequirementId string `json:"requirement_id" yaml:"requirement_id" mapstructure:"requirement_id"`
-
-	// RiskClassification corresponds to the JSON schema field "risk_classification".
-	RiskClassification *TaskContractRiskClassification `json:"risk_classification,omitempty,omitzero" yaml:"risk_classification,omitempty" mapstructure:"risk_classification,omitempty"`
-
-	// Scope corresponds to the JSON schema field "scope".
-	Scope string `json:"scope" yaml:"scope" mapstructure:"scope"`
-
-	// TestRequirements corresponds to the JSON schema field "test_requirements".
-	TestRequirements []string `json:"test_requirements,omitempty,omitzero" yaml:"test_requirements,omitempty" mapstructure:"test_requirements,omitempty"`
-}
-
-type TaskContractDependenciesElem struct {
-	// Id corresponds to the JSON schema field "id".
-	Id string `json:"id" yaml:"id" mapstructure:"id"`
-
-	// Type corresponds to the JSON schema field "type".
-	Type TaskContractDependenciesElemType `json:"type" yaml:"type" mapstructure:"type"`
-}
-
-type TaskContractDependenciesElemType string
-
-const TaskContractDependenciesElemTypeBlocks TaskContractDependenciesElemType = "blocks"
-const TaskContractDependenciesElemTypeDiscoveredFrom TaskContractDependenciesElemType = "discovered-from"
-const TaskContractDependenciesElemTypeRequires TaskContractDependenciesElemType = "requires"
-
-var enumValues_TaskContractDependenciesElemType = []interface{}{
-	"blocks",
-	"discovered-from",
-	"requires",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *TaskContractDependenciesElemType) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_TaskContractDependenciesElemType {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_TaskContractDependenciesElemType, v)
-	}
-	*j = TaskContractDependenciesElemType(v)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *TaskContractDependenciesElem) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["id"]; raw != nil && !ok {
-		return fmt.Errorf("field id in TaskContractDependenciesElem: required")
-	}
-	if _, ok := raw["type"]; raw != nil && !ok {
-		return fmt.Errorf("field type in TaskContractDependenciesElem: required")
-	}
-	type Plain TaskContractDependenciesElem
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	*j = TaskContractDependenciesElem(plain)
-	return nil
-}
-
-type TaskContractRiskClassification string
-
-const TaskContractRiskClassificationHigh TaskContractRiskClassification = "high"
-const TaskContractRiskClassificationLow TaskContractRiskClassification = "low"
-const TaskContractRiskClassificationMedium TaskContractRiskClassification = "medium"
-
-var enumValues_TaskContractRiskClassification = []interface{}{
-	"low",
-	"medium",
-	"high",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *TaskContractRiskClassification) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_TaskContractRiskClassification {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_TaskContractRiskClassification, v)
-	}
-	*j = TaskContractRiskClassification(v)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *TaskContract) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["acceptance_criteria"]; raw != nil && !ok {
-		return fmt.Errorf("field acceptance_criteria in TaskContract: required")
-	}
-	if _, ok := raw["definition_of_done"]; raw != nil && !ok {
-		return fmt.Errorf("field definition_of_done in TaskContract: required")
-	}
-	if _, ok := raw["id"]; raw != nil && !ok {
-		return fmt.Errorf("field id in TaskContract: required")
-	}
-	if _, ok := raw["repository"]; raw != nil && !ok {
-		return fmt.Errorf("field repository in TaskContract: required")
-	}
-	if _, ok := raw["requirement_id"]; raw != nil && !ok {
-		return fmt.Errorf("field requirement_id in TaskContract: required")
-	}
-	if _, ok := raw["scope"]; raw != nil && !ok {
-		return fmt.Errorf("field scope in TaskContract: required")
-	}
-	type Plain TaskContract
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if plain.AcceptanceCriteria != nil && len(plain.AcceptanceCriteria) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "acceptance_criteria", 1)
-	}
-	*j = TaskContract(plain)
-	return nil
-}
-
 // A bounded, causal-first projection of one test invocation's output, concise
 // enough for a continuous agent loop while the full stdout/stderr remains
 // available, unmodified, as the referenced EvidenceArtifact. Never returned
@@ -9837,8 +9658,7 @@ type WorkflowRun struct {
 	Outcome *WorkflowRunOutcome `json:"outcome,omitempty,omitzero" yaml:"outcome,omitempty" mapstructure:"outcome,omitempty"`
 
 	// Immutable reference to the internal/plan revision this run was instantiated
-	// from (project hygiene refactor plan §5.3's workflow -> plan -> delivery
-	// pipeline). Absent for a run predating this wiring. Present for a run created by
+	// from. Absent for a run predating this wiring. Present for a run created by
 	// invoking a workflow definition, mirroring definition_ref's shape.
 	PlanRef *WorkflowRunPlanRef `json:"plan_ref,omitempty,omitzero" yaml:"plan_ref,omitempty" mapstructure:"plan_ref,omitempty"`
 
@@ -10274,10 +10094,9 @@ func (j *WorkflowRunOutcome) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-// Immutable reference to the internal/plan revision this run was instantiated from
-// (project hygiene refactor plan §5.3's workflow -> plan -> delivery pipeline).
-// Absent for a run predating this wiring. Present for a run created by invoking a
-// workflow definition, mirroring definition_ref's shape.
+// Immutable reference to the internal/plan revision this run was instantiated
+// from. Absent for a run predating this wiring. Present for a run created by
+// invoking a workflow definition, mirroring definition_ref's shape.
 type WorkflowRunPlanRef struct {
 	// Id corresponds to the JSON schema field "id".
 	Id string `json:"id" yaml:"id" mapstructure:"id"`

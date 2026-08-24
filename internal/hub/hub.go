@@ -5,9 +5,9 @@
 //
 // Adoption is always explicit, never automatic for an already-existing
 // project: a project only uses the hub once something writes its pointer
-// file (the future migration tool). Lookup mirrors internal/beads's
-// ProjectInitialized - a pure, cheap filesystem check with no caching and no
-// side effects - so callers can branch on it inline.
+// file (the future migration tool). Lookup is a pure, cheap filesystem
+// check with no caching and no side effects, so callers can branch on it
+// inline.
 package hub
 
 import (

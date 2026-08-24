@@ -39,9 +39,8 @@ type PlanStep struct {
 
 	// DependsOn lists the ID of every PlanStep in the same plan that must
 	// be done before this one. A plain blocking list, not a typed
-	// dependency taxonomy (contrast protocol.TaskContract.Dependencies or
-	// Beads' own dependency types) - nothing in this domain yet needs
-	// anything richer than "must finish first".
+	// dependency taxonomy - nothing in this domain yet needs anything
+	// richer than "must finish first".
 	DependsOn []string `json:"depends_on,omitempty"`
 
 	// UnresolvedBlockingQuestion, when non-empty, names the one thing

@@ -61,6 +61,13 @@ export interface WorkflowRun {
     [k: string]: unknown;
   };
   /**
+   * Immutable reference to the internal/plan revision this run was instantiated from. Absent for a run predating this wiring. Present for a run created by invoking a workflow definition, mirroring definition_ref's shape.
+   */
+  plan_ref?: {
+    id: string;
+    revision: number;
+  };
+  /**
    * Bounded, immutable snapshot of the context this run was prepared with (agent-context plan §4.1). Holds references and hashes, never a copy of the whole knowledge store. Fully populated by the context preparation service (plan §4.4); at invocation only the `missing` list and revision may be set.
    */
   context_snapshot?: {

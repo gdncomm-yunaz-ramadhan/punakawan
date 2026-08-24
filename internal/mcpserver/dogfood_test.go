@@ -95,6 +95,7 @@ func TestShippedFeatureDeliveryStepOrder(t *testing.T) {
 	wantWaves := [][]string{
 		{"requirement"},
 		{"decompose"},
+		{"ready"},
 		{"claim"},
 		{"context", "worktree"},
 		{"plan"},
