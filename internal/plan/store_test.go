@@ -65,6 +65,38 @@ func TestSaveAssignsSequentialRevisions(t *testing.T) {
 	}
 }
 
+func TestSaveAssignsStepIDsWhenEmptyAndPreservesSupplied(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	id := NewID()
+
+	saved, err := store.Save(ctx, Plan{
+		ID:        id,
+		Objective: "two steps",
+		Steps: []PlanStep{
+			{Objective: "first step"},
+			{ID: "step-caller-supplied", Objective: "second step"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if saved.Steps[0].ID == "" {
+		t.Fatalf("Steps[0].ID = %q, want a generated non-empty id", saved.Steps[0].ID)
+	}
+	if saved.Steps[1].ID != "step-caller-supplied" {
+		t.Fatalf("Steps[1].ID = %q, want caller-supplied id preserved", saved.Steps[1].ID)
+	}
+
+	got, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Steps[0].ID != saved.Steps[0].ID {
+		t.Fatalf("Get Steps[0].ID = %q, want the persisted %q", got.Steps[0].ID, saved.Steps[0].ID)
+	}
+}
+
 func TestSaveRequiresIDAndObjective(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

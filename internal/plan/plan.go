@@ -23,6 +23,12 @@ import "time"
 // this type carries no separate presence bit, since §4.3's executable
 // check only needs to know whether content exists.
 type PlanStep struct {
+	// ID identifies this step stably across a plan lineage's revisions, so
+	// something that tracks one step's execution (e.g. internal/planexec)
+	// can reference it unambiguously even after the plan is revised.
+	// Assigned by the caller, or by Store.Save when left empty - see
+	// Store.Save for the assignment rule.
+	ID              string `json:"id,omitempty"`
 	Objective       string `json:"objective"`
 	TargetProjectID string `json:"target_project_id,omitempty"`
 	TargetRepoID    string `json:"target_repo_id,omitempty"`
@@ -30,6 +36,13 @@ type PlanStep struct {
 
 	AcceptanceCriteria []string `json:"acceptance_criteria,omitempty"`
 	VerificationMethod string   `json:"verification_method,omitempty"`
+
+	// DependsOn lists the ID of every PlanStep in the same plan that must
+	// be done before this one. A plain blocking list, not a typed
+	// dependency taxonomy (contrast protocol.TaskContract.Dependencies or
+	// Beads' own dependency types) - nothing in this domain yet needs
+	// anything richer than "must finish first".
+	DependsOn []string `json:"depends_on,omitempty"`
 
 	// UnresolvedBlockingQuestion, when non-empty, names the one thing
 	// standing between this step and delegation to a cheaper

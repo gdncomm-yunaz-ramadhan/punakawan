@@ -21,6 +21,7 @@ import (
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/plan"
+	"github.com/ygrip/punakawan/internal/planexec"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
@@ -68,6 +69,9 @@ type App struct {
 
 	planMu    sync.Mutex
 	planStore *plan.Store
+
+	planExecMu    sync.Mutex
+	planExecStore *planexec.Store
 
 	learningMu    sync.Mutex
 	learningStore *learning.Store
@@ -385,6 +389,35 @@ func (a *App) OpenPlan() (*plan.Store, error) {
 	}
 	a.planStore = plan.NewStore(db)
 	return a.planStore, nil
+}
+
+// OpenPlanExec lazily opens the plan-step execution domain's store,
+// memoizing the result: an alternative, additive way to track a plan
+// step's execution lifecycle (ready/claimed/committed/reopened) for a
+// project that wants plan-native step tracking instead of, or alongside,
+// Beads/OpenTaskStore. Like OpenPlan, it is not scoped to this
+// workspace's id, since a Plan (and its steps) is not scoped to one
+// workspace either.
+func (a *App) OpenPlanExec() (*planexec.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.planExecMu.Lock()
+	defer a.planExecMu.Unlock()
+
+	if a.planExecStore != nil {
+		return a.planExecStore, nil
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	plans, err := a.OpenPlan()
+	if err != nil {
+		return nil, err
+	}
+	a.planExecStore = planexec.NewStore(db, plans)
+	return a.planExecStore, nil
 }
 
 // OpenApprovals lazily opens the approval store, memoizing the result, scoped

@@ -74,6 +74,32 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 		Description: "Fetch a Plan by id, optionally an exact past revision. Omit revision for the plan's current (highest) revision.",
 	}, planGetHandler(a))
 
+	// internal/planexec: plan-native step execution tracking, an
+	// alternative to the Beads-backed list_ready_tasks/claim_ready_task/
+	// reopen_task tools below for a project that wants to track execution
+	// against a Plan's own steps instead of (or alongside) Beads issues.
+	// Not wired to replace those tools - a caller picks whichever backend
+	// fits the project it is working in.
+	addTool(server, reg, &mcp.Tool{
+		Name:        "plan_step_ready",
+		Description: "List a plan's steps that are ready to claim: not yet claimed or completed, and every step they depend on (PlanStep.depends_on) is already completed. An alternative to list_ready_tasks for a project tracking execution against a Plan's own steps instead of Beads issues - reads only Plan/execution state, never Beads or the taskstore fallback. Read-only.",
+	}, planStepReadyHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "plan_step_claim",
+		Description: "Claim one plan step's execution, recording who claimed it. Fails if the step is not ready (a dependency is not yet completed) or is already claimed by someone else. An alternative to claim_ready_task for a project tracking execution against a Plan's own steps instead of Beads issues.",
+	}, planStepClaimHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "plan_step_complete",
+		Description: "Mark one plan step's execution done, so any other step that depends on it can become ready. A project tracking execution against a Plan's own steps needs this explicit call because nothing else closes that record the way `bd close` closes a Beads issue outside MCP.",
+	}, planStepCompleteHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
+		Name:        "plan_step_reopen",
+		Description: "Reopen a previously completed plan step's execution, recording why (e.g. a review found a regression in already-completed work). An alternative to reopen_task for a project tracking execution against a Plan's own steps instead of Beads issues.",
+	}, planStepReopenHandler(a))
+
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_workflow_run",
 		Description: "Start a new workflow run in state \"created\".",

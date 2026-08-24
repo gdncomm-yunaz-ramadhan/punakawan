@@ -53,6 +53,16 @@ func (s *Store) Save(ctx context.Context, p Plan) (Plan, error) {
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = time.Now().UTC()
 	}
+	for i := range p.Steps {
+		if strings.TrimSpace(p.Steps[i].ID) != "" {
+			continue
+		}
+		id, err := newStepID()
+		if err != nil {
+			return Plan{}, fmt.Errorf("plan: save %s: %w", p.ID, err)
+		}
+		p.Steps[i].ID = id
+	}
 
 	key, err := writeKey()
 	if err != nil {
@@ -203,4 +213,16 @@ func writeKey() (string, error) {
 		return "", fmt.Errorf("plan: generate write key: %w", err)
 	}
 	return hex.EncodeToString(b[:]), nil
+}
+
+// newStepID mints a short, collision-resistant id for a PlanStep that
+// arrived at Save with none set, mirroring taskstore.newID's "short
+// random hex" convention (a full ULID would be needlessly long for
+// something scoped to one plan's own step list).
+func newStepID() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("plan: generate step id: %w", err)
+	}
+	return "step-" + hex.EncodeToString(b[:]), nil
 }
