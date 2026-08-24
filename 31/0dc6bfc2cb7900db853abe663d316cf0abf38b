@@ -1,0 +1,31 @@
+scripts/install.sh
+  a330ccb60fead87e 117
+README.md
+  a330ccb60fead87e 290-292,337
+internal/knowledge/knowledge.go
+  a330ccb60fead87e 33-34
+cmd/punakawan/doctor_cmd.go
+  a330ccb60fead87e 17
+internal/archcheck/legacy_test.go
+  a330ccb60fead87e 2-3,28,36-37,100,103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "310dc6bfc2cb7900db853abe663d316cf0abf38b",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 564,
+      "total_deletions": 758,
+      "accepted_lines": 558,
+      "overriden_lines": 0
+    }
+  }
+}
