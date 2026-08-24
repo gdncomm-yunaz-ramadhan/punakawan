@@ -46,7 +46,7 @@ type CreatePrInput struct {
 	DeferredWork             string `json:"deferred_work,omitempty"`
 
 	TaskIds      []string `json:"task_ids" jsonschema:"BD task ids this PR implements; rendered as the PR body's BD task references section"`
-	JiraKeys     []string `json:"jira_keys,omitempty" jsonschema:"Jira issue keys this PR relates to; the Jira references section is omitted entirely if empty, per §8.1 ('when available')"`
+	JiraKeys     []string `json:"jira_keys,omitempty" jsonschema:"Jira issue keys this PR relates to; the Jira references section is omitted entirely if empty"`
 	KnowledgeIds []string `json:"knowledge_ids,omitempty" jsonschema:"durable knowledge record ids this PR updates or is informed by"`
 
 	Reviewers []string `json:"reviewers,omitempty"`

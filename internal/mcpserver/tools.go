@@ -46,7 +46,7 @@ const plainLanguageStyleNote = " Style: clear, concise, plain language - short s
 func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{
 		Name:        "build_context_dossier",
-		Description: "Assemble the §9.1 context dossier from workspace, git, and durable knowledge state. No reasoning is performed.",
+		Description: "Assemble the context dossier from workspace, git, and durable knowledge state. No reasoning is performed.",
 	}, buildContextDossierHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -61,12 +61,12 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_final_plan",
-		Description: "Validate and persist Semar's final implementation plan (§9.3) into the Plan domain (internal/plan), refused while blocking contradictions remain open. For a lane's Synthesis stage instead, use submit_lane_review with role semar. For general plan CRUD (multiple steps, project_ids, revisions), use plan_save/plan_get instead.",
+		Description: "Validate and persist Semar's final implementation plan into the Plan domain (internal/plan), refused while blocking contradictions remain open. For a lane's Synthesis stage instead, use submit_lane_review with role semar. For general plan CRUD (multiple steps, project_ids, revisions), use plan_save/plan_get instead.",
 	}, submitFinalPlanHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "plan_save",
-		Description: "Save a new revision of a first-class Plan (§4). Reuse an existing plan's id to append a clarifying revision on top of it (immutable - the prior revision is never changed), or a fresh id to start a new plan lineage.",
+		Description: "Save a new revision of a first-class Plan. Reuse an existing plan's id to append a clarifying revision on top of it (immutable - the prior revision is never changed), or a fresh id to start a new plan lineage.",
 	}, planSaveHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -76,7 +76,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "create_workflow_run",
-		Description: "Start a new workflow run in state \"created\" (§18.1).",
+		Description: "Start a new workflow run in state \"created\".",
 	}, createWorkflowRunHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -96,12 +96,12 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "get_knowledge_records",
-		Description: "Batch-read complete typed knowledge records by id (agent-context plan §5.2), e.g. to expand the ids prepare_work_context or search_knowledge returned into full records in one call. Ids not found are reported in not_found rather than erroring the whole batch. project_id (ADR-0020) selects which project's knowledge store to read from and defaults to the calling project; name another project's id only to deliberately cross-project read (requires it share this project's hub).",
+		Description: "Batch-read complete typed knowledge records by id, e.g. to expand the ids prepare_work_context or search_knowledge returned into full records in one call. Ids not found are reported in not_found rather than erroring the whole batch. project_id (ADR-0020) selects which project's knowledge store to read from and defaults to the calling project; name another project's id only to deliberately cross-project read (requires it share this project's hub).",
 	}, getKnowledgeRecordsHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "get_workflow_state",
-		Description: "Read a workflow run's current state and checkpoint history (§18.1).",
+		Description: "Read a workflow run's current state and checkpoint history.",
 	}, getWorkflowStateHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -111,12 +111,12 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "get_next_workflow_step",
-		Description: "For a definition-backed run, list the steps that are ready to execute now and the ones still blocked (with the reason: unmet dependency, or a capability the workflow does not allow / that is not registered). A disallowed capability surfaces as blocked here, before you execute it (agent-context plan §5.3). An ad hoc run has no steps and says so.",
+		Description: "For a definition-backed run, list the steps that are ready to execute now and the ones still blocked (with the reason: unmet dependency, or a capability the workflow does not allow / that is not registered). A disallowed capability surfaces as blocked here, before you execute it. An ad hoc run has no steps and says so.",
 	}, getNextWorkflowStepHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "complete_workflow_step",
-		Description: "Mark one workflow step done, attaching evidence_ids and/or a deviation_reason (one is required), then unlock any dependent steps whose inputs are now satisfied (agent-context plan §5.3). Rejects completing a step whose capability the workflow does not allow. Records a run-scoped capability event for the run's trace.",
+		Description: "Mark one workflow step done, attaching evidence_ids and/or a deviation_reason (one is required), then unlock any dependent steps whose inputs are now satisfied. Rejects completing a step whose capability the workflow does not allow. Records a run-scoped capability event for the run's trace.",
 	}, completeWorkflowStepHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -126,7 +126,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "record_work_outcome",
-		Description: "Persist the structured result of a context-aware run before completing it (agent-context plan §6.1): status (success|partial|failed), a concise summary, evidence ids, output refs, any workflow deviations, missing/stale context encountered, and reusable observations classified for a later learning proposal (workflow|metadata|knowledge|contradiction|workflow-revision). An observation is a traceable input to a proposal, NOT canonical knowledge. A context-aware run cannot be advanced to completed until this is recorded.",
+		Description: "Persist the structured result of a context-aware run before completing it: status (success|partial|failed), a concise summary, evidence ids, output refs, any workflow deviations, missing/stale context encountered, and reusable observations classified for a later learning proposal (workflow|metadata|knowledge|contradiction|workflow-revision). An observation is a traceable input to a proposal, NOT canonical knowledge. A context-aware run cannot be advanced to completed until this is recorded.",
 	}, recordWorkOutcomeHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -137,17 +137,17 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	// Milestone 6: Plan-to-Beads and Petruk execution (§10, §11).
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_task_graph",
-		Description: "Batch-create TaskContracts and wire their dependency edges into Beads (§10.1-§10.4). The calling role does the decomposition; this tool only creates and wires the result. Each item's requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested.",
+		Description: "Batch-create TaskContracts and wire their dependency edges into Beads. The calling role does the decomposition; this tool only creates and wires the result. Each item's requirement_id must already exist as a knowledge record - call ingest_jira_requirement first for any Jira-sourced requirement not yet ingested.",
 	}, submitTaskGraphHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_ready_tasks",
-		Description: "List Beads issues with no active blockers (§9's 'Petruk executes ready task'). Read-only. Returns at most `limit` issues (default 50).",
+		Description: "List Beads issues with no active blockers - the set Petruk can pick up next. Read-only. Returns at most `limit` issues (default 50).",
 	}, listReadyTasksHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "claim_ready_task",
-		Description: "Atomically claim the first ready Beads issue matching the filters (§11.3's 'claim task' step). Mutates issue state, returning the single claimed issue. The optional assignee filters which candidate issues are considered; it is NOT the claimer - bd assigns the claimed issue to the invoking bd user itself.",
+		Description: "Atomically claim the first ready Beads issue matching the filters. Mutates issue state, returning the single claimed issue. The optional assignee filters which candidate issues are considered; it is NOT the claimer - bd assigns the claimed issue to the invoking bd user itself.",
 	}, claimReadyTaskHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -157,12 +157,12 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "start_task_execution",
-		Description: "Create this task's isolated worktree and open its evidence bundle/journal (§11.1 steps 1-4). Requires a prior approved worktree-creation request: this is a human-run CLI step, not another MCP tool - ask the user to run `punakawan worktree approve <repo-id> <task-id>` in their own terminal, then retry this call.",
+		Description: "Create this task's isolated worktree and open its evidence bundle/journal. Requires a prior approved worktree-creation request: this is a human-run CLI step, not another MCP tool - ask the user to run `punakawan worktree approve <repo-id> <task-id>` in their own terminal, then retry this call.",
 	}, startTaskExecutionHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "finish_task_execution",
-		Description: "Record this task's final status and remove its isolated worktree (§11.1 step 10).",
+		Description: "Record this task's final status and remove its isolated worktree.",
 	}, finishTaskExecutionHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -172,17 +172,17 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "check_diff",
-		Description: "Stage and check a task's pending changes against policy and a heuristic secret scan (§15.4), writing diff.patch evidence (§17.2). Must pass before commit_task.",
+		Description: "Stage and check a task's pending changes against policy and a heuristic secret scan, writing diff.patch evidence. Must pass before commit_task.",
 	}, checkDiffHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "run_tests",
-		Description: "Run caller-specified compile/test commands through the tool supervisor and record a tests.json evidence report (§11.3, §17.2).",
+		Description: "Run caller-specified compile/test commands through the tool supervisor and record a tests.json evidence report.",
 	}, runTestsHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "check_openapi_compatibility",
-		Description: "Diff a base and head OpenAPI spec, classify breaking changes, and record api-diff.json evidence (§13.4, §17.2).",
+		Description: "Diff a base and head OpenAPI spec, classify breaking changes, and record api-diff.json evidence.",
 	}, checkOpenAPICompatibilityHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -197,7 +197,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "push_task_branch",
-		Description: "Push a task's branch to its remote (AEP-M4 §8's 'push branch' step, before create_pr), gated by detected push capability ∩ repository policy ∩ this call's allow_push override. Never force-pushes. Must run before finish_task_execution removes the task's worktree.",
+		Description: "Push a task's branch to its remote, before create_pr, gated by detected push capability ∩ repository policy ∩ this call's allow_push override. Never force-pushes. Must run before finish_task_execution removes the task's worktree.",
 	}, pushTaskBranchHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -207,27 +207,27 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "review_pr",
-		Description: "Fetch a PR's metadata, diff files, CI checks, and (optionally) comments (§8.2). REACTIVE - explicit_trigger must be true only when a human explicitly asked to review this specific PR; never call this for a PR being discovered, CI failing, or any other automatic signal. Punakawan does not review anything itself (ADR-0016): have Gareng/Petruk review and Bagong verify findings, then call submit_pr_review_findings with Semar's deduplicated result.",
+		Description: "Fetch a PR's metadata, diff files, CI checks, and (optionally) comments. REACTIVE - explicit_trigger must be true only when a human explicitly asked to review this specific PR; never call this for a PR being discovered, CI failing, or any other automatic signal. Punakawan does not review anything itself (ADR-0016): have Gareng/Petruk review and Bagong verify findings, then call submit_pr_review_findings with Semar's deduplicated result.",
 	}, reviewPrHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_pr_review_findings",
-		Description: "Persist review_pr's final, Semar-deduplicated ReviewFinding[] for a PR (§8.2's 'return final review' step).",
+		Description: "Persist review_pr's final, Semar-deduplicated ReviewFinding[] for a PR.",
 	}, submitPrReviewFindingsHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "fetch_unresolved_pr_comments",
-		Description: "Fetch a PR's still-open review threads (§8.3). REACTIVE - explicit_trigger must be true only when a human explicitly asked to fix this PR's review comments; never call this for a reviewer commenting, CI failing, or review_pr finishing. Classifying each comment as applicable/already_resolved/stale/conflicting/requires_clarification/major_change_required is the calling agent's judgment, not something this tool determines.",
+		Description: "Fetch a PR's still-open review threads. REACTIVE - explicit_trigger must be true only when a human explicitly asked to fix this PR's review comments; never call this for a reviewer commenting, CI failing, or review_pr finishing. Classifying each comment as applicable/already_resolved/stale/conflicting/requires_clarification/major_change_required is the calling agent's judgment, not something this tool determines.",
 	}, fetchUnresolvedPrCommentsHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "resolve_review_thread",
-		Description: "Mark a review thread resolved (§8.3's final, optional write step). Requires allow=true - review threads are never resolved automatically." + approvalGateNote,
+		Description: "Mark a review thread resolved. Requires allow=true - review threads are never resolved automatically." + approvalGateNote,
 	}, resolveReviewThreadHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "report_discovered_task",
-		Description: "Record newly discovered work found mid-execution as a discovered-from task, labeled for Semar's review (§10.4's discovery rule).",
+		Description: "Record newly discovered work found mid-execution as a discovered-from task, labeled for Semar's review.",
 	}, reportDiscoveredTaskHandler(a))
 
 	// Jira as source of truth: adapter invocation (§5.1-§5.3).
@@ -327,7 +327,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "reopen_task",
-		Description: "Reopen a closed Beads issue, e.g. when Bagong's independent review finds a blocking regression in already-completed work (§8.4). Pairs with report_discovered_task, which covers the 'create a new task' half of the same acceptance criterion.",
+		Description: "Reopen a closed Beads issue, e.g. when Bagong's independent review finds a blocking regression in already-completed work. Pairs with report_discovered_task, which covers the 'create a new task' half of the same acceptance criterion.",
 	}, reopenTaskHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -337,17 +337,17 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_missing_context_request",
-		Description: "Request context a prior submission did not include (§6.4). Subagents may request additional context but must not search broadly themselves - this only records the request; it is Semar's (the calling agent's) own next call to search_knowledge or resolve_missing_context_request that decides what happens to it.",
+		Description: "Request context a prior submission did not include. Subagents may request additional context but must not search broadly themselves - this only records the request; it is Semar's (the calling agent's) own next call to search_knowledge or resolve_missing_context_request that decides what happens to it.",
 	}, submitMissingContextRequestHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "list_missing_context_requests",
-		Description: "List missing-context requests (§6.4), defaulting to pending ones, so Semar can decide each one's resolution.",
+		Description: "List missing-context requests, defaulting to pending ones, so Semar can decide each one's resolution.",
 	}, listMissingContextRequestsHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "resolve_missing_context_request",
-		Description: "Record Semar's decision on a missing-context request (§6.4): added_to_revision (requires a revised_capsule_id identifying the revised context), rejected, or asked_user. Punakawan does not choose between these - it only persists whichever the calling agent picked.",
+		Description: "Record Semar's decision on a missing-context request: added_to_revision (requires a revised_capsule_id identifying the revised context), rejected, or asked_user. Punakawan does not choose between these - it only persists whichever the calling agent picked.",
 	}, resolveMissingContextRequestHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -363,7 +363,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	// Contradiction Ledger (Gareng, §16-22). Deterministic, no reasoning.
 	addTool(server, reg, &mcp.Tool{
 		Name:        "submit_contradiction",
-		Description: "Record a detected contradiction - a disagreement between sources about one subject (§21/CONTRA-007). Deduplicates deterministically by normalized subject.key (§20): if a contradiction already exists for the same subject the existing record is returned (deduplicated=true) rather than a duplicate created. New records start at status detected and block by default only when severity is critical. Gated to role Gareng's contradictions capability.",
+		Description: "Record a detected contradiction - a disagreement between sources about one subject. Deduplicates deterministically by normalized subject.key: if a contradiction already exists for the same subject the existing record is returned (deduplicated=true) rather than a duplicate created. New records start at status detected and block by default only when severity is critical. Gated to role Gareng's contradictions capability.",
 	}, submitContradictionHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
@@ -373,23 +373,23 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "resolve_contradiction",
-		Description: "Record a contradiction's confirmed resolution statement and who confirmed it, advancing it to resolved (§18). Only valid from resolution_proposed. Gated to role Gareng's contradictions capability.",
+		Description: "Record a contradiction's confirmed resolution statement and who confirmed it, advancing it to resolved. Only valid from resolution_proposed. Gated to role Gareng's contradictions capability.",
 	}, resolveContradictionHandler(a))
 
 	// Cross-Repository Impact Graph (Gareng, §23-31). Deterministic query, no reasoning.
 	addTool(server, reg, &mcp.Tool{
 		Name:        "analyze_impact",
-		Description: "Answer \"if subject_id changes, what else is affected?\" by a cycle-safe traversal of the impact graph (§26/§29), returning direct/transitive impact plus affected repositories, tests, deployments, owners, missing coverage, and any related contradictions. depth defaults to 3; set refresh=true to reconcile the structural graph from the workspace first. Read-only against durable state.",
+		Description: "Answer \"if subject_id changes, what else is affected?\" by a cycle-safe traversal of the impact graph, returning direct/transitive impact plus affected repositories, tests, deployments, owners, missing coverage, and any related contradictions. depth defaults to 3; set refresh=true to reconcile the structural graph from the workspace first. Read-only against durable state.",
 	}, analyzeImpactHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "record_impact_edge",
-		Description: "Record a discovered dependency edge (from->to of a given type and confidence) into the impact graph (§29/IMPACT-012). Idempotent by (from,to,type): re-recording an edge supersedes the prior one. Gated to role Gareng's cross_repository_impact capability.",
+		Description: "Record a discovered dependency edge (from->to of a given type and confidence) into the impact graph. Idempotent by (from,to,type): re-recording an edge supersedes the prior one. Gated to role Gareng's cross_repository_impact capability.",
 	}, recordImpactEdgeHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "verify_impact_coverage",
-		Description: "Bagong's coverage check (§30/IMPACT-014): traverse the impact graph from subject_id and report whether every reachable symbol/operation is tested and whether any reachable edge is in dispute. Returns covered=true only when nothing is missing coverage and nothing is disputed, plus the affected repositories, missing-coverage nodes, and related contradictions. Gated to role Bagong's cross_repository_verification capability.",
+		Description: "Bagong's coverage check: traverse the impact graph from subject_id and report whether every reachable symbol/operation is tested and whether any reachable edge is in dispute. Returns covered=true only when nothing is missing coverage and nothing is disputed, plus the affected repositories, missing-coverage nodes, and related contradictions. Gated to role Bagong's cross_repository_verification capability.",
 	}, verifyImpactCoverageHandler(a))
 
 	// Delivery scheduling: pull-based lease lifecycle over a multi-project

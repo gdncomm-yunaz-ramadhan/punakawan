@@ -56,7 +56,7 @@ type FinishTaskExecutionInput struct {
 	RunId  string `json:"run_id"`
 	TaskId string `json:"task_id"`
 	RepoId string `json:"repo_id"`
-	Status string `json:"status" jsonschema:"one of committed|blocked, per §11.3's execution loop"`
+	Status string `json:"status" jsonschema:"one of committed|blocked"`
 	Reason string `json:"reason,omitempty" jsonschema:"why the task was blocked, if status is blocked"`
 }
 

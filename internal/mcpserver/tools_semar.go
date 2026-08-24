@@ -17,7 +17,7 @@ import (
 type SubmitFinalPlanInput struct {
 	Id        string                             `json:"id" jsonschema:"short local id for this submission, e.g. the run id"`
 	Title     string                             `json:"title" jsonschema:"human-readable title"`
-	FinalPlan *protocol.KnowledgeRecordFinalPlan `json:"final_plan" jsonschema:"the final implementation plan payload (§9.3)"`
+	FinalPlan *protocol.KnowledgeRecordFinalPlan `json:"final_plan" jsonschema:"the final implementation plan payload"`
 }
 
 // contradictionTitles renders a short "id (title)" list for an error message.

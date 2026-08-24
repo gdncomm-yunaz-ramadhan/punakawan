@@ -27,7 +27,7 @@ type SearchKnowledgeInput struct {
 	Types []string `json:"types,omitempty"`
 	Tags  []string `json:"tags,omitempty"`
 
-	IncludeRelated bool `json:"include_related,omitempty" jsonschema:"expand one hop of directly related records (§11.9), bounded to 10 items"`
+	IncludeRelated bool `json:"include_related,omitempty" jsonschema:"expand one hop of directly related records, bounded to 10 items"`
 	Limit          int  `json:"limit,omitempty" jsonschema:"maximum results to return, default 20"`
 
 	// ProjectId is ADR-0020's hub project filter - which project's knowledge
