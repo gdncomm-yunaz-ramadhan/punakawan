@@ -19,10 +19,10 @@ type DeleteKnowledgeInput struct {
 	Ids []string `json:"ids"`
 }
 
-// DeleteKnowledgeOutput is delete_knowledge's output. CommitHash is the Dolt
-// commit created for this delete (empty when nothing was actually deleted,
-// e.g. every id was not_found) - the record to point at for AS OF queries or
-// a checkout-based revert of exactly this operation.
+// DeleteKnowledgeOutput is delete_knowledge's output. CommitHash is an
+// opaque audit-log identifier for this delete (Store.CommitWorkingSet: a
+// content hash over the commit message, not a VCS commit), empty when
+// nothing was actually deleted, e.g. every id was not_found.
 type DeleteKnowledgeOutput struct {
 	Deleted    []string `json:"deleted"`
 	NotFound   []string `json:"not_found,omitempty"`

@@ -90,6 +90,11 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	}, prepareWorkContextHandler(a))
 
 	addTool(server, reg, &mcp.Tool{
+		Name:        "knowledge_record_candidate",
+		Description: "Persist a candidate durable learning, e.g. delivery evidence worth remembering once accepted. Named 'candidate', not 'create': this is evidence offered for storage, not an assertion of canonical truth. Currently always written to the local project knowledge store. Defaults to model-assisted/inferred provenance.",
+	}, knowledgeRecordCandidateHandler(a))
+
+	addTool(server, reg, &mcp.Tool{
 		Name:        "get_knowledge_records",
 		Description: "Batch-read complete typed knowledge records by id (agent-context plan §5.2), e.g. to expand the ids prepare_work_context or search_knowledge returned into full records in one call. Ids not found are reported in not_found rather than erroring the whole batch. project_id (ADR-0020) selects which project's knowledge store to read from and defaults to the calling project; name another project's id only to deliberately cross-project read (requires it share this project's hub).",
 	}, getKnowledgeRecordsHandler(a))
@@ -352,7 +357,7 @@ func registerTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 
 	addTool(server, reg, &mcp.Tool{
 		Name:        "delete_knowledge",
-		Description: "Bulk-delete specific knowledge records by id, e.g. ones find_prune_candidates or search_knowledge flagged as stale, superseded, or wrong. Any validity_state may be deleted; naming an id is the deliberate act. Not undoable through this tool but not unrecoverable: a delete is committed to the project's Dolt store and commit_hash is returned - deleted records stay readable via `SELECT ... AS OF '<commit_hash>~1'`, or restorable with `dolt checkout <commit_hash>~1`. commit_hash is empty when every id was not_found.",
+		Description: "Bulk-delete specific knowledge records by id, e.g. ones find_prune_candidates or search_knowledge flagged as stale, superseded, or wrong. Any validity_state may be deleted; naming an id is the deliberate act. Not undoable through this tool: the knowledge store is a plain SQLite table with no version history, so a delete is permanent - commit_hash is only an opaque audit-log identifier for this operation, not a revertable snapshot. commit_hash is empty when every id was not_found.",
 	}, deleteKnowledgeHandler(a))
 
 	// Contradiction Ledger (Gareng, §16-22). Deterministic, no reasoning.

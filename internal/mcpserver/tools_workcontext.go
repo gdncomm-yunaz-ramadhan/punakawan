@@ -10,6 +10,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/knowledge"
+	"github.com/ygrip/punakawan/internal/knowledgefacade"
 	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/workcontext"
@@ -96,7 +97,7 @@ func prepareWorkContextHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 		}
 
 		// Knowledge retrieval and recipe resolution only open the (expensive)
-		// Dolt-backed store when a retrieval query is actually supplied.
+		// shared SQLite-backed store when a retrieval query is actually supplied.
 		var searchFn workcontext.SearchFunc
 		var recipes *recipe.Repository
 		if in.RetrievalQuery != "" {
@@ -281,9 +282,12 @@ func getKnowledgeRecordsHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if err != nil {
 			return nil, GetKnowledgeRecordsOutput{}, fmt.Errorf("mcpserver: open knowledge store: %w", err)
 		}
+		// Project mirrors GetInProject's own "" fallback: empty means this
+		// call's own project, exactly like the pre-facade direct call below.
+		local := &knowledgefacade.LegacyLocalKnowledgeProvider{Store: store, Project: in.ProjectId}
 		out := GetKnowledgeRecordsOutput{Records: []protocol.KnowledgeRecord{}}
 		for _, id := range in.Ids {
-			rec, err := store.GetInProject(in.ProjectId, id)
+			rec, err := local.Get(ctx, id)
 			if errors.Is(err, knowledge.ErrNotFound) {
 				out.NotFound = append(out.NotFound, id)
 				continue

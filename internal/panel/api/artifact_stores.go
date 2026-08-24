@@ -20,8 +20,8 @@ import (
 // make the existing review/proposal protocol type-generic rather than
 // build a second, retrieval_recipe-specific copy of it.
 //
-// Recipes is a factory, not a concrete store: opening the Dolt-backed
-// knowledge store behind it starts an external Dolt server process
+// Recipes is a factory, not a concrete store: opening the SQLite-backed
+// knowledge store behind it opens the shared storage kernel
 // (App.OpenKnowledge's own doc comment), which every existing plan-only
 // route (the overwhelming majority of panel traffic, including nearly
 // every pre-existing test) has no reason to pay for. Recipes is called
@@ -38,7 +38,7 @@ type ArtifactStores struct {
 	// Root is the workspace root the workflow and project-metadata learning
 	// adapters operate on (agent-context plan §6.3); those are file-backed and
 	// need no lazy factory. Knowledge is a lazy factory like Recipes, since the
-	// knowledge adapter opens the Dolt-backed store.
+	// knowledge adapter opens the shared SQLite-backed store.
 	Root      string
 	Knowledge func() (*knowledge.Store, error)
 
