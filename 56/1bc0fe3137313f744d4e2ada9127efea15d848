@@ -1,0 +1,33 @@
+protocol/workflow.schema.json
+  a330ccb60fead87e 82-91
+internal/panel/server/server.go
+  a330ccb60fead87e 242-249,253,263
+internal/mcpserver/tools_invokeworkflowdefinition.go
+  a330ccb60fead87e 3-16,28,61,70-87,89-92,94,96,100-111,113,119-127,140-144,180-186,203
+internal/panel/server/server_test.go
+  a330ccb60fead87e 22,28,644-721
+internal/plan/workflowdef.go
+  a330ccb60fead87e 1-36
+internal/mcpserver/tools_invokeworkflowdefinition_test.go
+  a330ccb60fead87e 70-75,111-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "561bc0fe3137313f744d4e2ada9127efea15d848",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 224,
+      "total_deletions": 87,
+      "accepted_lines": 224,
+      "overriden_lines": 0
+    }
+  }
+}
