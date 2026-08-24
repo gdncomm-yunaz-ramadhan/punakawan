@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/panel"
@@ -11,11 +10,11 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// NeedsAttentionKind categorizes one Overview.NeedsAttention entry, per
-// §14.1's fixed priority order (failed session, pending approval, blocked
-// task, unavailable workspace, stale active session). A "source failure"
-// kind was reserved here originally, but per-source health is not available
-// from WorkspaceReader.List (it returns WorkspaceSummary, no Health), and a
+// NeedsAttentionKind categorizes one Overview.NeedsAttention entry, per the
+// fixed priority order (failed session, pending approval, unavailable
+// workspace, stale active session). A "source failure" kind was reserved
+// here originally, but per-source health is not available from
+// WorkspaceReader.List (it returns WorkspaceSummary, no Health), and a
 // wholly-unavailable source already surfaces as an unavailable_workspace
 // entry, so the dead kind was removed rather than left un-emitted.
 type NeedsAttentionKind string
@@ -23,7 +22,6 @@ type NeedsAttentionKind string
 const (
 	NeedsAttentionFailedSession        NeedsAttentionKind = "failed_session"
 	NeedsAttentionPendingApproval      NeedsAttentionKind = "pending_approval"
-	NeedsAttentionBlockedTasks         NeedsAttentionKind = "blocked_tasks"
 	NeedsAttentionUnavailableWorkspace NeedsAttentionKind = "unavailable_workspace"
 	NeedsAttentionStaleSession         NeedsAttentionKind = "stale_session"
 )
@@ -51,20 +49,18 @@ const staleActiveSessionAfter = 30 * time.Minute
 type Overview struct {
 	ActiveSessions      []protocol.PanelSessionSummary `json:"active_sessions"`
 	PendingApprovals    []protocol.ApprovalRecord      `json:"pending_approvals"`
-	BlockedTasks        int                            `json:"blocked_tasks"`
 	AvailableWorkspaces int                            `json:"available_workspaces"`
 	NeedsAttention      []NeedsAttentionItem           `json:"needs_attention"`
 	WorkspaceHealth     []contract.WorkspaceSummary    `json:"workspace_health"`
 	RecentSessions      []protocol.PanelSessionSummary `json:"recent_sessions"`
 	// PrimaryWorkspaceId names the single workspace this panel instance was
 	// loaded for. The scope of this response is deliberately mixed and this
-	// field makes it explicit: BlockedTasks, AvailableWorkspaces, and
-	// WorkspaceHealth aggregate across every registered workspace, but
-	// ActiveSessions, RecentSessions, and PendingApprovals cover only the
-	// primary workspace - the non-workspace sources cannot serve any other
-	// workspace's sessions/approvals (they 404). The frontend uses this to
-	// label the primary-only cards rather than implying a cross-workspace
-	// total.
+	// field makes it explicit: AvailableWorkspaces and WorkspaceHealth
+	// aggregate across every registered workspace, but ActiveSessions,
+	// RecentSessions, and PendingApprovals cover only the primary workspace -
+	// the non-workspace sources cannot serve any other workspace's
+	// sessions/approvals (they 404). The frontend uses this to label the
+	// primary-only cards rather than implying a cross-workspace total.
 	PrimaryWorkspaceId string `json:"primary_workspace_id"`
 }
 
@@ -104,19 +100,10 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 		}
 
 		var attention []NeedsAttentionItem
-		blockedTasks := 0
 		availableWorkspaces := 0
 		for _, ws := range workspaces {
-			blockedTasks += ws.BlockedTaskCount
 			if ws.Availability == protocol.PanelSourceHealthAvailabilityAvailable {
 				availableWorkspaces++
-			}
-			if ws.BlockedTaskCount > 0 {
-				attention = append(attention, NeedsAttentionItem{
-					Kind:        NeedsAttentionBlockedTasks,
-					WorkspaceId: ws.ID,
-					Message:     blockedTasksMessage(ws.BlockedTaskCount),
-				})
 			}
 			if ws.Availability == protocol.PanelSourceHealthAvailabilityUnavailable || ws.Availability == protocol.PanelSourceHealthAvailabilityPartiallyAvailable {
 				attention = append(attention, NeedsAttentionItem{
@@ -170,10 +157,10 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 			})
 		}
 
-		// §14.1's fixed priority order: failed session, pending approval,
-		// blocked task, unavailable workspace, source failure, stale
-		// session. attention currently holds blocked-tasks/unavailable
-		// entries (built above); assemble the final order here.
+		// The fixed priority order: failed session, pending approval,
+		// unavailable workspace, source failure, stale session. attention
+		// currently holds the unavailable-workspace entries (built above);
+		// assemble the final order here.
 		final := append([]NeedsAttentionItem{}, failed...)
 		final = append(final, pendingAttention...)
 		final = append(final, attention...)
@@ -188,7 +175,6 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 		writeJSON(w, http.StatusOK, Overview{
 			ActiveSessions:      activeSessions,
 			PendingApprovals:    pending,
-			BlockedTasks:        blockedTasks,
 			AvailableWorkspaces: availableWorkspaces,
 			NeedsAttention:      final,
 			WorkspaceHealth:     workspaces,
@@ -196,13 +182,6 @@ func OverviewHandler(readers panel.Readers, workspaceID string) http.HandlerFunc
 			PrimaryWorkspaceId:  workspaceID,
 		})
 	}
-}
-
-func blockedTasksMessage(count int) string {
-	if count == 1 {
-		return "1 blocked task"
-	}
-	return strconv.Itoa(count) + " blocked tasks"
 }
 
 func isActiveStatus(status string) bool {

@@ -275,28 +275,24 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/health", api.HealthHandler(healthCache))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/health/refresh", session.RequireSession(s.sessions, api.HealthRefreshHandler(healthCache)))
 
-	// Project-scoped Tasks / Sessions / Evidence / Knowledge reads. These
-	// resolve the backing *app.App per project id through the runtime pool
-	// (the primary is used directly), so a project's Tasks/Knowledge/Sessions
-	// tabs (including a session's evidence) work for any registered project,
-	// not only the startup workspace. The {workspaceId} path-value name is
-	// intentional: it lets the existing workspace-scoped handlers be reused
-	// verbatim over a project-aware reader.
+	// Project-scoped Sessions / Evidence / Knowledge reads. These resolve the
+	// backing *app.App per project id through the runtime pool (the primary
+	// is used directly), so a project's Knowledge/Sessions tabs (including a
+	// session's evidence) work for any registered project, not only the
+	// startup workspace. The {workspaceId} path-value name is intentional: it
+	// lets the existing workspace-scoped handlers be reused verbatim over a
+	// project-aware reader.
 	projResolver := &sources.AppResolver{
 		PrimaryID: s.app.Workspace.ID,
 		Primary:   s.app,
 		Runtime:   s.readers.Runtime,
 		Resolve:   s.resolveRoot,
 	}
-	projTasks := sources.ProjectTaskReader{AppResolver: projResolver}
 	projSessions := sources.ProjectSessionReader{AppResolver: projResolver}
 	projKnowledge := sources.ProjectKnowledgeReader{AppResolver: projResolver}
 	projApprovals := sources.ProjectApprovalReader{AppResolver: projResolver}
 	projEvidence := sources.ProjectEvidenceReader{AppResolver: projResolver}
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/approvals", api.ApprovalsHandler(projApprovals))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks", api.TasksHandler(projTasks))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/tasks/{taskId}", api.TaskHandler(projTasks))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/task-graph", api.TaskGraphHandler(projTasks))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions", api.SessionsHandler(projSessions))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}", api.SessionHandler(projSessions))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}/evidence", api.EvidenceListHandler(projEvidence))

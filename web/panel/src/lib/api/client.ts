@@ -1,6 +1,6 @@
 // Thin fetch wrapper for /api/v1, mirroring internal/panel/api's Go
 // response shapes. Kept deliberately small for Phase 1 (system +
-// workspaces only); later phases add sessions/tasks/knowledge/evidence/
+// workspaces only); later phases add sessions/knowledge/evidence/
 // approvals here as their own endpoints land.
 
 import { fetchWithCsrf } from "../session";
@@ -25,13 +25,11 @@ export interface WorkspaceSummary {
   availability: Availability;
   repository_count: number;
   active_session_count: number;
-  open_task_count: number;
-  blocked_task_count: number;
   knowledge_count: number;
   last_activity_at: string;
   pinned: boolean;
   // True only for the single workspace this panel instance serves; every
-  // other workspace's sessions/tasks/knowledge/approvals are unavailable
+  // other workspace's sessions/knowledge/approvals are unavailable
   // here (they 404), so the UI disables their drill-down navigation.
   primary: boolean;
 }
@@ -90,7 +88,6 @@ export interface ApprovalRecord {
 export type NeedsAttentionKind =
   | "failed_session"
   | "pending_approval"
-  | "blocked_tasks"
   | "unavailable_workspace"
   | "stale_session";
 
@@ -104,15 +101,14 @@ export interface NeedsAttentionItem {
 export interface Overview {
   active_sessions: PanelSessionSummary[];
   pending_approvals: ApprovalRecord[];
-  blocked_tasks: number;
   available_workspaces: number;
   needs_attention: NeedsAttentionItem[];
   workspace_health: WorkspaceSummary[];
   recent_sessions: PanelSessionSummary[];
   // The single workspace this panel instance serves. active_sessions,
   // recent_sessions, and pending_approvals cover only this workspace,
-  // whereas blocked_tasks/available_workspaces/workspace_health span all
-  // registered workspaces.
+  // whereas available_workspaces/workspace_health span all registered
+  // workspaces.
   primary_workspace_id: string;
 }
 
@@ -214,97 +210,6 @@ export function listCapsules(workspaceId: string, taskId: string): Promise<{ ite
   return getJSON<{ items: ContextCapsule[] }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/capsules?task_id=${encodeURIComponent(taskId)}`,
   );
-}
-
-export interface TaskDependencyEdge {
-  issue_id: string;
-  depends_on_id: string;
-  type: string;
-}
-
-export interface TaskSummary {
-  id: string;
-  title: string;
-  description?: string;
-  status: string;
-  priority: number;
-  issue_type: string;
-  owner?: string;
-  assignee?: string;
-  labels?: string[];
-  parent?: string;
-  dependencies?: TaskDependencyEdge[];
-  created_at: string;
-  created_by?: string;
-  updated_at: string;
-  started_at?: string;
-  external_ref?: string;
-  board_status: string;
-  blocking_reasons?: string[];
-  stale: boolean;
-}
-
-export interface RelatedTask {
-  id: string;
-  title: string;
-  status: string;
-  priority: number;
-  issue_type: string;
-  dependency_type: string;
-}
-
-export interface TaskDetail {
-  id: string;
-  title: string;
-  description?: string;
-  acceptance_criteria?: string;
-  status: string;
-  priority: number;
-  issue_type: string;
-  owner?: string;
-  assignee?: string;
-  labels?: string[];
-  parent?: string;
-  dependencies?: RelatedTask[];
-  dependents?: RelatedTask[];
-  created_at: string;
-  created_by?: string;
-  updated_at: string;
-  closed_at?: string;
-  external_ref?: string;
-}
-
-export interface TaskGraphEdge {
-  from: string;
-  to: string;
-  type: string;
-}
-
-export interface TaskGraph {
-  nodes: TaskSummary[];
-  edges: TaskGraphEdge[];
-  cycles: string[][];
-}
-
-export interface TaskFilter {
-  status?: string;
-  priority?: string;
-  type?: string;
-  blocked?: boolean;
-  query?: string;
-  limit?: number;
-}
-
-function taskListQuery(filter: TaskFilter): string {
-  const params = new URLSearchParams();
-  if (filter.status) params.set("status", filter.status);
-  if (filter.priority) params.set("priority", filter.priority);
-  if (filter.type) params.set("type", filter.type);
-  if (filter.blocked) params.set("blocked", "true");
-  if (filter.query) params.set("query", filter.query);
-  if (filter.limit) params.set("limit", String(filter.limit));
-  const qs = params.toString();
-  return qs ? `?${qs}` : "";
 }
 
 export interface KnowledgeRelation {
@@ -644,8 +549,6 @@ export interface ProjectSummary {
   availability: string;
   repository_count: number;
   knowledge_count: number;
-  open_task_count: number;
-  blocked_task_count: number;
   active_session_count: number;
   metadata_count: number;
 }
@@ -1002,25 +905,13 @@ export function refreshHealth(id: string): Promise<HealthResponse> {
   return mutateJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health/refresh`, { method: "POST" });
 }
 
-// --- Project-scoped task / session / knowledge reads ---------------------
+// --- Project-scoped session / knowledge reads -----------------------------
 //
 // The server mounts the SAME handlers used by the /workspaces/{id}/...
 // endpoints under /projects/{id}/... too, so these mirror the workspace
-// reads' response shapes exactly. They let Project Detail's Tasks,
-// Sessions, and Knowledge tabs read real data for ANY project (not only
-// the startup workspace) without routing through the /workspaces/... URLs.
-
-export function listProjectTasks(id: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
-  return getJSON<{ items: TaskSummary[] }>(`/projects/${encodeURIComponent(id)}/tasks${taskListQuery(filter)}`);
-}
-
-export function getProjectTask(id: string, taskId: string): Promise<TaskDetail> {
-  return getJSON<TaskDetail>(`/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`);
-}
-
-export function getProjectTaskGraph(id: string): Promise<TaskGraph> {
-  return getJSON<TaskGraph>(`/projects/${encodeURIComponent(id)}/task-graph`);
-}
+// reads' response shapes exactly. They let Project Detail's Sessions and
+// Knowledge tabs read real data for ANY project (not only the startup
+// workspace) without routing through the /workspaces/... URLs.
 
 export function listProjectSessions(id: string): Promise<{ items: PanelSessionSummary[] }> {
   return getJSON<{ items: PanelSessionSummary[] }>(`/projects/${encodeURIComponent(id)}/sessions`);

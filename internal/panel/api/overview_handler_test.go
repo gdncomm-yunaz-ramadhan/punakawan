@@ -58,7 +58,7 @@ func TestOverviewHandlerOrdersNeedsAttentionByPriority(t *testing.T) {
 	now := time.Now().UTC()
 	readers := panel.Readers{
 		Workspace: fakeWorkspaceReader{summaries: []contract.WorkspaceSummary{
-			{ID: "ws-a", BlockedTaskCount: 2, Availability: protocol.PanelSourceHealthAvailabilityAvailable},
+			{ID: "ws-a", Availability: protocol.PanelSourceHealthAvailabilityAvailable},
 			{ID: "ws-b", Availability: protocol.PanelSourceHealthAvailabilityUnavailable},
 		}},
 		Session: fakeSessionReader{sessions: []protocol.PanelSessionSummary{
@@ -87,7 +87,6 @@ func TestOverviewHandlerOrdersNeedsAttentionByPriority(t *testing.T) {
 	wantOrder := []NeedsAttentionKind{
 		NeedsAttentionFailedSession,
 		NeedsAttentionPendingApproval,
-		NeedsAttentionBlockedTasks,
 		NeedsAttentionUnavailableWorkspace,
 		NeedsAttentionStaleSession,
 	}
@@ -100,9 +99,6 @@ func TestOverviewHandlerOrdersNeedsAttentionByPriority(t *testing.T) {
 		}
 	}
 
-	if out.BlockedTasks != 2 {
-		t.Fatalf("BlockedTasks = %d, want 2", out.BlockedTasks)
-	}
 	if out.AvailableWorkspaces != 1 {
 		t.Fatalf("AvailableWorkspaces = %d, want 1", out.AvailableWorkspaces)
 	}

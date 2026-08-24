@@ -172,8 +172,6 @@
               </span>
               <span class="stats" aria-label="Project snapshot">
                 <span><strong>{p.repository_count}</strong> repos</span>
-                <span><strong>{p.open_task_count}</strong> open</span>
-                <span class:danger={p.blocked_task_count > 0}><strong>{p.blocked_task_count}</strong> blocked</span>
                 <span><strong>{p.active_session_count}</strong> active</span>
                 <span><strong>{p.knowledge_count}</strong> knowledge</span>
               </span>
@@ -459,10 +457,6 @@
   .stats strong {
     color: var(--color-text);
     font-variant-numeric: tabular-nums;
-  }
-  .stats .danger,
-  .stats .danger strong {
-    color: var(--color-danger);
   }
   .open-hint {
     margin-left: auto;

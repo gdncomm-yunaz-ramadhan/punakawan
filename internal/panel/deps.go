@@ -17,7 +17,6 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/runtime"
 	"github.com/ygrip/punakawan/internal/panel/settings"
 	"github.com/ygrip/punakawan/internal/panel/sources"
-	"github.com/ygrip/punakawan/internal/panel/tasksnapshot"
 	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -32,7 +31,6 @@ const Version = "0.1.0"
 type Readers struct {
 	Workspace    contract.WorkspaceReader
 	Session      contract.SessionReader
-	Task         contract.TaskReader
 	Knowledge    contract.KnowledgeReader
 	Evidence     contract.EvidenceReader
 	Approval     contract.ApprovalReader
@@ -66,11 +64,6 @@ type Readers struct {
 // (WorkspaceReader and GlobalSearchReader use it to reach every
 // registered workspace, not just a's own).
 func NewReaders(a *app.App, reg *registry.Store) Readers {
-	// One shared task snapshot service: the board, table, dependency graph,
-	// and count widgets reuse a single `bd list` + `bd ready` refresh instead
-	// of each shelling out to bd independently (Phase 5, §8/§12).
-	taskSnap := tasksnapshot.NewService(tasksnapshot.BeadsRunner(a.Supervisor, a.Workspace.Root))
-
 	// Bounded pool of loaded *app.App runtimes, seeded with the long-lived
 	// primary. Non-primary workspaces are Acquire'd and reused across requests
 	// instead of app.Load/Close per call; the primary is never evicted or
@@ -103,7 +96,6 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 	return Readers{
 		Workspace:    workspaceReader,
 		Session:      &sources.SessionSource{App: a},
-		Task:         &sources.TaskSource{App: a, Snapshot: taskSnap},
 		Knowledge:    &sources.KnowledgeSource{App: a},
 		Evidence:     &sources.EvidenceSource{App: a},
 		Approval:     &sources.ApprovalSource{App: a},
@@ -121,7 +113,7 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 // ProjectSource implements contract.ProjectReader over the project files at
 // each workspace root, per the project performance plan §3/§4. Reads reuse
 // the injected ProjectWorkspaceReader's snapshot-backed per-workspace counts
-// (repositories, knowledge, tasks, sessions) instead of duplicating that
+// (repositories, knowledge, sessions) instead of duplicating that
 // inspection;
 // project identity and metadata come from internal/project.Load. Metadata
 // mutations load the project fresh, apply an optimistically-locked change,
@@ -139,10 +131,10 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 // it has no Get: the project routes need the registered list and one project's
 // counts, never the live per-source Health detail Get computes. Reading counts
 // through Get is what made GET /api/v1/projects/{id} open the project's Dolt
-// store, shell out to `bd list` plus `bd ready`, and run `git status` per
-// repository on every single request - measured at ~8s cold and ~2.6s warm for
-// a project with a real task graph, for numbers the snapshot cache was already
-// maintaining. Summary serves those same counts from that snapshot.
+// store and run `git status` per repository on every single request -
+// measured at ~8s cold and ~2.6s warm for a project with several
+// repositories, for numbers the snapshot cache was already maintaining.
+// Summary serves those same counts from that snapshot.
 type ProjectWorkspaceReader interface {
 	List(ctx context.Context) ([]contract.WorkspaceSummary, error)
 	Summary(ctx context.Context, projectID string) (contract.WorkspaceSummary, error)
@@ -245,8 +237,6 @@ func (s *ProjectSource) summaryFromWorkspace(ws contract.WorkspaceSummary) contr
 		Availability:       string(ws.Availability),
 		RepositoryCount:    ws.RepositoryCount,
 		KnowledgeCount:     ws.KnowledgeCount,
-		OpenTaskCount:      ws.OpenTaskCount,
-		BlockedTaskCount:   ws.BlockedTaskCount,
 		ActiveSessionCount: ws.ActiveSessionCount,
 		MetadataCount:      metadataCount,
 	}

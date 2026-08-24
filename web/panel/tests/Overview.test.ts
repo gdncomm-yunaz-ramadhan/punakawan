@@ -20,27 +20,22 @@ describe("Overview", () => {
       jsonResponse({
         active_sessions: [{ id: "run-1", workspace_id: "ws-a", workflow: "feature-delivery", status: "executing", started_at: "2026-07-23T00:00:00Z", updated_at: "2026-07-23T00:00:00Z" }],
         pending_approvals: [],
-        blocked_tasks: 3,
         available_workspaces: 1,
         needs_attention: [
           { kind: "failed_session", workspace_id: "ws-a", entity_id: "run-2", message: "session failed" },
-          { kind: "blocked_tasks", workspace_id: "ws-a", message: "3 blocked tasks" },
+          { kind: "unavailable_workspace", workspace_id: "ws-b", message: "workspace is unavailable" },
         ],
-        workspace_health: [{ id: "ws-a", path: "/repos/ws-a", display_name: "WS A", availability: "available", repository_count: 1, active_session_count: 1, open_task_count: 2, blocked_task_count: 3, knowledge_count: 5, last_activity_at: "2026-07-23T00:00:00Z", pinned: false }],
+        workspace_health: [{ id: "ws-a", path: "/repos/ws-a", display_name: "WS A", availability: "available", repository_count: 1, active_session_count: 1, knowledge_count: 5, last_activity_at: "2026-07-23T00:00:00Z", pinned: false }],
         recent_sessions: [],
       }),
     );
 
     render(Overview);
 
-    // "3" (blocked-tasks count) and "WS A" now appear both in the metric
-    // tiles / workspace list and in the blocked-tasks chart's accessible
-    // data-table fallback, so assert at-least-one rather than uniqueness.
     await waitFor(() => {
-      expect(screen.getAllByText("3").length).toBeGreaterThan(0);
+      expect(screen.getByText("session failed")).toBeTruthy();
     });
-    expect(screen.getByText("session failed")).toBeTruthy();
-    expect(screen.getByText("3 blocked tasks")).toBeTruthy();
+    expect(screen.getByText("workspace is unavailable")).toBeTruthy();
     expect(screen.getAllByText("WS A").length).toBeGreaterThan(0);
   });
 
@@ -49,7 +44,6 @@ describe("Overview", () => {
       jsonResponse({
         active_sessions: [],
         pending_approvals: [],
-        blocked_tasks: 0,
         available_workspaces: 0,
         needs_attention: [],
         workspace_health: [],

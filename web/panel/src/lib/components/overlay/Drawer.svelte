@@ -16,10 +16,7 @@
 </script>
 
 <!--
-  Generalizes the backdrop + close-button pattern already used by
-  routes/tasks/TaskDetailDrawer.svelte (UI-007) into a reusable,
-  token-based primitive. TaskDetailDrawer itself is intentionally left
-  unmigrated (out of scope, per the plan) to avoid blast radius.
+  A reusable, token-based backdrop + close-button drawer primitive.
 -->
 <svelte:window onkeydown={open ? onKeydown : undefined} />
 

@@ -54,13 +54,11 @@ func benchWorkspaces(n int) []contract.WorkspaceSummary {
 	now := time.Now().UTC()
 	for i := 0; i < n; i++ {
 		out = append(out, contract.WorkspaceSummary{
-			ID:               fmt.Sprintf("ws-%02d", i),
-			DisplayName:      fmt.Sprintf("Workspace %02d", i),
-			Availability:     protocol.PanelSourceHealthAvailabilityAvailable,
-			KnowledgeCount:   i * 3,
-			BlockedTaskCount: i % 2,
-			OpenTaskCount:    i,
-			LastActivityAt:   now,
+			ID:             fmt.Sprintf("ws-%02d", i),
+			DisplayName:    fmt.Sprintf("Workspace %02d", i),
+			Availability:   protocol.PanelSourceHealthAvailabilityAvailable,
+			KnowledgeCount: i * 3,
+			LastActivityAt: now,
 		})
 	}
 	return out
@@ -144,7 +142,6 @@ func benchProjects(n int) []contract.ProjectSummary {
 			Availability:    string(protocol.PanelSourceHealthAvailabilityAvailable),
 			RepositoryCount: 1,
 			KnowledgeCount:  i * 3,
-			OpenTaskCount:   i,
 		})
 	}
 	return out

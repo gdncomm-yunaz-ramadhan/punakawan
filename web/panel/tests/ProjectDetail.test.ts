@@ -47,9 +47,7 @@ function detail(over: Record<string, unknown> = {}) {
     availability: "available",
     repository_count: 1,
     knowledge_count: 0,
-    open_task_count: 3,
-    blocked_task_count: 0,
-    active_session_count: 0,
+    active_session_count: 3,
     metadata_count: 0,
     metadata: [],
     revision: 1,
@@ -61,8 +59,8 @@ function projectCalls() {
   return (fetch as unknown as FetchMock).mock.calls.filter((c) => String(c[0]) === "/api/v1/projects/proj-a");
 }
 
-function openTaskCount(): string {
-  const label = screen.getByText("Open tasks");
+function activeSessionCount(): string {
+  const label = screen.getByText("Active sessions");
   return (label.closest(".metric") as HTMLElement).querySelector(".value")!.textContent ?? "";
 }
 
@@ -109,17 +107,17 @@ describe("ProjectDetail", () => {
   it("refreshes on a relevant event without falling back to the loading state", async () => {
     (fetch as unknown as FetchMock)
       .mockResolvedValueOnce(jsonResponse(detail()))
-      .mockResolvedValue(jsonResponse(detail({ open_task_count: 9 })));
+      .mockResolvedValue(jsonResponse(detail({ active_session_count: 9 })));
 
     render(ProjectDetail, { props: { projectId: "proj-a" } });
     await waitFor(() => expect(screen.getByRole("heading", { name: "Checkout" })).toBeTruthy());
-    expect(openTaskCount()).toBe("3");
+    expect(activeSessionCount()).toBe("3");
 
-    emitPanelEvent("task.updated", { id: "evt-5", type: "task.updated", entity_id: "bd-1" });
+    emitPanelEvent("session.started", { id: "evt-5", type: "session.started", entity_id: "run-1" });
 
     // The refreshed count arrives and the header stays on screen throughout -
     // a background refresh must never unmount the view behind a spinner.
-    await waitFor(() => expect(openTaskCount()).toBe("9"));
+    await waitFor(() => expect(activeSessionCount()).toBe("9"));
     expect(projectCalls()).toHaveLength(2);
     expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.getByRole("heading", { name: "Checkout" })).toBeTruthy();

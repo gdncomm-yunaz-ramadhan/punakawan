@@ -20,8 +20,6 @@ function project(id: string, over: Record<string, unknown> = {}) {
     availability: "available",
     repository_count: 1,
     knowledge_count: 0,
-    open_task_count: 0,
-    blocked_task_count: 0,
     active_session_count: 0,
     metadata_count: 0,
     ...over,
@@ -99,8 +97,8 @@ describe("ProjectsList", () => {
 
   it("reorders the list when the sort control changes", async () => {
     installBackend([
-      project("a", { name: "Alpha", open_task_count: 1 }),
-      project("z", { name: "Zulu", open_task_count: 9 }),
+      project("a", { name: "Alpha", repository_count: 1 }),
+      project("z", { name: "Zulu", repository_count: 9 }),
     ]);
     const { container } = render(ProjectsList);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeTruthy());
@@ -108,7 +106,7 @@ describe("ProjectsList", () => {
     const names = () => Array.from(container.querySelectorAll(".name")).map((n) => n.textContent);
     expect(names()).toEqual(["Alpha", "Zulu"]);
 
-    await fireEvent.change(screen.getByLabelText("Sort by"), { target: { value: "open_tasks" } });
+    await fireEvent.change(screen.getByLabelText("Sort by"), { target: { value: "repositories" } });
     await waitFor(() => expect(names()).toEqual(["Zulu", "Alpha"]));
   });
 

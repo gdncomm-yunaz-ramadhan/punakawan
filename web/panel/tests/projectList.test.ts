@@ -12,8 +12,6 @@ function project(over: Partial<ProjectSummary> & { id: string }): ProjectSummary
     availability: "available",
     repository_count: 0,
     knowledge_count: 0,
-    open_task_count: 0,
-    blocked_task_count: 0,
     active_session_count: 0,
     metadata_count: 0,
     ...over,
@@ -70,21 +68,19 @@ describe("sortProjects", () => {
 
   it("sorts counts highest-first", () => {
     const list = [
-      project({ id: "low", open_task_count: 1, blocked_task_count: 0, repository_count: 1 }),
-      project({ id: "high", open_task_count: 9, blocked_task_count: 4, repository_count: 7 }),
+      project({ id: "low", repository_count: 1 }),
+      project({ id: "high", repository_count: 7 }),
     ];
-    expect(ids(sortProjects(list, "open_tasks"))).toEqual(["high", "low"]);
-    expect(ids(sortProjects(list, "blocked_tasks"))).toEqual(["high", "low"]);
     expect(ids(sortProjects(list, "repositories"))).toEqual(["high", "low"]);
   });
 
   it("breaks equal counts by name so the order is stable", () => {
     const list = [
-      project({ id: "c", name: "Cherry", open_task_count: 2 }),
-      project({ id: "a", name: "Apple", open_task_count: 2 }),
-      project({ id: "b", name: "Banana", open_task_count: 2 }),
+      project({ id: "c", name: "Cherry", repository_count: 2 }),
+      project({ id: "a", name: "Apple", repository_count: 2 }),
+      project({ id: "b", name: "Banana", repository_count: 2 }),
     ];
-    expect(ids(sortProjects(list, "open_tasks"))).toEqual(["a", "b", "c"]);
+    expect(ids(sortProjects(list, "repositories"))).toEqual(["a", "b", "c"]);
   });
 
   it("does not mutate the input array", () => {

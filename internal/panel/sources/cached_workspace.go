@@ -184,13 +184,12 @@ func (c *CachedWorkspaceReader) cachedSummary(ctx context.Context, e protocol.Pa
 // live per-source Health detail Get computes.
 //
 // This is the read the project pages actually want. They render counts
-// (repositories, knowledge, open/blocked tasks, active sessions) and never
-// display per-source health - but recomputing health means opening the
-// project's Dolt store, shelling out to `bd list` plus `bd ready`, and running
-// `git status` once per repository. Against a project with a real task graph
-// that is several seconds of work, and routing the project detail read through
-// Get made every single request pay it, even though List had already computed
-// and cached the very same counts moments earlier.
+// (repositories, knowledge, active sessions) and never display per-source
+// health - but recomputing health means opening the project's Dolt store and
+// running `git status` once per repository. Against a project with several
+// repositories that is several seconds of work, and routing the project
+// detail read through Get made every single request pay it, even though List
+// had already computed and cached the very same counts moments earlier.
 //
 // Get stays deliberately live because the Health page exists to show fresh
 // per-source detail. A counts-only read has no such reason to bypass the
@@ -266,8 +265,6 @@ func (c *CachedWorkspaceReader) snapshotToSummary(s *snapshot.ProjectSnapshot, e
 		Availability:       protocol.PanelSourceHealthAvailability(s.Availability),
 		RepositoryCount:    s.RepositoryCount,
 		ActiveSessionCount: s.ActiveRunCount,
-		OpenTaskCount:      s.OpenTaskCount,
-		BlockedTaskCount:   s.BlockedTaskCount,
 		KnowledgeCount:     s.KnowledgeCount,
 		LastActivityAt:     s.UpdatedAt,
 		Pinned:             e.Pinned != nil && *e.Pinned,
@@ -287,13 +284,11 @@ func summaryToSnapshot(sum contract.WorkspaceSummary) *snapshot.ProjectSnapshot 
 		updated = time.Now().UTC()
 	}
 	return &snapshot.ProjectSnapshot{
-		ProjectID:        sum.ID,
-		UpdatedAt:        updated,
-		Availability:     string(sum.Availability),
-		RepositoryCount:  sum.RepositoryCount,
-		KnowledgeCount:   sum.KnowledgeCount,
-		ActiveRunCount:   sum.ActiveSessionCount,
-		OpenTaskCount:    sum.OpenTaskCount,
-		BlockedTaskCount: sum.BlockedTaskCount,
+		ProjectID:       sum.ID,
+		UpdatedAt:       updated,
+		Availability:    string(sum.Availability),
+		RepositoryCount: sum.RepositoryCount,
+		KnowledgeCount:  sum.KnowledgeCount,
+		ActiveRunCount:  sum.ActiveSessionCount,
 	}
 }

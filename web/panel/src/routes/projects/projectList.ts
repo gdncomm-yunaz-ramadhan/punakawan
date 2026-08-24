@@ -5,7 +5,7 @@
 
 import type { ProjectSummary } from "../../lib/api/client";
 
-export type ProjectSortKey = "name" | "open_tasks" | "blocked_tasks" | "repositories";
+export type ProjectSortKey = "name" | "repositories";
 
 export interface ProjectSortOption {
   key: ProjectSortKey;
@@ -14,12 +14,9 @@ export interface ProjectSortOption {
 
 // ProjectSummary carries no timestamp, so there is no "recently updated"
 // option to offer here. The count fields are the closest thing the payload
-// has to an activity signal, and each is useful on its own ("who has the
-// most open work", "who is stuck").
+// has to an activity signal, and each is useful on its own.
 export const projectSortOptions: ProjectSortOption[] = [
   { key: "name", label: "Name (A–Z)" },
-  { key: "open_tasks", label: "Most open tasks" },
-  { key: "blocked_tasks", label: "Most blocked tasks" },
   { key: "repositories", label: "Most repositories" },
 ];
 
@@ -48,8 +45,6 @@ export function sortProjects(projects: ProjectSummary[], key: ProjectSortKey): P
 
   const comparators: Record<ProjectSortKey, (a: ProjectSummary, b: ProjectSummary) => number> = {
     name: byName,
-    open_tasks: descBy((p) => p.open_task_count),
-    blocked_tasks: descBy((p) => p.blocked_task_count),
     repositories: descBy((p) => p.repository_count),
   };
 

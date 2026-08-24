@@ -8,9 +8,7 @@
   import { onPanelEvent } from "../../lib/events/sse.svelte";
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
-    import ChartCard from "../../lib/components/cards/ChartCard.svelte";
   import TableCard from "../../lib/components/cards/TableCard.svelte";
-  import BlockedTasksChart from "../../lib/components/charts/BlockedTasksChart.svelte";
   import DataTable from "../../lib/components/data/DataTable.svelte";
   import type { Column } from "../../lib/components/data/types";
 
@@ -39,7 +37,6 @@
   const attentionLabels: Record<string, string> = {
     failed_session: "Failed session",
     pending_approval: "Pending approval",
-    blocked_tasks: "Blocked tasks",
     unavailable_workspace: "Unavailable workspace",
     stale_session: "Stale session",
   };
@@ -72,32 +69,12 @@
   <p role="alert" class="error">Failed to load the overview: {error}</p>
 {:else if overview}
   {@const ov = overview}
-  {@const blockedByWorkspace = ov.workspace_health
-    .filter((w) => w.blocked_task_count > 0)
-    .sort((a, b) => b.blocked_task_count - a.blocked_task_count)}
   <BentoGrid>
     <!-- span 3 on the 12/6/1-col BentoGrid => 4 per row (desktop),
          2 per row (tablet), 1 per row (mobile): the 4/2/1 cap. -->
     <MetricCard label="Active sessions" value={ov.active_sessions.length} size="small" columns={3} accent="indigo" icon="activity" />
-    <MetricCard label="Blocked tasks" value={ov.blocked_tasks} size="small" columns={3} accent="terracotta" icon="alert" />
     <MetricCard label="Pending approvals" value={ov.pending_approvals.length} size="small" columns={3} accent="gold" icon="approval" />
     <MetricCard label="Available workspaces" value={ov.available_workspaces} size="small" columns={3} accent="teal" icon="workspace" />
-
-    <ChartCard
-      title="Blocked tasks by workspace"
-      description="Where blocked work is concentrated right now."
-      size="full"
-      state={blockedByWorkspace.length === 0 ? "empty" : "default"}
-      emptyMessage="No blocked tasks across workspaces."
-    >
-      {#snippet children()}
-        <div class="chart-fill">
-          <BlockedTasksChart
-            items={blockedByWorkspace.map((w) => ({ label: w.display_name || w.id, value: w.blocked_task_count }))}
-          />
-        </div>
-      {/snippet}
-    </ChartCard>
 
     <TableCard title="Active Now" size="wide" state={ov.active_sessions.length === 0 ? "empty" : "default"} emptyMessage="No active sessions.">
       {#snippet children()}
@@ -231,12 +208,5 @@
     cursor: pointer;
     font-size: inherit;
     text-decoration: underline;
-  }
-
-  /* Let the chart fill the card's content box so it uses the full tile
-     width rather than sitting in a fixed-width island. */
-  .chart-fill {
-    width: 100%;
-    min-width: 0;
   }
 </style>

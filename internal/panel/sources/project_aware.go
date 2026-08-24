@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/runtime"
@@ -57,40 +56,6 @@ func (r *AppResolver) with(ctx context.Context, projectID string, fn func(a *app
 	}
 	defer release()
 	return fn(rt.App)
-}
-
-// ProjectTaskReader is a contract.TaskReader that resolves the backing app per
-// project id, so /api/v1/projects/{projectId}/tasks works for any project.
-type ProjectTaskReader struct{ *AppResolver }
-
-func (p ProjectTaskReader) List(ctx context.Context, workspaceID string, filter contract.TaskFilter) ([]contract.TaskSummary, error) {
-	var out []contract.TaskSummary
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&TaskSource{App: a}).List(ctx, workspaceID, filter)
-		return e
-	})
-	return out, err
-}
-
-func (p ProjectTaskReader) Get(ctx context.Context, workspaceID, taskID string) (beads.Issue, error) {
-	var out beads.Issue
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&TaskSource{App: a}).Get(ctx, workspaceID, taskID)
-		return e
-	})
-	return out, err
-}
-
-func (p ProjectTaskReader) Dependencies(ctx context.Context, workspaceID string) (contract.TaskGraph, error) {
-	var out contract.TaskGraph
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&TaskSource{App: a}).Dependencies(ctx, workspaceID)
-		return e
-	})
-	return out, err
 }
 
 // ProjectSessionReader is a contract.SessionReader resolved per project id.

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/beads"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/runtime"
 	"github.com/ygrip/punakawan/internal/project"
@@ -90,16 +89,6 @@ func TestZZMeasure(t *testing.T) {
 		t0 = time.Now()
 		recs, err := store.AllWithUpdatedAt()
 		t.Logf("knowledge AllWithUpdatedAt   %v (n=%d err=%v)", time.Since(t0), len(recs), err)
-	}
-
-	t.Logf("beads.ProjectInitialized     %v", beads.ProjectInitialized(rt.App.Workspace.Root))
-	if beads.ProjectInitialized(rt.App.Workspace.Root) {
-		t0 = time.Now()
-		issues, err := beads.List(ctx, rt.App.Supervisor, rt.App.Workspace.Root, beads.ListOptions{Limit: -1})
-		t.Logf("beads.List                   %v (n=%d err=%v)", time.Since(t0), len(issues), err)
-		t0 = time.Now()
-		ready, err := beads.Ready(ctx, rt.App.Supervisor, rt.App.Workspace.Root, beads.ReadyOptions{})
-		t.Logf("beads.Ready                  %v (n=%d err=%v)", time.Since(t0), len(ready), err)
 	}
 
 	t0 = time.Now()

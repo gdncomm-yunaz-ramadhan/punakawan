@@ -14,7 +14,6 @@
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
   import ProjectHealth from "./ProjectHealth.svelte";
-  import ProjectTasks from "./ProjectTasks.svelte";
   import ProjectSessions from "./ProjectSessions.svelte";
   import ProjectKnowledge from "./ProjectKnowledge.svelte";
   import ApprovalsList from "../approvals/ApprovalsList.svelte";
@@ -37,7 +36,6 @@
     "roles",
     "workflows",
     "knowledge",
-    "tasks",
     "plans",
     "sessions",
     "approvals",
@@ -49,7 +47,6 @@
     { id: "roles", label: "Roles", icon: "users" as IconName },
     { id: "workflows", label: "Workflows", icon: "git-branch" as IconName },
     { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
-    { id: "tasks", label: "Tasks", icon: "list" as IconName },
     { id: "plans", label: "Plans", icon: "file" as IconName },
     { id: "sessions", label: "Sessions", icon: "activity" as IconName },
     { id: "approvals", label: "Approvals", icon: "approval" as IconName },
@@ -99,20 +96,16 @@
   }
 
   // The summary this view renders spans several entity types at once -
-  // repository and metadata counts, open/blocked task counts, active session
-  // count, knowledge count, availability - so the filter is deliberately
-  // broader than a single entity's events. It still excludes every event that
-  // cannot move any of those numbers (approvals, evidence, deliveries,
-  // adapter health, contradictions, dossiers, handoffs) and the
-  // high-frequency session.progress/session.phase_changed frames, which
-  // report progress inside one session without changing how many are active.
+  // repository and metadata counts, active session count, knowledge count,
+  // availability - so the filter is deliberately broader than a single
+  // entity's events. It still excludes every event that cannot move any of
+  // those numbers (approvals, evidence, deliveries, adapter health,
+  // contradictions, dossiers, handoffs) and the high-frequency
+  // session.progress/session.phase_changed frames, which report progress
+  // inside one session without changing how many are active.
   const refreshOn = new Set([
     "workspace.updated",
     "workspace.availability_changed",
-    "task.created",
-    "task.updated",
-    "task.blocked",
-    "task.completed",
     "session.started",
     "session.completed",
     "session.failed",
@@ -144,8 +137,6 @@
     if (!p) return [];
     return [
       { label: "Repositories", value: p.repository_count, accent: "indigo", icon: "folder" },
-      { label: "Open tasks", value: p.open_task_count, accent: "gold", icon: "list" },
-      { label: "Blocked tasks", value: p.blocked_task_count, accent: "danger", icon: "alert" },
       { label: "Active sessions", value: p.active_session_count, accent: "teal", icon: "activity" },
       { label: "Knowledge records", value: p.knowledge_count, accent: "terracotta", icon: "book" },
       { label: "Metadata entries", value: p.metadata_count, accent: "success", icon: "database" },
@@ -207,10 +198,6 @@
   {:else if activeId === "knowledge"}
     <div id="tabpanel-knowledge" role="tabpanel" aria-labelledby="tab-knowledge">
       <ProjectKnowledge {projectId} />
-    </div>
-  {:else if activeId === "tasks"}
-    <div id="tabpanel-tasks" role="tabpanel" aria-labelledby="tab-tasks">
-      <ProjectTasks {projectId} />
     </div>
   {:else if activeId === "sessions"}
     <div id="tabpanel-sessions" role="tabpanel" aria-labelledby="tab-sessions">
