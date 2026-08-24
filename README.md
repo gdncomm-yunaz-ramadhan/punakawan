@@ -38,23 +38,51 @@ Punakawan does not duplicate those tools.
 
 ## Install
 
-Requirements: Go 1.26+, Node.js 20+, and pnpm.
+Clone the repository, then run the installer for your platform.
+
+macOS:
 
 ```bash
 git clone https://github.com/ygrip/punakawan.git
 cd punakawan
+bash scripts/install.sh
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/ygrip/punakawan.git
+Set-Location punakawan
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
+
+The installers detect Go, Node.js, and pnpm; install missing prerequisites
+through Homebrew or winget; build the panel assets; and install `punakawan`
+and `punakawand` into a user-local directory on `PATH`. If automatic setup
+fails, the installer prints the exact manual command and documentation link.
+
+Use `--dry-run` on macOS or `-DryRun` on Windows to preview every action.
+Open a new shell after installation, then verify on macOS:
+
+```bash
+command -v punakawan punakawand
+punakawan --help
+```
+
+Or on Windows:
+
+```powershell
+Get-Command punakawan, punakawand
+punakawan --help
+```
+
+Manual source installation requires Go 1.26+, Node.js 20+, and pnpm:
+
+```bash
 make bootstrap
 make panel-build
 mkdir -p "$HOME/.local/bin"
 GOBIN="$HOME/.local/bin" go install ./cmd/punakawan ./cmd/punakawand
-```
-
-Add the install directory to `PATH`, then verify both binaries:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-command -v punakawan punakawand
-punakawan --help
 ```
 
 Configure your MCP client to run the installed server over STDIO:

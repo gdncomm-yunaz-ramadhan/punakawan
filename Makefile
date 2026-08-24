@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test test-go test-ts lint generate protocol-check integration-test package doctor panel-dev panel-build panel-test
+.PHONY: bootstrap build test test-go test-ts installer-test lint generate protocol-check integration-test package doctor panel-dev panel-build panel-test
 
 bootstrap:
 	go mod download
@@ -8,7 +8,10 @@ build:
 	go build ./...
 	pnpm -r --if-present build
 
-test: test-go test-ts
+test: installer-test test-go test-ts
+
+installer-test:
+	bash scripts/install_test.sh
 
 test-go:
 	go test ./...
