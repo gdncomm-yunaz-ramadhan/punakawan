@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -324,7 +325,7 @@ func (s *Store) RecordReviewConclusion(ctx context.Context, idempotencyKey, orch
 	stored.LaneId = laneID
 	stored.RecordedAt = now
 
-	err := s.db.Write(ctx, idempotencyKey, "record review conclusion "+laneID, func(tx *sql.Tx) error {
+	writeErr := s.db.Write(ctx, idempotencyKey, "record review conclusion "+laneID, func(tx *sql.Tx) error {
 		events, err := loadEventsTx(ctx, tx, orchestrationID)
 		if err != nil {
 			return err
@@ -350,10 +351,28 @@ func (s *Store) RecordReviewConclusion(ctx context.Context, idempotencyKey, orch
 			Sequence: len(events), OccurredAt: now,
 		})
 	})
-	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+	if writeErr != nil && !errors.Is(writeErr, storage.ErrDuplicateWrite) {
+		return nil, writeErr
+	}
+	result, err := s.GetLatestReviewConclusion(ctx, orchestrationID, laneID)
+	if err != nil {
 		return nil, err
 	}
-	return s.GetLatestReviewConclusion(ctx, orchestrationID, laneID)
+	if writeErr == nil {
+		// Only the fresh record dispatches, never the duplicate-
+		// idempotency-key retry, matching GrantLease/CompleteLease's own
+		// reasoning. An outcome other than approved means the reviewer
+		// found something blocking, hence review.changes_required rather
+		// than review.accepted.
+		eventType := deliveryhooks.EventReviewAccepted
+		summary := "review accepted on lane " + laneID
+		if conclusion.Outcome != protocol.ReviewConclusionOutcomeApproved {
+			eventType = deliveryhooks.EventReviewChangesRequired
+			summary = "review requested changes on lane " + laneID
+		}
+		s.dispatchOrchestrationEvent(ctx, orchestrationID, eventType, summary, s.pullRequestURLs(ctx, orchestrationID))
+	}
+	return result, nil
 }
 
 func validReviewOutcome(outcome protocol.ReviewConclusionOutcome) bool {

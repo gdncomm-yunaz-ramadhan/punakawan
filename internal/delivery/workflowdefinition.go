@@ -12,7 +12,11 @@
 // here has no reason to own that store's lifecycle directly.
 package delivery
 
-import "context"
+import (
+	"context"
+
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
+)
 
 // WorkflowDefinitionResolver looks up an externally-owned workflow
 // definition on this package's behalf: once at
@@ -55,6 +59,21 @@ type StoreOption func(*Store)
 // regardless of anything recorded on an orchestration.
 func WithWorkflowDefinitionResolver(r WorkflowDefinitionResolver) StoreOption {
 	return func(s *Store) { s.workflowDefinitions = r }
+}
+
+// WithHooks registers hooks to be notified, via
+// internal/deliveryhooks' higher-level event vocabulary, of specific
+// delivery state transitions (a new orchestration, a plan attached, a
+// lease granted/completed, a review conclusion recorded, an orchestration
+// reaching a terminal status). Without this option, Store's dispatch calls
+// are a complete no-op (see deliveryhooks.Dispatcher.Dispatch's nil
+// receiver behavior) - every existing NewStore(db) call site keeps
+// compiling and behaving exactly as before. Dispatch always happens after
+// the triggering write has already committed, never from inside its
+// transaction, so a hook failure (or a slow one) can never block or roll
+// back the delivery operation it is piggybacking on.
+func WithHooks(hooks ...deliveryhooks.Hook) StoreOption {
+	return func(s *Store) { s.hooks = deliveryhooks.NewDispatcher(hooks...) }
 }
 
 // resolveRequiredStages looks up which of a lane's four role stages

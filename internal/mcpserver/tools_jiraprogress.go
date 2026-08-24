@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -208,31 +207,12 @@ func transitionIssueToStatus(
 		return false, "", "", "", fmt.Errorf("list available transitions: %w", err)
 	}
 
-	var result struct {
-		Transitions []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			ToStatus struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"toStatus"`
-		} `json:"transitions"`
+	transitions, err := adapters.DecodeJiraTransitions(raw)
+	if err != nil {
+		return false, "", "", "", err
 	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return false, "", "", "", fmt.Errorf("decode available transitions: %w", err)
-	}
-
-	var matchID, matchToStatus string
-	var available []string
-	for _, t := range result.Transitions {
-		available = append(available, t.ToStatus.Name)
-		if strings.EqualFold(t.ToStatus.Name, targetStatusName) || strings.EqualFold(t.Name, targetStatusName) {
-			matchID = t.ID
-			matchToStatus = t.ToStatus.Name
-			break
-		}
-	}
-	if matchID == "" {
+	match, available, ok := adapters.MatchJiraTransition(transitions, targetStatusName)
+	if !ok {
 		return false, "", "", fmt.Sprintf(
 			"no transition from the issue's current status reaches %q; available target statuses: %s",
 			targetStatusName, strings.Join(available, ", "),
@@ -241,12 +221,12 @@ func transitionIssueToStatus(
 
 	if _, err := invokeAdapterOperation(ctx, req, gate, runID, "atlassian.transitionJiraIssue", map[string]any{
 		"issueIdOrKey": issueIDOrKey,
-		"transitionId": matchID,
+		"transitionId": match.ID,
 	}, requestedBy); err != nil {
-		return false, "", "", "", fmt.Errorf("fire transition %q: %w", matchID, err)
+		return false, "", "", "", fmt.Errorf("fire transition %q: %w", match.ID, err)
 	}
 
-	return true, matchID, matchToStatus, "", nil
+	return true, match.ID, match.ToStatusName, "", nil
 }
 
 // resolveEstimateHours implements the user's decision: an explicit

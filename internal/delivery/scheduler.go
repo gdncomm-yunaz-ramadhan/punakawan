@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -271,8 +272,17 @@ func (s *Store) GrantLease(ctx context.Context, idempotencyKey, orchestrationID,
 			Sequence: len(events), OccurredAt: time.Now().UTC(),
 		})
 	})
+	fresh := err == nil
 	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
 		return nil, err
+	}
+	if fresh {
+		// Only the fresh grant dispatches, never the duplicate-idempotency-
+		// key retry - a retry lands on the same orchestration revision, and
+		// re-dispatching "implementation started" for it would just make a
+		// configured hook redo its own already-fired check for no reason.
+		s.dispatchOrchestrationEvent(ctx, orchestrationID, deliveryhooks.EventImplementationStarted,
+			"implementation started on lane "+laneID, nil)
 	}
 	return s.GetLane(ctx, orchestrationID, laneID)
 }
@@ -327,7 +337,7 @@ func (s *Store) Heartbeat(ctx context.Context, idempotencyKey, orchestrationID, 
 // stage before it can be reported done (ErrRoleStagesIncomplete
 // otherwise).
 func (s *Store) CompleteLease(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int) (*protocol.DeliveryLane, error) {
-	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseCompleted, func(lane *protocol.DeliveryLane, requiredStages map[string]bool) error {
+	lane, fresh, err := s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseCompleted, func(lane *protocol.DeliveryLane, requiredStages map[string]bool) error {
 		if lane.SemarRecordId == nil {
 			return nil
 		}
@@ -341,6 +351,16 @@ func (s *Store) CompleteLease(ctx context.Context, idempotencyKey, orchestration
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	if fresh {
+		// Only the fresh completion dispatches, never the duplicate-
+		// idempotency-key retry, matching GrantLease's own reasoning above.
+		s.dispatchOrchestrationEvent(ctx, orchestrationID, deliveryhooks.EventImplementationCompleted,
+			"implementation completed on lane "+laneID, nil)
+	}
+	return lane, nil
 }
 
 // RejectLease reports the leaseholder declining the work (e.g. a
@@ -349,11 +369,17 @@ func (s *Store) CompleteLease(ctx context.Context, idempotencyKey, orchestration
 // CompleteLease, this never requires any role stage to have run - a
 // worker may bail at any point.
 func (s *Store) RejectLease(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int) (*protocol.DeliveryLane, error) {
-	return s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseRejected, nil)
+	lane, _, err := s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseRejected, nil)
+	return lane, err
 }
 
-func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int, eventType protocol.DeliveryEventType, precondition func(*protocol.DeliveryLane, map[string]bool) error) (*protocol.DeliveryLane, error) {
-	err := s.db.Write(ctx, idempotencyKey, string(eventType)+" "+laneID, func(tx *sql.Tx) error {
+// transitionLeasedLane returns fresh=true when this call actually appended
+// the transition event (as opposed to replaying an already-committed
+// idempotencyKey), so a caller that dispatches a hook event for this
+// transition - currently only CompleteLease - can skip re-dispatching on a
+// retry.
+func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int, eventType protocol.DeliveryEventType, precondition func(*protocol.DeliveryLane, map[string]bool) error) (lane *protocol.DeliveryLane, fresh bool, err error) {
+	writeErr := s.db.Write(ctx, idempotencyKey, string(eventType)+" "+laneID, func(tx *sql.Tx) error {
 		events, err := loadEventsTx(ctx, tx, orchestrationID)
 		if err != nil {
 			return err
@@ -394,10 +420,14 @@ func (s *Store) transitionLeasedLane(ctx context.Context, idempotencyKey, orches
 			Sequence: len(events), OccurredAt: time.Now().UTC(),
 		})
 	})
-	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
-		return nil, err
+	if writeErr != nil && !errors.Is(writeErr, storage.ErrDuplicateWrite) {
+		return nil, false, writeErr
 	}
-	return s.GetLane(ctx, orchestrationID, laneID)
+	lane, err = s.GetLane(ctx, orchestrationID, laneID)
+	if err != nil {
+		return nil, false, err
+	}
+	return lane, writeErr == nil, nil
 }
 
 // ExpireLeases sweeps every leased/running lane in orchestrationID whose

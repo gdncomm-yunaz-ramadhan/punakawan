@@ -3,12 +3,14 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/jirahooks"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/roles"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -62,7 +64,38 @@ func openDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error)
 	if err != nil {
 		return nil, fmt.Errorf("mcpserver: open workflow definition store: %w", err)
 	}
-	return delivery.NewStore(db, delivery.WithWorkflowDefinitionResolver(workflowDefinitionResolver{store: defStore})), nil
+	resolver := workflowDefinitionResolver{store: defStore}
+
+	// A delivery.Store built here is the one every MCP tool that mutates
+	// delivery state goes through (every call site in this package reaches
+	// storage through this function), so this is also the one place a
+	// JiraHook needs wiring into it: every role's role-stage/lease/review
+	// progress through MCP tool calls then automatically dispatches through
+	// it, without each of those tool handlers needing to know hooks exist.
+	// The JiraHook itself stays inert unless jira-workflow.yaml's auto_log
+	// is turned on, so building it unconditionally here changes nothing for
+	// a workspace that has not opted in. A config load failure (e.g. a
+	// malformed jira-workflow.yaml) is logged and treated as "no Jira
+	// hook configured" rather than failing every delivery tool call - a
+	// broken Jira config file should not also break work that has nothing
+	// to do with Jira.
+	var opts []delivery.StoreOption
+	opts = append(opts, delivery.WithWorkflowDefinitionResolver(resolver))
+	if cfg, err := a.JiraWorkflow(); err != nil {
+		slog.Warn("mcpserver: load jira workflow config for delivery hooks; continuing without Jira hooks", "error", err)
+	} else {
+		// JiraHook needs its own *delivery.Store handle to resolve a
+		// delivery's linked Jira issue from its captured requirements
+		// (Store.ListRequirementSources) - a distinct Go value from the
+		// one this function returns below, but both wrap the same db and
+		// carry the same workflow-definition resolver, so reads and
+		// writes through either behave identically; only the returned one
+		// also carries the hook that reads through this one.
+		hookStore := delivery.NewStore(db, delivery.WithWorkflowDefinitionResolver(resolver))
+		hook := jirahooks.NewJiraHook(db, hookStore, a.AdapterRegistry, cfg)
+		opts = append(opts, delivery.WithHooks(hook))
+	}
+	return delivery.NewStore(db, opts...), nil
 }
 
 // ListRunnableLanesInput is list_runnable_lanes' input.

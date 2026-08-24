@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -32,6 +33,11 @@ type Store struct {
 	// YAML file per definition id) than this package's own event log, so
 	// there is no shared lifecycle to couple to directly.
 	workflowDefinitions WorkflowDefinitionResolver
+	// hooks is nil unless WithHooks is passed to NewStore, in which case
+	// every dispatch call below through it is a no-op (see
+	// deliveryhooks.Dispatcher.Dispatch), so every existing Store caller
+	// that never configures hooks is unaffected.
+	hooks *deliveryhooks.Dispatcher
 }
 
 // NewStore wraps an opened storage kernel database. opts is variadic so
@@ -232,7 +238,20 @@ func (s *Store) CreateOrchestrationWithOptions(ctx context.Context, idempotencyK
 	if err != nil {
 		return nil, fmt.Errorf("delivery: create orchestration %s: %w", id, err)
 	}
-	return s.GetOrchestration(ctx, id)
+	orch, err := s.GetOrchestration(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Dispatched only on the fresh-create path above, never on the
+	// duplicate-idempotency-key retry: a retried StartDelivery call must
+	// not re-announce "delivery started" for a delivery that already
+	// started.
+	s.hooks.Dispatch(ctx, deliveryhooks.Event{
+		Type: deliveryhooks.EventDeliveryStarted, DeliveryID: id, Revision: orch.Revision,
+		Title: derefOrEmpty(orch.Title), Projects: orch.ProjectIds,
+		Summary: "delivery started",
+	})
+	return orch, nil
 }
 
 // GetOrchestration fails closed (ErrNotFound) for an unknown id.
@@ -306,10 +325,33 @@ func (s *Store) CancelOrchestration(ctx context.Context, idempotencyKey, id stri
 			Sequence: len(events), OccurredAt: time.Now().UTC(),
 		})
 	})
-	if errors.Is(err, storage.ErrDuplicateWrite) || err == nil {
-		return s.GetOrchestration(ctx, id)
+	if !errors.Is(err, storage.ErrDuplicateWrite) && err != nil {
+		return nil, err
 	}
-	return nil, err
+	orch, getErr := s.GetOrchestration(ctx, id)
+	if getErr != nil {
+		return nil, getErr
+	}
+	// Cancellation is reported as delivery.failed rather than
+	// delivery.completed since it means the delivery did not reach a
+	// successful outcome. Nothing in this package currently ever appends
+	// orchestration.completed (there is no "mark this orchestration
+	// successfully done" call anywhere yet), so delivery.completed has no
+	// dispatch point to wire today; a future addition of that call is the
+	// natural place to dispatch it. Only the fresh-cancel path dispatches
+	// here, never the duplicate-idempotency-key retry, for the same reason
+	// CreateOrchestrationWithOptions only dispatches on its own fresh
+	// path.
+	if err == nil {
+		s.hooks.Dispatch(ctx, deliveryhooks.Event{
+			Type: deliveryhooks.EventDeliveryFailed, DeliveryID: id, Revision: orch.Revision,
+			Title: derefOrEmpty(orch.Title), Projects: orch.ProjectIds,
+			PlanID: derefOrEmpty(orch.PlanId), PlanRevision: derefOrZero(orch.PlanRevision),
+			PullRequests: s.pullRequestURLs(ctx, id),
+			Summary:      "delivery cancelled",
+		})
+	}
+	return orch, nil
 }
 
 // RegisterInput appends input.registered, adding one more not-yet-routed
@@ -338,7 +380,62 @@ func (s *Store) UpdateOrchestrationDetails(ctx context.Context, idempotencyKey, 
 	if !details.set() {
 		return nil, fmt.Errorf("delivery: update orchestration %s: no field to update was supplied", orchestrationID)
 	}
-	return s.appendOrchestrationEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeOrchestrationDetailsUpdated, details.payload())
+
+	// planWasUnset is captured from the pre-write state read inside the
+	// same write transaction below (not from a separate read before/after
+	// it), so a retried call that hits the duplicate-idempotency-key path
+	// never sees a stale "already set" view of a plan that only this same
+	// retried call itself would have set.
+	var planWasUnset bool
+	fresh := false
+	payload := details.payload()
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: encode %s payload: %w", protocol.DeliveryEventTypeOrchestrationDetailsUpdated, err)
+	}
+	writeErr := s.db.Write(ctx, idempotencyKey, string(protocol.DeliveryEventTypeOrchestrationDetailsUpdated)+" "+orchestrationID, func(tx *sql.Tx) error {
+		events, err := loadEventsTx(ctx, tx, orchestrationID)
+		if err != nil {
+			return err
+		}
+		current, err := reduceOrchestration(orchestrationID, events)
+		if err != nil {
+			return err
+		}
+		if current.Revision != expectedRevision {
+			return ErrRevisionConflict
+		}
+		if isTerminal(current.Status) {
+			return ErrInvalidState
+		}
+		planWasUnset = current.PlanId == nil || *current.PlanId == ""
+		fresh = true
+		return insertEvent(ctx, tx, eventRow{
+			ID: newID(), OrchestrationID: orchestrationID, IdempotencyKey: idempotencyKey,
+			Type: string(protocol.DeliveryEventTypeOrchestrationDetailsUpdated), Payload: string(encoded),
+			Sequence: len(events), OccurredAt: time.Now().UTC(),
+		})
+	})
+	if writeErr != nil && !errors.Is(writeErr, storage.ErrDuplicateWrite) {
+		return nil, writeErr
+	}
+	updated, err := s.GetOrchestration(ctx, orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	if fresh && (details.PlanID != nil || details.PlanRevision != nil) {
+		eventType := deliveryhooks.EventPlanRevised
+		if planWasUnset {
+			eventType = deliveryhooks.EventPlanCreated
+		}
+		s.hooks.Dispatch(ctx, deliveryhooks.Event{
+			Type: eventType, DeliveryID: orchestrationID, Revision: updated.Revision,
+			Title: derefOrEmpty(updated.Title), Projects: updated.ProjectIds,
+			PlanID: derefOrEmpty(updated.PlanId), PlanRevision: derefOrZero(updated.PlanRevision),
+			Summary: "orchestration plan reference updated",
+		})
+	}
+	return updated, nil
 }
 
 // AttachProject appends project.attached, recording that this run
