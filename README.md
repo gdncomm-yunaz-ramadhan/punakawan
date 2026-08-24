@@ -287,12 +287,9 @@ client, or no client yet.
 
 On macOS it installs prerequisites through Homebrew. On Linux it uses the
 distro package manager it detects (apt / dnf / yum / pacman / zypper) for git,
-ripgrep, Node, and Go, installs Dolt via its official script, and installs
-Beads (`bd`) via `go install`. Punakawan's own live storage no longer uses
-Dolt (it runs on an embedded SQLite kernel), but the `dolt` CLI is still a
-real prerequisite for the one-way import that reads a legacy Dolt-backed
-install (`internal/doltimport`) — it is not needed for normal operation.
-`rtk` is optional and left to you on Linux. It writes config to
+ripgrep, Node, and Go, and installs Beads (`bd`) via `go install`. Punakawan's
+own live storage runs on an embedded SQLite kernel; no Dolt install is
+required. `rtk` is optional and left to you on Linux. It writes config to
 `$XDG_CONFIG_HOME/punakawan` (i.e. `~/.config/punakawan`), matching
 `os.UserConfigDir()`.
 
@@ -337,9 +334,7 @@ global defaults.
 - **macOS** — fully supported via `scripts/install.sh` (Homebrew-based).
 - **Linux** — fully supported via `scripts/install.sh`. It detects the distro
   package manager (apt / dnf / yum / pacman / zypper) for git, ripgrep, Node,
-  and Go, installs Dolt from its official script (needed only for the
-  one-way legacy-import path, not Punokawan's own SQLite-backed storage) and
-  Beads via `go install`, and writes config to `~/.config/punakawan`
+  and Go, installs Beads via `go install`, and writes config to `~/.config/punakawan`
   (`os.UserConfigDir()`). `rtk` is optional and not auto-installed; missing
   tools degrade gracefully (health reports them unavailable). If no supported
   package manager is found, install the prerequisites manually and rerun.

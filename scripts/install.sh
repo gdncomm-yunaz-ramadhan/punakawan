@@ -114,7 +114,7 @@ else
   detect_linux_pkg_mgr
   if [[ -z "$PKG_MGR" ]]; then
     warn "No supported package manager found (apt/dnf/yum/pacman/zypper)."
-    echo "Install the prerequisites manually, then rerun: git, ripgrep, node, go, dolt, bd." >&2
+    echo "Install the prerequisites manually, then rerun: git, ripgrep, node, go, bd." >&2
   else
     log "Using package manager: $PKG_MGR${SUDO:+ (via sudo)}"
   fi
@@ -154,29 +154,6 @@ install_if_missing curl curl
 install_if_missing rg ripgrep ripgrep
 install_if_missing node node node
 install_if_missing go go go
-
-# dolt: Homebrew formula on macOS; official install script on Linux (not in
-# distro repos). Fatal on macOS, best-effort with a clear pointer on Linux.
-install_dolt() {
-  if command -v dolt >/dev/null 2>&1; then
-    log "dolt already installed ($(command -v dolt))"
-    return 0
-  fi
-  if [[ "${PUNAKAWAN_DRY_RUN:-0}" == "1" ]]; then
-    log "[dry-run] would install dolt"
-    return 0
-  fi
-  if [[ "$PLATFORM" == "macos" ]]; then
-    log "Installing dolt"
-    brew install dolt
-  else
-    log "Installing dolt via the official install script"
-    if ! curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | $SUDO bash; then
-      warn "dolt install failed. Install it manually: https://docs.dolthub.com/introduction/installation"
-    fi
-  fi
-}
-install_dolt
 
 # bd (beads): Homebrew formula on macOS. On Linux it is not in distro repos;
 # try `go install` and fall back to a clear pointer. Non-fatal - Punakawan's

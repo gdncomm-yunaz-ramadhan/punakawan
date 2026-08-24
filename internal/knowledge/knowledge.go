@@ -30,9 +30,8 @@ var ErrNotFound = errors.New("knowledge: record not found")
 // writes. The fixed width is what makes SQLite's default byte-wise text
 // comparison agree with chronological order, which the keyset pagination in
 // ListRecords relies on for its (updated_at DESC, id ASC) seek predicate.
-// Exported so other writers of this same column (e.g. internal/doltimport's
-// one-way Dolt import) format timestamps identically rather than
-// duplicating the layout string.
+// Exported so other writers of this same column format timestamps
+// identically rather than duplicating the layout string.
 const TimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
 
 // Store is a SQLite-backed durable knowledge store, scoped to one project

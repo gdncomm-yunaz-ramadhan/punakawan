@@ -71,7 +71,6 @@ Install-IfMissing -Command git  -WingetId 'Git.Git'
 Install-IfMissing -Command rg   -WingetId 'BurntSushi.ripgrep.MSVC'
 Install-IfMissing -Command node -WingetId 'OpenJS.NodeJS'
 Install-IfMissing -Command go   -WingetId 'GoLang.Go'
-Install-IfMissing -Command dolt -WingetId 'DoltHub.Dolt' -Optional
 # bd (beads) and rtk do not have well-known winget ids; warn if absent.
 if (-not (Test-Command 'bd'))  { Write-Warn "bd (beads) not found; install it manually (see project README)." }
 if (-not (Test-Command 'rtk')) { Write-Warn "rtk not found; install it manually if you use the token-optimizing proxy." }
