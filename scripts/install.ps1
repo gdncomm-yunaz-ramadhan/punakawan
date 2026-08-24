@@ -21,6 +21,11 @@ $InstallDir = if ($env:PUNAKAWAN_INSTALL_DIR) {
 } else {
     Join-Path $env:LOCALAPPDATA 'Programs\Punakawan'
 }
+$ConfigDir = if ($env:PUNAKAWAN_CONFIG_DIR) {
+    $env:PUNAKAWAN_CONFIG_DIR
+} else {
+    Join-Path $env:APPDATA 'punakawan'
+}
 
 function Write-Step {
     param([string]$Message)
@@ -98,6 +103,100 @@ function Invoke-External {
     if ($LASTEXITCODE -ne 0) {
         throw "Command failed ($LASTEXITCODE): $Display"
     }
+}
+
+function Find-McpClient {
+    param(
+        [string]$Name,
+        [string]$Override
+    )
+    if ($Override) {
+        if (Test-Path $Override) { return (Resolve-Path $Override).Path }
+        return $null
+    }
+    $client = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($client) { return $client.Source }
+    return $null
+}
+
+function Write-ManualMcpSetup {
+    param(
+        [string]$Client,
+        [string]$PunakawanPath
+    )
+    if ($Client -eq 'Codex') {
+        Write-Host "Manual setup: codex mcp add punakawan -- `"$PunakawanPath`" mcp serve"
+    } else {
+        Write-Host "Manual setup: claude mcp add punakawan --scope user -- `"$PunakawanPath`" mcp serve"
+    }
+}
+
+function Register-McpClient {
+    param(
+        [string]$Label,
+        [string]$ClientPath,
+        [string[]]$RemoveArguments,
+        [string[]]$AddArguments,
+        [string]$PunakawanPath
+    )
+    if (-not $ClientPath) {
+        Write-Warning "$Label not detected; skipping automatic registration."
+        Write-ManualMcpSetup -Client $Label -PunakawanPath $PunakawanPath
+        return
+    }
+
+    Write-Step "Registering Punakawan with $Label"
+    Write-Host "    $ClientPath $($RemoveArguments -join ' ')"
+    Write-Host "    $ClientPath $($AddArguments -join ' ')"
+    if ($DryRun) { return }
+
+    $registrationSucceeded = $false
+    try {
+        & $ClientPath @RemoveArguments *> $null
+        & $ClientPath @AddArguments
+        $registrationSucceeded = ($LASTEXITCODE -eq 0)
+    } catch {
+        Write-Warning "$Label registration command failed: $_"
+    }
+
+    if ($registrationSucceeded) {
+        Write-Host "$Label configured. Restart $Label to load Punakawan."
+    } else {
+        Write-Warning "$Label registration failed. Punakawan remains installed."
+        Write-ManualMcpSetup -Client $Label -PunakawanPath $PunakawanPath
+    }
+}
+
+function Configure-McpClients {
+    param([string]$PunakawanPath)
+
+    $codex = Find-McpClient -Name 'codex' -Override $env:PUNAKAWAN_CODEX_BIN
+    $claude = Find-McpClient -Name 'claude' -Override $env:PUNAKAWAN_CLAUDE_BIN
+
+    Register-McpClient -Label 'Codex' -ClientPath $codex `
+        -RemoveArguments @('mcp', 'remove', 'punakawan') `
+        -AddArguments @('mcp', 'add', 'punakawan', '--', $PunakawanPath, 'mcp', 'serve') `
+        -PunakawanPath $PunakawanPath
+    Register-McpClient -Label 'Claude Code' -ClientPath $claude `
+        -RemoveArguments @('mcp', 'remove', 'punakawan', '--scope', 'user') `
+        -AddArguments @('mcp', 'add', 'punakawan', '--scope', 'user', '--', $PunakawanPath, 'mcp', 'serve') `
+        -PunakawanPath $PunakawanPath
+
+    $genericConfig = Join-Path $ConfigDir 'mcp-config.json'
+    if ($DryRun) {
+        Write-Step "Generic MCP config: $genericConfig"
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+    @{
+        mcpServers = @{
+            punakawan = @{
+                command = $PunakawanPath
+                args = @('mcp', 'serve')
+            }
+        }
+    } | ConvertTo-Json -Depth 4 | Set-Content -Path $genericConfig -Encoding UTF8
+    Write-Step "Wrote generic MCP config: $genericConfig"
 }
 
 $prerequisiteFailure = $false
@@ -185,10 +284,14 @@ if ($DryRun) {
     if ($LASTEXITCODE -ne 0) { throw 'punakawan --help failed' }
 }
 
+Write-Step 'Auto-configuring detected MCP clients'
+Configure-McpClients -PunakawanPath $punakawan
+
 Write-Host @"
 
 ==> Done.
 Binary directory: $InstallDir
+Generic MCP config: $ConfigDir\mcp-config.json
 Panel: punakawan panel --workspace C:\absolute\path\to\project
 MCP: punakawan mcp serve
 "@

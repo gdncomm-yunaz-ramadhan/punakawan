@@ -37,6 +37,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTALL_DIR="${PUNAKAWAN_INSTALL_DIR:-$HOME/.local/bin}"
+CONFIG_DIR="${PUNAKAWAN_CONFIG_DIR:-$HOME/Library/Application Support/punakawan}"
 
 log() {
   printf '\n==> %s\n' "$1"
@@ -153,10 +154,14 @@ else
   "$INSTALL_DIR/punakawan" --help >/dev/null
 fi
 
+log "Auto-configuring detected MCP clients"
+PUNAKAWAN_DRY_RUN="$DRY_RUN" bash "$SCRIPT_DIR/configure-agent.sh" "$INSTALL_DIR/punakawan" "$CONFIG_DIR"
+
 cat <<EOF
 
 ==> Done.
 Binary directory: $INSTALL_DIR
+Generic MCP config: $CONFIG_DIR/mcp-config.json
 Panel: punakawan panel --workspace /absolute/path/to/project
 MCP: punakawan mcp serve
 EOF

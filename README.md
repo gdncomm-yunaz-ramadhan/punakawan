@@ -61,6 +61,17 @@ through Homebrew or winget; build the panel assets; and install `punakawan`
 and `punakawand` into a user-local directory on `PATH`. If automatic setup
 fails, the installer prints the exact manual command and documentation link.
 
+They also detect Codex and Claude Code, replace any existing user-level
+`punakawan` MCP registration, and register the installed binary as
+`punakawan mcp serve`. Restart detected clients after installation. Missing or
+failed clients do not undo the binary installation; the installer prints the
+exact manual registration command instead.
+
+A generic MCP configuration is always written for other clients:
+
+- macOS: `~/Library/Application Support/punakawan/mcp-config.json`
+- Windows: `%APPDATA%\punakawan\mcp-config.json`
+
 Use `--dry-run` on macOS or `-DryRun` on Windows to preview every action.
 Open a new shell after installation, then verify on macOS:
 
@@ -85,7 +96,8 @@ mkdir -p "$HOME/.local/bin"
 GOBIN="$HOME/.local/bin" go install ./cmd/punakawan ./cmd/punakawand
 ```
 
-Configure your MCP client to run the installed server over STDIO:
+For a client not detected by the installer, configure the installed server
+over STDIO:
 
 ```json
 {
