@@ -143,13 +143,13 @@ func advanceWorkflowHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 }
 
 // checkNoBlockingBagongFindings refuses completion while the run's Bagong
-// review (§8.4, recorded under recordID(a, "bagong", runID) - see
-// SubmitBagongReviewInput) has unresolved blocking_findings (M8's
-// acceptance criterion: "delivery cannot be marked complete with unresolved
-// blocking findings"). A run with no Bagong review at all is allowed to
-// complete - the review step is optional scaffolding like the rest of the
-// pipeline (§28's serverInstructions), not a mandatory gate that would break
-// every simple run that never used it.
+// review (recorded under recordID(a, "bagong", runID) by submit_lane_review
+// with role bagong - there is no separate submit_bagong_review tool) has
+// unresolved blocking_findings: a delivery must not be marked complete while
+// a reviewer has flagged work that does not satisfy the requirement. A run
+// with no Bagong review at all is allowed to complete - the review step is
+// optional scaffolding like the rest of the workflow-run pipeline, not a
+// mandatory gate that would break every simple run that never used it.
 func checkNoBlockingBagongFindings(store *knowledge.Store, a *app.App, runID string) error {
 	rec, err := store.Get(recordID(a, "bagong", runID))
 	if errors.Is(err, knowledge.ErrNotFound) {
@@ -168,7 +168,7 @@ func checkNoBlockingBagongFindings(store *knowledge.Store, a *app.App, runID str
 		summaries = append(summaries, fmt.Sprintf("[%s] %s: %s", f.Severity, f.Location, f.Why))
 	}
 	return fmt.Errorf(
-		"mcpserver: advance workflow: run %q has %d unresolved blocking Bagong finding(s): %s; resolve each via reopen_task (regression in completed work) or report_discovered_task (new/missing scope), then resubmit a clean submit_bagong_review before completing",
+		"mcpserver: advance workflow: run %q has %d unresolved blocking Bagong finding(s): %s; resolve each via reopen_task (regression in completed work) or report_discovered_task (new/missing scope), then resubmit a clean submit_lane_review with role bagong before completing",
 		runID, len(rec.BagongReview.BlockingFindings), strings.Join(summaries, "; "),
 	)
 }

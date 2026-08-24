@@ -74,7 +74,13 @@ func leasedLaneForRoleStagesWithStore(t *testing.T, s *Store, workflowDefinition
 	return s, orch.Id, lane.Id, *leased.LeaseToken
 }
 
-func TestRecordRoleStageEnforcesOrder(t *testing.T) {
+// TestRecordRoleStageEnforcesSemarFirst: with no workflow definition
+// attached, Semar is the only stage every other stage's ordering check
+// actually depends on - Gareng and Petruk are optional by default, so
+// none of Gareng, Petruk, or Bagong can be recorded before Semar, but
+// once Semar is recorded, Bagong may be recorded directly without
+// Gareng or Petruk ever running.
+func TestRecordRoleStageEnforcesSemarFirst(t *testing.T) {
 	s, orchID, laneID, token := leasedLaneForRoleStages(t)
 	ctx := context.Background()
 
@@ -86,6 +92,12 @@ func TestRecordRoleStageEnforcesOrder(t *testing.T) {
 	if _, err := s.RecordRoleStage(ctx, "gareng-early", orchID, laneID, token, RoleStageGareng, "rec-gareng", lane.Revision); !errors.Is(err, ErrRoleStageOutOfOrder) {
 		t.Fatalf("expected ErrRoleStageOutOfOrder recording gareng before semar, got %v", err)
 	}
+	if _, err := s.RecordRoleStage(ctx, "petruk-early", orchID, laneID, token, RoleStagePetruk, "rec-petruk", lane.Revision); !errors.Is(err, ErrRoleStageOutOfOrder) {
+		t.Fatalf("expected ErrRoleStageOutOfOrder recording petruk before semar, got %v", err)
+	}
+	if _, err := s.RecordRoleStage(ctx, "bagong-early", orchID, laneID, token, RoleStageBagong, "rec-bagong", lane.Revision); !errors.Is(err, ErrRoleStageOutOfOrder) {
+		t.Fatalf("expected ErrRoleStageOutOfOrder recording bagong before semar, got %v", err)
+	}
 
 	afterSemar, err := s.RecordRoleStage(ctx, "semar-1", orchID, laneID, token, RoleStageSemar, "rec-semar", lane.Revision)
 	if err != nil {
@@ -95,29 +107,31 @@ func TestRecordRoleStageEnforcesOrder(t *testing.T) {
 		t.Fatalf("expected semar_record_id = rec-semar, got %+v", afterSemar.SemarRecordId)
 	}
 
-	if _, err := s.RecordRoleStage(ctx, "petruk-early", orchID, laneID, token, RoleStagePetruk, "rec-petruk", afterSemar.Revision); !errors.Is(err, ErrRoleStageOutOfOrder) {
-		t.Fatalf("expected ErrRoleStageOutOfOrder recording petruk before gareng, got %v", err)
-	}
-
-	afterGareng, err := s.RecordRoleStage(ctx, "gareng-1", orchID, laneID, token, RoleStageGareng, "rec-gareng", afterSemar.Revision)
+	// Gareng and Petruk default to optional, so Bagong may be recorded
+	// straight after Semar.
+	afterBagong, err := s.RecordRoleStage(ctx, "bagong-1", orchID, laneID, token, RoleStageBagong, "rec-bagong", afterSemar.Revision)
 	if err != nil {
-		t.Fatalf("RecordRoleStage(gareng): %v", err)
-	}
-	afterPetruk, err := s.RecordRoleStage(ctx, "petruk-1", orchID, laneID, token, RoleStagePetruk, "rec-petruk", afterGareng.Revision)
-	if err != nil {
-		t.Fatalf("RecordRoleStage(petruk): %v", err)
-	}
-	afterBagong, err := s.RecordRoleStage(ctx, "bagong-1", orchID, laneID, token, RoleStageBagong, "rec-bagong", afterPetruk.Revision)
-	if err != nil {
-		t.Fatalf("RecordRoleStage(bagong): %v", err)
+		t.Fatalf("RecordRoleStage(bagong) skipping optional gareng/petruk: %v", err)
 	}
 	if afterBagong.BagongRecordId == nil || *afterBagong.BagongRecordId != "rec-bagong" {
 		t.Fatalf("expected bagong_record_id = rec-bagong, got %+v", afterBagong.BagongRecordId)
 	}
 }
 
+// TestRecordRoleStageClearsLaterStagesOnResubmission uses a workflow
+// definition that explicitly opts Gareng and Petruk into the required
+// set - the default leaves them optional, which would let Bagong be
+// recorded straight after Semar and make this test's final assertion
+// meaningless - so the full four-stage ordering and invalidation
+// behavior still has something to enforce.
 func TestRecordRoleStageClearsLaterStagesOnResubmission(t *testing.T) {
-	s, orchID, laneID, token := leasedLaneForRoleStages(t)
+	const defID = "strict-workflow"
+	resolver := &fakeWorkflowDefinitionResolver{
+		enabled:        map[string]bool{defID: true},
+		requiredStages: map[string]map[string]bool{defID: {"gareng": true, "petruk": true}},
+	}
+	s := NewStore(newTestDB(t), WithWorkflowDefinitionResolver(resolver))
+	_, orchID, laneID, token := leasedLaneForRoleStagesWithStore(t, s, defID)
 	ctx := context.Background()
 	lane, err := s.GetLane(ctx, orchID, laneID)
 	if err != nil {
@@ -264,12 +278,14 @@ func TestCompleteLeaseHonorsDefinitionOptionalStages(t *testing.T) {
 	}
 }
 
-// TestCompleteLeaseRequiresAllFourWithEmptyRolesMap: a definition
-// attached to the orchestration but with an empty Roles map must not
-// loosen the gate at all - a restriction only takes effect once it is
-// stated, so every one of the four stages absent from an empty map
-// still defaults to required.
-func TestCompleteLeaseRequiresAllFourWithEmptyRolesMap(t *testing.T) {
+// TestCompleteLeaseDefaultsGarengPetrukOptionalWithEmptyRolesMap: a
+// definition attached to the orchestration but with an empty Roles map
+// behaves exactly like no definition being attached at all - Semar and
+// Bagong stay required, but Gareng and Petruk remain optional since
+// nothing in the map explicitly opted them in. Both the ordering gate
+// (RecordRoleStage) and the completion gate (CompleteLease) must let
+// Bagong be recorded, and the lease completed, right after Semar.
+func TestCompleteLeaseDefaultsGarengPetrukOptionalWithEmptyRolesMap(t *testing.T) {
 	const defID = "no-restrictions-workflow"
 	resolver := &fakeWorkflowDefinitionResolver{
 		enabled:        map[string]bool{defID: true},
@@ -288,12 +304,17 @@ func TestCompleteLeaseRequiresAllFourWithEmptyRolesMap(t *testing.T) {
 		t.Fatalf("RecordRoleStage(semar): %v", err)
 	}
 
-	if _, err := s.RecordRoleStage(ctx, "bagong-early", orchID, laneID, token, RoleStageBagong, "rec-bagong", lane.Revision); !errors.Is(err, ErrRoleStageOutOfOrder) {
-		t.Fatalf("expected ErrRoleStageOutOfOrder skipping gareng/petruk with an empty Roles map, got %v", err)
+	lane, err = s.RecordRoleStage(ctx, "bagong-1", orchID, laneID, token, RoleStageBagong, "rec-bagong", lane.Revision)
+	if err != nil {
+		t.Fatalf("RecordRoleStage(bagong) skipping optional gareng/petruk with an empty Roles map: %v", err)
 	}
 
-	if _, err := s.CompleteLease(ctx, "complete-early", orchID, laneID, token, lane.Revision); !errors.Is(err, ErrRoleStagesIncomplete) {
-		t.Fatalf("expected ErrRoleStagesIncomplete with an empty Roles map (all four still required), got %v", err)
+	completed, err := s.CompleteLease(ctx, "complete-1", orchID, laneID, token, lane.Revision)
+	if err != nil {
+		t.Fatalf("CompleteLease with only semar+bagong recorded and an empty Roles map: %v", err)
+	}
+	if completed.Status != protocol.DeliveryLaneStatusReview {
+		t.Fatalf("expected review status, got %s", completed.Status)
 	}
 }
 

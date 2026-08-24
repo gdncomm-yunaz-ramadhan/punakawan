@@ -1,14 +1,17 @@
-// rolestage.go tracks the one fixed order every lane's attempt
-// advances through: Semar synthesizes intent, Gareng reviews
-// feasibility, Petruk plans and implements, Bagong reviews
-// independently. This package never invokes a role itself - a
-// connected agent supplies the actual reasoning and content elsewhere,
-// then presents just the resulting record id here. What this file
-// enforces is structural: a stage can only be recorded once the stage
-// immediately before it exists, only by whoever currently holds the
-// lane's lease, and recording a stage invalidates every later stage
-// already recorded for this attempt, since those were built against a
-// predecessor that no longer holds.
+// rolestage.go tracks the fixed order a lane's attempt may advance
+// through: Semar synthesizes intent, Gareng reviews feasibility, Petruk
+// plans and implements, Bagong reviews independently. This package
+// never invokes a role itself - a connected agent supplies the actual
+// reasoning and content elsewhere, then presents just the resulting
+// record id here. Only Semar and Bagong are required by default: a
+// lane may go straight from Semar to Bagong without Gareng or Petruk
+// ever running, since neither is a mandatory runtime gate on its own -
+// a workflow definition that wants either of them enforced has to say
+// so explicitly. What this file enforces is structural: a stage can
+// only be recorded once its nearest required predecessor exists, only
+// by whoever currently holds the lane's lease, and recording a stage
+// invalidates every later stage already recorded for this attempt,
+// since those were built against a predecessor that no longer holds.
 package delivery
 
 import (
@@ -72,14 +75,23 @@ func roleStageName(stage RoleStage) string {
 // definition's Roles map. A stage whose name is absent from
 // requiredStages - including when requiredStages is nil, which is what
 // a lane with no attached definition (or no configured resolver)
-// always resolves to - defaults to required, matching this package's
-// behavior before workflow definitions could customize the gate. Only
-// an explicit false entry turns a stage off.
+// always resolves to - defaults to required only for Semar and Bagong:
+// Semar anchors the intent every later stage builds on, and Bagong is
+// the independent review a lease cannot complete without. Gareng and
+// Petruk default to optional, since a lane should be able to go
+// straight from Semar to Bagong without either of them ever running -
+// only a workflow definition that explicitly lists one of them as
+// required (an explicit true entry) turns that stage back into a gate.
 func isRequired(requiredStages map[string]bool, stage RoleStage) bool {
 	if v, ok := requiredStages[roleStageName(stage)]; ok {
 		return v
 	}
-	return true
+	switch stage {
+	case RoleStageSemar, RoleStageBagong:
+		return true
+	default:
+		return false
+	}
 }
 
 // recordIDForStage returns the lane's currently recorded record id for
@@ -105,10 +117,11 @@ func recordIDForStage(lane *protocol.DeliveryLane, stage RoleStage) *string {
 // any stage requiredStages marks not required, or "" if that stage has
 // not been recorded yet (or stage has no required predecessor - either
 // because it is the first stage, or because every stage before it was
-// marked not required). With requiredStages nil or empty every stage is
-// required, so this reduces to exactly stage's immediate predecessor -
-// this package's behavior before workflow definitions could customize
-// the gate.
+// marked not required). With requiredStages nil or empty, Gareng and
+// Petruk are skipped by isRequired's own default, so recording Petruk or
+// Bagong needs only Semar's record to already exist - Gareng and Petruk
+// impose no ordering on anything after them unless a workflow definition
+// explicitly requires them.
 func precedingRecordID(lane *protocol.DeliveryLane, stage RoleStage, requiredStages map[string]bool) string {
 	for s := stage - 1; s >= RoleStageSemar; s-- {
 		if !isRequired(requiredStages, s) {
@@ -140,10 +153,13 @@ func lastRequiredStage(requiredStages map[string]bool) (stage RoleStage, ok bool
 // RecordRoleStage records recordID as laneID's current attempt's
 // output for stage. Requires leaseToken to match the lane's current
 // lease - only the worker holding this lane's lease may advance its
-// stages - and that stage is not being recorded ahead of the stage
-// immediately preceding it (ErrRoleStageOutOfOrder otherwise). Semar
-// has no predecessor to check. A held lease cannot be completed via
-// CompleteLease until Bagong's stage has been recorded.
+// stages - and that stage is not being recorded ahead of its nearest
+// required predecessor (ErrRoleStageOutOfOrder otherwise; by default
+// that predecessor is Semar for every stage except Semar itself, since
+// Gareng and Petruk are optional unless a workflow definition requires
+// them). Semar has no predecessor to check. A held lease cannot be
+// completed via CompleteLease until the last required stage - Bagong,
+// by default - has been recorded.
 func (s *Store) RecordRoleStage(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, stage RoleStage, recordID string, expectedRevision int) (*protocol.DeliveryLane, error) {
 	eventType, err := stage.eventType()
 	if err != nil {

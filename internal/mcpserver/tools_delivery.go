@@ -458,9 +458,10 @@ func submitLaneReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 }
 
 // requireClearGarengReview refuses a Petruk plan while the lane's recorded
-// Gareng review still lists blocking findings. A lane with no Gareng review
-// recorded yet passes here and is rejected later by RecordRoleStage's own
-// ordering check instead, which reports the missing predecessor precisely.
+// Gareng review still lists blocking findings. Gareng is optional by
+// default, so a lane with no Gareng review recorded yet passes here and
+// Petruk proceeds straight after Semar - this check only fires once a
+// Gareng review actually exists and needs resolving.
 func requireClearGarengReview(ctx context.Context, a *app.App, kstore *knowledge.Store, orchestrationID, laneID string) error {
 	store, err := openDeliveryStore(ctx, a)
 	if err != nil {
