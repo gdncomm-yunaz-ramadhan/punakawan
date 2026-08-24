@@ -36,28 +36,42 @@ answer_delivery_question    cancel_delivery           approve_project_delivery
 own ordinary file, shell, Git, worktree, test, and pull-request operations.
 Punakawan does not duplicate those tools.
 
-## Build and connect
+## Install
 
 Requirements: Go 1.26+, Node.js 20+, and pnpm.
 
 ```bash
+git clone https://github.com/ygrip/punakawan.git
+cd punakawan
 make bootstrap
-make build
-make package
+make panel-build
+mkdir -p "$HOME/.local/bin"
+GOBIN="$HOME/.local/bin" go install ./cmd/punakawan ./cmd/punakawand
 ```
 
-Configure your MCP client to run the built server over STDIO:
+Add the install directory to `PATH`, then verify both binaries:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+command -v punakawan punakawand
+punakawan --help
+```
+
+Configure your MCP client to run the installed server over STDIO:
 
 ```json
 {
   "mcpServers": {
     "punakawan": {
-      "command": "/absolute/path/to/dist/punakawan",
+      "command": "punakawan",
       "args": ["mcp", "serve"]
     }
   }
 }
 ```
+
+If the MCP client does not inherit your shell `PATH`, use the absolute path to
+the installed `punakawan` binary as `command`.
 
 The MCP server may start outside a project. Use `upsert_project` to register
 repository identity before starting delivery work.
@@ -65,7 +79,7 @@ repository identity before starting delivery work.
 ## Panel
 
 ```bash
-dist/punakawan panel --workspace /absolute/path/to/project
+punakawan panel --workspace /absolute/path/to/project
 ```
 
 The loopback-only panel focuses on Projects, Deliveries, and Settings. Project
@@ -91,6 +105,8 @@ Project delivery is driven through MCP, not duplicated as a generic CLI.
 ## Development
 
 ```bash
+make build
+make package
 make test
 make lint
 make panel-test
