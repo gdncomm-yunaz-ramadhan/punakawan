@@ -1,0 +1,39 @@
+internal/planexec/planexec.go
+  a330ccb60fead87e 1-505
+internal/plan/store_test.go
+  a330ccb60fead87e 68-99
+internal/mcpserver/tools_planexec.go
+  a330ccb60fead87e 1-119
+internal/planexec/planexec_test.go
+  a330ccb60fead87e 1-239
+internal/plan/plan.go
+  a330ccb60fead87e 26-31,40-45
+internal/storage/migrations/0015_plan_step_executions.sql
+  a330ccb60fead87e 1-31
+internal/app/app.go
+  a330ccb60fead87e 24,73-75,394-422
+internal/mcpserver/tools.go
+  a330ccb60fead87e 77-102
+internal/plan/store.go
+  a330ccb60fead87e 56-65,217-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "b475c3d1791ce19aebf622f0532de3ecaa51755f",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1039,
+      "total_deletions": 19,
+      "accepted_lines": 1020,
+      "overriden_lines": 0
+    }
+  }
+}
