@@ -1,0 +1,23 @@
+.beads/issues.jsonl
+  b4e2288e28259e79 196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2fc238c7fbe0f986ff3fa08bd810ecc37b61c676",
+  "prompts": {
+    "b4e2288e28259e79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0348d-d13d-73a0-a931-68d62a85e579",
+        "model": "unknown"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
