@@ -7,7 +7,6 @@
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
-  import { onPanelEvent } from "../../lib/events/sse.svelte";
   import Icon from "../../lib/components/Icon.svelte";
   import Button from "../../lib/components/Button.svelte";
   import Dialog from "../../lib/components/overlay/Dialog.svelte";
@@ -58,7 +57,6 @@
 
   onMount(() => {
     load();
-    return onPanelEvent(load);
   });
 
   function open(id: string) {
@@ -172,8 +170,6 @@
               </span>
               <span class="stats" aria-label="Project snapshot">
                 <span><strong>{p.repository_count}</strong> repos</span>
-                <span><strong>{p.open_task_count}</strong> open</span>
-                <span class:danger={p.blocked_task_count > 0}><strong>{p.blocked_task_count}</strong> blocked</span>
                 <span><strong>{p.active_session_count}</strong> active</span>
                 <span><strong>{p.knowledge_count}</strong> knowledge</span>
               </span>
@@ -459,10 +455,6 @@
   .stats strong {
     color: var(--color-text);
     font-variant-numeric: tabular-nums;
-  }
-  .stats .danger,
-  .stats .danger strong {
-    color: var(--color-danger);
   }
   .open-hint {
     margin-left: auto;

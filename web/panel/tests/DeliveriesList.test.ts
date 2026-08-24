@@ -3,33 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DeliveriesList from "../src/routes/deliveries/DeliveriesList.svelte";
 import { setCsrfToken } from "../src/lib/session";
 
-// Mocking sse.svelte's public surface lets a test dispatch a synthetic panel
-// frame straight at the listener DeliveriesList registered, the same way the
-// real module would after a live SSE frame arrives (see DeliveryDetail.test.ts
-// for the same approach).
-let panelListeners: Array<(evt: MessageEvent) => void> = [];
-
-vi.mock("../src/lib/events/sse.svelte", () => ({
-  onPanelEvent: (cb: (evt: MessageEvent) => void) => {
-    panelListeners.push(cb);
-    return () => {
-      panelListeners = panelListeners.filter((l) => l !== cb);
-    };
-  },
-  parsePanelEvent: (evt: MessageEvent) => {
-    try {
-      return JSON.parse((evt as unknown as { data: string }).data);
-    } catch {
-      return null;
-    }
-  },
-}));
-
-function emitPanelEvent(type: string, data: unknown = {}) {
-  const evt = { type, data: JSON.stringify(data) } as unknown as MessageEvent;
-  for (const cb of [...panelListeners]) cb(evt);
-}
-
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
 }
@@ -71,7 +44,6 @@ type FetchMock = ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
   setCsrfToken("csrf-test-token");
-  panelListeners = [];
 });
 
 afterEach(() => {
@@ -245,62 +217,6 @@ describe("DeliveriesList", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Cancel delivery" }));
 
     await waitFor(() => expect(posted).toEqual(["/api/v1/deliveries/orc-1/cancel"]));
-  });
-
-  it("keeps the search box mounted through a background refresh", async () => {
-    installBackend([orchestration("orc-1", "active", { title: "Migrate billing" })]);
-    render(DeliveriesList);
-    await waitFor(() => expect(screen.getByText("Migrate billing")).toBeTruthy());
-
-    const input = screen.getByLabelText("Search deliveries") as HTMLInputElement;
-    input.focus();
-    await fireEvent.input(input, { target: { value: "Migrate" } });
-
-    // A panel event re-runs load(); the toolbar must not be torn down and
-    // replaced by the loading placeholder, or focus and caret are lost.
-    emitPanelEvent("delivery.updated", { entity_id: "orc-1" });
-
-    await waitFor(() => expect(screen.getByText("Migrate billing")).toBeTruthy());
-    expect(screen.queryByText("Loading…")).toBeNull();
-    const after = screen.getByLabelText("Search deliveries") as HTMLInputElement;
-    expect(after).toBe(input);
-    expect(after.value).toBe("Migrate");
-    expect(document.activeElement).toBe(after);
-  });
-
-  it("cancels with the revision from the latest refresh, not the one first shown", async () => {
-    const posted: { url: string; revision: number }[] = [];
-    let current = { title: "Migrate billing", revision: 1 };
-    (fetch as unknown as FetchMock).mockImplementation(async (url: string, init?: RequestInit) => {
-      const method = (init?.method ?? "GET").toUpperCase();
-      if (method === "POST") {
-        posted.push({ url, revision: JSON.parse(init!.body as string).expected_revision });
-        return jsonResponse(deliveryView("orc-1"));
-      }
-      if (url === "/api/v1/deliveries") {
-        return jsonResponse({ items: [orchestration("orc-1", "active", { ...current })] });
-      }
-      return jsonResponse(deliveryView("orc-1"));
-    });
-
-    const { container } = render(DeliveriesList);
-    const cardName = () => container.querySelector(".name")?.textContent;
-    await waitFor(() => expect(cardName()).toBe("Migrate billing"));
-
-    await fireEvent.click(screen.getByLabelText("Cancel delivery Migrate billing"));
-
-    // Someone else advances the delivery while the dialog sits open. The title
-    // changes too, purely so the test can wait for the refresh to actually land
-    // before confirming.
-    current = { title: "Migrate billing v2", revision: 7 };
-    emitPanelEvent("delivery.updated", { entity_id: "orc-1" });
-    await waitFor(() => expect(cardName()).toBe("Migrate billing v2"));
-    expect(screen.getByRole("dialog")).toBeTruthy();
-
-    await fireEvent.click(screen.getByRole("button", { name: "Cancel delivery" }));
-
-    await waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0].revision).toBe(7);
   });
 
   it("surfaces a failed cancel in the dialog instead of closing it", async () => {

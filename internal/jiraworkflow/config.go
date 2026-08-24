@@ -53,6 +53,51 @@ type Config struct {
 	ClarificationStatus string `yaml:"clarification_status"`
 
 	Estimation EstimationConfig `yaml:"estimation"`
+
+	// AutoLog is the master switch for automatically posting delivery-event
+	// updates to a workspace's linked Jira issues. False (the default, and
+	// what an existing config file with none of these fields keeps
+	// behaving as) means every automatic Jira update stays off, regardless
+	// of what CommentEvents/TransitionOnComplete/LogWork say - a workspace
+	// opts in explicitly rather than an upgrade silently starting to write
+	// to Jira on its behalf.
+	AutoLog bool `yaml:"auto_log"`
+
+	// CommentEvents lists which delivery event type names (e.g.
+	// "delivery.started", "review.changes_required") should post a Jira
+	// comment when AutoLog is true. An event type not in this list simply
+	// never posts a comment; the list is empty by default, so AutoLog=true
+	// with no CommentEvents configured still posts nothing.
+	CommentEvents []string `yaml:"comment_events"`
+
+	// TransitionOnComplete additionally requests a Jira workflow-status
+	// transition when a delivery completes. Kept as its own toggle,
+	// separate from CommentEvents, because moving an issue's status is a
+	// stronger, more visible action than leaving a comment and a workspace
+	// may want one without the other.
+	TransitionOnComplete bool `yaml:"transition_on_complete"`
+
+	// LogWork additionally requests that time spent be logged to Jira as a
+	// worklog entry. Kept as its own toggle for the same reason as
+	// TransitionOnComplete: worklog entries affect a project's time
+	// tracking and a workspace may not want that just because it wants
+	// comments.
+	LogWork bool `yaml:"log_work"`
+}
+
+// ShouldComment reports whether eventName (a delivery event type name, e.g.
+// "delivery.completed") is one of the configured CommentEvents. Matching is
+// exact: unlike ShouldSkip's Jira status names, delivery event type names
+// are a fixed, code-defined vocabulary rather than free-text values an admin
+// might retype inconsistently, so there is no casing drift to guard against
+// here.
+func (c *Config) ShouldComment(eventName string) bool {
+	for _, e := range c.CommentEvents {
+		if e == eventName {
+			return true
+		}
+	}
+	return false
 }
 
 // Default returns a safe, empty configuration: no statuses are skipped, no

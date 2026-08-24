@@ -4,418 +4,159 @@
 
 <h1 align="center">Punakawan</h1>
 
-<p align="center">
-  <em>A Go core + TypeScript adapter platform that turns documents and requirements into
-  verified knowledge, implementation plans, executable work items, code changes,
-  tests, and evidence — driven by whatever LLM agent you already use.</em>
-</p>
+Punakawan is a lean MCP orchestration server for durable software delivery. A
+connected coding agent does the reasoning and implementation; Punakawan owns
+only the coordination state needed to move from project and workflow to plan
+and delivery.
 
----
+## Core model
 
-## What is Punakawan?
+- **Project** identifies a repository and its default branch.
+- **Workflow** is a reusable, role-aware delivery definition.
+- **Plan** is an immutable, reviewable revision of intended work.
+- **Delivery** records execution state, questions, approvals, workers, commits,
+  pull requests, verification, review, Jira activity, and timeline events.
 
-Punakawan is an **MCP (Model Context Protocol) server**. It plugs into an agent
-client you already run — Claude Code, Codex, or any STDIO MCP client — and gives
-that agent a disciplined workflow for taking a Jira issue (or a raw requirement)
-from *"read this ticket"* all the way to *"assessed, planned, decomposed into
-tracked work, code changed, tested, reviewed, and evidenced."*
+Semar orchestrates, Gareng challenges risk and feasibility, Petruk plans and
+implements, and Bagong independently reviews the result.
 
-Crucially, **Punakawan does not bundle an LLM and never reasons on its own**
-([ADR-0016](punakawan-go-typescript-detailed-plan.md)). The connected MCP client
-is the reasoning engine. Punakawan supplies the prompts, orchestration,
-persistence, adapters, and approval gates — it is the *trusted data and
-provenance boundary*. It validates and durably stores whatever structured result
-the agent submits, and it enforces one human approval per run before any
-external write (a Jira comment, a transition, a subtask) actually happens.
+## MCP tools
 
-Think of it as the difference between an LLM that *talks* about doing the work
-and a system that makes the work **durable, reviewable, and safe** across
-sessions, machines, and teammates.
+The public surface is intentionally small:
 
-## The four Punakawan
-
-<table>
-  <tr>
-    <td align="center" width="25%"><img src="assets/semar.png" width="120" alt="Semar" /><br/><b>Semar</b></td>
-    <td align="center" width="25%"><img src="assets/gareng.png" width="120" alt="Gareng" /><br/><b>Gareng</b></td>
-    <td align="center" width="25%"><img src="assets/petruk.png" width="120" alt="Petruk" /><br/><b>Petruk</b></td>
-    <td align="center" width="25%"><img src="assets/bagong.png" width="120" alt="Bagong" /><br/><b>Bagong</b></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Orchestrator</b><br/>Interprets intent, gathers context from repos/Jira/Confluence, builds the dossier, decides which roles run, and merges their findings.</td>
-    <td align="center"><b>Risk &amp; feasibility</b><br/>Requirement completeness, feasibility, compatibility, security, privacy, reliability, performance.</td>
-    <td align="center"><b>Planner</b><br/>Challenges scope, finds simpler alternatives, weighs architecture options, and produces the implementation plan.</td>
-    <td align="center"><b>Independent review</b><br/>Reviews the diff, test evidence, API compatibility, migrations, E2E flows, and unresolved tasks — separately from the planners.</td>
-  </tr>
-</table>
-
-Each role is an MCP **prompt** (in [`prompts/`](prompts/)) paired with a
-`submit_*` tool that validates and persists its structured output. The agent
-plays the role; Punakawan keeps the record.
-
-### The inspiration
-
-The name comes from the **Punakawan** (also *Punokawan*) — the four
-clown-servant characters of Javanese and Indonesian *wayang* (shadow-puppet
-theatre): **Semar** and his sons **Gareng**, **Petruk**, and **Bagong**. In the
-stories they are comic figures, but they are also the wisest characters on
-stage: humble companions who advise the noble heroes, translate hard truths, and
-keep everyone honest. That is exactly the role this tool plays for a developer —
-not a hero replacing you, but four trusted advisors who assess, plan, and review
-the work while *you* stay in charge.
-
-## Why and when to use it
-
-Use Punakawan when you want an agent to work a real ticket **end to end** and you
-care that the result is trustworthy:
-
-- **You want durable, multi-session work.** The assessment, plan, task graph,
-  and review findings persist in a local SQLite kernel and a Beads task
-  graph — a later session or a teammate picks up where you left off instead of
-  starting from zero.
-- **You want a safety gate on external writes.** Every Jira/Confluence write
-  (comments, transitions, subtasks, estimates, worklogs, attachments) is
-  approval-gated per run. One human approval covers the run; nothing hits your
-  system of record without it.
-- **You want separation of planning and review.** Petruk plans; Bagong reviews
-  independently. Gareng pressure-tests feasibility and risk. The structure is
-  the point.
-- **You want token-efficient context.** Jira reads request only planning fields,
-  JQL searches cap results, ADF is flattened to plain text, and raw REST
-  envelopes are omitted by default — so the model spends context on substance.
-
-**When *not* to reach for it:** a throwaway one-line change, or a task with no
-ticket, no review, and no need for a durable trail. Punakawan is scaffolding for
-work that deserves scaffolding.
-
-## How it works
-
-Punakawan sits between your agent client and your systems of record. The agent
-reasons; Punakawan validates, persists, gates writes, and keeps the output
-token-efficient.
-
-```mermaid
-flowchart LR
-  You([You]) -->|prompt| Agent[LLM agent client<br/>Claude Code / Codex]
-  Agent <-->|MCP / STDIO| PK[Punakawan core - Go]
-
-  subgraph Roles [Role prompts + submit_* tools]
-    Semar[Semar - orchestrate]
-    Gareng[Gareng - risk]
-    Petruk[Petruk - plan]
-    Bagong[Bagong - review]
-  end
-
-  PK --- Roles
-  PK -->|normalize| ADP[TS adapters] -->|REST v3| Jira[(Jira / Confluence)]
-  PK -->|FTS5| KN[(Knowledge store<br/>SQLite kernel)]
-  PK -->|task graph| BD[(Beads)]
-  PK -->|compress cmd output| RTK[RTK]
-  PK -->|embedded| Panel[[Panel UI]]
-  PK -.->|approval gate| You
+```text
+upsert_project              list_projects
+save_workflow               get_workflow              list_workflows
+invoke_workflow             plan_save                 plan_get
+start_delivery              get_delivery
+answer_delivery_question    cancel_delivery           approve_project_delivery
 ```
 
-### Example workflow
-
-Working a Jira ticket end to end. Each external write waits on **one** human
-approval per run; the agent runs its shell/dev commands through **RTK** to keep
-command output compact.
-
-```mermaid
-sequenceDiagram
-  actor U as You
-  participant A as LLM agent
-  participant P as Punakawan
-  participant J as Jira
-
-  U->>A: "Use Punakawan to work PAY-123"
-  A->>P: call_adapter_operation (getJiraIssue, compact)
-  P->>J: REST v3 read
-  J-->>P: planning fields only
-  P-->>A: compact issue (no raw envelope)
-  A->>P: semar/gareng prompts -> submit_jira_assessment
-  A->>P: petruk prompt -> submit_lane_petruk_plan
-  A->>P: submit_task_graph (durable Beads work items)
-  A->>P: sync_jira_subtasks (deduped) [WRITE]
-  P-->>A: approval required (run-scoped)
-  A->>U: Approve / Deny?
-  U-->>A: Approve
-  A->>P: respond_to_adapter_approval -> retry
-  P->>J: create subtasks + set estimates
-  Note over A,P: implement -> run_tests (RTK-compressed) -> bagong review -> commit_task
-```
-
-Concretely, ask your agent:
-
-> Use Punakawan to read PAY-123, assess feasibility and risks with Semar and
-> Gareng, produce an implementation plan with Petruk, create the Beads tasks and
-> non-duplicate Jira subtasks, and set the original estimates.
-
-Watch it happen in the [Panel](#the-panel), and approve the single write gate
-when prompted.
-
-## The Panel
-
-Punakawan ships a local, loopback-only **visual tracker**:
-
-```bash
-punakawan panel
-```
-
-<p align="center">
-  <img src="assets/panel-overview.png" alt="Punakawan Panel — Overview" width="820" />
-</p>
-
-It renders an overview of sessions, the Beads task graph and dependencies,
-knowledge records, pending approvals, and a review mode for diffs and plans —
-keyboard-accessible and served entirely from the Go binary (the Svelte frontend
-is embedded via `go:embed`). Nothing leaves your machine; the listener binds to
-loopback and mutating routes are session- and CSRF-gated.
-
-Each project drills into tabbed surfaces — Summary, Metadata, **Roles**,
-Workflows, Knowledge, Tasks, Plans, Sessions, Approvals, and Health — so the
-four Punakawan roles, their open blockers, and run state all read from one
-place. A top-level **Deliveries** view lists and drills into cross-project
-delivery lanes alongside Overview, Projects, Context Improvements, and System.
-The Roles tab configures Semar, Gareng, Petruk, and Bagong directly — each
-with its wayang portrait, per-role style/mode, and toggleable capabilities:
-
-<p align="center">
-  <img src="assets/panel-showcase.png" alt="Punakawan Panel — role configuration" width="820" />
-</p>
-
-The interface is a single design system themed on the wayang batik palette drawn
-from the artwork above — gold, teal, terracotta, and indigo — with accented
-metric tiles, status pills, charts, cards, buttons, and modals that all read from
-the same tokens, stay responsive down to a single column on mobile, and render in
-both light and dark.
-
-### Storage: embedded SQLite kernel
-
-Punakawan's durable state — knowledge, tasks, approvals, learning proposals,
-the adapter-write sync queue, and delivery-orchestration data (projects,
-lanes, worker leases, evidence, review conclusions) — lives in one embedded
-SQLite kernel (`internal/storage`), owned by exactly one daemon process per
-OS user. There is no subprocess to boot and no network listener: every access
-is an in-process `database/sql` call over a single WAL-mode database file,
-through one serialized writer and a bounded reader pool. See
-[ADR-0021](docs/architecture/ADR-0021-an-embedded-sqlite-kernel-replaces-the-dolt-hub-as-active-storage.md).
-
-The panel still keeps a **bounded pool** of per-project `*app.App` runtimes
-warm as you browse across projects — not for the shared kernel, but for the
-state that is genuinely still per-project: workspace discovery and each
-project's own SQLite FTS5 search index (`<project>/.punakawan/index/bm25`).
-
-- **Cap**, default **4** live runtimes (the primary project is always kept).
-  Exceeding the cap shuts down the least-recently-used idle project's runtime.
-- **Idle shutdown** of an unused non-primary project's runtime after **12
-  minutes**.
-- Both are tunable from **System → Runtime pool** (`GET`/`PATCH
-  /api/v1/system/settings`, persisted at `.punakawan/panel/settings.json`);
-  lowering the cap frees memory immediately.
-
-Closing an idle runtime by hand is always safe — its search index is on disk
-and reopens (or rebuilds from the knowledge store if missing) next time the
-project is browsed.
-
-## Architecture in one line
-
-Go core (orchestration, persistence, approval gates, MCP surface) + TypeScript
-adapters (Atlassian normalization) + a connected LLM agent (the reasoning
-engine) + an embedded SQLite kernel and Beads task graph (durable state,
-owned by a single daemon per OS user) + an embedded Svelte panel (visibility).
-
-- **MCP surface:** `internal/mcpserver` exposes ~46 tools — `call_adapter_operation`
-  for Jira/Confluence, the `semar`/`gareng`/`petruk`/`bagong` prompts and their
-  `submit_*` tools, `submit_task_graph`, `sync_jira_subtasks`,
-  `update_jira_task_progress`, `search_knowledge`, and the workflow pipeline.
-- **Knowledge search:** BM25-ranked SQLite FTS5 with a technical tokenizer that
-  preserves identifiers, and first-class indexing of **CVE / GHSA / Sonar-rule**
-  identifiers (`internal/search`).
-- **Sync model:** issues live in a local Dolt DB; `bd dolt push/pull` syncs under
-  `refs/dolt/data` on your git remote. See [`AGENTS.md`](AGENTS.md) and the beads
-  [SYNC_CONCEPTS](https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md).
-
-See [`punakawan-go-typescript-detailed-plan.md`](punakawan-go-typescript-detailed-plan.md)
-for the full engineering plan, architecture, and milestone roadmap.
-
-## Tech &amp; inspiration
-
-| Layer | Tech |
-|-------|------|
-| Core | **Go 1.26+** — MCP server, orchestration, approval gates, panel server |
-| Adapters | **TypeScript / Node 20+** (pnpm workspaces) — Atlassian normalization boundary |
-| Panel UI | **Svelte + Vite + TypeScript**, embedded via `go:embed` |
-| Knowledge store | **SQLite** (embedded kernel); **FTS5** for BM25-ranked search |
-| Task graph | **Beads (bd)** — durable, syncable issue tracker |
-| Protocol | **MCP (Model Context Protocol)** over STDIO; JSON-Schema-generated Go structs + TS/Zod types |
-| Token efficiency | **RTK (Rust Token Killer)** — compresses command output; installed by default and urged on the agent |
-| Integrations | **Jira Cloud REST v3** and **Confluence** direct (no Rovo MCP); roadmap: Sonar, Trivy, OSV |
-
-The reasoning is **BYO-LLM**: Punakawan is deliberately model-agnostic.
-
-### Token efficiency &amp; RTK
-
-Model context is the scarce resource, so Punakawan spends it deliberately:
-
-- **Compact by default** — Jira reads request only planning fields, JQL results
-  are capped, ADF is flattened to plain text, and raw REST envelopes are omitted
-  unless you ask for `includeRaw: true`.
-- **RTK-native** — **RTK (Rust Token Killer)** is installed by
-  the setup script and wired in as Punakawan's command-output compressor: dev and
-  test commands Punakawan runs are routed through RTK so their output costs 60–90%
-  fewer tokens. Punakawan also **urges the connected agent to run its own shell
-  commands through RTK** (via the MCP server instructions), so the savings extend
-  to everything the agent does in the session. If `rtk` is not on `PATH`,
-  Punakawan degrades gracefully to raw output.
-- **Bounded knowledge** — search results, task context, and dossiers are
-  scope-filtered and capped rather than dumping the whole store into context.
+`invoke_workflow` resolves a Workflow into a Plan and Delivery. Coding agents
+own ordinary file, shell, Git, worktree, test, and pull-request operations.
+Punakawan does not duplicate those tools.
 
 ## Install
 
-The global installer installs missing prerequisites, builds Punakawan and its
-Atlassian adapter, collects Jira credentials outside git-tracked projects,
-optionally installs security scanners (Trivy / OSV / Sonar), and opens a wizard
-to integrate `punakawan` with Codex, Claude Code, both, another STDIO MCP
-client, or no client yet.
+Clone the repository, then run the installer for your platform.
 
-**macOS and Linux** — run the shell installer:
+macOS:
 
 ```bash
-./scripts/install.sh
+git clone https://github.com/ygrip/punakawan.git
+cd punakawan
+bash scripts/install.sh
 ```
 
-On macOS it installs prerequisites through Homebrew. On Linux it uses the
-distro package manager it detects (apt / dnf / yum / pacman / zypper) for git,
-ripgrep, Node, and Go, installs Dolt via its official script, and installs
-Beads (`bd`) via `go install`. Punakawan's own live storage no longer uses
-Dolt (it runs on an embedded SQLite kernel), but the `dolt` CLI is still a
-real prerequisite for the one-way import that reads a legacy Dolt-backed
-install (`internal/doltimport`) — it is not needed for normal operation.
-`rtk` is optional and left to you on Linux. It writes config to
-`$XDG_CONFIG_HOME/punakawan` (i.e. `~/.config/punakawan`), matching
-`os.UserConfigDir()`.
-
-**Windows** — run the PowerShell installer:
+Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+git clone https://github.com/ygrip/punakawan.git
+Set-Location punakawan
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
-It mirrors the shell installer (winget prerequisites, build, PATH, `%APPDATA%\
-punakawan` config, an MCP launcher `run-mcp.cmd`, and `doctor`), but does not
-drive the interactive client wizard — it writes a generic MCP config and prints
-the command to register it.
+The installers detect Go, Node.js, and pnpm; install missing prerequisites
+through Homebrew or winget; build the panel assets; and install `punakawan`
+and `punakawand` into a user-local directory on `PATH`. If automatic setup
+fails, the installer prints the exact manual command and documentation link.
 
-The final wizard offers Codex, Claude Code, both, a generic STDIO MCP config,
-or skip. To add or change clients later, rerun only the integration wizard,
-pointing it at the generated launcher (macOS path shown; on Linux it lives at
-`~/.config/punakawan/run-mcp.sh`):
+They also detect Codex and Claude Code, replace any existing user-level
+`punakawan` MCP registration, and register the installed binary as
+`punakawan mcp serve`. Restart detected clients after installation. Missing or
+failed clients do not undo the binary installation; the installer prints the
+exact manual registration command instead.
+
+A generic MCP configuration is always written for other clients:
+
+- macOS: `~/Library/Application Support/punakawan/mcp-config.json`
+- Windows: `%APPDATA%\punakawan\mcp-config.json`
+
+Use `--dry-run` on macOS or `-DryRun` on Windows to preview every action.
+Open a new shell after installation, then verify on macOS:
 
 ```bash
-./scripts/configure-agent.sh "$HOME/Library/Application Support/punakawan/run-mcp.sh"
+command -v punakawan punakawand
+punakawan --help
 ```
 
-For automated provisioning, set `PUNAKAWAN_AGENT_SELECTION` to `codex`,
-`claude`, `both`, `generic`, or `skip`. Set `PUNAKAWAN_INSTALL_SCANNERS` to
-`yes`/`no` to control the optional scanner step non-interactively, and
-`PUNAKAWAN_DRY_RUN=1` to preview the install commands without changing
-anything.
+Or on Windows:
 
-Punakawan calls Jira Cloud REST API v3 directly; it does not require or use
-Rovo MCP. The installer accepts an unscoped personal API token, a scoped
-personal token, or a scoped service-account token. Personal tokens also use
-the Atlassian account email. Scoped tokens should include `read:jira-work`
-and `write:jira-work`; every token remains limited by its account's Jira
-project permissions. It also asks for the site host (for example
-`yourteam.atlassian.net`) and derives the cloud ID automatically. No per-project
-Punakawan file is required; an optional `.punakawan/workspace.yaml` can override
-global defaults.
+```powershell
+Get-Command punakawan, punakawand
+punakawan --help
+```
 
-### Platform support
-
-- **macOS** — fully supported via `scripts/install.sh` (Homebrew-based).
-- **Linux** — fully supported via `scripts/install.sh`. It detects the distro
-  package manager (apt / dnf / yum / pacman / zypper) for git, ripgrep, Node,
-  and Go, installs Dolt from its official script (needed only for the
-  one-way legacy-import path, not Punokawan's own SQLite-backed storage) and
-  Beads via `go install`, and writes config to `~/.config/punakawan`
-  (`os.UserConfigDir()`). `rtk` is optional and not auto-installed; missing
-  tools degrade gracefully (health reports them unavailable). If no supported
-  package manager is found, install the prerequisites manually and rerun.
-- **Windows** — supported via `scripts/install.ps1` (PowerShell). The tool
-  supervisor has a Windows backend (`internal/tools/supervisor_windows.go`,
-  `//go:build windows`) so the binary cross-compiles under `GOOS=windows`; the
-  installer wires prerequisites (winget), PATH, `%APPDATA%\punakawan` config,
-  and an MCP launcher. The interactive client wizard is bash-only, so the
-  PowerShell installer prints the manual registration command instead. WSL2
-  also works via the Linux path.
-
-### Jira authentication
-
-The installer stores `ATLASSIAN_API_TOKEN`, `ATLASSIAN_HOST`, and, for a
-personal token, `ATLASSIAN_EMAIL`, and records whether the token is scoped.
-Unscoped personal tokens call `https://<site>.atlassian.net`; scoped personal
-and service-account tokens call `https://api.atlassian.com/ex/jira/<cloudId>`.
-
-HTTP 401/403 errors mean the direct token, configured mode/scopes, account
-product access, or Jira project permissions need correction. See
-[Atlassian's API-token guide](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/)
-and [Jira REST v3 documentation](https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/).
-
-## Jira MVP workflow
-
-Open the agent client selected during installation in any git repository and
-ask it to use Punakawan for a Jira issue, for example:
-
-> Use Punakawan to read PAY-123, assess feasibility and risks with Semar and
-> Gareng, produce an implementation plan with Petruk, create the Beads tasks
-> and non-duplicate Jira subtasks, and set the original estimates.
-
-The connected client can use these MCP surfaces:
-
-- `call_adapter_operation` for Jira/Confluence reads and advanced operations;
-- the `semar`, `gareng`, `petruk`, and `bagong` prompts plus their `submit_*`
-  tools for durable assessment, planning, and review;
-- `submit_task_graph` for executable Beads work items;
-- `sync_jira_subtasks` for deduplicated Jira subtask creation; and
-- `update_jira_task_progress` for estimates, worklogs, and comments.
-
-Jira responses are compact by default: issue reads request only planning
-fields, JQL searches return at most 20 summary rows unless `maxResults` is
-set, ADF descriptions are flattened to plain text, and raw REST envelopes are
-omitted. Pass `fields` when a specific Jira field (such as a site's story-point
-custom field) is needed. Pass `includeRaw: true` only for diagnostics; it
-intentionally costs substantially more model context.
-
-### Approvals
-
-The first adapter write in a run asks for inline human approval. One approval
-covers every approval-required adapter write in that run. If the connected
-client cannot show MCP elicitation, Punakawan tells the agent to show explicit
-**Approve** and **Deny** options. Only after the human chooses may the agent
-call `respond_to_adapter_approval` and retry an approved write. The CLI remains
-available:
+Manual source installation requires Go 1.26+, Node.js 20+, and pnpm:
 
 ```bash
-punakawan approvals list
-punakawan approvals approve <id> --by <your-name>
-punakawan approvals deny <id> --by <your-name>
+make bootstrap
+make panel-build
+mkdir -p "$HOME/.local/bin"
+GOBIN="$HOME/.local/bin" go install ./cmd/punakawan ./cmd/punakawand
 ```
+
+For a client not detected by the installer, configure the installed server
+over STDIO:
+
+```json
+{
+  "mcpServers": {
+    "punakawan": {
+      "command": "punakawan",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+If the MCP client does not inherit your shell `PATH`, use the absolute path to
+the installed `punakawan` binary as `command`.
+
+The MCP server may start outside a project. Use `upsert_project` to register
+repository identity before starting delivery work.
+
+## Panel
+
+```bash
+punakawan panel --workspace /absolute/path/to/project
+```
+
+The loopback-only panel focuses on Projects, Deliveries, and Settings. Project
+detail contains Summary, Plans, Workflows, Knowledge, and Settings; role policy
+and diagnostics live under Settings. Delivery detail is the main human-facing
+audit artifact. The panel uses plain request/response loading and has no live
+push channel.
+
+## CLI
+
+The binary keeps only operational commands:
+
+```text
+punakawan workspace ...
+punakawan doctor
+punakawan mcp serve
+punakawan panel ...
+punakawan daemon ...
+```
+
+Project delivery is driven through MCP, not duplicated as a generic CLI.
 
 ## Development
 
 ```bash
-make bootstrap   # install Go/TS dependencies
-make build       # build all packages
-make test        # run all tests
-make panel-build # build the Svelte panel and embed it into the binary
+make build
+make package
+make test
+make lint
+make panel-test
 ```
 
-Manual development requires Go 1.26+, Node 20+, and pnpm. This project tracks
-work with **bd (beads)** — run `bd prime` for the workflow and see
-[`AGENTS.md`](AGENTS.md).
+This repository uses `bd` for task tracking. Run `bd prime` for the local
+workflow.
 
-## License
+## Name
 
-[MIT](LICENSE).
+The Punakawan—Semar, Gareng, Petruk, and Bagong—are wayang companions who
+advise, question, translate hard truths, and keep the hero honest. Punakawan
+serves that same role for a coding agent without replacing it.

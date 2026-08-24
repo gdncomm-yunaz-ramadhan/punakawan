@@ -3,11 +3,8 @@
   import { getSystem, type SystemInfo } from "./lib/api/client";
   import { getPath } from "./lib/router/router.svelte";
   import AppShell from "./lib/components/AppShell.svelte";
-  import Overview from "./routes/overview/Overview.svelte";
   import ProjectsList from "./routes/projects/ProjectsList.svelte";
   import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
-  import ApprovalsList from "./routes/approvals/ApprovalsList.svelte";
-  import ContextImprovements from "./routes/improvements/ContextImprovements.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
   import DeliveriesList from "./routes/deliveries/DeliveriesList.svelte";
   import DeliveryDetail from "./routes/deliveries/DeliveryDetail.svelte";
@@ -24,7 +21,6 @@
   });
 
   const projectDetailPath = /^\/projects\/([^/]+)$/;
-  const approvalsPath = /^\/workspaces\/([^/]+)\/approvals$/;
   const deliveryDetailPath = /^\/deliveries\/([^/]+)$/;
 </script>
 
@@ -34,21 +30,16 @@
   {/if}
 
   {#if getPath() === "/" || getPath() === ""}
-    <Overview />
+    <ProjectsList />
   {:else if getPath() === "/projects"}
     <ProjectsList />
-  {:else if getPath() === "/improvements"}
-    <ContextImprovements />
-  {:else if getPath() === "/system"}
+  {:else if getPath() === "/settings"}
     <SystemPage />
   {:else if getPath() === "/deliveries"}
     <DeliveriesList />
   {:else if deliveryDetailPath.exec(getPath())}
     {@const match = deliveryDetailPath.exec(getPath())}
     <DeliveryDetail orchestrationId={decodeURIComponent(match?.[1] ?? "")} />
-  {:else if approvalsPath.exec(getPath())}
-    {@const match = approvalsPath.exec(getPath())}
-    <ApprovalsList workspaceId={decodeURIComponent(match?.[1] ?? "")} />
   {:else if projectDetailPath.exec(getPath())}
     {@const match = projectDetailPath.exec(getPath())}
     <ProjectDetail projectId={decodeURIComponent(match?.[1] ?? "")} />

@@ -139,6 +139,47 @@ func TestUpdateOrchestrationDetailsChangesEachFieldIndependently(t *testing.T) {
 	}
 }
 
+// TestUpdateOrchestrationDetailsSetsPlanIDAndRevision covers §4.4's
+// replacement pointer: a delivery can carry an exact plan_id+plan_revision
+// alongside (not instead of) the deprecated plan_record_id, and either
+// can be edited without disturbing the other.
+func TestUpdateOrchestrationDetailsSetsPlanIDAndRevision(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	view, err := s.StartDelivery(ctx, "", []string{"PAY-1842"})
+	if err != nil {
+		t.Fatalf("StartDelivery: %v", err)
+	}
+	id := view.Orchestration.Id
+	revision := 2
+
+	orch, err := s.UpdateOrchestrationDetails(ctx, NewID(), id, view.Orchestration.Revision, OrchestrationDetails{
+		PlanID:       strptr("plan-123"),
+		PlanRevision: &revision,
+	})
+	if err != nil {
+		t.Fatalf("UpdateOrchestrationDetails: %v", err)
+	}
+	if orch.PlanId == nil || *orch.PlanId != "plan-123" {
+		t.Fatalf("PlanId = %v, want %q", orch.PlanId, "plan-123")
+	}
+	if orch.PlanRevision == nil || *orch.PlanRevision != 2 {
+		t.Fatalf("PlanRevision = %v, want 2", orch.PlanRevision)
+	}
+	if orch.PlanRecordId != nil {
+		t.Fatalf("PlanRecordId = %v, want nil - setting plan_id must not touch the deprecated field", orch.PlanRecordId)
+	}
+
+	built, err := s.BuildDeliveryView(ctx, id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if built.PlanID != "plan-123" || built.PlanRevision != 2 {
+		t.Fatalf("view plan_id/plan_revision = %q/%d, want %q/%d", built.PlanID, built.PlanRevision, "plan-123", 2)
+	}
+}
+
 // TestUpdateOrchestrationDetailsStaleRevisionConflicts covers the
 // optimistic-locking path: an edit composed against a view somebody else
 // has already moved past must conflict, not overwrite.

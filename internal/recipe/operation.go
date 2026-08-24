@@ -17,14 +17,11 @@ import (
 // candidate: revalidate before reuse" means ResolveAndExecute
 // revalidates it inline instead of asking the caller to run discovery.
 //
-// §16's "Suggested BD expansion" (resolve recipe / discover mapping if
-// missing / validate candidate / persist / retrieve / attach evidence)
-// describes how a real orchestrating agent should decompose the task
-// with `bd create`/`bd dep add` once this error is returned - that
-// decomposition is the calling agent's job, not logic this package
-// encodes: internal/recipe has no bd/task-creation dependency anywhere
-// else, and adding one here would duplicate internal/beads rather than
-// reuse it.
+// A real orchestrating agent decomposes the task into concrete work once
+// this error is returned - that decomposition is the calling agent's job,
+// not logic this package encodes: internal/recipe has no task-creation
+// dependency anywhere else, and adding one here would duplicate that
+// responsibility rather than reuse it.
 type DiscoveryNeededError struct {
 	Outcome    Outcome
 	Candidates []Candidate

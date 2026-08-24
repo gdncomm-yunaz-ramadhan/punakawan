@@ -161,6 +161,59 @@ func TestValidateStoryPoints_OffScale(t *testing.T) {
 	}
 }
 
+func TestLoadMissingFileLeavesHookFieldsOff(t *testing.T) {
+	// A workspace with no jira-workflow.yaml at all - or an existing one
+	// written before these fields existed - must keep behaving exactly as
+	// it always did: no automatic Jira update of any kind.
+	c, err := Load("/nonexistent/jira-workflow.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.AutoLog {
+		t.Error("expected AutoLog to default to false")
+	}
+	if len(c.CommentEvents) != 0 {
+		t.Errorf("expected CommentEvents to default to empty, got %v", c.CommentEvents)
+	}
+	if c.TransitionOnComplete {
+		t.Error("expected TransitionOnComplete to default to false")
+	}
+	if c.LogWork {
+		t.Error("expected LogWork to default to false")
+	}
+}
+
+func TestShouldComment(t *testing.T) {
+	c := &Config{CommentEvents: []string{"delivery.started", "delivery.completed"}}
+
+	cases := []struct {
+		name  string
+		event string
+		want  bool
+	}{
+		{"configured event", "delivery.started", true},
+		{"another configured event", "delivery.completed", true},
+		{"unconfigured event", "review.accepted", false},
+		{"case mismatch is not a match", "Delivery.Started", false},
+		{"empty event name", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := c.ShouldComment(tc.event)
+			if got != tc.want {
+				t.Errorf("ShouldComment(%q) = %v, want %v", tc.event, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShouldComment_UnconfiguredEmpty(t *testing.T) {
+	c := &Config{}
+	if c.ShouldComment("delivery.started") {
+		t.Error("ShouldComment on empty CommentEvents should always be false")
+	}
+}
+
 func TestValidateStoryPoints_UnconfiguredScaleAllowsAny(t *testing.T) {
 	c := &Config{} // no scale configured at all
 	for _, v := range []float64{-1, 0, 4, 6, 100, 1000.5} {

@@ -7,9 +7,9 @@ describe("MobileNavigation", () => {
   it("renders a tab for each top-level route", () => {
     render(MobileNavigation);
 
-    expect(screen.getByRole("link", { name: /Overview/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Projects/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /System/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Deliveries/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Settings/ })).toBeTruthy();
   });
 
   it("marks the tab matching the current route as active and navigates on click", async () => {

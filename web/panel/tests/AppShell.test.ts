@@ -24,8 +24,6 @@ describe("AppShell", () => {
           read_only: true,
           bound_address: "127.0.0.1:7331",
           registered_workspaces: 1,
-          watcher_status: "not_implemented",
-          feature_flags: [],
         },
       },
     });

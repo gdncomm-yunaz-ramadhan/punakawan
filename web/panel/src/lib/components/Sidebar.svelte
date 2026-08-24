@@ -4,16 +4,14 @@
   import Icon, { type IconName } from "./Icon.svelte";
 
   const links: { path: string; label: string; icon: IconName; disabled?: boolean }[] = [
-    { path: "/", label: "Overview", icon: "dashboard" },
     { path: "/projects", label: "Projects", icon: "folder" },
     { path: "/deliveries", label: "Deliveries", icon: "git-branch" },
-    { path: "/improvements", label: "Context Improvements", icon: "comment" },
-    { path: "/system", label: "System", icon: "settings" },
+    { path: "/settings", label: "Settings", icon: "settings" },
   ];
 
   function isActive(path: string): boolean {
     const current = getPath();
-    if (path === "/") return current === "/";
+    if (path === "/projects") return current === "/" || current.startsWith(path);
     return current.startsWith(path);
   }
 </script>

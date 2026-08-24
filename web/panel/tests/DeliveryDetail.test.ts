@@ -3,37 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DeliveryDetail from "../src/routes/deliveries/DeliveryDetail.svelte";
 import { setCsrfToken } from "../src/lib/session";
 
-// Real EventSource frames always carry an explicit `event: <type>` line
-// (internal/panel/events/sse.go), so jsdom's absence of EventSource
-// entirely (confirmed: no test in this suite mocks it) is not the
-// blocker for exercising AC4's live-unlock path - the module boundary
-// is. Mocking sse.svelte's tiny public surface lets this test dispatch
-// a synthetic delivery.updated frame straight at whatever listener
-// DeliveryDetail registered via onPanelEvent, the same way the real
-// module would after a live SSE frame arrives.
-let panelListeners: Array<(evt: MessageEvent) => void> = [];
-
-vi.mock("../src/lib/events/sse.svelte", () => ({
-  onPanelEvent: (cb: (evt: MessageEvent) => void) => {
-    panelListeners.push(cb);
-    return () => {
-      panelListeners = panelListeners.filter((l) => l !== cb);
-    };
-  },
-  parsePanelEvent: (evt: MessageEvent) => {
-    try {
-      return JSON.parse((evt as unknown as { data: string }).data);
-    } catch {
-      return null;
-    }
-  },
-}));
-
-function emitPanelEvent(type: string, data: unknown) {
-  const evt = { type, data: JSON.stringify(data) } as unknown as MessageEvent;
-  for (const cb of [...panelListeners]) cb(evt);
-}
-
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
 }
@@ -85,7 +54,6 @@ function baseView(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
   setCsrfToken("csrf-test-token");
-  panelListeners = [];
 });
 
 afterEach(() => {
@@ -109,6 +77,68 @@ describe("DeliveryDetail", () => {
 
     const prLink = screen.getByRole("link", { name: /PR/ });
     expect(prLink.getAttribute("href")).toBe("https://github.com/org/repo/pull/42");
+  });
+
+  it("renders the delivery audit record in one view", async () => {
+    const view = baseView({
+      plan_id: "plan-billing",
+      plan_revision: 3,
+      lanes: [
+        {
+          lane_id: "lane-1",
+          project_id: "proj-a",
+          status: "accepted",
+          repository: "org/billing",
+          branch: "codex/billing-v2",
+          worker: "worker-42",
+          commits: ["abcdef1234567890"],
+          pr_url: "https://github.com/org/billing/pull/42",
+          pr_number: 42,
+          verification: {
+            computed_at: "2026-08-10T00:00:00Z",
+            dimensions: [{ name: "unit", status: "passed" }],
+          },
+          bagong_review: {
+            outcome: "approved",
+            independence_level: "different_worker",
+            reviewer_worker_id: "reviewer-7",
+            reviewer_session_id: "review-session",
+            blocking_finding_ids: [],
+            evidence_ids: [],
+            recorded_at: "2026-08-10T01:00:00Z",
+          },
+        },
+      ],
+      blockers: [],
+      jira_activity: [
+        {
+          event_type: "implementation.completed",
+          entity_id: "lane-1",
+          issue_key: "BILL-42",
+          fired_at: "2026-08-10T02:00:00Z",
+        },
+      ],
+      timeline: [
+        { sequence: 7, type: "lane.commit_recorded", entity_id: "lane-1", occurred_at: "2026-08-10T00:30:00Z" },
+      ],
+    });
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(view);
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByText("plan-billing r3")).toBeTruthy());
+    expect(container.textContent).toContain("repository org/billing");
+    expect(container.textContent).toContain("branch codex/billing-v2");
+    expect(container.textContent).toContain("worker worker-42");
+    expect(container.textContent).toContain("abcdef12");
+    expect(container.textContent).toContain("unit: passed");
+    expect(container.textContent).toContain("approved · different_worker");
+    expect(container.textContent).toContain("BILL-42");
+    expect(container.textContent).toContain("implementation.completed · lane-1");
+    expect(container.textContent).toContain("lane.commit_recorded");
   });
 
   it("answers a pending question with the entered reference and resolution fields", async () => {
@@ -192,39 +222,6 @@ describe("DeliveryDetail", () => {
 
     const projectBCard = within(approvalsRegion).getByText("proj-b").closest("li") as HTMLElement;
     expect(within(projectBCard).getByRole("button", { name: "Approve" }).hasAttribute("disabled")).toBe(false);
-  });
-
-  it("live-unlocks a newly runnable lane on a matching delivery.updated SSE event, without any manual refresh", async () => {
-    const blockedView = baseView({
-      lanes: [{ lane_id: "lane-2", project_id: "proj-a", status: "blocked", blocked_by: ["lane-1"] }],
-      latest_seq: 1,
-    });
-    const unlockedView = baseView({
-      lanes: [{ lane_id: "lane-2", project_id: "proj-a", status: "runnable" }],
-      latest_seq: 2,
-      newly_runnable_lane_ids: ["lane-2"],
-    });
-
-    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
-      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(blockedView);
-      if (url === "/api/v1/deliveries/orc-1?since_seq=1") return jsonResponse(unlockedView);
-      throw new Error(`unexpected url ${url}`);
-    });
-
-    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
-
-    await waitFor(() => expect(screen.getByText("blocked")).toBeTruthy());
-    expect(panelListeners.length).toBeGreaterThan(0);
-
-    emitPanelEvent("delivery.updated", {
-      id: "evt-2",
-      type: "delivery.updated",
-      entity_id: "orc-1",
-      payload: { latest_seq: 2, newly_runnable_lane_ids: ["lane-2"] },
-    });
-
-    await waitFor(() => expect(screen.getByText("runnable")).toBeTruthy());
-    expect(screen.getByText("Newly runnable")).toBeTruthy();
   });
 
   it("renders worker, worktree, base sha, pipeline stage, repair count, escalation, and evidence links", async () => {

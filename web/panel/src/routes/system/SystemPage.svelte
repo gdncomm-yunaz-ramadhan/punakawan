@@ -191,7 +191,6 @@
     { label: "Bound address", value: info.bound_address, icon: "server" },
     { label: "Read-only mode", value: info.read_only ? "yes" : "no", icon: "approval" },
     { label: "Registered workspaces", value: info.registered_workspaces, icon: "folder" },
-    { label: "Watcher status", value: info.watcher_status, icon: "activity" },
   ]}
   <dl>
     {#each items as item (item.label)}
@@ -201,17 +200,6 @@
         <dd>{item.value}</dd>
       </div>
     {/each}
-    <div class="row flags">
-      <span class="icon"><Icon name="settings" size={18} /></span>
-      <dt>Feature flags</dt>
-      <dd>
-        {#if info.feature_flags.length}
-          {#each info.feature_flags as flag (flag)}<span class="flag">{flag}</span>{/each}
-        {:else}
-          <span class="muted">No feature flags enabled</span>
-        {/if}
-      </dd>
-    </div>
   </dl>
 {/if}
 
@@ -326,22 +314,6 @@
     font-size: 0.9rem;
     font-weight: 600;
     overflow-wrap: anywhere;
-  }
-  .flags {
-    grid-column: 1 / -1;
-  }
-  .flag {
-    display: inline-flex;
-    margin: 0.15rem 0.25rem 0.15rem 0;
-    padding: 0.16rem 0.48rem;
-    border-radius: 999px;
-    color: var(--color-accent);
-    background: var(--color-accent-soft);
-    font-size: 0.72rem;
-  }
-  .muted {
-    color: var(--color-text-muted);
-    font-weight: 500;
   }
   .error {
     color: var(--color-danger);

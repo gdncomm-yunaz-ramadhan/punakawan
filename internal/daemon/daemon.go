@@ -97,6 +97,11 @@ func Run(ctx context.Context, host, port string, paths Paths) (*Daemon, error) {
 	// openDeliveryStore-per-call here, since there is nothing else for the
 	// daemon to scope storage.Open against.
 	deliveryStore := delivery.NewStore(db)
+	// Best-effort startup janitor (PR1 §3.6): reconciles orphaned lane
+	// worktrees left behind by an interrupted cleanup. Never blocks or
+	// fails startup - deliveryStore.ReconcileWorktrees logs and skips
+	// anything it cannot safely resolve.
+	deliveryStore.ReconcileWorktrees(ctx)
 	transport, err := NewTransport(host, port, token, d.readyCheck, deliveryStore)
 	if err != nil {
 		db.Close()

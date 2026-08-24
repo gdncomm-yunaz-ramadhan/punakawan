@@ -1,5 +1,4 @@
-// Package api implements the Punakawan Panel's /api/v1 HTTP handlers, per
-// punakawan-panel-implementation-plan.md §11. Handlers only translate
+// Package api implements the Punakawan Panel's /api/v1 HTTP handlers. Handlers only translate
 // between HTTP and internal/panel/contract's reader interfaces - no
 // format-specific parsing lives here.
 package api
@@ -32,8 +31,6 @@ type SystemInfo struct {
 	ReadOnly             bool      `json:"read_only"`
 	BoundAddress         string    `json:"bound_address"`
 	RegisteredWorkspaces int       `json:"registered_workspaces"`
-	WatcherStatus        string    `json:"watcher_status"`
-	FeatureFlags         []string  `json:"feature_flags"`
 }
 
 // writeJSON encodes v as the response body with a JSON content type. It
@@ -65,11 +62,6 @@ func listErrorStatus(err error) int {
 }
 
 // SystemHandler serves GET /api/v1/system.
-//
-// WatcherStatus and FeatureFlags are reported as fixed honest placeholders
-// ("not_implemented" / empty) rather than fabricated data: the filesystem
-// watcher (§19) and feature-flag mechanism don't exist yet - later phases
-// wire real values in without changing this response's shape.
 func SystemHandler(cfg Config, reg *registry.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		count := 0
@@ -84,8 +76,6 @@ func SystemHandler(cfg Config, reg *registry.Store) http.HandlerFunc {
 			ReadOnly:             cfg.ReadOnly,
 			BoundAddress:         cfg.BoundAddr,
 			RegisteredWorkspaces: count,
-			WatcherStatus:        "not_implemented",
-			FeatureFlags:         []string{},
 		})
 	}
 }

@@ -42,6 +42,36 @@ func DBPath() (string, error) {
 	return filepath.Join(dir, dbFileName), nil
 }
 
+// WorktreesDir returns the central directory execution worktrees are
+// created under, creating it if absent. Worktrees are runtime state, not
+// part of a managed repository, so they live here rather than inside any
+// repo's own working tree.
+func WorktreesDir() (string, error) {
+	dir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	worktreesDir := filepath.Join(dir, "worktrees")
+	if err := os.MkdirAll(worktreesDir, 0o700); err != nil {
+		return "", fmt.Errorf("storage: create worktrees dir %s: %w", worktreesDir, err)
+	}
+	return worktreesDir, nil
+}
+
+// IndexesDir returns the central directory search indexes are built
+// under, creating it if absent.
+func IndexesDir() (string, error) {
+	dir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	indexesDir := filepath.Join(dir, "indexes")
+	if err := os.MkdirAll(indexesDir, 0o700); err != nil {
+		return "", fmt.Errorf("storage: create indexes dir %s: %w", indexesDir, err)
+	}
+	return indexesDir, nil
+}
+
 // CheckLocation rejects database paths that live on a network-mounted
 // filesystem (NFS/SMB/CIFS/AFP and similar): SQLite's file-locking
 // guarantees are unreliable over network protocols and silently

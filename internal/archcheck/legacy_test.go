@@ -1,7 +1,6 @@
 // Package archcheck is a build-time architecture gate: it fails go test
-// if any package outside the documented Dolt migration importer
-// (internal/doltimport) imports the removed MySQL/Dolt/Bleve
-// dependencies, or launches an external dolt/mysqld process.
+// if any package imports the removed MySQL/Dolt/Bleve dependencies, or
+// launches an external dolt/mysqld process.
 package archcheck
 
 import (
@@ -16,11 +15,6 @@ import (
 	"testing"
 )
 
-// approvedImporterPrefix is the one package explicitly allowed to still
-// depend on Dolt/MySQL, for the documented one-way migration window -
-// see internal/doltimport's package doc comment.
-const approvedImporterPrefix = "internal/doltimport/"
-
 // excludedDirs hold no Go runtime code (VCS metadata, JS/TS packages,
 // vendored tool state, build output) - walking into them wastes time and
 // risks matching unrelated text in generated or third-party files.
@@ -31,9 +25,7 @@ var excludedDirs = map[string]bool{
 }
 
 // bannedImportSubstrings match the real upstream module paths for the
-// dependencies this project removed, not our own internal/doltimport
-// package name - so the approved importer's own import path never
-// false-positives against this list.
+// dependencies this project removed.
 var bannedImportSubstrings = []string{
 	"dolthub/dolt",
 	"dolthub/go-mysql-server",
@@ -41,8 +33,8 @@ var bannedImportSubstrings = []string{
 	"blevesearch/bleve",
 }
 
-// bannedProcessLiterals name external server binaries only the
-// documented importer may launch.
+// bannedProcessLiterals name external server binaries this project no
+// longer launches.
 var bannedProcessLiterals = map[string]bool{"dolt": true, "mysqld": true}
 
 func TestNoLegacyRuntimeImportsOrProcessLaunches(t *testing.T) {
@@ -69,9 +61,6 @@ func TestNoLegacyRuntimeImportsOrProcessLaunches(t *testing.T) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if strings.HasPrefix(rel, approvedImporterPrefix) {
-			return nil
-		}
 
 		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 		if err != nil {
@@ -108,10 +97,10 @@ func TestNoLegacyRuntimeImportsOrProcessLaunches(t *testing.T) {
 	}
 
 	if len(importViolations) > 0 {
-		t.Errorf("legacy runtime imports found outside %s:\n%s", approvedImporterPrefix, strings.Join(importViolations, "\n"))
+		t.Errorf("legacy runtime imports found:\n%s", strings.Join(importViolations, "\n"))
 	}
 	if len(processViolations) > 0 {
-		t.Errorf("unapproved dolt/mysqld process launch outside %s:\n%s", approvedImporterPrefix, strings.Join(processViolations, "\n"))
+		t.Errorf("unapproved dolt/mysqld process launch:\n%s", strings.Join(processViolations, "\n"))
 	}
 }
 

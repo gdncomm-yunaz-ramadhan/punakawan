@@ -86,8 +86,6 @@ export * from './generated/reviewfinding.js';
 export * from './generated/reviewfinding.zod.js';
 export * from './generated/roleconfig.js';
 export * from './generated/roleconfig.zod.js';
-export * from './generated/task.js';
-export * from './generated/task.zod.js';
 export * from './generated/testreportsummary.js';
 export * from './generated/testreportsummary.zod.js';
 export * from './generated/verificationdimension.js';

@@ -44,10 +44,9 @@ func newPanelCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "panel",
 		Short: "Start the Punakawan Panel: a local, loopback-only web dashboard",
-		Long: "Start the Punakawan Panel, per punakawan-panel-implementation-plan.md: a local web " +
-			"dashboard served from this binary. It binds to loopback only, auto-registers the " +
-			"current workspace, and never writes to canonical workspace state except through an " +
-			"authenticated review session, per punakawan-artifact-review-plan-mutation-plan-v2.md §15.\n\n" +
+		Long: "Start the Punakawan Panel, a local web dashboard served from this binary. " +
+			"It binds to loopback only, auto-registers the current workspace, and protects " +
+			"mutations with an authenticated session.\n\n" +
 			"This command runs in the foreground and stops when its terminal goes away. To keep the " +
 			"panel available without a terminal - started at login and restarted if it crashes - " +
 			"register it as a background service instead:\n\n" +

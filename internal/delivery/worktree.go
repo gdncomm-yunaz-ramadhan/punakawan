@@ -357,6 +357,14 @@ func (s *Store) RemoveWorktree(ctx context.Context, idempotencyKey, orchestratio
 			return fmt.Errorf("delivery: git worktree remove: %s", res.Stderr)
 		}
 
+		pruneRes, err := sup.Run(ctx, tools.Spec{Name: "git", Args: []string{"worktree", "prune"}, Dir: *profile.LocalPath})
+		if err != nil {
+			return fmt.Errorf("delivery: git worktree prune: %w", err)
+		}
+		if pruneRes.ExitCode != 0 {
+			return fmt.Errorf("delivery: git worktree prune: %s", pruneRes.Stderr)
+		}
+
 		payload, err := json.Marshal(map[string]interface{}{"removed_path": worktreePath})
 		if err != nil {
 			return err
@@ -416,6 +424,24 @@ func (s *Store) CommitLane(ctx context.Context, orchestrationID, laneID, message
 	sha, err := inspector.HeadSHA(ctx, *lane.WorktreePath)
 	if err != nil {
 		return "", fmt.Errorf("delivery: resolve resulting commit sha: %w", err)
+	}
+	payload, err := json.Marshal(map[string]interface{}{"sha": sha, "message": message})
+	if err != nil {
+		return sha, fmt.Errorf("delivery: encode commit record: %w", err)
+	}
+	writeKey := "lane-commit:" + orchestrationID + ":" + laneID + ":" + sha
+	if err := s.db.Write(ctx, writeKey, "record lane commit "+laneID, func(tx *sql.Tx) error {
+		events, err := loadEventsTx(ctx, tx, orchestrationID)
+		if err != nil {
+			return err
+		}
+		return insertEvent(ctx, tx, eventRow{
+			ID: newID(), OrchestrationID: orchestrationID, EntityID: &laneID, IdempotencyKey: writeKey,
+			Type: string(protocol.DeliveryEventTypeLaneCommitRecorded), Payload: string(payload),
+			Sequence: len(events), OccurredAt: time.Now().UTC(),
+		})
+	}); err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return sha, fmt.Errorf("delivery: record resulting commit %s: %w", sha, err)
 	}
 	return sha, nil
 }

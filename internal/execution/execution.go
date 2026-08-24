@@ -30,12 +30,11 @@ type Session struct {
 	Journal  *evidence.Journal
 }
 
-// StartTaskExecution performs §11.1 steps 1-4: it requires an already
-// approved worktree-creation request (mgr.RequestApproval/Approve, exactly
-// as gitops.WorktreeManager.Create itself requires), creates the isolated
-// worktree and task branch, and opens this run's evidence bundle and
-// journal. A "task-started" event is appended to the journal before
-// returning.
+// StartTaskExecution performs §11.1 steps 1-4: it creates the isolated
+// worktree and task branch (no human approval required - creating a
+// worktree is internal execution infrastructure, per the project-hygiene
+// refactor), and opens this run's evidence bundle and journal. A
+// "task-started" event is appended to the journal before returning.
 func StartTaskExecution(ctx context.Context, mgr *gitops.WorktreeManager, workspaceRoot, repoPath, repoID, runID, taskID string) (*Session, error) {
 	wt, err := mgr.Create(ctx, workspaceRoot, repoPath, repoID, taskID)
 	if err != nil {

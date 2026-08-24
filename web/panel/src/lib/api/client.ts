@@ -1,7 +1,5 @@
 // Thin fetch wrapper for /api/v1, mirroring internal/panel/api's Go
-// response shapes. Kept deliberately small for Phase 1 (system +
-// workspaces only); later phases add sessions/tasks/knowledge/evidence/
-// approvals here as their own endpoints land.
+// response shapes.
 
 import { fetchWithCsrf } from "../session";
 
@@ -12,8 +10,6 @@ export interface SystemInfo {
   read_only: boolean;
   bound_address: string;
   registered_workspaces: number;
-  watcher_status: string;
-  feature_flags: string[];
 }
 
 export type Availability = "available" | "partially_available" | "busy" | "unavailable" | "invalid";
@@ -25,14 +21,10 @@ export interface WorkspaceSummary {
   availability: Availability;
   repository_count: number;
   active_session_count: number;
-  open_task_count: number;
-  blocked_task_count: number;
   knowledge_count: number;
   last_activity_at: string;
   pinned: boolean;
-  // True only for the single workspace this panel instance serves; every
-  // other workspace's sessions/tasks/knowledge/approvals are unavailable
-  // here (they 404), so the UI disables their drill-down navigation.
+  // True only for the single workspace this panel instance serves.
   primary: boolean;
 }
 
@@ -41,113 +33,6 @@ export interface SourceHealth {
   availability: Availability;
   message?: string;
   checked_at: string;
-}
-
-export interface PanelSessionSummary {
-  id: string;
-  workspace_id: string;
-  workflow: string;
-  status: string;
-  started_at: string;
-  updated_at: string;
-  initiator?: string;
-  objective?: string;
-  active_role?: "semar" | "gareng" | "petruk" | "bagong";
-  task_counts?: {
-    total?: number;
-    open?: number;
-    in_progress?: number;
-    blocked?: number;
-    closed?: number;
-  };
-  evidence_count?: number;
-  warning_count?: number;
-  error_count?: number;
-}
-
-export interface ApprovalRecord {
-  id: string;
-  run_id: string;
-  operation: string;
-  target?: string;
-  reason?: string;
-  requested_by: string;
-  status: string;
-  created_at: string;
-  resolved_at?: string;
-  approved_by?: string;
-  preview?: string;
-  policy_level?: string;
-  // approve_command/deny_command are only present on GET .../approvals'
-  // response (internal/panel/api/approval_handler.go), and only for a
-  // still-pending record - the panel's read-only MVP has no
-  // approve/deny endpoint of its own, so this is the concrete next step
-  // ("run this in your terminal") it can offer instead.
-  approve_command?: string;
-  deny_command?: string;
-}
-
-export type NeedsAttentionKind =
-  | "failed_session"
-  | "pending_approval"
-  | "blocked_tasks"
-  | "unavailable_workspace"
-  | "stale_session";
-
-export interface NeedsAttentionItem {
-  kind: NeedsAttentionKind;
-  workspace_id: string;
-  entity_id?: string;
-  message: string;
-}
-
-export interface Overview {
-  active_sessions: PanelSessionSummary[];
-  pending_approvals: ApprovalRecord[];
-  blocked_tasks: number;
-  available_workspaces: number;
-  needs_attention: NeedsAttentionItem[];
-  workspace_health: WorkspaceSummary[];
-  recent_sessions: PanelSessionSummary[];
-  // The single workspace this panel instance serves. active_sessions,
-  // recent_sessions, and pending_approvals cover only this workspace,
-  // whereas blocked_tasks/available_workspaces/workspace_health span all
-  // registered workspaces.
-  primary_workspace_id: string;
-}
-
-export interface TimelineEvent {
-  id: string;
-  run_id: string;
-  timestamp: string;
-  operation: string;
-  type: string;
-  result: "success" | "failure" | "cancelled" | "timeout";
-  role?: "semar" | "gareng" | "petruk" | "bagong";
-  task?: string;
-  tool?: string;
-  adapter?: string;
-  approval_id?: string;
-  duration_ms?: number;
-  repository?: string;
-}
-
-export interface SessionDetail extends PanelSessionSummary {
-  Timeline?: TimelineEvent[] | null;
-}
-
-export interface ContextCapsule {
-  id: string;
-  task_id: string;
-  created_at: string;
-  digest: string;
-  role: "semar" | "gareng" | "petruk" | "bagong";
-  objective: string;
-  allowed_tools: string[];
-  forbidden_actions: string[];
-  relevant_knowledge?: { id: string; summary?: string }[];
-  evidence?: { id: string; summary?: string }[];
-  token_budget?: number;
 }
 
 export class ApiError extends Error {
@@ -204,107 +89,6 @@ export function updatePanelSettings(patch: Partial<PanelSettings>): Promise<Pane
     method: "PATCH",
     body: JSON.stringify(patch),
   });
-}
-
-export function getOverview(): Promise<Overview> {
-  return getJSON<Overview>("/overview");
-}
-
-export function listCapsules(workspaceId: string, taskId: string): Promise<{ items: ContextCapsule[] }> {
-  return getJSON<{ items: ContextCapsule[] }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/capsules?task_id=${encodeURIComponent(taskId)}`,
-  );
-}
-
-export interface TaskDependencyEdge {
-  issue_id: string;
-  depends_on_id: string;
-  type: string;
-}
-
-export interface TaskSummary {
-  id: string;
-  title: string;
-  description?: string;
-  status: string;
-  priority: number;
-  issue_type: string;
-  owner?: string;
-  assignee?: string;
-  labels?: string[];
-  parent?: string;
-  dependencies?: TaskDependencyEdge[];
-  created_at: string;
-  created_by?: string;
-  updated_at: string;
-  started_at?: string;
-  external_ref?: string;
-  board_status: string;
-  blocking_reasons?: string[];
-  stale: boolean;
-}
-
-export interface RelatedTask {
-  id: string;
-  title: string;
-  status: string;
-  priority: number;
-  issue_type: string;
-  dependency_type: string;
-}
-
-export interface TaskDetail {
-  id: string;
-  title: string;
-  description?: string;
-  acceptance_criteria?: string;
-  status: string;
-  priority: number;
-  issue_type: string;
-  owner?: string;
-  assignee?: string;
-  labels?: string[];
-  parent?: string;
-  dependencies?: RelatedTask[];
-  dependents?: RelatedTask[];
-  created_at: string;
-  created_by?: string;
-  updated_at: string;
-  closed_at?: string;
-  external_ref?: string;
-}
-
-export interface TaskGraphEdge {
-  from: string;
-  to: string;
-  type: string;
-}
-
-export interface TaskGraph {
-  nodes: TaskSummary[];
-  edges: TaskGraphEdge[];
-  cycles: string[][];
-}
-
-export interface TaskFilter {
-  status?: string;
-  priority?: string;
-  type?: string;
-  blocked?: boolean;
-  query?: string;
-  limit?: number;
-}
-
-function taskListQuery(filter: TaskFilter): string {
-  const params = new URLSearchParams();
-  if (filter.status) params.set("status", filter.status);
-  if (filter.priority) params.set("priority", filter.priority);
-  if (filter.type) params.set("type", filter.type);
-  if (filter.blocked) params.set("blocked", "true");
-  if (filter.query) params.set("query", filter.query);
-  if (filter.limit) params.set("limit", String(filter.limit));
-  const qs = params.toString();
-  return qs ? `?${qs}` : "";
 }
 
 export interface KnowledgeRelation {
@@ -500,129 +284,6 @@ function buildKnowledgeQuery(filter: KnowledgeFilter): string {
   return params.toString();
 }
 
-export interface GlobalSearchResult {
-  workspace_id: string;
-  result: SearchResult;
-  rrf_score: number;
-}
-
-export function globalSearch(
-  query: string,
-  opts: { type?: string; repo?: string; limit?: number } = {},
-): Promise<{ items: GlobalSearchResult[] }> {
-  const params = new URLSearchParams({ q: query });
-  if (opts.type) params.set("type", opts.type);
-  if (opts.repo) params.set("repo", opts.repo);
-  if (opts.limit) params.set("limit", String(opts.limit));
-  return getJSON<{ items: GlobalSearchResult[] }>(`/search?${params.toString()}`);
-}
-
-export type EvidenceRecordType =
-  | "source-excerpt"
-  | "repository-snapshot"
-  | "command-output"
-  | "test-report"
-  | "playwright-trace"
-  | "screenshot"
-  | "api-diff"
-  | "git-diff"
-  | "commit"
-  | "user-answer"
-  | "approval-record"
-  | "external-response";
-
-export interface EvidenceRecord {
-  id: string;
-  run_id: string;
-  task_id?: string;
-  type: EvidenceRecordType;
-  path?: string;
-  content_hash?: string;
-  summary?: string;
-  created_at: string;
-}
-
-export interface DiffSummary {
-  files_changed: number;
-  insertions: number;
-  deletions: number;
-  truncated: boolean;
-}
-
-export interface EvidenceTextPreview {
-  content_type: string;
-  text: string;
-  offset: number;
-  total_size: number;
-  truncated: boolean;
-  diff_summary: DiffSummary | null;
-}
-
-// binaryEvidenceTypes mirrors internal/panel/sources/evidence_source.go's
-// binaryEvidenceTypes: these are served as a raw blob (an <img> can point
-// straight at projectEvidencePreviewUrl), never as the JSON text-preview
-// shape.
-const binaryEvidenceTypes: ReadonlySet<EvidenceRecordType> = new Set(["screenshot", "playwright-trace"]);
-
-export function isBinaryEvidence(type: EvidenceRecordType): boolean {
-  return binaryEvidenceTypes.has(type);
-}
-
-// listProjectEvidence/getProjectEvidence/projectEvidencePreviewUrl are
-// project-scoped, mounted under /projects/{id}/... the same way
-// listProjectSessions/getProjectSession mirror the session reads below -
-// they let any registered project's session evidence load, not only the
-// startup workspace's.
-
-export function listProjectEvidence(id: string, sessionId: string): Promise<{ items: EvidenceRecord[] }> {
-  return getJSON<{ items: EvidenceRecord[] }>(
-    `/projects/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}/evidence`,
-  );
-}
-
-export function getProjectEvidence(id: string, evidenceId: string): Promise<EvidenceRecord> {
-  return getJSON<EvidenceRecord>(`/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}`);
-}
-
-// projectEvidencePreviewUrl mirrors evidencePreviewUrl: built directly
-// (rather than through getJSON) so callers can hand it straight to an
-// <img src> for binary evidence (screenshots) without round-tripping the
-// bytes through JS.
-export function projectEvidencePreviewUrl(
-  id: string,
-  evidenceId: string,
-  opts: { offset?: number; limit?: number } = {},
-): string {
-  const params = new URLSearchParams();
-  if (opts.offset) params.set("offset", String(opts.offset));
-  if (opts.limit) params.set("limit", String(opts.limit));
-  const qs = params.toString();
-  return `/api/v1/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`;
-}
-
-export function getProjectEvidenceTextPreview(
-  id: string,
-  evidenceId: string,
-  opts: { offset?: number; limit?: number } = {},
-): Promise<EvidenceTextPreview> {
-  const params = new URLSearchParams();
-  if (opts.offset) params.set("offset", String(opts.offset));
-  if (opts.limit) params.set("limit", String(opts.limit));
-  const qs = params.toString();
-  return getJSON<EvidenceTextPreview>(
-    `/projects/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}/preview${qs ? `?${qs}` : ""}`,
-  );
-}
-
-export function listApprovals(workspaceId: string, status?: string): Promise<{ items: ApprovalRecord[] }> {
-  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
-  // Project-scoped route: resolves any registered project through the panel's
-  // runtime pool (the primary is served directly), so approvals load for a
-  // non-primary project instead of failing "workspace is not available on
-  // this panel instance". The id is the project/workspace id either way.
-  return getJSON<{ items: ApprovalRecord[] }>(`/projects/${encodeURIComponent(workspaceId)}/approvals${qs}`);
-}
-
 // --- Projects (Phase 2, plan §5) -----------------------------------------
 //
 // Projects are becoming the primary entity. A project's snapshot counts
@@ -644,8 +305,6 @@ export interface ProjectSummary {
   availability: string;
   repository_count: number;
   knowledge_count: number;
-  open_task_count: number;
-  blocked_task_count: number;
   active_session_count: number;
   metadata_count: number;
 }
@@ -1002,35 +661,7 @@ export function refreshHealth(id: string): Promise<HealthResponse> {
   return mutateJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health/refresh`, { method: "POST" });
 }
 
-// --- Project-scoped task / session / knowledge reads ---------------------
-//
-// The server mounts the SAME handlers used by the /workspaces/{id}/...
-// endpoints under /projects/{id}/... too, so these mirror the workspace
-// reads' response shapes exactly. They let Project Detail's Tasks,
-// Sessions, and Knowledge tabs read real data for ANY project (not only
-// the startup workspace) without routing through the /workspaces/... URLs.
-
-export function listProjectTasks(id: string, filter: TaskFilter = {}): Promise<{ items: TaskSummary[] }> {
-  return getJSON<{ items: TaskSummary[] }>(`/projects/${encodeURIComponent(id)}/tasks${taskListQuery(filter)}`);
-}
-
-export function getProjectTask(id: string, taskId: string): Promise<TaskDetail> {
-  return getJSON<TaskDetail>(`/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`);
-}
-
-export function getProjectTaskGraph(id: string): Promise<TaskGraph> {
-  return getJSON<TaskGraph>(`/projects/${encodeURIComponent(id)}/task-graph`);
-}
-
-export function listProjectSessions(id: string): Promise<{ items: PanelSessionSummary[] }> {
-  return getJSON<{ items: PanelSessionSummary[] }>(`/projects/${encodeURIComponent(id)}/sessions`);
-}
-
-export function getProjectSession(id: string, sessionId: string): Promise<SessionDetail> {
-  return getJSON<SessionDetail>(
-    `/projects/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`,
-  );
-}
+// --- Project-scoped knowledge reads ---------------------------------------
 
 export function listProjectKnowledge(
   id: string,
@@ -1058,98 +689,6 @@ export function getProjectKnowledgeHistory(id: string, knowledgeId: string): Pro
   return getJSON<{ items: KnowledgeEvent[] }>(
     `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/history`,
   );
-}
-
-// --- Project Change Dossiers ---------------------------------------------
-//
-// A change dossier is the assembled, human-readable case for a change: its
-// objective, requirement coverage, cross-repo impact, plan conformance, and
-// the verified claims backing it. No screen consumes any of this today: the
-// JSON list/detail/finalize wrappers were removed as dead, and the Markdown
-// export below is kept deliberately unwired, as the one piece a future
-// "download the dossier" affordance would need.
-//
-// The export is served as text, not JSON, so it is fetched directly rather
-// than through getJSON. Callers hand the string to a download/preview; a
-// non-2xx still surfaces as an ApiError.
-export async function exportDossierMarkdown(id: string, dossierId: string): Promise<string> {
-  const res = await fetch(
-    `/api/v1/projects/${encodeURIComponent(id)}/dossiers/${encodeURIComponent(dossierId)}/export.md`,
-    { headers: { Accept: "text/markdown, text/plain, */*" } },
-  );
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(res.status, body.error ?? res.statusText);
-  }
-  return res.text();
-}
-
-// --- Context Improvements (agent-context plan §8) ------------------------
-//
-// A context improvement is a proposal, distilled from one or more prior
-// runs, to change a durable project artifact: a workflow definition, a
-// project-metadata value, or a knowledge record. It carries the rationale,
-// how many runs support it (support_count), the backing evidence/run ids,
-// and the review it hangs off. The panel presents them as an inbox and
-// accepts/rejects each proposal. Accept/reject are session-gated writes
-// (they go through mutateJSON so they carry the CSRF header); the
-// {proposalId} in the URL is the proposal_attempt number.
-
-export type ContextImprovementArtifactType = "workflow" | "project_metadata" | "knowledge";
-
-export interface ContextImprovement {
-  id: string;
-  artifact_type: ContextImprovementArtifactType;
-  target_id: string;
-  rationale: string;
-  support_count: number;
-  evidence_ids: string[];
-  source_run_ids: string[];
-  review_id: string;
-  // Which retry produced this proposal; doubles as the {proposalId} path
-  // segment on the accept/reject endpoints. Usually 1.
-  proposal_attempt: number;
-  // Free-form lifecycle status, e.g. "proposal_ready" (actionable),
-  // "accepted", "rejected", "conflicted".
-  status: string;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export function listContextImprovements(id: string): Promise<{ improvements: ContextImprovement[] }> {
-  return getJSON<{ improvements: ContextImprovement[] }>(
-    `/projects/${encodeURIComponent(id)}/context-improvements`,
-  );
-}
-
-// acceptContextImprovement / rejectContextImprovement resolve a single
-// proposal. They post through fetchWithCsrf (the same CSRF-bearing path
-// mutateJSON uses) but tolerate an empty/204 body, since a resolve action
-// need not echo a payload; the caller reloads the inbox afterwards. A
-// non-2xx surfaces as an ApiError carrying the server's code and message.
-async function resolveContextImprovement(
-  projectId: string,
-  reviewId: string,
-  proposalAttempt: number,
-  action: "accept" | "reject",
-): Promise<void> {
-  const res = await fetchWithCsrf(
-    `/api/v1/projects/${encodeURIComponent(projectId)}/reviews/${encodeURIComponent(reviewId)}/proposals/${encodeURIComponent(String(proposalAttempt))}/${action}`,
-    { method: "POST", headers: { Accept: "application/json" } },
-  );
-  if (!res.ok && res.status !== 204) {
-    const body = await res.json().catch(() => ({}) as { error?: string; message?: string; code?: string });
-    throw new ApiError(res.status, body.error ?? body.message ?? res.statusText, body.code);
-  }
-}
-
-export function acceptContextImprovement(projectId: string, reviewId: string, proposalAttempt: number): Promise<void> {
-  return resolveContextImprovement(projectId, reviewId, proposalAttempt, "accept");
-}
-
-export function rejectContextImprovement(projectId: string, reviewId: string, proposalAttempt: number): Promise<void> {
-  return resolveContextImprovement(projectId, reviewId, proposalAttempt, "reject");
 }
 
 // --- Deliveries (multi-project orchestration) ----------------------------
@@ -1208,6 +747,9 @@ export interface DeliveryLaneSummary {
   pr_url?: string;
   pr_number?: number;
   pr_provider?: string;
+  repository?: string;
+  branch?: string;
+  commits?: string[];
   worker?: string;
   worktree_path?: string;
   base_sha?: string;
@@ -1224,6 +766,45 @@ export interface DeliveryLaneSummary {
   // never interchangeable and must not be shown as one thing.
   session_id?: string;
   evidence?: DeliveryEvidenceRef[];
+  verification?: DeliveryVerificationMatrix;
+  bagong_review?: DeliveryReviewConclusion;
+}
+
+export interface DeliveryVerificationMatrix {
+  computed_at: string;
+  dimensions: Array<{
+    name: "logic" | "unit" | "integration" | "quality" | "e2e" | "ci";
+    status: "pending" | "passed" | "failed";
+    evidence_id?: string;
+    summary?: string;
+    checked_at?: string;
+  }>;
+}
+
+export interface DeliveryReviewConclusion {
+  outcome: "approved" | "blocked" | "changes_requested";
+  independence_level: "different_session" | "different_worker" | "same_session";
+  reviewer_worker_id: string;
+  reviewer_session_id: string;
+  reviewer_model?: string;
+  reviewer_provider?: string;
+  blocking_finding_ids: string[];
+  evidence_ids: string[];
+  recorded_at: string;
+}
+
+export interface DeliveryAuditEvent {
+  sequence: number;
+  type: string;
+  entity_id?: string;
+  occurred_at: string;
+}
+
+export interface DeliveryJiraActivity {
+  event_type: string;
+  entity_id?: string;
+  issue_key: string;
+  fired_at: string;
 }
 
 export interface DeliveryBlockerSummary {
@@ -1281,6 +862,8 @@ export interface DeliveryView {
   // session drove the delivery.
   description?: string;
   plan_record_id?: string;
+  plan_id?: string;
+  plan_revision?: number;
   session_id?: string;
   projects: DeliveryProjectSummary[];
   lanes: DeliveryLaneSummary[];
@@ -1288,6 +871,8 @@ export interface DeliveryView {
   pending_approvals: ApprovalManifest[];
   pending_questions: string[];
   next_action: string;
+  timeline?: DeliveryAuditEvent[];
+  jira_activity?: DeliveryJiraActivity[];
   latest_seq: number;
   newly_runnable_lane_ids: string[];
 }

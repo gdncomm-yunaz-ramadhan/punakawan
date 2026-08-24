@@ -25,9 +25,17 @@ export interface DeliveryOrchestration {
    */
   project_ids?: string[];
   /**
-   * Id of the knowledge record holding this run's final plan, as persisted by submit_final_plan. Absent until a plan has been recorded against the run.
+   * Deprecated: id of the knowledge record holding this run's final plan, as persisted by the old submit_final_plan write path. New plans are recorded via plan_id/plan_revision instead (internal/plan); this stays only so pre-existing references remain resolvable.
    */
   plan_record_id?: string;
+  /**
+   * Id of the internal/plan lineage holding this run's plan, as persisted by submit_final_plan or plan_save. Absent until a plan has been recorded against the run.
+   */
+  plan_id?: string;
+  /**
+   * Exact revision of plan_id this run is built from. Set together with plan_id; a revision without an id (or vice versa) is meaningless, but the schema does not itself enforce that pairing.
+   */
+  plan_revision?: number;
   /**
    * Id of the workflow run driving this delivery - the same id sessions are identified by everywhere else (a WorkflowRun's id, which is also PanelSessionSummary's id and the run_id the MCP tools thread). Absent when no session has claimed the run.
    */

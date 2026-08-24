@@ -15,7 +15,9 @@
       "description": "Projects explicitly attached to this run, in attachment order. Attachment is a deliberate statement that a run involves a project, kept separate from the incidental fact that some lane happens to name it: a project can be attached before it has any lane, and detaching it never touches lanes it already owns.",
       "items": { "type": "string" }
     },
-    "plan_record_id": { "type": "string", "description": "Id of the knowledge record holding this run's final plan, as persisted by submit_final_plan. Absent until a plan has been recorded against the run." },
+    "plan_record_id": { "type": "string", "description": "Deprecated: id of the knowledge record holding this run's final plan, as persisted by the old submit_final_plan write path. New plans are recorded via plan_id/plan_revision instead (internal/plan); this stays only so pre-existing references remain resolvable." },
+    "plan_id": { "type": "string", "description": "Id of the internal/plan lineage holding this run's plan, as persisted by submit_final_plan or plan_save. Absent until a plan has been recorded against the run." },
+    "plan_revision": { "type": "integer", "description": "Exact revision of plan_id this run is built from. Set together with plan_id; a revision without an id (or vice versa) is meaningless, but the schema does not itself enforce that pairing." },
     "session_id": { "type": "string", "description": "Id of the workflow run driving this delivery - the same id sessions are identified by everywhere else (a WorkflowRun's id, which is also PanelSessionSummary's id and the run_id the MCP tools thread). Absent when no session has claimed the run." },
     "status": { "type": "string", "enum": ["pending", "active", "cancelled", "completed"] },
     "unresolved_inputs": {

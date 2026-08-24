@@ -63,13 +63,12 @@ func (f *fakeWorkspaceReader) calls(id string) int {
 	return f.getCalls[id]
 }
 
-func summaryFixture(id string, knowledge, blocked int) contract.WorkspaceDetail {
+func summaryFixture(id string, knowledge int) contract.WorkspaceDetail {
 	return contract.WorkspaceDetail{WorkspaceSummary: contract.WorkspaceSummary{
-		ID:               id,
-		Availability:     protocol.PanelSourceHealthAvailabilityAvailable,
-		KnowledgeCount:   knowledge,
-		BlockedTaskCount: blocked,
-		LastActivityAt:   time.Now().UTC(),
+		ID:             id,
+		Availability:   protocol.PanelSourceHealthAvailabilityAvailable,
+		KnowledgeCount: knowledge,
+		LastActivityAt: time.Now().UTC(),
 	}}
 }
 
@@ -77,8 +76,8 @@ func TestCachedWorkspaceReaderServesFromCache(t *testing.T) {
 	inner := &fakeWorkspaceReader{
 		getCalls: map[string]int{},
 		detail: map[string]contract.WorkspaceDetail{
-			"alpha": summaryFixture("alpha", 42, 1),
-			"beta":  summaryFixture("beta", 7, 0),
+			"alpha": summaryFixture("alpha", 42),
+			"beta":  summaryFixture("beta", 7),
 		},
 	}
 	reg := openTestRegistry(t)
@@ -105,7 +104,7 @@ func TestCachedWorkspaceReaderServesFromCache(t *testing.T) {
 	for _, s := range first {
 		byID[s.ID] = s
 	}
-	if byID["alpha"].KnowledgeCount != 42 || byID["alpha"].BlockedTaskCount != 1 {
+	if byID["alpha"].KnowledgeCount != 42 {
 		t.Errorf("alpha counts not served from snapshot: %+v", byID["alpha"])
 	}
 	if byID["alpha"].DisplayName != "Alpha" {
@@ -138,7 +137,7 @@ func TestCachedWorkspaceReaderServesFromCache(t *testing.T) {
 func TestCachedWorkspaceReaderGetWarmsCache(t *testing.T) {
 	inner := &fakeWorkspaceReader{
 		getCalls: map[string]int{},
-		detail:   map[string]contract.WorkspaceDetail{"alpha": summaryFixture("alpha", 5, 0)},
+		detail:   map[string]contract.WorkspaceDetail{"alpha": summaryFixture("alpha", 5)},
 	}
 	reg := openTestRegistry(t)
 	if _, err := reg.Register("alpha", mkdir(t, "alpha"), "", time.Now().UTC()); err != nil {
@@ -173,7 +172,7 @@ func TestCachedWorkspaceReaderGetWarmsCache(t *testing.T) {
 func TestCachedWorkspaceReaderPersistsSnapshotAcrossRestarts(t *testing.T) {
 	inner := &fakeWorkspaceReader{
 		getCalls: map[string]int{},
-		detail:   map[string]contract.WorkspaceDetail{"alpha": summaryFixture("alpha", 42, 1)},
+		detail:   map[string]contract.WorkspaceDetail{"alpha": summaryFixture("alpha", 42)},
 	}
 	reg := openTestRegistry(t)
 	dir := mkdir(t, "alpha")
@@ -240,7 +239,7 @@ func TestCachedWorkspaceReaderRestartServesStalePersistedSnapshotWithoutBlocking
 	gate := make(chan struct{})
 	inner := &fakeWorkspaceReader{
 		getCalls: map[string]int{},
-		detail:   map[string]contract.WorkspaceDetail{"alpha": summaryFixture("alpha", 99, 0)},
+		detail:   map[string]contract.WorkspaceDetail{"alpha": summaryFixture("alpha", 99)},
 		gate:     gate,
 	}
 	c := NewCachedWorkspaceReader(inner, reg, "alpha", time.Millisecond)

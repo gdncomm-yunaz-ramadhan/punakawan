@@ -14,12 +14,6 @@ func TestCommitTaskCommitsOnTaskBranch(t *testing.T) {
 	workspace := t.TempDir()
 	mgr := newWorktreeManager(t, repo, workspace)
 
-	if _, err := mgr.RequestApproval("run-1", "repo-a", "task-1", "petruk"); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := mgr.Approve("repo-a", "task-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
 	wt, err := mgr.Create(context.Background(), workspace, repo, "repo-a", "task-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -49,12 +43,6 @@ func TestCommitTaskRefusesWithoutPassingDiffCheck(t *testing.T) {
 	workspace := t.TempDir()
 	mgr := newWorktreeManager(t, repo, workspace)
 
-	if _, err := mgr.RequestApproval("run-1", "repo-a", "task-1", "petruk"); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := mgr.Approve("repo-a", "task-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
 	wt, err := mgr.Create(context.Background(), workspace, repo, "repo-a", "task-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -71,12 +59,6 @@ func TestPushBranchPushesToRemote(t *testing.T) {
 	workspace := t.TempDir()
 	mgr := newWorktreeManager(t, repo, workspace)
 
-	if _, err := mgr.RequestApproval("run-1", "repo-a", "task-1", "petruk"); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := mgr.Approve("repo-a", "task-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
 	wt, err := mgr.Create(context.Background(), workspace, repo, "repo-a", "task-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)

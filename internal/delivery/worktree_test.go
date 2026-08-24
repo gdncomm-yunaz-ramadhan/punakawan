@@ -305,6 +305,13 @@ func TestCommitLaneAndPushLane(t *testing.T) {
 	if !strings.Contains(logOut, sha) {
 		t.Fatalf("commit sha %q not found in the worktree's own history:\n%s", sha, logOut)
 	}
+	view, err := f.store.BuildDeliveryView(ctx, f.orchestrationID)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if len(view.Lanes) != 1 || len(view.Lanes[0].Commits) != 1 || view.Lanes[0].Commits[0] != sha {
+		t.Fatalf("delivery view commits = %+v, want [%s]", view.Lanes, sha)
+	}
 
 	branch, err := f.store.PushLane(ctx, f.orchestrationID, f.laneID)
 	if err != nil {

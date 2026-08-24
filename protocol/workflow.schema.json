@@ -79,6 +79,16 @@
       "description": "Resolved workflow inputs at invocation time (agent-context plan §4.1/§4.4): declared inputs with caller-supplied values or declared defaults applied. Values are arbitrary JSON.",
       "additionalProperties": true
     },
+    "plan_ref": {
+      "type": "object",
+      "description": "Immutable reference to the internal/plan revision this run was instantiated from. Absent for a run predating this wiring. Present for a run created by invoking a workflow definition, mirroring definition_ref's shape.",
+      "required": ["id", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "revision": { "type": "integer" }
+      }
+    },
     "context_snapshot": {
       "type": "object",
       "description": "Bounded, immutable snapshot of the context this run was prepared with (agent-context plan §4.1). Holds references and hashes, never a copy of the whole knowledge store. Fully populated by the context preparation service (plan §4.4); at invocation only the `missing` list and revision may be set.",

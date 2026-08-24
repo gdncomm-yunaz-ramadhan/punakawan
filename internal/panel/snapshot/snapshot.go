@@ -3,8 +3,8 @@
 // punakawan-panel-project-performance-improvement-plan.md §10/§10.2/§10.4.
 //
 // The panel's project overview is expensive to compute from scratch: it
-// aggregates repository, knowledge, workflow, plan, run, task, and review
-// counts across a workspace's Dolt/bd/git/adapter state. Recomputing it on
+// aggregates repository, knowledge, workflow, plan, run, and review counts
+// across a workspace's Dolt/git/adapter state. Recomputing it on
 // every request (or every 1s reconciler tick) is the hot path §10 targets.
 // This package keeps the latest computed ProjectSnapshot per project in
 // memory and serves it instantly, refreshing it in the background when it
@@ -41,8 +41,6 @@ type ProjectSnapshot struct {
 	WorkflowCount      int       `json:"workflow_count"`
 	PlanCount          int       `json:"plan_count"`
 	ActiveRunCount     int       `json:"active_run_count"`
-	OpenTaskCount      int       `json:"open_task_count"`
-	BlockedTaskCount   int       `json:"blocked_task_count"`
 	PendingReviewCount int       `json:"pending_review_count"`
 }
 

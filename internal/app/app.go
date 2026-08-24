@@ -20,13 +20,14 @@ import (
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/learning"
+	"github.com/ygrip/punakawan/internal/plan"
+	"github.com/ygrip/punakawan/internal/planexec"
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
-	"github.com/ygrip/punakawan/internal/taskstore"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -62,8 +63,11 @@ type App struct {
 	approvalsMu    sync.Mutex
 	approvalsStore *approvals.Store
 
-	taskStoreMu sync.Mutex
-	taskStore   *taskstore.Store
+	planMu    sync.Mutex
+	planStore *plan.Store
+
+	planExecMu    sync.Mutex
+	planExecStore *planexec.Store
 
 	learningMu    sync.Mutex
 	learningStore *learning.Store
@@ -125,7 +129,7 @@ func load(ws *workspace.Workspace) (*App, error) {
 		return nil, err
 	}
 
-	roots := make([]string, 0, len(ws.Repositories)+1)
+	roots := make([]string, 0, len(ws.Repositories)+2)
 	roots = append(roots, ws.Root)
 	for _, r := range ws.Repositories {
 		path, err := ws.RepositoryPath(r.ID)
@@ -134,6 +138,15 @@ func load(ws *workspace.Workspace) (*App, error) {
 		}
 		roots = append(roots, path)
 	}
+	// Task worktrees now live under Punakawan's central data dir rather
+	// than inside the workspace (PR1 project hygiene), so every git
+	// invocation this Supervisor makes against a worktree path needs that
+	// directory allowed too.
+	worktreesDir, err := storage.WorktreesDir()
+	if err != nil {
+		return nil, err
+	}
+	roots = append(roots, worktreesDir)
 	sup := tools.New(roots...)
 
 	wf, err := workflow.Open(ws.Root)
@@ -184,15 +197,17 @@ func load(ws *workspace.Workspace) (*App, error) {
 
 	// The approval store and sync queue now live in the shared SQLite kernel,
 	// opened lazily so a command that never touches an approval or records a
-	// failed adapter write never pays to open the kernel. The registry (and,
-	// for approvals, the worktree manager) therefore take a provider
-	// (a.OpenApprovals, a.OpenSyncQueue) rather than an already-opened store,
-	// deferring the open to the first operation that actually needs it.
+	// failed adapter write never pays to open the kernel. The registry
+	// therefore takes a provider (a.OpenApprovals, a.OpenSyncQueue) rather
+	// than an already-opened store, deferring the open to the first
+	// operation that actually needs it. The worktree manager needs no
+	// approval store at all: creating a worktree is internal execution
+	// infrastructure, not a human-approval-gated action.
 	registry := adapters.NewRegistry(specs, a.OpenApprovals)
 	registry.SetApprovalScope(pol.Approvals.Scope)
 	registry.SetSyncQueue(a.OpenSyncQueue)
 	a.AdapterRegistry = registry
-	a.Worktrees = gitops.NewWorktreeManager(sup, a.OpenApprovals, pol)
+	a.Worktrees = gitops.NewWorktreeManager(sup, pol)
 
 	return a, nil
 }
@@ -271,10 +286,9 @@ func (a *App) isClosed() bool {
 
 // OpenKnowledge lazily opens the durable knowledge store, memoizing the
 // result, scoped to this workspace's id within the shared storage kernel.
-// Like OpenTaskStore, it is a thin scope over the one
-// shared *storage.DB rather than a per-project server, so it starts nothing:
-// the deferral simply avoids opening the kernel for commands that never touch
-// durable knowledge.
+// It is a thin scope over the one shared *storage.DB rather than a
+// per-project server, so it starts nothing: the deferral simply avoids
+// opening the kernel for commands that never touch durable knowledge.
 func (a *App) OpenKnowledge() (*knowledge.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -328,35 +342,62 @@ func (a *App) OpenStorage(ctx context.Context) (*storage.DB, error) {
 	return db, nil
 }
 
-// OpenTaskStore lazily opens the Beads-less fallback task store, memoizing
-// the result, scoped to this workspace's id within the shared storage
-// kernel. Used only for projects with no .beads directory; a Beads-backed
-// project reads/writes tasks through bd instead.
-func (a *App) OpenTaskStore() (*taskstore.Store, error) {
+// OpenPlan lazily opens the first-class Plan aggregate's store, memoizing
+// the result. Like internal/delivery.Store, it is not scoped to this
+// workspace's id: a Plan can name several ProjectIDs, so there is no
+// single project id to partition it by.
+func (a *App) OpenPlan() (*plan.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	a.taskStoreMu.Lock()
-	defer a.taskStoreMu.Unlock()
+	a.planMu.Lock()
+	defer a.planMu.Unlock()
 
-	if a.taskStore != nil {
-		return a.taskStore, nil
+	if a.planStore != nil {
+		return a.planStore, nil
 	}
 	db, err := a.OpenStorage(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	a.taskStore = taskstore.New(db, a.Workspace.ID)
-	return a.taskStore, nil
+	a.planStore = plan.NewStore(db)
+	return a.planStore, nil
+}
+
+// OpenPlanExec lazily opens the plan-step execution domain's store,
+// memoizing the result: tracks a plan step's execution lifecycle
+// (ready/claimed/committed/reopened) for a project that wants plan-native
+// step tracking. Like OpenPlan, it is not scoped to this workspace's id,
+// since a Plan (and its steps) is not scoped to one workspace either.
+func (a *App) OpenPlanExec() (*planexec.Store, error) {
+	if a.isClosed() {
+		return nil, errAppClosed
+	}
+	a.planExecMu.Lock()
+	defer a.planExecMu.Unlock()
+
+	if a.planExecStore != nil {
+		return a.planExecStore, nil
+	}
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	plans, err := a.OpenPlan()
+	if err != nil {
+		return nil, err
+	}
+	a.planExecStore = planexec.NewStore(db, plans)
+	return a.planExecStore, nil
 }
 
 // OpenApprovals lazily opens the approval store, memoizing the result, scoped
-// to this workspace's id within the shared storage kernel. Like OpenTaskStore,
-// it is a thin scope over the one shared *storage.DB rather
-// than a per-project server, so it starts nothing: the deferral simply avoids
-// opening the kernel for commands that never touch an approval. The adapter
-// registry and worktree manager hold this method as a provider, so the kernel
-// opens on the first approval-gated operation, not at Load.
+// to this workspace's id within the shared storage kernel. It is a thin
+// scope over the one shared *storage.DB rather than a per-project server,
+// so it starts nothing: the deferral simply avoids opening the kernel for
+// commands that never touch an approval. The adapter registry and
+// worktree manager hold this method as a provider, so the kernel opens on
+// the first approval-gated operation, not at Load.
 func (a *App) OpenApprovals() (*approvals.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -493,7 +534,11 @@ func (a *App) OpenSearchIndex() (*search.Index, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	ix, err := search.OpenIndex(filepath.Join(a.Workspace.Root, ".punakawan", "index", "bm25"))
+	indexesDir, err := storage.IndexesDir()
+	if err != nil {
+		return nil, err
+	}
+	ix, err := search.OpenIndex(filepath.Join(indexesDir, a.Workspace.ID, "bm25"))
 	if err != nil {
 		return nil, err
 	}

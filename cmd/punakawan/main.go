@@ -19,20 +19,14 @@ func main() {
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "punakawan",
-		Short:         "Punakawan: Go core + TypeScript adapter platform",
+		Short:         "Punakawan delivery orchestration",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	root.AddCommand(newWorkspaceCmd())
-	root.AddCommand(newGitCmd())
-	root.AddCommand(newWorktreeCmd())
 	root.AddCommand(newDoctorCmd())
 	root.AddCommand(newMCPCmd())
-	root.AddCommand(newApprovalsCmd())
 	root.AddCommand(newPanelCmd())
-	root.AddCommand(newKnowledgeCmd())
 	root.AddCommand(newDaemonCmd())
-	root.AddCommand(newDeliverCmd())
-	root.AddCommand(newStorageCmd())
 	return root
 }

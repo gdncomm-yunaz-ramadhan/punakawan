@@ -158,16 +158,3 @@ func KnowledgeDetailHandler(reader contract.KnowledgeReader) http.HandlerFunc {
 		}
 	}
 }
-
-// GlobalSearchHandler serves GET /api/v1/search, per §10.1: every
-// registered workspace searched and fused into one ranked list.
-func GlobalSearchHandler(reader contract.GlobalSearchReader) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		results, err := reader.Search(r.Context(), parseSearchRequest(r.URL.Query()))
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": results})
-	}
-}

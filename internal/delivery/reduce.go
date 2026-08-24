@@ -63,6 +63,8 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 			applyOptionalText(&o.Title, ev.Payload, "title")
 			applyOptionalText(&o.Description, ev.Payload, "description")
 			applyOptionalText(&o.PlanRecordId, ev.Payload, "plan_record_id")
+			applyOptionalText(&o.PlanId, ev.Payload, "plan_id")
+			applyOptionalInt(&o.PlanRevision, ev.Payload, "plan_revision")
 			applyOptionalText(&o.SessionId, ev.Payload, "session_id")
 		case protocol.DeliveryEventTypeProjectAttached:
 			// Attachment order is the order projects were named, and a
@@ -224,6 +226,7 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 			l.BagongRecordId = &recordID
 		case protocol.DeliveryEventTypeLaneVerificationDimensionRecorded,
 			protocol.DeliveryEventTypeLaneCiCheckReported,
+			protocol.DeliveryEventTypeLaneCommitRecorded,
 			protocol.DeliveryEventTypeLaneReviewConclusionRecorded:
 			// Recorded in the lane's own event log (so verification.go's
 			// BuildVerificationMatrix/GetLatestReviewConclusion can scan
@@ -627,6 +630,26 @@ func applyOptionalText(field **string, payload protocol.DeliveryEventPayload, ke
 		return
 	}
 	*field = &trimmed
+}
+
+// applyOptionalInt is applyOptionalText's counterpart for an integer
+// field: a key the event never carried leaves the current value
+// untouched, and a key carrying zero or less (never a valid revision,
+// which starts at 1) clears the field back to absent. JSON numbers
+// decode as float64 through the payload's map[string]interface{}, so
+// that is the only shape this expects.
+func applyOptionalInt(field **int, payload protocol.DeliveryEventPayload, key string) {
+	raw, present := payload[key]
+	if !present {
+		return
+	}
+	n, ok := raw.(float64)
+	if !ok || n <= 0 {
+		*field = nil
+		return
+	}
+	v := int(n)
+	*field = &v
 }
 
 // indexOfString returns where value sits in list, or -1 when it is

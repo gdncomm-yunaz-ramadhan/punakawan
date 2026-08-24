@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -32,6 +33,11 @@ type Store struct {
 	// YAML file per definition id) than this package's own event log, so
 	// there is no shared lifecycle to couple to directly.
 	workflowDefinitions WorkflowDefinitionResolver
+	// hooks is nil unless WithHooks is passed to NewStore, in which case
+	// every dispatch call below through it is a no-op (see
+	// deliveryhooks.Dispatcher.Dispatch), so every existing Store caller
+	// that never configures hooks is unaffected.
+	hooks *deliveryhooks.Dispatcher
 }
 
 // NewStore wraps an opened storage kernel database. opts is variadic so
@@ -73,24 +79,88 @@ func (s *Store) RegisterProject(ctx context.Context, idempotencyKey, id, slug, r
 	return s.GetProject(ctx, id)
 }
 
+// UpsertProject creates a project or updates the repository configuration of
+// the existing project with the same slug. Existing ids and registration
+// timestamps remain stable across updates.
+func (s *Store) UpsertProject(ctx context.Context, idempotencyKey, id, slug, repositoryURL, defaultBranch string) (*protocol.DeliveryProject, error) {
+	now := time.Now().UTC()
+	err := s.db.Write(ctx, idempotencyKey, "upsert project "+slug, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO delivery_projects (id, slug, repository_url, default_branch, status, registered_at, revision)
+			VALUES (?, ?, ?, ?, 'active', ?, 0)
+			ON CONFLICT(slug) DO UPDATE SET
+				repository_url = excluded.repository_url,
+				default_branch = excluded.default_branch,
+				status = 'active',
+				revision = delivery_projects.revision + 1`,
+			id, slug, repositoryURL, defaultBranch, now.Format(timeLayout),
+		)
+		return err
+	})
+	if errors.Is(err, storage.ErrDuplicateWrite) {
+		return s.GetProjectBySlug(ctx, slug)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("delivery: upsert project %s: %w", slug, err)
+	}
+	return s.GetProjectBySlug(ctx, slug)
+}
+
+// GetProjectBySlug returns the project registered under slug.
+func (s *Store) GetProjectBySlug(ctx context.Context, slug string) (*protocol.DeliveryProject, error) {
+	row := s.db.Reader().QueryRowContext(ctx,
+		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects WHERE slug = ?`, slug)
+	return scanProject(row, slug)
+}
+
+// ListProjects returns every registered project ordered by slug.
+func (s *Store) ListProjects(ctx context.Context) ([]protocol.DeliveryProject, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects ORDER BY slug`)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: list projects: %w", err)
+	}
+	defer rows.Close()
+	projects := make([]protocol.DeliveryProject, 0)
+	for rows.Next() {
+		project, err := scanProject(rows, "")
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, *project)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("delivery: list projects: %w", err)
+	}
+	return projects, nil
+}
+
 // GetProject fails closed (ErrNotFound) for an unknown project id.
 func (s *Store) GetProject(ctx context.Context, id string) (*protocol.DeliveryProject, error) {
 	row := s.db.Reader().QueryRowContext(ctx,
 		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects WHERE id = ?`, id)
+	return scanProject(row, id)
+}
+
+type projectScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanProject(row projectScanner, identity string) (*protocol.DeliveryProject, error) {
 	var p protocol.DeliveryProject
 	var defaultBranch, registeredAt string
 	if err := row.Scan(&p.Id, &p.Slug, &p.RepositoryUrl, &defaultBranch, &p.Status, &registeredAt, &p.Revision); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("delivery: get project %s: %w", id, err)
+		return nil, fmt.Errorf("delivery: get project %s: %w", identity, err)
 	}
 	if defaultBranch != "" {
 		p.DefaultBranch = &defaultBranch
 	}
 	t, err := time.Parse(timeLayout, registeredAt)
 	if err != nil {
-		return nil, fmt.Errorf("delivery: parse registered_at for project %s: %w", id, err)
+		return nil, fmt.Errorf("delivery: parse registered_at for project %s: %w", identity, err)
 	}
 	p.RegisteredAt = t
 	return &p, nil
@@ -129,13 +199,22 @@ type OrchestrationOptions struct {
 type OrchestrationDetails struct {
 	Title       *string
 	Description *string
-	// PlanRecordID is the id of the knowledge record holding the run's
-	// final plan, as returned by submit_final_plan. This package does not
-	// resolve it: the knowledge store has an entirely separate
-	// persistence lifecycle from this event log, the same reason
-	// workflow definitions are reached through an injected resolver
-	// rather than a direct dependency.
+	// PlanRecordID is deprecated: the id of the knowledge record holding
+	// the run's final plan, as returned by the old submit_final_plan
+	// write path. This package does not resolve it: the knowledge store
+	// has an entirely separate persistence lifecycle from this event
+	// log, the same reason workflow definitions are reached through an
+	// injected resolver rather than a direct dependency. New deliveries
+	// should set PlanID/PlanRevision instead (§4.4 - plans now live in
+	// internal/plan, not as knowledge records); this field is kept only
+	// so pre-existing references remain settable/readable.
 	PlanRecordID *string
+	// PlanID and PlanRevision together name the exact internal/plan
+	// revision this run is built from. Like PlanRecordID, this package
+	// does not resolve them - internal/plan has its own persistence
+	// lifecycle, reached the same way the knowledge store is.
+	PlanID       *string
+	PlanRevision *int
 	// SessionID is the id of the workflow run driving the delivery - the
 	// identifier a session is known by everywhere else in the system.
 	SessionID *string
@@ -143,7 +222,8 @@ type OrchestrationDetails struct {
 
 // set reports whether details asks for any change at all.
 func (d OrchestrationDetails) set() bool {
-	return d.Title != nil || d.Description != nil || d.PlanRecordID != nil || d.SessionID != nil
+	return d.Title != nil || d.Description != nil || d.PlanRecordID != nil ||
+		d.PlanID != nil || d.PlanRevision != nil || d.SessionID != nil
 }
 
 // payload renders details as an orchestration.details_updated payload
@@ -153,11 +233,14 @@ func (d OrchestrationDetails) payload() map[string]interface{} {
 	out := map[string]interface{}{}
 	for key, value := range map[string]*string{
 		"title": d.Title, "description": d.Description,
-		"plan_record_id": d.PlanRecordID, "session_id": d.SessionID,
+		"plan_record_id": d.PlanRecordID, "plan_id": d.PlanID, "session_id": d.SessionID,
 	} {
 		if value != nil {
 			out[key] = strings.TrimSpace(*value)
 		}
+	}
+	if d.PlanRevision != nil {
+		out["plan_revision"] = *d.PlanRevision
 	}
 	return out
 }
@@ -219,7 +302,20 @@ func (s *Store) CreateOrchestrationWithOptions(ctx context.Context, idempotencyK
 	if err != nil {
 		return nil, fmt.Errorf("delivery: create orchestration %s: %w", id, err)
 	}
-	return s.GetOrchestration(ctx, id)
+	orch, err := s.GetOrchestration(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Dispatched only on the fresh-create path above, never on the
+	// duplicate-idempotency-key retry: a retried StartDelivery call must
+	// not re-announce "delivery started" for a delivery that already
+	// started.
+	s.hooks.Dispatch(ctx, deliveryhooks.Event{
+		Type: deliveryhooks.EventDeliveryStarted, DeliveryID: id, Revision: orch.Revision,
+		Title: derefOrEmpty(orch.Title), Projects: orch.ProjectIds,
+		Summary: "delivery started",
+	})
+	return orch, nil
 }
 
 // GetOrchestration fails closed (ErrNotFound) for an unknown id.
@@ -293,10 +389,33 @@ func (s *Store) CancelOrchestration(ctx context.Context, idempotencyKey, id stri
 			Sequence: len(events), OccurredAt: time.Now().UTC(),
 		})
 	})
-	if errors.Is(err, storage.ErrDuplicateWrite) || err == nil {
-		return s.GetOrchestration(ctx, id)
+	if !errors.Is(err, storage.ErrDuplicateWrite) && err != nil {
+		return nil, err
 	}
-	return nil, err
+	orch, getErr := s.GetOrchestration(ctx, id)
+	if getErr != nil {
+		return nil, getErr
+	}
+	// Cancellation is reported as delivery.failed rather than
+	// delivery.completed since it means the delivery did not reach a
+	// successful outcome. Nothing in this package currently ever appends
+	// orchestration.completed (there is no "mark this orchestration
+	// successfully done" call anywhere yet), so delivery.completed has no
+	// dispatch point to wire today; a future addition of that call is the
+	// natural place to dispatch it. Only the fresh-cancel path dispatches
+	// here, never the duplicate-idempotency-key retry, for the same reason
+	// CreateOrchestrationWithOptions only dispatches on its own fresh
+	// path.
+	if err == nil {
+		s.hooks.Dispatch(ctx, deliveryhooks.Event{
+			Type: deliveryhooks.EventDeliveryFailed, DeliveryID: id, Revision: orch.Revision,
+			Title: derefOrEmpty(orch.Title), Projects: orch.ProjectIds,
+			PlanID: derefOrEmpty(orch.PlanId), PlanRevision: derefOrZero(orch.PlanRevision),
+			PullRequests: s.pullRequestURLs(ctx, id),
+			Summary:      "delivery cancelled",
+		})
+	}
+	return orch, nil
 }
 
 // RegisterInput appends input.registered, adding one more not-yet-routed
@@ -325,7 +444,62 @@ func (s *Store) UpdateOrchestrationDetails(ctx context.Context, idempotencyKey, 
 	if !details.set() {
 		return nil, fmt.Errorf("delivery: update orchestration %s: no field to update was supplied", orchestrationID)
 	}
-	return s.appendOrchestrationEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeOrchestrationDetailsUpdated, details.payload())
+
+	// planWasUnset is captured from the pre-write state read inside the
+	// same write transaction below (not from a separate read before/after
+	// it), so a retried call that hits the duplicate-idempotency-key path
+	// never sees a stale "already set" view of a plan that only this same
+	// retried call itself would have set.
+	var planWasUnset bool
+	fresh := false
+	payload := details.payload()
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: encode %s payload: %w", protocol.DeliveryEventTypeOrchestrationDetailsUpdated, err)
+	}
+	writeErr := s.db.Write(ctx, idempotencyKey, string(protocol.DeliveryEventTypeOrchestrationDetailsUpdated)+" "+orchestrationID, func(tx *sql.Tx) error {
+		events, err := loadEventsTx(ctx, tx, orchestrationID)
+		if err != nil {
+			return err
+		}
+		current, err := reduceOrchestration(orchestrationID, events)
+		if err != nil {
+			return err
+		}
+		if current.Revision != expectedRevision {
+			return ErrRevisionConflict
+		}
+		if isTerminal(current.Status) {
+			return ErrInvalidState
+		}
+		planWasUnset = current.PlanId == nil || *current.PlanId == ""
+		fresh = true
+		return insertEvent(ctx, tx, eventRow{
+			ID: newID(), OrchestrationID: orchestrationID, IdempotencyKey: idempotencyKey,
+			Type: string(protocol.DeliveryEventTypeOrchestrationDetailsUpdated), Payload: string(encoded),
+			Sequence: len(events), OccurredAt: time.Now().UTC(),
+		})
+	})
+	if writeErr != nil && !errors.Is(writeErr, storage.ErrDuplicateWrite) {
+		return nil, writeErr
+	}
+	updated, err := s.GetOrchestration(ctx, orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	if fresh && (details.PlanID != nil || details.PlanRevision != nil) {
+		eventType := deliveryhooks.EventPlanRevised
+		if planWasUnset {
+			eventType = deliveryhooks.EventPlanCreated
+		}
+		s.hooks.Dispatch(ctx, deliveryhooks.Event{
+			Type: eventType, DeliveryID: orchestrationID, Revision: updated.Revision,
+			Title: derefOrEmpty(updated.Title), Projects: updated.ProjectIds,
+			PlanID: derefOrEmpty(updated.PlanId), PlanRevision: derefOrZero(updated.PlanRevision),
+			Summary: "orchestration plan reference updated",
+		})
+	}
+	return updated, nil
 }
 
 // AttachProject appends project.attached, recording that this run

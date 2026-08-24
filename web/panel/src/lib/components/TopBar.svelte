@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { SystemInfo } from "../api/client";
-  import { getConnectionStatus } from "../events/sse.svelte";
   import { navigate } from "../router/router.svelte";
   import Icon from "./Icon.svelte";
 
@@ -16,7 +15,6 @@
     }, 1000);
   }
 
-  const connectionLabels = { connecting: "Connecting…", open: "Live", error: "Reconnecting…" };
   const versionTitle = $derived(
     system ? `Panel v${system.panel_version} · Punakawan v${system.punakawan_version}` : "",
   );
@@ -24,9 +22,8 @@
 
 <!--
   Deliberately minimal: the sidebar already carries the brand, so the top
-  bar is only a right-aligned status strip. Version and connection state
-  are compact glyphs whose full text is revealed on hover (title) and to
-  assistive tech (aria-label), rather than always-on chips.
+  bar is only a right-aligned status strip. Version details are revealed on
+  hover (title) and to assistive tech (aria-label).
 -->
 <header>
   <!--
@@ -49,15 +46,6 @@
   {#if system}
     <span class="info" data-testid="panel-version" title={versionTitle} aria-label={versionTitle}><Icon name="info" size={16} /></span>
   {/if}
-  <span
-    class="connection connection-{getConnectionStatus()}"
-    data-testid="connection-indicator"
-    title={connectionLabels[getConnectionStatus()]}
-    aria-label={`Connection: ${connectionLabels[getConnectionStatus()]}`}
-  >
-    <span class="connection-dot" aria-hidden="true"></span>
-    <span class="connection-label">{connectionLabels[getConnectionStatus()]}</span>
-  </span>
   <time title="Local time">{now.toLocaleTimeString()}</time>
 </header>
 
@@ -115,50 +103,12 @@
     font-size: 0.85rem;
     font-variant-numeric: tabular-nums;
   }
-  .connection {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.22rem 0.55rem;
-    border: 1px solid var(--color-border);
-    border-radius: 999px;
-    background: var(--color-surface);
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--color-text-muted);
-    cursor: default;
-  }
-  .connection-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: currentColor;
-    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 13%, transparent);
-  }
-  .connection-open {
-    color: var(--color-success);
-  }
-  .connection-error {
-    color: var(--color-danger);
-  }
-  .connection-connecting {
-    color: var(--color-warning);
-  }
-
   @media (max-width: 639px) {
     header {
       padding: 0.5rem 1rem;
     }
     .brand-mobile {
       display: inline-flex;
-    }
-    /* Reclaim horizontal room on small screens: drop the verbose connection
-       label to just its dot; the aria-label/title still carry the state. */
-    .connection {
-      padding: 0.22rem 0.4rem;
-    }
-    .connection-label {
-      display: none;
     }
   }
 </style>

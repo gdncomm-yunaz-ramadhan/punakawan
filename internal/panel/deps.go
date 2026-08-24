@@ -17,7 +17,6 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/runtime"
 	"github.com/ygrip/punakawan/internal/panel/settings"
 	"github.com/ygrip/punakawan/internal/panel/sources"
-	"github.com/ygrip/punakawan/internal/panel/tasksnapshot"
 	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -30,29 +29,12 @@ const Version = "0.1.0"
 // (internal/panel/contract) that every HTTP handler reaches Punakawan's
 // data through.
 type Readers struct {
-	Workspace    contract.WorkspaceReader
-	Session      contract.SessionReader
-	Task         contract.TaskReader
-	Knowledge    contract.KnowledgeReader
-	Evidence     contract.EvidenceReader
-	Approval     contract.ApprovalReader
-	GlobalSearch contract.GlobalSearchReader
-	Project      contract.ProjectReader
-	Roles        contract.RolesReader
-	// Contradiction/Impact/Dossier deliberately have no live implementation
-	// now that the ceremony surfaces backing them are gone; they stay
-	// declared only because internal/panel/events/reconciler.go still
-	// null-checks and polls them, degrading those three SSE event kinds to a
-	// silent no-op rather than a nil-pointer panic.
-	Contradiction contract.ContradictionReader
-	Impact        contract.ImpactReader
-	Dossier       contract.DossierReader
-
+	Workspace contract.WorkspaceReader
+	Project   contract.ProjectReader
+	Roles     contract.RolesReader
 	// Delivery is nil when this panel instance could not reach the daemon
-	// at startup (e.g. punakawand not installed) - handlers and the events
-	// watcher treat a nil Delivery the same way they already treat a nil
-	// Contradiction/Impact/Dossier: degrade to a 503/no-op instead of a
-	// nil-pointer panic. Server.Start populates it once it has connected.
+	// at startup (e.g. punakawand not installed). Delivery handlers degrade
+	// to 503 instead of panicking. Server.Start populates it once connected.
 	Delivery contract.DeliveryReader
 
 	// Runtime is the bounded *app.App pool (Phase 3). The server owns its
@@ -66,11 +48,6 @@ type Readers struct {
 // (WorkspaceReader and GlobalSearchReader use it to reach every
 // registered workspace, not just a's own).
 func NewReaders(a *app.App, reg *registry.Store) Readers {
-	// One shared task snapshot service: the board, table, dependency graph,
-	// and count widgets reuse a single `bd list` + `bd ready` refresh instead
-	// of each shelling out to bd independently (Phase 5, §8/§12).
-	taskSnap := tasksnapshot.NewService(tasksnapshot.BeadsRunner(a.Supervisor, a.Workspace.Root))
-
 	// Bounded pool of loaded *app.App runtimes, seeded with the long-lived
 	// primary. Non-primary workspaces are Acquire'd and reused across requests
 	// instead of app.Load/Close per call; the primary is never evicted or
@@ -101,13 +78,7 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		Runtime:     runtimeMgr,
 	}
 	return Readers{
-		Workspace:    workspaceReader,
-		Session:      &sources.SessionSource{App: a},
-		Task:         &sources.TaskSource{App: a, Snapshot: taskSnap},
-		Knowledge:    &sources.KnowledgeSource{App: a},
-		Evidence:     &sources.EvidenceSource{App: a},
-		Approval:     &sources.ApprovalSource{App: a},
-		GlobalSearch: &sources.GlobalSearchSource{App: a, Registry: reg, Runtime: runtimeMgr},
+		Workspace: workspaceReader,
 		// The project source composes the cached workspace reader's
 		// counts-only Summary and the registry for id->root resolution, so it
 		// never re-runs the deep bd/dolt/git inspection whose result the
@@ -121,7 +92,7 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 // ProjectSource implements contract.ProjectReader over the project files at
 // each workspace root, per the project performance plan §3/§4. Reads reuse
 // the injected ProjectWorkspaceReader's snapshot-backed per-workspace counts
-// (repositories, knowledge, tasks, sessions) instead of duplicating that
+// (repositories, knowledge, sessions) instead of duplicating that
 // inspection;
 // project identity and metadata come from internal/project.Load. Metadata
 // mutations load the project fresh, apply an optimistically-locked change,
@@ -139,10 +110,10 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 // it has no Get: the project routes need the registered list and one project's
 // counts, never the live per-source Health detail Get computes. Reading counts
 // through Get is what made GET /api/v1/projects/{id} open the project's Dolt
-// store, shell out to `bd list` plus `bd ready`, and run `git status` per
-// repository on every single request - measured at ~8s cold and ~2.6s warm for
-// a project with a real task graph, for numbers the snapshot cache was already
-// maintaining. Summary serves those same counts from that snapshot.
+// store and run `git status` per repository on every single request -
+// measured at ~8s cold and ~2.6s warm for a project with several
+// repositories, for numbers the snapshot cache was already maintaining.
+// Summary serves those same counts from that snapshot.
 type ProjectWorkspaceReader interface {
 	List(ctx context.Context) ([]contract.WorkspaceSummary, error)
 	Summary(ctx context.Context, projectID string) (contract.WorkspaceSummary, error)
@@ -245,8 +216,6 @@ func (s *ProjectSource) summaryFromWorkspace(ws contract.WorkspaceSummary) contr
 		Availability:       string(ws.Availability),
 		RepositoryCount:    ws.RepositoryCount,
 		KnowledgeCount:     ws.KnowledgeCount,
-		OpenTaskCount:      ws.OpenTaskCount,
-		BlockedTaskCount:   ws.BlockedTaskCount,
 		ActiveSessionCount: ws.ActiveSessionCount,
 		MetadataCount:      metadataCount,
 	}
