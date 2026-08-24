@@ -7,7 +7,6 @@
     type DeliveryOrchestration,
     type DeliveryView,
   } from "../../lib/api/client";
-  import { onPanelEvent } from "../../lib/events/sse.svelte";
   import { navigate } from "../../lib/router/router.svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
@@ -92,7 +91,6 @@
 
   onMount(() => {
     load();
-    return onPanelEvent(load);
   });
 
   function open(id: string) {

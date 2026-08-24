@@ -1,8 +1,5 @@
 // tools_plan.go implements plan_save and plan_get, the primary MCP
-// surface over the first-class Plan aggregate (internal/plan,
-// punakawan-efficiency-project-hygiene-refactor-plan.md §4). submit_final_plan
-// (tools_semar.go) is kept as a thin compatibility wrapper over the same
-// Store rather than duplicated here.
+// surface over the first-class Plan aggregate in internal/plan.
 package mcpserver
 
 import (

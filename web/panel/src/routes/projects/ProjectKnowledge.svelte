@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { untrack } from "svelte";
   import {
     listProjectKnowledge,
     getProjectKnowledge,
@@ -9,7 +9,6 @@
     type KnowledgeRecord,
     type SearchResult,
   } from "../../lib/api/client";
-  import { onPanelEvent } from "../../lib/events/sse.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
@@ -182,18 +181,6 @@
     }
   }
 
-  // A live refresh swaps the list contents in place without touching
-  // `loading`, so a record the user is reading does not vanish behind a
-  // spinner every time somebody else writes knowledge.
-  async function refresh(id: string) {
-    error = null;
-    try {
-      await fetchRows(id);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
   async function open(recordId: string) {
     if (selectedId === recordId) {
       selectedId = null;
@@ -224,19 +211,7 @@
     }
   }
 
-  // Only knowledge writes can change this list; every other panel event
-  // (sessions, tasks, approvals, deliveries) would refetch it for nothing.
-  const refreshOn = new Set(["knowledge.created", "knowledge.updated", "knowledge.superseded"]);
-
-  onMount(() => {
-    return onPanelEvent((evt) => {
-      if (!refreshOn.has(evt.type)) return;
-      refresh(projectId);
-    });
-  });
-  // Single trigger for the first load and for a project change - effects run
-  // after the first render too, so loading from onMount as well would fire
-  // the same request twice per open. The discrete filter controls are read
+  // Single trigger for the first load and for a project change. The discrete filter controls are read
   // here so they re-run the load; the free-text fields deliberately are not,
   // because they update on every keystroke and would then fire one request
   // per character - they refetch from their own change handlers instead.
@@ -419,7 +394,7 @@
           <h5 id="recipe-selector-heading-{detail.id}">Selector</h5>
           <p class="hint">
             The structured condition this recipe's compiled query is built from - matches
-            <code>punakawan knowledge recipe explain</code>'s clause vocabulary.
+            the recipe selector clause vocabulary.
           </p>
           {#if recipe.selector.all?.length}
             <p class="selector-group-label">All of:</p>

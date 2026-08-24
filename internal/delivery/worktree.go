@@ -425,6 +425,24 @@ func (s *Store) CommitLane(ctx context.Context, orchestrationID, laneID, message
 	if err != nil {
 		return "", fmt.Errorf("delivery: resolve resulting commit sha: %w", err)
 	}
+	payload, err := json.Marshal(map[string]interface{}{"sha": sha, "message": message})
+	if err != nil {
+		return sha, fmt.Errorf("delivery: encode commit record: %w", err)
+	}
+	writeKey := "lane-commit:" + orchestrationID + ":" + laneID + ":" + sha
+	if err := s.db.Write(ctx, writeKey, "record lane commit "+laneID, func(tx *sql.Tx) error {
+		events, err := loadEventsTx(ctx, tx, orchestrationID)
+		if err != nil {
+			return err
+		}
+		return insertEvent(ctx, tx, eventRow{
+			ID: newID(), OrchestrationID: orchestrationID, EntityID: &laneID, IdempotencyKey: writeKey,
+			Type: string(protocol.DeliveryEventTypeLaneCommitRecorded), Payload: string(payload),
+			Sequence: len(events), OccurredAt: time.Now().UTC(),
+		})
+	}); err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return sha, fmt.Errorf("delivery: record resulting commit %s: %w", sha, err)
+	}
 	return sha, nil
 }
 

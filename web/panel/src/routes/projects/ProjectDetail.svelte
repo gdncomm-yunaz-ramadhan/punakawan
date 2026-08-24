@@ -1,22 +1,17 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { getProject, type ProjectDetail, type Availability } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
-  import { onPanelEvent } from "../../lib/events/sse.svelte";
   import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import Tabs from "../../lib/components/Tabs.svelte";
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard, { type MetricAccent } from "../../lib/components/cards/MetricCard.svelte";
-  import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import type { IconName } from "../../lib/components/Icon.svelte";
   import ProjectMetadata from "./ProjectMetadata.svelte";
   import ProjectRoles from "./ProjectRoles.svelte";
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
   import ProjectHealth from "./ProjectHealth.svelte";
-  import ProjectSessions from "./ProjectSessions.svelte";
   import ProjectKnowledge from "./ProjectKnowledge.svelte";
-  import ApprovalsList from "../approvals/ApprovalsList.svelte";
 
   interface Props {
     projectId: string;
@@ -32,25 +27,17 @@
   // matching /projects/{id}/... endpoint with its own empty/error states.
   const activeTabs = new Set([
     "summary",
-    "metadata",
-    "roles",
     "workflows",
     "knowledge",
     "plans",
-    "sessions",
-    "approvals",
-    "health",
+    "settings",
   ]);
   const tabs = [
     { id: "summary", label: "Summary", icon: "dashboard" as IconName },
-    { id: "metadata", label: "Metadata", icon: "database" as IconName },
-    { id: "roles", label: "Roles", icon: "users" as IconName },
+    { id: "plans", label: "Plans", icon: "file" as IconName },
     { id: "workflows", label: "Workflows", icon: "git-branch" as IconName },
     { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
-    { id: "plans", label: "Plans", icon: "file" as IconName },
-    { id: "sessions", label: "Sessions", icon: "activity" as IconName },
-    { id: "approvals", label: "Approvals", icon: "approval" as IconName },
-    { id: "health", label: "Health", icon: "heart" as IconName },
+    { id: "settings", label: "Settings", icon: "settings" as IconName },
   ];
 
   function tabFromUrl(): string {
@@ -83,43 +70,6 @@
     }
   }
 
-  // A live refresh reuses the same request but leaves `loading` and the
-  // already-rendered project alone, so an incoming event updates the header
-  // and the counts in place instead of tearing the page down to a spinner.
-  async function refresh(id: string) {
-    error = null;
-    try {
-      project = await getProject(id);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  // The summary this view renders spans several entity types at once -
-  // repository and metadata counts, active session count, knowledge count,
-  // availability - so the filter is deliberately broader than a single
-  // entity's events. It still excludes every event that cannot move any of
-  // those numbers (approvals, evidence, deliveries, adapter health,
-  // contradictions, dossiers, handoffs) and the high-frequency
-  // session.progress/session.phase_changed frames, which report progress
-  // inside one session without changing how many are active.
-  const refreshOn = new Set([
-    "workspace.updated",
-    "workspace.availability_changed",
-    "session.started",
-    "session.completed",
-    "session.failed",
-    "knowledge.created",
-    "knowledge.updated",
-    "knowledge.superseded",
-  ]);
-
-  onMount(() => {
-    return onPanelEvent((evt) => {
-      if (!refreshOn.has(evt.type)) return;
-      refresh(projectId);
-    });
-  });
   // The effect is the single trigger for both the first load and any later
   // projectId change - effects also run after the first render, so loading
   // from onMount as well would fire the very same request twice per open.
@@ -137,7 +87,6 @@
     if (!p) return [];
     return [
       { label: "Repositories", value: p.repository_count, accent: "indigo", icon: "folder" },
-      { label: "Active sessions", value: p.active_session_count, accent: "teal", icon: "activity" },
       { label: "Knowledge records", value: p.knowledge_count, accent: "terracotta", icon: "book" },
       { label: "Metadata entries", value: p.metadata_count, accent: "success", icon: "database" },
     ];
@@ -183,14 +132,6 @@
         {/each}
       </BentoGrid>
     </div>
-  {:else if activeId === "metadata"}
-    <div id="tabpanel-metadata" role="tabpanel" aria-labelledby="tab-metadata">
-      <ProjectMetadata {projectId} />
-    </div>
-  {:else if activeId === "roles"}
-    <div id="tabpanel-roles" role="tabpanel" aria-labelledby="tab-roles">
-      <ProjectRoles {projectId} />
-    </div>
   {:else if activeId === "workflows"}
     <div id="tabpanel-workflows" role="tabpanel" aria-labelledby="tab-workflows">
       <ProjectWorkflows {projectId} />
@@ -199,29 +140,18 @@
     <div id="tabpanel-knowledge" role="tabpanel" aria-labelledby="tab-knowledge">
       <ProjectKnowledge {projectId} />
     </div>
-  {:else if activeId === "sessions"}
-    <div id="tabpanel-sessions" role="tabpanel" aria-labelledby="tab-sessions">
-      <ProjectSessions {projectId} />
-    </div>
   {:else if activeId === "plans"}
     <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">
       <ProjectPlans {projectId} />
     </div>
-  {:else if activeId === "approvals"}
-    <div id="tabpanel-approvals" role="tabpanel" aria-labelledby="tab-approvals">
-      <ApprovalsList workspaceId={projectId} />
-    </div>
-  {:else if activeId === "health"}
-    <div id="tabpanel-health" role="tabpanel" aria-labelledby="tab-health">
+  {:else if activeId === "settings"}
+    <div id="tabpanel-settings" role="tabpanel" aria-labelledby="tab-settings" class="settings-sections">
+      <h2>Project metadata</h2>
+      <ProjectMetadata {projectId} />
+      <h2>Agent policy</h2>
+      <ProjectRoles {projectId} />
+      <h2>Diagnostics</h2>
       <ProjectHealth {projectId} />
-    </div>
-  {:else}
-    {@const tab = tabs.find((t) => t.id === activeId)}
-    <div id={`tabpanel-${activeId}`} role="tabpanel" aria-labelledby={`tab-${activeId}`}>
-      <EmptyStateCard
-        title={`${tab?.label ?? "This section"} — coming soon`}
-        message="This section arrives in a later phase. There is no data to show yet."
-      />
     </div>
   {/if}
 {/if}

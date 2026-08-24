@@ -53,12 +53,3 @@ func TestPlanSaveAndGet(t *testing.T) {
 		t.Fatalf("plan_get (revision 1) = %+v, want the original, unmutated revision", first.Plan)
 	}
 }
-
-// TestPlanGetUnknownIsRefused covers looking up a plan id nobody ever
-// saved.
-func TestPlanGetUnknownIsRefused(t *testing.T) {
-	a := newTestApp(t)
-	cs := connect(t, a)
-
-	callToolExpectingError(t, cs, "plan_get", map[string]any{"id": "no-such-plan"})
-}

@@ -281,7 +281,7 @@ func (s *Store) GrantLease(ctx context.Context, idempotencyKey, orchestrationID,
 		// key retry - a retry lands on the same orchestration revision, and
 		// re-dispatching "implementation started" for it would just make a
 		// configured hook redo its own already-fired check for no reason.
-		s.dispatchOrchestrationEvent(ctx, orchestrationID, deliveryhooks.EventImplementationStarted,
+		s.dispatchOrchestrationEvent(ctx, orchestrationID, laneID, deliveryhooks.EventImplementationStarted,
 			"implementation started on lane "+laneID, nil)
 	}
 	return s.GetLane(ctx, orchestrationID, laneID)
@@ -357,7 +357,7 @@ func (s *Store) CompleteLease(ctx context.Context, idempotencyKey, orchestration
 	if fresh {
 		// Only the fresh completion dispatches, never the duplicate-
 		// idempotency-key retry, matching GrantLease's own reasoning above.
-		s.dispatchOrchestrationEvent(ctx, orchestrationID, deliveryhooks.EventImplementationCompleted,
+		s.dispatchOrchestrationEvent(ctx, orchestrationID, laneID, deliveryhooks.EventImplementationCompleted,
 			"implementation completed on lane "+laneID, nil)
 	}
 	return lane, nil

@@ -57,7 +57,7 @@ func testManifest() protocol.AdapterManifest {
 		Operations: protocol.AdapterManifestOperations{
 			"atlassian.getTransitionsForJiraIssue": {SideEffect: false},
 			"atlassian.addJiraComment":             {SideEffect: true, Approval: approvalRequired()},
-			"atlassian.transitionJiraIssue":         {SideEffect: true, Approval: approvalRequired()},
+			"atlassian.transitionJiraIssue":        {SideEffect: true, Approval: approvalRequired()},
 		},
 	}
 }
@@ -192,6 +192,40 @@ func TestHandle_PostsCommentForConfiguredEventAndDedupesOnRetry(t *testing.T) {
 	}
 	if len(fc.calls) != 1 {
 		t.Fatalf("calls after retry = %+v, want still exactly one (deduped)", fc.calls)
+	}
+}
+
+func TestHandle_LaneEventsDeduplicatePerLane(t *testing.T) {
+	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"implementation.started", "implementation.completed"}}
+	hook, store, fc, approve := newTestHook(t, cfg)
+	ctx := context.Background()
+	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	captureJiraRequirement(t, store, orch.Id, "PAY-1")
+	approve(orch.Id)
+
+	for _, eventType := range []deliveryhooks.EventType{
+		deliveryhooks.EventImplementationStarted,
+		deliveryhooks.EventImplementationCompleted,
+	} {
+		for _, laneID := range []string{"lane-a", "lane-b"} {
+			event := deliveryhooks.Event{
+				Type: eventType, DeliveryID: orch.Id, Revision: 7,
+				EntityID: laneID, Summary: string(eventType) + " on " + laneID,
+			}
+			if err := hook.Handle(ctx, event); err != nil {
+				t.Fatalf("Handle(%s, %s): %v", eventType, laneID, err)
+			}
+			if err := hook.Handle(ctx, event); err != nil {
+				t.Fatalf("Handle retry(%s, %s): %v", eventType, laneID, err)
+			}
+		}
+	}
+
+	if len(fc.calls) != 4 {
+		t.Fatalf("calls = %d, want one comment for each event type and lane; calls=%+v", len(fc.calls), fc.calls)
 	}
 }
 

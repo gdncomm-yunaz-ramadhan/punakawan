@@ -21,7 +21,7 @@ func newMCPCmd() *cobra.Command {
 func newMCPServeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
-		Short: "Serve Semar/Gareng/Petruk/Bagong as MCP prompts and tools over stdio (§28)",
+		Short: "Serve Punakawan's focused project/workflow/plan/delivery tools over stdio",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := loadAppOptional()
 			if err != nil {

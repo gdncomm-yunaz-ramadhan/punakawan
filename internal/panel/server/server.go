@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
@@ -17,12 +16,10 @@ import (
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
 	"github.com/ygrip/punakawan/internal/panel/deliverysource"
-	"github.com/ygrip/punakawan/internal/panel/events"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/session"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
-	"github.com/ygrip/punakawan/internal/recipe"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 )
 
@@ -63,20 +60,7 @@ type Server struct {
 	logger    *slog.Logger
 	startedAt time.Time
 
-	hub                *events.Hub
-	stopReconciliation context.CancelFunc
-	reconcileDone      chan struct{}
-	stopDeliveryWatch  context.CancelFunc
-	deliveryWatchDone  chan struct{}
-	stopRuntimeSweep   context.CancelFunc
-
-	// shutdownCtx/cancelShutdown are the server's shutdown signal, separate
-	// from any one request's context: it is cancelled once, at the very start
-	// of Shutdown, so every long-lived handler (currently just the SSE
-	// stream) can stop waiting on its own client and return immediately
-	// instead of holding httpServer.Shutdown's connection-draining open.
-	shutdownCtx    context.Context
-	cancelShutdown context.CancelFunc
+	stopRuntimeSweep context.CancelFunc
 
 	sessions     *session.Manager
 	bootstrapURL string
@@ -103,17 +87,13 @@ func New(a *app.App, reg *registry.Store, opts Options) *Server {
 	if opts.DaemonClient != nil {
 		readers.Delivery = &deliverysource.Source{Client: opts.DaemonClient}
 	}
-	shutdownCtx, cancelShutdown := context.WithCancel(context.Background())
 	return &Server{
-		app:            a,
-		registry:       reg,
-		readers:        readers,
-		opts:           opts,
-		logger:         logger,
-		hub:            events.NewHub(),
-		sessions:       session.NewManager(),
-		shutdownCtx:    shutdownCtx,
-		cancelShutdown: cancelShutdown,
+		app:      a,
+		registry: reg,
+		readers:  readers,
+		opts:     opts,
+		logger:   logger,
+		sessions: session.NewManager(),
 	}
 }
 
@@ -179,26 +159,9 @@ func (s *Server) Start() error {
 		BoundAddr:        listener.Addr().String(),
 		StartedAt:        s.startedAt,
 	}
-	// Recipes is resolved lazily (see ArtifactStores' own doc comment):
-	// opening the knowledge store starts an external Dolt server process,
-	// which every plan-only request (the overwhelming majority) should
-	// never pay for. App.OpenKnowledge memoizes its own result, so this
-	// closure only actually starts Dolt once, on the first
-	// retrieval_recipe-typed request this server instance receives.
-	recipesFactory := func() (*recipe.RecipeStore, error) {
-		knowledgeStore, err := s.app.OpenKnowledge()
-		if err != nil {
-			return nil, err
-		}
-		return &recipe.RecipeStore{Repo: &recipe.Repository{Store: knowledgeStore}}, nil
-	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
 	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
 	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
-	mux.HandleFunc("GET /api/v1/overview", api.OverviewHandler(s.readers, s.app.Workspace.ID))
-	mux.HandleFunc("GET /api/v1/events", events.SSEHandler(s.hub, s.shutdownCtx))
-	mux.HandleFunc("GET /api/v1/search", api.GlobalSearchHandler(s.readers.GlobalSearch))
-	mux.HandleFunc("GET /api/v1/workspaces/{workspaceId}/approvals", api.ApprovalsHandler(s.readers.Approval))
 
 	// Delivery orchestrations: served straight from the daemon's own
 	// delivery.Store over its authenticated loopback transport
@@ -275,48 +238,20 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/health", api.HealthHandler(healthCache))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/health/refresh", session.RequireSession(s.sessions, api.HealthRefreshHandler(healthCache)))
 
-	// Project-scoped Sessions / Evidence / Knowledge reads. These resolve the
+	// Project-scoped Knowledge reads resolve the
 	// backing *app.App per project id through the runtime pool (the primary
-	// is used directly), so a project's Knowledge/Sessions tabs (including a
-	// session's evidence) work for any registered project, not only the
-	// startup workspace. The {workspaceId} path-value name is intentional: it
-	// lets the existing workspace-scoped handlers be reused verbatim over a
-	// project-aware reader.
+	// is used directly), so Knowledge works for any registered project.
 	projResolver := &sources.AppResolver{
 		PrimaryID: s.app.Workspace.ID,
 		Primary:   s.app,
 		Runtime:   s.readers.Runtime,
 		Resolve:   s.resolveRoot,
 	}
-	projSessions := sources.ProjectSessionReader{AppResolver: projResolver}
 	projKnowledge := sources.ProjectKnowledgeReader{AppResolver: projResolver}
-	projApprovals := sources.ProjectApprovalReader{AppResolver: projResolver}
-	projEvidence := sources.ProjectEvidenceReader{AppResolver: projResolver}
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/approvals", api.ApprovalsHandler(projApprovals))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions", api.SessionsHandler(projSessions))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}", api.SessionHandler(projSessions))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/sessions/{sessionId}/evidence", api.EvidenceListHandler(projEvidence))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/evidence/{evidenceId}", api.EvidenceHandler(projEvidence))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/evidence/{evidenceId}/preview", api.EvidencePreviewHandler(projEvidence))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge", api.KnowledgeListHandler(projKnowledge))
 	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge/{knowledgeRest...}", api.KnowledgeDetailHandler(projKnowledge))
 
 	mux.HandleFunc("POST /api/v1/session/exchange", session.ExchangeHandler(s.sessions))
-
-	// Project-scoped Context Improvements inbox (agent-context plan §8): the
-	// artifact review/proposal protocol it used to be part of is gone, but this
-	// endpoint still resolves per-project Plan/Learning stores via the same
-	// artifact.ProjectStores resolver used by /projects/.../plans.
-	projectArtifacts := api.NewProjectArtifactStores(
-		projectStores,
-		recipesFactory,
-		s.app.OpenKnowledge,
-		s.app.OpenLearning,
-	)
-	pa := "/api/v1/projects/{projectId}"
-	mux.HandleFunc("GET "+pa+"/context-improvements", projectArtifacts.ContextImprovements())
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/accept", session.RequireSession(s.sessions, projectArtifacts.AcceptProposal()))
-	mux.HandleFunc("POST "+pa+"/reviews/{reviewId}/proposals/{proposalId}/reject", session.RequireSession(s.sessions, projectArtifacts.RejectProposal()))
 
 	mux.Handle("/", static)
 
@@ -336,28 +271,6 @@ func (s *Server) Start() error {
 		if err := s.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			s.logger.Error("panel server exited", "error", err)
 		}
-	}()
-
-	reconcileCtx, cancel := context.WithCancel(context.Background())
-	s.stopReconciliation = cancel
-	s.reconcileDone = make(chan struct{})
-	reconciler := &events.Reconciler{Hub: s.hub, Readers: s.readers, WorkspaceID: s.app.Workspace.ID}
-	go func() {
-		defer close(s.reconcileDone)
-		reconciler.Run(reconcileCtx)
-	}()
-
-	// DeliveryWatcher long-polls the daemon per orchestration instead of
-	// ticking over every entity like Reconciler's tiers do, so it runs as
-	// its own goroutine rather than a fourth Reconciler tier (see its own
-	// doc comment). A nil s.readers.Delivery makes Run an immediate no-op.
-	deliveryCtx, cancelDelivery := context.WithCancel(context.Background())
-	s.stopDeliveryWatch = cancelDelivery
-	s.deliveryWatchDone = make(chan struct{})
-	watcher := &events.DeliveryWatcher{Hub: s.hub, Reader: s.readers.Delivery}
-	go func() {
-		defer close(s.deliveryWatchDone)
-		watcher.Run(deliveryCtx)
 	}()
 
 	// Periodically close project runtimes that have gone idle, so the pool does
@@ -391,43 +304,8 @@ func (s *Server) Start() error {
 // in-flight requests are given ctx's deadline to finish rather than being
 // dropped. Stopping never modifies canonical workspace state (§30) - this
 // server only reads from the stores behind its readers.
-//
-// It also waits (bounded by ctx) for the background reconciler goroutine
-// started in Start to actually exit, not just for its context to be
-// cancelled. Cancelling reconcileCtx alone does not stop reconcileOnce
-// synchronously - without this wait, the goroutine can still be mid-poll
-// (or start one more poll) after Shutdown returns and after the caller
-// proceeds to close/dispose of App, which raced with test cleanup: a poll
-// that calls a.OpenKnowledge() after App.Close has already run and nil'd
-// out its memoized store would silently start a brand new, un-tracked Dolt
-// sql-server process writing into a directory the caller believes is now
-// quiescent (root cause of punokawan-q9r.6.1's flaky TempDir cleanup).
 func (s *Server) Shutdown(ctx context.Context) error {
-	// Fire the shutdown signal first, before anything else: this is what lets
-	// an open SSE connection's handler goroutine (events.SSEHandler) notice
-	// shutdown has begun and return right away, instead of blocking
-	// s.httpServer.Shutdown below on a client that only disconnects on its
-	// own initiative (which, for a browser tab left open, may be never).
-	s.cancelShutdown()
 	s.sessions.InvalidateAll()
-	if s.stopReconciliation != nil {
-		s.stopReconciliation()
-	}
-	if s.reconcileDone != nil {
-		select {
-		case <-s.reconcileDone:
-		case <-ctx.Done():
-		}
-	}
-	if s.stopDeliveryWatch != nil {
-		s.stopDeliveryWatch()
-	}
-	if s.deliveryWatchDone != nil {
-		select {
-		case <-s.deliveryWatchDone:
-		case <-ctx.Done():
-		}
-	}
 	if s.stopRuntimeSweep != nil {
 		s.stopRuntimeSweep()
 	}
@@ -446,24 +324,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // loggingMiddleware writes one structured log line per request, per
 // §27's observability expectations, without logging request bodies or
 // headers that might carry secrets.
-//
-// An SSE handler (events.SSEHandler) does not return until the client
-// disconnects, so ServeHTTP blocks for the connection's whole lifetime -
-// often minutes - rather than the time spent doing work. Logging that
-// under the same "panel request"/duration_ms shape as every other route
-// makes it read as a multi-minute stall, when nothing was actually slow.
-// Detecting the response's Content-Type (set by the handler before this
-// middleware ever logs) lets this stay handler-agnostic - it labels any
-// streaming response this way, not just today's one SSE route.
 func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
 		duration := time.Since(start).Milliseconds()
-		if strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream") {
-			logger.Info("panel stream closed", "method", r.Method, "path", r.URL.Path, "connection_duration_ms", duration)
-			return
-		}
 		logger.Info("panel request", "method", r.Method, "path", r.URL.Path, "duration_ms", duration)
 	})
 }
@@ -481,10 +346,7 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 // WriteHeader/Write exactly once at the end (see writeJSON), so we wrap the
 // ResponseWriter and inject the header just-in-time on the first
 // WriteHeader/Write call - the moment before the headers are flushed, which
-// is also the moment the handler has finished its probed work. A handler that
-// streams (e.g. the SSE endpoint) would flush headers early and thus capture
-// only the timings recorded so far; that is acceptable for a dev-only
-// diagnostic and those endpoints are not the warm-read paths §18 targets.
+// is also the moment the handler has finished its probed work.
 func timingMiddleware(enabled bool, next http.Handler) http.Handler {
 	if !enabled {
 		return next
@@ -534,9 +396,7 @@ func (w *timingResponseWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// Flush forwards to the underlying writer when it supports flushing (the SSE
-// endpoint relies on it), injecting the header first so streamed responses
-// still carry whatever timings were recorded before the first flush.
+// Flush forwards to the underlying writer when it supports flushing.
 func (w *timingResponseWriter) Flush() {
 	w.injectServerTiming()
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {

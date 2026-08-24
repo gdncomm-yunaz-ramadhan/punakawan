@@ -24,8 +24,6 @@ describe("SystemPage", () => {
         read_only: true,
         bound_address: "127.0.0.1:7331",
         registered_workspaces: 2,
-        watcher_status: "not_implemented",
-        feature_flags: [],
       }),
     );
 

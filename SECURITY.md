@@ -12,5 +12,5 @@ vulnerabilities.
 
 ## Scope
 
-See `docs/security/` for the threat model and capability/approval policy
-design (in progress, tracked under Milestone 0 and Milestone 9).
+Reports involving repository integrity, credential exposure, process
+supervision, delivery approvals, or the loopback panel are in scope.

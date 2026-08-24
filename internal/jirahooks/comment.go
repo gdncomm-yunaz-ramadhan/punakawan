@@ -22,6 +22,9 @@ func buildComment(event deliveryhooks.Event) string {
 	if event.PlanID != "" {
 		lines = append(lines, fmt.Sprintf("Plan: %s r%d", event.PlanID, event.PlanRevision))
 	}
+	if event.EntityID != "" {
+		lines = append(lines, "Lane: "+event.EntityID)
+	}
 	if len(event.Projects) > 0 {
 		lines = append(lines, "Projects: "+strings.Join(event.Projects, ", "))
 	}

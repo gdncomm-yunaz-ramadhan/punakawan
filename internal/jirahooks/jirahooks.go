@@ -95,7 +95,7 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 		return nil // no Jira-sourced requirement has been captured for this delivery: nothing to update
 	}
 
-	fired, err := h.alreadyFired(ctx, event.DeliveryID, event.Type, event.Revision)
+	fired, err := h.alreadyFired(ctx, event)
 	if err != nil {
 		return fmt.Errorf("jirahooks: check dispatch marker for %s on %s: %w", event.Type, issueKey, err)
 	}
@@ -142,7 +142,7 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 	if !acted {
 		return nil // nothing configured for this event type actually happened, so there is nothing to mark as fired
 	}
-	return h.markFired(ctx, event.DeliveryID, event.Type, event.Revision, issueKey)
+	return h.markFired(ctx, event, issueKey)
 }
 
 // resolveIssueKey returns the Jira issue key linked to deliveryID via its

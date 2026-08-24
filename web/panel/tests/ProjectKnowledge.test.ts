@@ -2,32 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ProjectKnowledge from "../src/routes/projects/ProjectKnowledge.svelte";
 
-// jsdom has no EventSource, so the real module never connects. Mocking
-// sse.svelte's small public surface lets these tests hand a synthetic frame
-// straight to the listener the component registered through onPanelEvent.
-let panelListeners: Array<(evt: MessageEvent) => void> = [];
-
-vi.mock("../src/lib/events/sse.svelte", () => ({
-  onPanelEvent: (cb: (evt: MessageEvent) => void) => {
-    panelListeners.push(cb);
-    return () => {
-      panelListeners = panelListeners.filter((l) => l !== cb);
-    };
-  },
-  parsePanelEvent: (evt: MessageEvent) => {
-    try {
-      return JSON.parse((evt as unknown as { data: string }).data);
-    } catch {
-      return null;
-    }
-  },
-}));
-
-function emitPanelEvent(type: string) {
-  const evt = { type, data: JSON.stringify({ id: "evt-1", type }) } as unknown as MessageEvent;
-  for (const cb of [...panelListeners]) cb(evt);
-}
-
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
 }
@@ -72,7 +46,6 @@ type FetchMock = ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
-  panelListeners = [];
 });
 
 afterEach(() => {
@@ -169,26 +142,6 @@ describe("ProjectKnowledge", () => {
     await fireEvent.change(search, { target: { value: "ref" } });
     await waitFor(() => expect((fetch as unknown as FetchMock).mock.calls).toHaveLength(2));
     expect(String((fetch as unknown as FetchMock).mock.calls[1][0])).toContain("q=ref");
-  });
-
-  it("refreshes on a knowledge event and ignores unrelated panel events", async () => {
-    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ items: [record] }));
-
-    render(ProjectKnowledge, { props: { projectId: "proj-a" } });
-    await waitFor(() => expect(screen.getByText("Refund SLA policy")).toBeTruthy());
-    expect(panelListeners.length).toBeGreaterThan(0);
-
-    emitPanelEvent("session.progress");
-    emitPanelEvent("task.updated");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect((fetch as unknown as FetchMock).mock.calls).toHaveLength(1);
-
-    emitPanelEvent("knowledge.updated");
-    await waitFor(() => expect((fetch as unknown as FetchMock).mock.calls).toHaveLength(2));
-    // The refresh is silent: the list stays rendered instead of collapsing
-    // back to the loading placeholder.
-    expect(screen.queryByText("Loading…")).toBeNull();
-    expect(screen.getByText("Refund SLA policy")).toBeTruthy();
   });
 
   it("shows an error state when the API call fails", async () => {

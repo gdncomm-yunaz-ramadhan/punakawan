@@ -1,7 +1,5 @@
 # Contributing
 
-Punakawan is developed against the plan in
-[`punakawan-go-typescript-detailed-plan.md`](./punakawan-go-typescript-detailed-plan.md).
 Work is tracked in `bd` (beads); run `bd ready` to see unblocked work.
 
 ## Setup

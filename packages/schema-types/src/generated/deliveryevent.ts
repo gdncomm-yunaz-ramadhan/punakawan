@@ -40,6 +40,7 @@ export interface DeliveryEvent {
     | "lane.verification_dimension_recorded"
     | "lane.ci_check_reported"
     | "lane.review_conclusion_recorded"
+    | "lane.commit_recorded"
     | "lane.pr_published"
     | "lane.repair_cycle_started"
     | "lane.escalated"

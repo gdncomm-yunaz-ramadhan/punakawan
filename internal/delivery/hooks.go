@@ -17,14 +17,13 @@ import (
 // are configured. Every lane-scoped call site (a lease granted or
 // completed, a review conclusion recorded) uses this rather than building
 // its own Event, because a hook resolves its external target (e.g. a
-// linked Jira issue) per delivery, not per lane - the individual lane that
-// triggered the transition has no separate identity a hook downstream of
-// this call could use. Loading the orchestration is a best-effort step
-// here: a failure is logged and swallowed rather than propagated, since by
+// linked Jira issue) per delivery, while entityID preserves the lane identity
+// needed to deduplicate lane-scoped events. Loading the orchestration is a
+// best-effort step here: a failure is logged and swallowed rather than propagated, since by
 // the time this runs the actual delivery state change it rides along with
 // has already committed and must not be affected by a hook-plumbing
 // problem.
-func (s *Store) dispatchOrchestrationEvent(ctx context.Context, orchestrationID string, eventType deliveryhooks.EventType, summary string, pullRequests []string) {
+func (s *Store) dispatchOrchestrationEvent(ctx context.Context, orchestrationID, entityID string, eventType deliveryhooks.EventType, summary string, pullRequests []string) {
 	if s.hooks == nil {
 		return
 	}
@@ -35,7 +34,7 @@ func (s *Store) dispatchOrchestrationEvent(ctx context.Context, orchestrationID 
 		return
 	}
 	s.hooks.Dispatch(ctx, deliveryhooks.Event{
-		Type: eventType, DeliveryID: orchestrationID, Revision: orch.Revision,
+		Type: eventType, DeliveryID: orchestrationID, EntityID: entityID, Revision: orch.Revision,
 		Title: derefOrEmpty(orch.Title), Projects: orch.ProjectIds,
 		PlanID: derefOrEmpty(orch.PlanId), PlanRevision: derefOrZero(orch.PlanRevision),
 		PullRequests: pullRequests, Summary: summary,

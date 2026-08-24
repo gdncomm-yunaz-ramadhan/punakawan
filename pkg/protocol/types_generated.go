@@ -3465,6 +3465,7 @@ const DeliveryEventTypeInputResolved DeliveryEventType = "input.resolved"
 const DeliveryEventTypeLaneBagongSubmitted DeliveryEventType = "lane.bagong_submitted"
 const DeliveryEventTypeLaneBlocked DeliveryEventType = "lane.blocked"
 const DeliveryEventTypeLaneCiCheckReported DeliveryEventType = "lane.ci_check_reported"
+const DeliveryEventTypeLaneCommitRecorded DeliveryEventType = "lane.commit_recorded"
 const DeliveryEventTypeLaneCreated DeliveryEventType = "lane.created"
 const DeliveryEventTypeLaneEscalated DeliveryEventType = "lane.escalated"
 const DeliveryEventTypeLaneGarengSubmitted DeliveryEventType = "lane.gareng_submitted"
@@ -3519,6 +3520,7 @@ var enumValues_DeliveryEventType = []interface{}{
 	"lane.verification_dimension_recorded",
 	"lane.ci_check_reported",
 	"lane.review_conclusion_recorded",
+	"lane.commit_recorded",
 	"lane.pr_published",
 	"lane.repair_cycle_started",
 	"lane.escalated",

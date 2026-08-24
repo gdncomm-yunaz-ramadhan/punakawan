@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -20,11 +19,8 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
-	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/timing"
-	"github.com/ygrip/punakawan/internal/search"
-	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -153,17 +149,6 @@ func TestServerSystemEndpoint(t *testing.T) {
 	}
 }
 
-func TestServerOverviewEndpoint(t *testing.T) {
-	s, _ := startTestServer(t)
-	status, body := getJSON(t, s.Addr(), "/api/v1/overview")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if _, ok := body["workspace_health"]; !ok {
-		t.Fatalf("expected a workspace_health field: %+v", body)
-	}
-}
-
 func TestServerRejectsUnexpectedHostHeader(t *testing.T) {
 	s, _ := startTestServer(t)
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/api/v1/system", s.Addr()), nil)
@@ -231,32 +216,6 @@ func TestServerStaticFallbackServesIndexForUnknownPath(t *testing.T) {
 	}
 }
 
-func TestServerSessionsEndpoints(t *testing.T) {
-	s, a := startTestServer(t)
-
-	run := workflow.New("run-test-1", a.Workspace.ID, protocol.WorkflowRunWorkflowNameFeatureDelivery, time.Now().UTC())
-	if err := a.Workflow.Append(run); err != nil {
-		t.Fatalf("Workflow.Append: %v", err)
-	}
-
-	status, body := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want 1", items)
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions/run-test-1")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if body["id"] != "run-test-1" {
-		t.Fatalf("id = %v, want run-test-1", body["id"])
-	}
-}
-
 func TestServerKnowledgeEndpoints(t *testing.T) {
 	requireDolt(t)
 	s, a := startTestServer(t)
@@ -318,265 +277,6 @@ func TestServerKnowledgeHandlerUnknownIDReturns404(t *testing.T) {
 	status, _ := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/no-such-id")
 	if status != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", status)
-	}
-}
-
-func TestServerGlobalSearchEndpoint(t *testing.T) {
-	requireDolt(t)
-	s, a := startTestServer(t)
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	rec := protocol.KnowledgeRecord{
-		Id:         "pkw:requirement/repo-a/refund-sla",
-		Type:       protocol.KnowledgeRecordTypeRequirement,
-		Title:      "Refund SLA policy",
-		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
-		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodManual},
-		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
-	}
-	if err := store.Put(rec); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	ix, err := a.OpenSearchIndex()
-	if err != nil {
-		t.Fatalf("OpenSearchIndex: %v", err)
-	}
-	if err := search.Rebuild(store, ix); err != nil {
-		t.Fatalf("search.Rebuild: %v", err)
-	}
-
-	status, body := getJSON(t, s.Addr(), "/api/v1/search?q=refund+SLA")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) == 0 {
-		t.Fatal("expected at least one fused global search result")
-	}
-}
-
-func TestServerEvidenceEndpoints(t *testing.T) {
-	s, a := startTestServer(t)
-
-	run := workflow.New("run-ev-1", a.Workspace.ID, protocol.WorkflowRunWorkflowNameFeatureDelivery, time.Now().UTC())
-	if err := a.Workflow.Append(run); err != nil {
-		t.Fatalf("Workflow.Append: %v", err)
-	}
-	dir := filepath.Join(a.Workspace.Root, ".punakawan", "evidence", "run-ev-1")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	path := filepath.Join(dir, "build.log")
-	// awsKeyLooking is concatenated, not a contiguous literal, so this
-	// file's raw text doesn't contain a string shaped like a real AWS
-	// access key id - GitHub's push protection blocks any push whose diff
-	// contains that shape, real or not.
-	awsKeyLooking := "AKIA" + "ABCDEFGHIJKLMNOP"
-	content := "build ok\nAWS_ACCESS_KEY_ID=" + awsKeyLooking + "\n"
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write evidence file: %v", err)
-	}
-	ledger, err := evidence.OpenLedger(a.Workspace.Root, "run-ev-1")
-	if err != nil {
-		t.Fatalf("OpenLedger: %v", err)
-	}
-	if err := ledger.Append(protocol.EvidenceRecord{
-		Id:        "ev-1",
-		RunId:     "run-ev-1",
-		Type:      protocol.EvidenceRecordTypeCommandOutput,
-		Path:      &path,
-		CreatedAt: time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("ledger.Append: %v", err)
-	}
-
-	status, body := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions/run-ev-1/evidence")
-	if status != http.StatusOK {
-		t.Fatalf("list: status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("list items = %+v, want 1", items)
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/evidence/ev-1")
-	if status != http.StatusOK {
-		t.Fatalf("get: status = %d, want 200", status)
-	}
-	if body["id"] != "ev-1" {
-		t.Fatalf("get id = %v, want ev-1", body["id"])
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/evidence/ev-1/preview")
-	if status != http.StatusOK {
-		t.Fatalf("preview: status = %d, want 200", status)
-	}
-	text, _ := body["text"].(string)
-	if strings.Contains(text, awsKeyLooking) {
-		t.Fatalf("preview text = %q, secret was not redacted before reaching the API response", text)
-	}
-	if !strings.Contains(text, "[REDACTED]") {
-		t.Fatalf("preview text = %q, want a [REDACTED] marker", text)
-	}
-}
-
-func TestServerEvidencePreviewRejectsPathOutsideEvidenceRoot(t *testing.T) {
-	s, a := startTestServer(t)
-
-	run := workflow.New("run-ev-2", a.Workspace.ID, protocol.WorkflowRunWorkflowNameFeatureDelivery, time.Now().UTC())
-	if err := a.Workflow.Append(run); err != nil {
-		t.Fatalf("Workflow.Append: %v", err)
-	}
-	ledger, err := evidence.OpenLedger(a.Workspace.Root, "run-ev-2")
-	if err != nil {
-		t.Fatalf("OpenLedger: %v", err)
-	}
-	escaped := filepath.Join(a.Workspace.Root, "repo-a", "f.txt")
-	if err := ledger.Append(protocol.EvidenceRecord{
-		Id:        "ev-escape",
-		RunId:     "run-ev-2",
-		Type:      protocol.EvidenceRecordTypeCommandOutput,
-		Path:      &escaped,
-		CreatedAt: time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("ledger.Append: %v", err)
-	}
-
-	status, _ := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/evidence/ev-escape/preview")
-	if status == http.StatusOK {
-		t.Fatal("preview: want a non-200 status for a path outside the evidence directory")
-	}
-}
-
-func TestServerApprovalsEndpoint(t *testing.T) {
-	s, a := startTestServer(t)
-
-	rec := protocol.ApprovalRecord{
-		Id:          "appr-1",
-		RunId:       "run-1",
-		Operation:   protocol.ApprovalRecordOperationGitPush,
-		RequestedBy: protocol.ApprovalRecordRequestedByPetruk,
-		Status:      protocol.ApprovalRecordStatusPending,
-		CreatedAt:   time.Now().UTC(),
-	}
-	store, err := a.OpenApprovals()
-	if err != nil {
-		t.Fatalf("OpenApprovals: %v", err)
-	}
-	if err := store.Append(rec); err != nil {
-		t.Fatalf("Approvals.Append: %v", err)
-	}
-
-	status, body := getJSON(t, s.Addr(), "/api/v1/workspaces/"+a.Workspace.ID+"/approvals")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want 1", items)
-	}
-	first, _ := items[0].(map[string]any)
-	if first["approve_command"] == nil || first["approve_command"] == "" {
-		t.Fatalf("approve_command = %v, want a non-empty CLI hint", first["approve_command"])
-	}
-}
-
-func TestServerSessionsEndpointUnknownSessionReturns404(t *testing.T) {
-	s, a := startTestServer(t)
-	status, _ := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/sessions/no-such-run")
-	if status != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", status)
-	}
-}
-
-// TestServerEventsEndpointStreamsSystemReadyOnConnect proves a fresh SSE
-// connection (no Last-Event-ID) always receives its own system.ready
-// frame immediately, per §12 - the frontend's connection indicator relies
-// on this, so it must not depend on catching a global startup event that
-// existed before the client subscribed.
-func TestServerEventsEndpointStreamsSystemReadyOnConnect(t *testing.T) {
-	s, _ := startTestServer(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/api/v1/events", s.Addr()), nil)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
-		t.Fatalf("Content-Type = %q, want text/event-stream", ct)
-	}
-
-	buf := make([]byte, 4096)
-	n, err := resp.Body.Read(buf)
-	if err != nil && n == 0 {
-		t.Fatalf("Read: %v", err)
-	}
-	if !strings.Contains(string(buf[:n]), "system.ready") {
-		t.Fatalf("first SSE frame = %q, want it to contain system.ready", buf[:n])
-	}
-}
-
-// TestLoggingMiddlewareLabelsStreamingResponsesSeparately guards against an
-// SSE handler blocking until the client disconnects: logging it under the
-// same duration_ms field as ordinary requests made a multi-minute idle
-// connection read as a multi-minute processing stall.
-func TestLoggingMiddlewareLabelsStreamingResponsesSeparately(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-
-	sseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-	})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
-	rec := httptest.NewRecorder()
-	loggingMiddleware(logger, sseHandler).ServeHTTP(rec, req)
-
-	var entry map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
-		t.Fatalf("decode log line: %v (raw: %s)", err, buf.String())
-	}
-	if entry["msg"] != "panel stream closed" {
-		t.Fatalf("msg = %v, want %q", entry["msg"], "panel stream closed")
-	}
-	if _, ok := entry["connection_duration_ms"]; !ok {
-		t.Fatalf("log entry missing connection_duration_ms: %+v", entry)
-	}
-	if _, ok := entry["duration_ms"]; ok {
-		t.Fatalf("log entry must not carry duration_ms for a streaming response: %+v", entry)
-	}
-
-	buf.Reset()
-	plainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
-	rec = httptest.NewRecorder()
-	loggingMiddleware(logger, plainHandler).ServeHTTP(rec, req)
-
-	entry = nil
-	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
-		t.Fatalf("decode log line: %v (raw: %s)", err, buf.String())
-	}
-	if entry["msg"] != "panel request" {
-		t.Fatalf("msg = %v, want %q", entry["msg"], "panel request")
-	}
-	if _, ok := entry["duration_ms"]; !ok {
-		t.Fatalf("log entry missing duration_ms: %+v", entry)
-	}
-	if _, ok := entry["connection_duration_ms"]; ok {
-		t.Fatalf("ordinary request must not carry connection_duration_ms: %+v", entry)
 	}
 }
 
@@ -871,40 +571,5 @@ func TestTimingMiddlewareAbsentWhenDisabled(t *testing.T) {
 	// The probe in the handler must have been a harmless no-op.
 	if _, ok := timing.FromContext(req.Context()); ok {
 		t.Fatal("no collector should be attached when timing is disabled")
-	}
-}
-
-// TestServerServerTimingEndToEnd confirms the Options flag actually wires the
-// header through the real middleware chain (security -> timing -> logging).
-func TestServerServerTimingEndToEnd(t *testing.T) {
-	a := newTestApp(t)
-	reg, err := registry.Open()
-	if err != nil {
-		t.Fatalf("registry.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = reg.Close() })
-	s := New(a, reg, Options{Port: "0", ServerTiming: true})
-	if err := s.Start(); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := s.Shutdown(ctx); err != nil {
-			t.Logf("Shutdown: %v", err)
-		}
-	})
-
-	resp, err := http.Get(fmt.Sprintf("http://%s/api/v1/overview", s.Addr()))
-	if err != nil {
-		t.Fatalf("GET /api/v1/overview: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
-	}
-	got := resp.Header.Get("Server-Timing")
-	if !strings.Contains(got, "overview_aggregate;dur=") {
-		t.Fatalf("Server-Timing = %q, want it to include overview_aggregate;dur=", got)
 	}
 }

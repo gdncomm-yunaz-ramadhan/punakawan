@@ -370,7 +370,7 @@ func (s *Store) RecordReviewConclusion(ctx context.Context, idempotencyKey, orch
 			eventType = deliveryhooks.EventReviewChangesRequired
 			summary = "review requested changes on lane " + laneID
 		}
-		s.dispatchOrchestrationEvent(ctx, orchestrationID, eventType, summary, s.pullRequestURLs(ctx, orchestrationID))
+		s.dispatchOrchestrationEvent(ctx, orchestrationID, "", eventType, summary, s.pullRequestURLs(ctx, orchestrationID))
 	}
 	return result, nil
 }

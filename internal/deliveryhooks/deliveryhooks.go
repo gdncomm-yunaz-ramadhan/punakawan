@@ -62,13 +62,12 @@ const (
 // Event is the payload handed to a Hook for one fired EventType. DeliveryID
 // is always the delivery orchestration id; Revision is that orchestration's
 // derived revision at the moment this event was raised, which together with
-// DeliveryID and Type forms the deterministic idempotency key
-// ("<delivery-id>:<event-type>:<revision>") a Hook implementation should use
-// to make a retried dispatch a safe no-op instead of a duplicate external
-// side effect.
+// DeliveryID, Type, Revision, and (for lane-scoped events) EntityID form the
+// deterministic idempotency key a Hook should use to make retries safe.
 type Event struct {
 	Type         EventType
 	DeliveryID   string
+	EntityID     string
 	Revision     int
 	Title        string
 	Projects     []string
@@ -82,8 +81,8 @@ type Event struct {
 }
 
 // Hook reacts to one fired Event. Handle is expected to be safe to call
-// repeatedly with an Event carrying the same DeliveryID/Type/Revision (see
-// Event's own doc comment on the idempotency key those three fields form) -
+// repeatedly with an Event carrying the same delivery/type/revision/entity
+// identity (see Event's doc comment) -
 // a Hook that cannot guarantee that must do its own internal deduplication
 // rather than rely on only ever being called once.
 type Hook interface {

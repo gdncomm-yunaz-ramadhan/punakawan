@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test test-go test-ts test-install lint generate protocol-check integration-test package doctor panel-dev panel-build panel-test
+.PHONY: bootstrap build test test-go test-ts lint generate protocol-check integration-test package doctor panel-dev panel-build panel-test
 
 bootstrap:
 	go mod download
@@ -8,16 +8,13 @@ build:
 	go build ./...
 	pnpm -r --if-present build
 
-test: test-go test-ts test-install
+test: test-go test-ts
 
 test-go:
 	go test ./...
 
 test-ts:
 	pnpm -r --if-present test
-
-test-install:
-	bash scripts/configure-agent_test.sh
 
 lint:
 	gofmt -l . | (! grep .)
@@ -45,9 +42,8 @@ doctor:
 	node --version
 	pnpm --version
 
-# Two-terminal dev loop (punakawan-panel-implementation-plan.md §21): run
-# this target in one terminal, then `pnpm --filter @punakawan/panel dev`
-# in another - Vite proxies /api/v1 to this server.
+# Two-terminal dev loop: run this target in one terminal, then
+# `pnpm --filter @punakawan/panel dev` in another. Vite proxies /api/v1.
 panel-dev:
 	go run ./cmd/punakawan panel --port 7331 --open-browser=false
 

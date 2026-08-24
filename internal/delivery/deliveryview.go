@@ -8,6 +8,7 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -46,6 +47,9 @@ type LaneSummary struct {
 	PRURL        string                      `json:"pr_url,omitempty"`
 	PRNumber     int                         `json:"pr_number,omitempty"`
 	PRProvider   string                      `json:"pr_provider,omitempty"`
+	Repository   string                      `json:"repository,omitempty"`
+	Branch       string                      `json:"branch,omitempty"`
+	Commits      []string                    `json:"commits,omitempty"`
 
 	// Worker, WorktreePath, BaseSha, and BaseRemote surface protocol.
 	// DeliveryLane's lease/worktree fields, unwrapped from their pointer
@@ -77,6 +81,9 @@ type LaneSummary struct {
 	// never their bytes - so a caller links to (or fetches) the
 	// underlying content instead of this view inlining it.
 	Evidence []EvidenceRef `json:"evidence,omitempty"`
+
+	Verification *protocol.VerificationMatrix `json:"verification,omitempty"`
+	BagongReview *protocol.ReviewConclusion   `json:"bagong_review,omitempty"`
 }
 
 // EvidenceRef is one evidence artifact's linkable metadata: enough for a
@@ -96,6 +103,20 @@ type BlockerSummary struct {
 	LaneID       string   `json:"lane_id"`
 	ParentTaskID string   `json:"parent_task_id,omitempty"`
 	BlockedBy    []string `json:"blocked_by"`
+}
+
+type AuditEvent struct {
+	Sequence   int                        `json:"sequence"`
+	Type       protocol.DeliveryEventType `json:"type"`
+	EntityID   string                     `json:"entity_id,omitempty"`
+	OccurredAt time.Time                  `json:"occurred_at"`
+}
+
+type JiraActivity struct {
+	EventType string    `json:"event_type"`
+	EntityID  string    `json:"entity_id,omitempty"`
+	IssueKey  string    `json:"issue_key"`
+	FiredAt   time.Time `json:"fired_at"`
 }
 
 // DeliveryView is the bounded, human-and-agent-readable snapshot of one
@@ -137,6 +158,8 @@ type DeliveryView struct {
 	PendingApprovals []*protocol.ApprovalManifest `json:"pending_approvals"`
 	PendingQuestions []string                     `json:"pending_questions"`
 	NextAction       string                       `json:"next_action"`
+	Timeline         []AuditEvent                 `json:"timeline"`
+	JiraActivity     []JiraActivity               `json:"jira_activity"`
 
 	// LatestSeq is the highest event sequence number reflected in this
 	// view - pass it back as a later call's SinceSeq to learn what
@@ -234,6 +257,8 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		Blockers:             []BlockerSummary{},
 		PendingApprovals:     []*protocol.ApprovalManifest{},
 		PendingQuestions:     []string{},
+		Timeline:             []AuditEvent{},
+		JiraActivity:         []JiraActivity{},
 		NewlyRunnableLaneIDs: []string{},
 	}
 	if orch.Description != nil {
@@ -255,7 +280,17 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		if ev.Sequence > view.LatestSeq {
 			view.LatestSeq = ev.Sequence
 		}
+		audit := AuditEvent{Sequence: ev.Sequence, Type: ev.Type, OccurredAt: ev.OccurredAt}
+		if ev.EntityId != nil {
+			audit.EntityID = *ev.EntityId
+		}
+		view.Timeline = append(view.Timeline, audit)
 	}
+	jiraActivity, err := s.listJiraActivity(ctx, orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	view.JiraActivity = jiraActivity
 
 	laneIDs := make([]string, 0, len(laneMap))
 	for id := range laneMap {
@@ -286,6 +321,14 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 			})
 		}
 	}
+	commitsByLane := map[string][]string{}
+	for _, event := range events {
+		if event.Type == protocol.DeliveryEventTypeLaneCommitRecorded && event.EntityId != nil {
+			if sha := stringField(event.Payload, "sha"); sha != "" {
+				commitsByLane[*event.EntityId] = append(commitsByLane[*event.EntityId], sha)
+			}
+		}
+	}
 
 	for _, id := range laneIDs {
 		l := laneMap[id]
@@ -295,6 +338,7 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 			Status:    l.Status,
 			BlockedBy: l.BlockedBy,
 			Evidence:  evidenceByLane[l.Id],
+			Commits:   commitsByLane[l.Id],
 		}
 		if l.ParentTaskId != nil {
 			summary.ParentTaskID = *l.ParentTaskId
@@ -307,6 +351,12 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		}
 		if l.PrProvider != nil {
 			summary.PRProvider = string(*l.PrProvider)
+		}
+		if l.PrRepoSlug != nil {
+			summary.Repository = *l.PrRepoSlug
+		}
+		if l.Branch != nil {
+			summary.Branch = *l.Branch
 		}
 		if l.LeaseWorkerId != nil {
 			summary.Worker = *l.LeaseWorkerId
@@ -342,6 +392,16 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		if l.SessionId != nil {
 			summary.SessionID = *l.SessionId
 		}
+		verification, err := s.BuildVerificationMatrix(ctx, orchestrationID, l.Id)
+		if err != nil {
+			return nil, err
+		}
+		summary.Verification = verification
+		review, err := s.GetLatestReviewConclusion(ctx, orchestrationID, l.Id)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		summary.BagongReview = review
 		view.Lanes = append(view.Lanes, summary)
 
 		laneIDsByProject[l.ProjectId] = append(laneIDsByProject[l.ProjectId], l.Id)
@@ -435,6 +495,34 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	}
 
 	return view, nil
+}
+
+func (s *Store) listJiraActivity(ctx context.Context, orchestrationID string) ([]JiraActivity, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		`SELECT event_type, entity_id, issue_key, fired_at FROM jira_hook_dispatch WHERE delivery_id = ? ORDER BY fired_at, event_type, entity_id`,
+		orchestrationID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: list jira activity for %s: %w", orchestrationID, err)
+	}
+	defer rows.Close()
+
+	out := []JiraActivity{}
+	for rows.Next() {
+		var eventType, entityID, issueKey, firedAt string
+		if err := rows.Scan(&eventType, &entityID, &issueKey, &firedAt); err != nil {
+			return nil, fmt.Errorf("delivery: scan jira activity for %s: %w", orchestrationID, err)
+		}
+		timestamp, err := time.Parse(time.RFC3339Nano, firedAt)
+		if err != nil {
+			return nil, fmt.Errorf("delivery: parse jira activity time for %s: %w", orchestrationID, err)
+		}
+		out = append(out, JiraActivity{EventType: eventType, EntityID: entityID, IssueKey: issueKey, FiredAt: timestamp})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("delivery: read jira activity for %s: %w", orchestrationID, err)
+	}
+	return out, nil
 }
 
 // newlyRunnableLaneIDs diffs current (every lane as of the full events

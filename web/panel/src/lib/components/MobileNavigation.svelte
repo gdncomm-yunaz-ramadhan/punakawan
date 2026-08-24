@@ -8,16 +8,14 @@
   // links constant and duplicating four short entries is cheaper than
   // introducing a shared module for it right now.
   const links: { path: string; label: string; icon: IconName }[] = [
-    { path: "/", label: "Overview", icon: "dashboard" },
     { path: "/projects", label: "Projects", icon: "folder" },
     { path: "/deliveries", label: "Deliveries", icon: "git-branch" },
-    { path: "/improvements", label: "Context", icon: "comment" },
-    { path: "/system", label: "System", icon: "settings" },
+    { path: "/settings", label: "Settings", icon: "settings" },
   ];
 
   function isActive(path: string): boolean {
     const current = getPath();
-    if (path === "/") return current === "/";
+    if (path === "/projects") return current === "/" || current.startsWith(path);
     return current.startsWith(path);
   }
 

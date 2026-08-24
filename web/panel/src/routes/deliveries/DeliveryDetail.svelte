@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import {
     getDeliveryView,
     cancelDelivery,
@@ -8,7 +7,6 @@
     type DeliveryLaneStatus,
     type DeliveryLaneSummary,
   } from "../../lib/api/client";
-  import { onPanelEvent, parsePanelEvent } from "../../lib/events/sse.svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import Card from "../../lib/components/cards/Card.svelte";
@@ -29,8 +27,6 @@
   let view: DeliveryView | null = $state(null);
   let error: string | null = $state(null);
   let loading = $state(true);
-  let lastSeq = 0;
-  let newlyRunnable: Set<string> = $state(new Set());
   let approvedBy = $state("");
   let cancelling = $state(false);
   let cancelError: string | null = $state(null);
@@ -38,45 +34,15 @@
   async function load(id: string) {
     loading = true;
     error = null;
-    newlyRunnable = new Set();
     try {
       const v = await getDeliveryView(id);
       view = v;
-      lastSeq = v.latest_seq;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
     }
   }
-
-  // Only a delivery.updated SSE event for this orchestration triggers a
-  // since_seq refetch - a plain unconditional reload (like most other
-  // routes' onPanelEvent handlers) would blow away newly_runnable_lane_ids
-  // every time any unrelated panel event fires, since a from-scratch
-  // GetDeliveryView call always leaves that diff empty.
-  async function refresh(id: string) {
-    try {
-      const v = await getDeliveryView(id, lastSeq);
-      view = v;
-      lastSeq = v.latest_seq;
-      newlyRunnable = new Set(v.newly_runnable_lane_ids);
-      setTimeout(() => {
-        newlyRunnable = new Set();
-      }, 8000);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  onMount(() => {
-    return onPanelEvent((evt) => {
-      if (evt.type !== "delivery.updated") return;
-      const parsed = parsePanelEvent(evt);
-      if (parsed?.entity_id !== orchestrationId) return;
-      refresh(orchestrationId);
-    });
-  });
 
   // Single trigger for the first load and for a later orchestrationId change -
   // effects run after the first render too, so loading from onMount as well
@@ -87,7 +53,6 @@
 
   function applyUpdate(v: DeliveryView) {
     view = v;
-    lastSeq = v.latest_seq;
   }
 
   // Cancelling is irreversible, so it goes through the same confirmation the
@@ -140,6 +105,10 @@
 
   function shortSha(sha: string): string {
     return sha.slice(0, 8);
+  }
+
+  function formatDate(value: string): string {
+    return new Date(value).toLocaleString();
   }
 
   const orchestrationStatusVariants: Record<string, BadgeVariant> = {
@@ -221,9 +190,11 @@
         <span class="unset">Not recorded</span>
       {/if}
     </dd>
-    <dt>Plan record</dt>
+    <dt>Plan</dt>
     <dd>
-      {#if v.plan_record_id}
+      {#if v.plan_id}
+        <code class="id">{v.plan_id} r{v.plan_revision ?? 1}</code>
+      {:else if v.plan_record_id}
         <code class="id">{v.plan_record_id}</code>
       {:else}
         <span class="unset">Not recorded</span>
@@ -341,13 +312,10 @@
             <ul class="lanes">
               {#each lanesFor(project.project_id) as lane (lane.lane_id)}
                 {@const stage = stageLabel(lane)}
-                <li class="lane" class:newly-runnable={newlyRunnable.has(lane.lane_id)}>
+                <li class="lane">
                   <div class="lane-head">
                     <span class="lane-id">{lane.lane_id}</span>
                     <StatusBadge variant={laneStatusVariants[lane.status] ?? "neutral"} label={lane.status} />
-                    {#if newlyRunnable.has(lane.lane_id)}
-                      <span class="new-badge">Newly runnable</span>
-                    {/if}
                   </div>
                   {#if lane.parent_task_id}<span class="meta">task {lane.parent_task_id}</span>{/if}
                   {#if lane.blocked_by?.length}
@@ -362,16 +330,24 @@
                       {/if}
                     </a>
                   {/if}
-                  {#if lane.session_id || lane.worker || lane.worktree_path || lane.base_sha}
+                  {#if lane.repository || lane.branch || lane.session_id || lane.worker || lane.worktree_path || lane.base_sha}
                     <div class="lane-detail meta">
                       <!-- The session that opened the lane and the worker
                            currently holding its lease are two different
                            things, so they are labelled separately and never
                            collapsed into one "who" field. -->
+                      {#if lane.repository}<span>repository {lane.repository}</span>{/if}
+                      {#if lane.branch}<span>branch {lane.branch}</span>{/if}
                       {#if lane.session_id}<span>session {lane.session_id}</span>{/if}
                       {#if lane.worker}<span>worker {lane.worker}</span>{/if}
                       {#if lane.worktree_path}<span>worktree {lane.worktree_path}</span>{/if}
                       {#if lane.base_sha}<span>base {shortSha(lane.base_sha)}{lane.base_remote ? ` (${lane.base_remote})` : ""}</span>{/if}
+                    </div>
+                  {/if}
+                  {#if lane.commits?.length}
+                    <div class="lane-detail meta">
+                      <strong>Commits</strong>
+                      {#each lane.commits as commit (commit)}<code>{shortSha(commit)}</code>{/each}
                     </div>
                   {/if}
                   {#if stage}
@@ -400,6 +376,26 @@
                       {/each}
                     </ul>
                   {/if}
+                  {#if lane.verification}
+                    <div class="audit-block">
+                      <strong>Verification</strong>
+                      <div class="verification">
+                        {#each lane.verification.dimensions as dimension (dimension.name)}
+                          <StatusBadge
+                            variant={dimension.status === "passed" ? "success" : dimension.status === "failed" ? "danger" : "neutral"}
+                            label={`${dimension.name}: ${dimension.status}`}
+                          />
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+                  {#if lane.bagong_review}
+                    <div class="audit-block">
+                      <strong>Bagong review</strong>
+                      <span>{lane.bagong_review.outcome} · {lane.bagong_review.independence_level}</span>
+                      <span class="meta">reviewer {lane.bagong_review.reviewer_worker_id} · {formatDate(lane.bagong_review.recorded_at)}</span>
+                    </div>
+                  {/if}
                 </li>
               {/each}
               {#if lanesFor(project.project_id).length === 0}
@@ -410,6 +406,37 @@
         </Card>
       {/each}
     </div>
+  </section>
+
+  <section aria-labelledby="jira-heading">
+    <h2 id="jira-heading">Jira activity</h2>
+    {#if v.jira_activity?.length}
+      <ul class="audit-list">
+        {#each v.jira_activity as activity (`${activity.event_type}-${activity.entity_id ?? ""}-${activity.fired_at}`)}
+          <li>
+            <strong>{activity.issue_key}</strong>
+            <span>{activity.event_type}{activity.entity_id ? ` · ${activity.entity_id}` : ""}</span>
+            <time>{formatDate(activity.fired_at)}</time>
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="empty">No Jira updates recorded.</p>
+    {/if}
+  </section>
+
+  <section aria-labelledby="timeline-heading">
+    <h2 id="timeline-heading">Timeline</h2>
+    <ol class="audit-list timeline">
+      {#each v.timeline ?? [] as event (event.sequence)}
+        <li>
+          <code>#{event.sequence}</code>
+          <strong>{event.type}</strong>
+          {#if event.entity_id}<span>{event.entity_id}</span>{/if}
+          <time>{formatDate(event.occurred_at)}</time>
+        </li>
+      {/each}
+    </ol>
   </section>
 {/if}
 
@@ -568,10 +595,6 @@
     gap: 0.2rem;
     font-size: 0.82rem;
   }
-  .lane.newly-runnable {
-    border-color: var(--color-success);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 40%, transparent);
-  }
   .lane-head {
     display: flex;
     align-items: center;
@@ -581,16 +604,6 @@
   .lane-id {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-weight: 600;
-  }
-  .new-badge {
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--color-success);
-    background: color-mix(in srgb, var(--color-success) 16%, var(--color-surface));
-    border-radius: 999px;
-    padding: 0.1rem 0.5rem;
   }
   .blocked-by {
     color: var(--color-warning);
@@ -607,6 +620,37 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.6rem;
+  }
+  .audit-block {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+  }
+  .verification {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+  .audit-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.45rem;
+  }
+  .audit-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+  }
+  .audit-list time {
+    margin-left: auto;
+    color: var(--color-text-muted);
+    font-size: 0.78rem;
   }
   .escalated {
     color: var(--color-danger);

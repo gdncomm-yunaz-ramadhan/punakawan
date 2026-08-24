@@ -29,28 +29,12 @@ const Version = "0.1.0"
 // (internal/panel/contract) that every HTTP handler reaches Punakawan's
 // data through.
 type Readers struct {
-	Workspace    contract.WorkspaceReader
-	Session      contract.SessionReader
-	Knowledge    contract.KnowledgeReader
-	Evidence     contract.EvidenceReader
-	Approval     contract.ApprovalReader
-	GlobalSearch contract.GlobalSearchReader
-	Project      contract.ProjectReader
-	Roles        contract.RolesReader
-	// Contradiction/Impact/Dossier deliberately have no live implementation
-	// now that the ceremony surfaces backing them are gone; they stay
-	// declared only because internal/panel/events/reconciler.go still
-	// null-checks and polls them, degrading those three SSE event kinds to a
-	// silent no-op rather than a nil-pointer panic.
-	Contradiction contract.ContradictionReader
-	Impact        contract.ImpactReader
-	Dossier       contract.DossierReader
-
+	Workspace contract.WorkspaceReader
+	Project   contract.ProjectReader
+	Roles     contract.RolesReader
 	// Delivery is nil when this panel instance could not reach the daemon
-	// at startup (e.g. punakawand not installed) - handlers and the events
-	// watcher treat a nil Delivery the same way they already treat a nil
-	// Contradiction/Impact/Dossier: degrade to a 503/no-op instead of a
-	// nil-pointer panic. Server.Start populates it once it has connected.
+	// at startup (e.g. punakawand not installed). Delivery handlers degrade
+	// to 503 instead of panicking. Server.Start populates it once connected.
 	Delivery contract.DeliveryReader
 
 	// Runtime is the bounded *app.App pool (Phase 3). The server owns its
@@ -94,12 +78,7 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 		Runtime:     runtimeMgr,
 	}
 	return Readers{
-		Workspace:    workspaceReader,
-		Session:      &sources.SessionSource{App: a},
-		Knowledge:    &sources.KnowledgeSource{App: a},
-		Evidence:     &sources.EvidenceSource{App: a},
-		Approval:     &sources.ApprovalSource{App: a},
-		GlobalSearch: &sources.GlobalSearchSource{App: a, Registry: reg, Runtime: runtimeMgr},
+		Workspace: workspaceReader,
 		// The project source composes the cached workspace reader's
 		// counts-only Summary and the registry for id->root resolution, so it
 		// never re-runs the deep bd/dolt/git inspection whose result the

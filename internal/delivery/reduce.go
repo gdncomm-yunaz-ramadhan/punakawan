@@ -226,6 +226,7 @@ func reduceLane(orchestrationID, laneID string, events []protocol.DeliveryEvent)
 			l.BagongRecordId = &recordID
 		case protocol.DeliveryEventTypeLaneVerificationDimensionRecorded,
 			protocol.DeliveryEventTypeLaneCiCheckReported,
+			protocol.DeliveryEventTypeLaneCommitRecorded,
 			protocol.DeliveryEventTypeLaneReviewConclusionRecorded:
 			// Recorded in the lane's own event log (so verification.go's
 			// BuildVerificationMatrix/GetLatestReviewConclusion can scan

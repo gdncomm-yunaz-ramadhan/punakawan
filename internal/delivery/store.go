@@ -79,24 +79,88 @@ func (s *Store) RegisterProject(ctx context.Context, idempotencyKey, id, slug, r
 	return s.GetProject(ctx, id)
 }
 
+// UpsertProject creates a project or updates the repository configuration of
+// the existing project with the same slug. Existing ids and registration
+// timestamps remain stable across updates.
+func (s *Store) UpsertProject(ctx context.Context, idempotencyKey, id, slug, repositoryURL, defaultBranch string) (*protocol.DeliveryProject, error) {
+	now := time.Now().UTC()
+	err := s.db.Write(ctx, idempotencyKey, "upsert project "+slug, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO delivery_projects (id, slug, repository_url, default_branch, status, registered_at, revision)
+			VALUES (?, ?, ?, ?, 'active', ?, 0)
+			ON CONFLICT(slug) DO UPDATE SET
+				repository_url = excluded.repository_url,
+				default_branch = excluded.default_branch,
+				status = 'active',
+				revision = delivery_projects.revision + 1`,
+			id, slug, repositoryURL, defaultBranch, now.Format(timeLayout),
+		)
+		return err
+	})
+	if errors.Is(err, storage.ErrDuplicateWrite) {
+		return s.GetProjectBySlug(ctx, slug)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("delivery: upsert project %s: %w", slug, err)
+	}
+	return s.GetProjectBySlug(ctx, slug)
+}
+
+// GetProjectBySlug returns the project registered under slug.
+func (s *Store) GetProjectBySlug(ctx context.Context, slug string) (*protocol.DeliveryProject, error) {
+	row := s.db.Reader().QueryRowContext(ctx,
+		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects WHERE slug = ?`, slug)
+	return scanProject(row, slug)
+}
+
+// ListProjects returns every registered project ordered by slug.
+func (s *Store) ListProjects(ctx context.Context) ([]protocol.DeliveryProject, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects ORDER BY slug`)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: list projects: %w", err)
+	}
+	defer rows.Close()
+	projects := make([]protocol.DeliveryProject, 0)
+	for rows.Next() {
+		project, err := scanProject(rows, "")
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, *project)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("delivery: list projects: %w", err)
+	}
+	return projects, nil
+}
+
 // GetProject fails closed (ErrNotFound) for an unknown project id.
 func (s *Store) GetProject(ctx context.Context, id string) (*protocol.DeliveryProject, error) {
 	row := s.db.Reader().QueryRowContext(ctx,
 		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects WHERE id = ?`, id)
+	return scanProject(row, id)
+}
+
+type projectScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanProject(row projectScanner, identity string) (*protocol.DeliveryProject, error) {
 	var p protocol.DeliveryProject
 	var defaultBranch, registeredAt string
 	if err := row.Scan(&p.Id, &p.Slug, &p.RepositoryUrl, &defaultBranch, &p.Status, &registeredAt, &p.Revision); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("delivery: get project %s: %w", id, err)
+		return nil, fmt.Errorf("delivery: get project %s: %w", identity, err)
 	}
 	if defaultBranch != "" {
 		p.DefaultBranch = &defaultBranch
 	}
 	t, err := time.Parse(timeLayout, registeredAt)
 	if err != nil {
-		return nil, fmt.Errorf("delivery: parse registered_at for project %s: %w", id, err)
+		return nil, fmt.Errorf("delivery: parse registered_at for project %s: %w", identity, err)
 	}
 	p.RegisteredAt = t
 	return &p, nil

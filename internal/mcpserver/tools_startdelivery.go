@@ -30,7 +30,7 @@ type StartDeliveryInput struct {
 	// Description is optional: prose about what the delivery is for.
 	// Omitted, the orchestration simply carries none - nothing invents
 	// prose the way a missing title is derived.
-	Description string `json:"description,omitempty" jsonschema:"longer prose about what this delivery is for and why it exists, for whoever reads the run later. Omitting it leaves the delivery with no description at all; unlike title, nothing is derived in its place. Editable afterwards via update_delivery"`
+	Description string `json:"description,omitempty" jsonschema:"longer prose about what this delivery is for and why it exists, for whoever reads the run later. Omitting it leaves the delivery with no description at all; unlike title, nothing is derived in its place"`
 	// IdempotencyKey is optional: repeating the same key on retry
 	// resolves to the same orchestration instead of minting a second
 	// one for the same request.
@@ -44,14 +44,13 @@ type StartDeliveryInput struct {
 	// Projects is optional but is what turns a new orchestration into a
 	// delivery that can actually run: without it the call only records
 	// the requirements and the orchestration stays at pending with zero
-	// lanes until register_project, create_parent_task, and create_lane
-	// are each called separately.
-	Projects []StartDeliveryProject `json:"projects,omitempty" jsonschema:"optional decomposition applied in the same call - pass it whenever you already know which repositories the work lands in. Omitting it leaves an inert shell: an orchestration with zero lanes that nothing can execute until register_project, create_parent_task, and create_lane are called by hand. Passing it registers each project and creates one parent task plus one lane per task, so the returned view already shows real lanes. A project or task that cannot be created is reported in decomposition[].skipped; the rest of the delivery still succeeds"`
+	// lanes. Pass it whenever routing is known so the public call creates
+	// the complete executable graph without exposing graph mutation tools.
+	Projects []StartDeliveryProject `json:"projects,omitempty" jsonschema:"optional decomposition applied in the same call - pass it whenever you know which repositories the work lands in. Each project is registered and each task becomes one parent task plus one lane, so the returned view already shows real lanes. A project or task that cannot be created is reported in decomposition[].skipped; the rest of the delivery still succeeds"`
 }
 
 // StartDeliveryProject is one repository the delivery lands in, plus the
-// units of work to open there. Slug/RepositoryUrl/DefaultBranch mirror
-// register_project's own input exactly.
+// units of work to open there.
 type StartDeliveryProject struct {
 	Slug          string              `json:"slug" jsonschema:"unique short identifier for this project; a slug already registered under a different id cannot be re-registered, and that project is reported as skipped"`
 	RepositoryUrl string              `json:"repository_url"`

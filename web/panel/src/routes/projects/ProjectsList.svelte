@@ -7,7 +7,6 @@
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
-  import { onPanelEvent } from "../../lib/events/sse.svelte";
   import Icon from "../../lib/components/Icon.svelte";
   import Button from "../../lib/components/Button.svelte";
   import Dialog from "../../lib/components/overlay/Dialog.svelte";
@@ -58,7 +57,6 @@
 
   onMount(() => {
     load();
-    return onPanelEvent(load);
   });
 
   function open(id: string) {

@@ -58,14 +58,6 @@ func (f fakeKnowledgeReader) History(ctx context.Context, workspaceID, knowledge
 	return f.history, nil
 }
 
-type fakeGlobalSearchReader struct {
-	results []contract.GlobalSearchResult
-}
-
-func (f fakeGlobalSearchReader) Search(ctx context.Context, req search.Request) ([]contract.GlobalSearchResult, error) {
-	return f.results, nil
-}
-
 func testKnowledgeRecord(id, repository string) protocol.KnowledgeRecord {
 	return protocol.KnowledgeRecord{
 		Id:         id,
@@ -154,29 +146,6 @@ func TestKnowledgeHistoryHandlerReturnsEvents(t *testing.T) {
 	}
 	if len(body.Items) != 1 || body.Items[0].Type != knowledge.EventTypePut {
 		t.Fatalf("items = %+v, want the put event", body.Items)
-	}
-}
-
-func TestGlobalSearchHandlerReturnsFusedResults(t *testing.T) {
-	reader := fakeGlobalSearchReader{results: []contract.GlobalSearchResult{
-		{WorkspaceID: "ws-a", Result: search.Result{Id: "pkw:requirement/repo-a/x", Record: testKnowledgeRecord("pkw:requirement/repo-a/x", "repo-a")}, RRFScore: 0.016},
-	}}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=refund", nil)
-	rec := httptest.NewRecorder()
-	GlobalSearchHandler(reader)(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	var body struct {
-		Items []contract.GlobalSearchResult `json:"items"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(body.Items) != 1 || body.Items[0].WorkspaceID != "ws-a" {
-		t.Fatalf("items = %+v, want the ws-a result", body.Items)
 	}
 }
 
