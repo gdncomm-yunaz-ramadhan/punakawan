@@ -1,0 +1,57 @@
+internal/deliveryhooks/deliveryhooks.go
+  a330ccb60fead87e 1-128
+internal/delivery/verification.go
+  a330ccb60fead87e 19,328,354-358,361-373,375
+internal/delivery/workflowdefinition.go
+  a330ccb60fead87e 15-19,64-78
+internal/delivery/store.go
+  a330ccb60fead87e 17,36-40,241-254,328-329,331-352,354,383-438
+internal/delivery/scheduler.go
+  a330ccb60fead87e 25,275,279-286,340,354-363,372-373,376-382,423-424,426-430
+internal/mcpserver/tools_jiraprogress.go
+  a330ccb60fead87e 210-212,214-215,224,226,229
+internal/storage/migrations/0014_jira_hook_dispatch.sql
+  a330ccb60fead87e 1-13
+internal/jirahooks/jirahooks_test.go
+  a330ccb60fead87e 1-328
+internal/mcpserver/tools_delivery.go
+  a330ccb60fead87e 6,13,67-98
+internal/jirahooks/jirahooks.go
+  a330ccb60fead87e 1-194
+internal/adapters/transitions.go
+  a330ccb60fead87e 1-59
+internal/deliveryhooks/deliveryhooks_test.go
+  a330ccb60fead87e 1-68
+internal/jirahooks/idempotency.go
+  a330ccb60fead87e 1-55
+internal/jiraworkflow/config.go
+  a330ccb60fead87e 56-100
+internal/jiraworkflow/jiraworkflow_test.go
+  a330ccb60fead87e 164-216
+internal/delivery/hooks.go
+  a330ccb60fead87e 1-87
+internal/jirahooks/comment.go
+  a330ccb60fead87e 1-68
+internal/delivery/hooks_test.go
+  a330ccb60fead87e 1-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "46625efb578f01aa088b6511d9ef81f619e24f54",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1656,
+      "total_deletions": 160,
+      "accepted_lines": 1546,
+      "overriden_lines": 0
+    }
+  }
+}
