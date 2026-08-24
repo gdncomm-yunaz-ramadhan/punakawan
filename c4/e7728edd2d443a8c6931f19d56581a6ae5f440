@@ -1,0 +1,43 @@
+internal/agentpolicy/agentpolicy.go
+  a330ccb60fead87e 1-334
+internal/agentrunner/agentrunner.go
+  a330ccb60fead87e 1-195
+internal/mcpserver/tools_delivery.go
+  a330ccb60fead87e 461-464
+internal/delivery/rolestage.go
+  a330ccb60fead87e 1-14,78-84,89-94,120-124,156-162
+internal/agentpolicy/resolver.go
+  a330ccb60fead87e 1-105
+internal/agentrunner/agentrunner_test.go
+  a330ccb60fead87e 1-135
+internal/agentpolicy/agentpolicy_test.go
+  a330ccb60fead87e 1-285
+internal/delivery/workflowdefinition.go
+  a330ccb60fead87e 23-27,36-40,53-54,64-65
+internal/delivery/rolestage_test.go
+  a330ccb60fead87e 77-83,95-100,110-112,114,121-126,128-134,281-288,307-309,312-317
+internal/mcpserver/tools_workflow.go
+  a330ccb60fead87e 146-152,171
+internal/agentpolicy/mutate.go
+  a330ccb60fead87e 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "c4e7728edd2d443a8c6931f19d56581a6ae5f440",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1850,
+      "total_deletions": 70,
+      "accepted_lines": 1850,
+      "overriden_lines": 0
+    }
+  }
+}
