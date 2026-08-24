@@ -23,10 +23,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/recipe"
-	"github.com/ygrip/punakawan/internal/workcontext"
-	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // Options configures a Server, per §26's configuration keys this phase
@@ -242,57 +239,18 @@ func (s *Server) Start() error {
 	// phase); MCP tool names are the source that had actually drifted.
 	caps := workflowdef.NewCapabilitySet(mcpserver.CapabilityRegistry(s.app).Names(), nil)
 	// Invoke validates enabled + capabilities in workflowdef, then this
-	// RunCreator binds the accepted definition to the run engine by creating a
-	// WorkflowRun. A definition id is not one of the fixed WorkflowRun name
-	// enums, so the run is created under the generic "implementation-only"
-	// carrier with its Objective set to the originating definition id (that is
-	// how a run traces back to the definition that spawned it). The primary
-	// project uses its long-lived run store directly; a non-primary project is
-	// Acquire'd from the runtime pool (punokawan-hbm) so its own
-	// .punakawan/workflow/runs.jsonl receives the run, then released.
+	// RunCreator resolves the right *app.App for root (the primary project's
+	// long-lived one, or a non-primary project's Acquire'd from the runtime
+	// pool per punokawan-hbm) and hands it to mcpserver.CreateWorkflowRun -
+	// the same shape-aware dispatch (Roles present -> delivery,
+	// otherwise -> legacy workflow run, either way via workcontext.Prepare
+	// against that App's own workspace root) the MCP invoke_workflow_definition
+	// tool uses, so the panel and MCP can no longer diverge on a Roles-shaped
+	// definition (punokawan-pkcd.3).
 	newInvoker := func(projectID, root string) workflowdef.Invoker {
 		return workflowdef.NewInvoker(caps, func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
-			now := time.Now().UTC()
-			// Compose the bounded context through the shared workcontext
-			// service — the same path prepare_work_context uses — so the panel
-			// invoke route and the MCP tool cannot diverge (agent-context plan
-			// §5.2). No retrieval query is passed here, so no knowledge store is
-			// opened; this validates+defaults inputs, resolves required metadata
-			// (missing → awaiting-clarification), and builds the snapshot+digest.
-			prepared, err := workcontext.Prepare(workcontext.Request{
-				WorkspaceRoot: root,
-				Definitions:   []workflowdef.Definition{def},
-				WorkflowID:    def.ID,
-				Inputs:        inputs,
-				Now:           now,
-			}, nil, nil)
-			if err != nil {
-				return "", err
-			}
-			defRef := &protocol.WorkflowRunDefinitionRef{Id: def.ID, Revision: def.Revision, ContentHash: def.ContentHash()}
-			stepProgress := prepared.StepProgress
-			snapshot := prepared.Snapshot
-			createRun := func(a *app.App) (string, error) {
-				runID := fmt.Sprintf("pkw:run/%s/%s-%d", a.Workspace.ID, def.ID, now.UnixNano())
-				// A definition id is not one of the fixed WorkflowRun name enums,
-				// so the run is created under the generic "implementation-only"
-				// carrier; the binding to the originating definition is now the
-				// immutable definition_ref (id/revision/content_hash), NOT a
-				// magic prefix parsed back out of Objective.
-				run := workflow.New(runID, a.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
-				objective := def.Name
-				run.Objective = &objective
-				run, err := workflow.StampContext(run, defRef, prepared.ResolvedInputs, stepProgress, &snapshot, now)
-				if err != nil {
-					return "", fmt.Errorf("stamp context onto run for definition %q: %w", def.ID, err)
-				}
-				if err := a.Workflow.Append(run); err != nil {
-					return "", fmt.Errorf("create workflow run for definition %q: %w", def.ID, err)
-				}
-				return runID, nil
-			}
 			if root == s.app.Workspace.Root {
-				return createRun(s.app)
+				return mcpserver.CreateWorkflowRun(s.app)(ctx, def, inputs)
 			}
 			if s.readers.Runtime == nil {
 				return "", fmt.Errorf("workflow invocation for non-primary project %q is unavailable: no runtime pool", projectID)
@@ -302,7 +260,7 @@ func (s *Server) Start() error {
 				return "", fmt.Errorf("acquire project %q for workflow invocation: %w", projectID, err)
 			}
 			defer release()
-			return createRun(rt.App)
+			return mcpserver.CreateWorkflowRun(rt.App)(ctx, def, inputs)
 		})
 	}
 	wf := api.NewWorkflowDefHandlers(s.resolveRoot, caps, newInvoker)

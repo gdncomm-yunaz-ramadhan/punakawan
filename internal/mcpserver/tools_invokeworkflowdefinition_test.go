@@ -67,6 +67,12 @@ func TestInvokeWorkflowDefinitionDeliveryShapedProducesRealOrchestration(t *test
 	if got.View.Orchestration.WorkflowDefinitionId == nil || *got.View.Orchestration.WorkflowDefinitionId != "hotfix-delivery" {
 		t.Fatalf("expected orchestration.workflow_definition_id = hotfix-delivery, got %v", got.View.Orchestration.WorkflowDefinitionId)
 	}
+	if got.View.PlanID == "" {
+		t.Fatal("expected the delivery to reference a plan_id, got none")
+	}
+	if got.View.PlanRevision == 0 {
+		t.Fatal("expected the delivery to reference a plan_revision, got 0")
+	}
 }
 
 // TestInvokeWorkflowDefinitionNonDeliveryShapedStillProducesLegacyRun:
@@ -101,6 +107,9 @@ func TestInvokeWorkflowDefinitionNonDeliveryShapedStillProducesLegacyRun(t *test
 	}
 	if run.DefinitionRef == nil || run.DefinitionRef.Id != "plain-automation" {
 		t.Fatalf("expected run.definition_ref.id = plain-automation, got %v", run.DefinitionRef)
+	}
+	if run.PlanRef == nil || run.PlanRef.Id == "" {
+		t.Fatalf("expected run.plan_ref to reference an instantiated plan, got %v", run.PlanRef)
 	}
 
 	// get_delivery must not treat this as a delivery orchestration.

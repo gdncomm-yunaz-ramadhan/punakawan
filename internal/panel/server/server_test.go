@@ -19,11 +19,13 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/evidence"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/workflow"
+	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -637,6 +639,84 @@ func exchangeSession(t *testing.T, s *Server) (*http.Client, string) {
 		t.Fatalf("decode exchange response: %v", err)
 	}
 	return client, out.CSRFToken
+}
+
+// TestWorkflowInvokeRouteMatchesMCPOnRolesShapedDefinition: invoking a
+// Roles-shaped definition through the panel's own
+// /workflows/{id}/invoke route must produce a real internal/delivery
+// orchestration (with a plan_id attached), the same way
+// invoke_workflow_definition already does over MCP - not a legacy
+// internal/workflow run, which is what this route always created before
+// this fix (punokawan-pkcd.3).
+func TestWorkflowInvokeRouteMatchesMCPOnRolesShapedDefinition(t *testing.T) {
+	s, a := startTestServer(t)
+	client, csrf := exchangeSession(t, s)
+
+	defStore, err := workflowdef.Open(a.Workspace.Root)
+	if err != nil {
+		t.Fatalf("workflowdef.Open: %v", err)
+	}
+	if _, err := defStore.Save(workflowdef.Definition{
+		Version: workflowdef.SchemaVersion,
+		ID:      "panel-hotfix-delivery",
+		Name:    "Panel Hotfix Delivery",
+		Enabled: true,
+		Roles: map[string]workflowdef.RoleRestriction{
+			"gareng": {Required: false},
+		},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"inputs": map[string]any{"references": []string{"JIRA-9001"}}})
+	target := fmt.Sprintf("http://%s/api/v1/projects/%s/workflows/panel-hotfix-delivery/invoke", s.Addr(), a.Workspace.ID)
+	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Csrf-Token", csrf)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read invoke response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("invoke status = %d, want 200: %s", resp.StatusCode, respBody)
+	}
+	var out struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(respBody, &out); err != nil {
+		t.Fatalf("decode invoke response: %v", err)
+	}
+	if out.RunID == "" {
+		t.Fatal("invoke returned an empty run_id")
+	}
+
+	ctx := context.Background()
+	db, err := a.OpenStorage(ctx)
+	if err != nil {
+		t.Fatalf("OpenStorage: %v", err)
+	}
+	view, err := delivery.NewStore(db).BuildDeliveryView(ctx, out.RunID)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView(%s): %v (run_id was not a delivery orchestration)", out.RunID, err)
+	}
+	if view.Orchestration.WorkflowDefinitionId == nil || *view.Orchestration.WorkflowDefinitionId != "panel-hotfix-delivery" {
+		t.Fatalf("expected orchestration.workflow_definition_id = panel-hotfix-delivery, got %v", view.Orchestration.WorkflowDefinitionId)
+	}
+	if view.PlanID == "" {
+		t.Fatal("expected the delivery to reference a plan_id")
+	}
+
+	if _, err := a.Workflow.Get(out.RunID); err == nil {
+		t.Fatal("expected no legacy workflow run to exist for a Roles-shaped definition")
+	}
 }
 
 // Deregistering a project is destructive from the panel's point of view, so

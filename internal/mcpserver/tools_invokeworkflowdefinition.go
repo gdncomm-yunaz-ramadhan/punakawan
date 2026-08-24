@@ -1,14 +1,19 @@
 // tools_invokeworkflowdefinition.go gives workflowdef.Invoker's
 // RunCreator seam its first MCP-reachable binding: invoke_workflow_definition
-// resolves a saved definition and hands it to workflowdef.NewInvoker with a
-// RunCreator that dispatches on the definition's own shape. A definition with
-// a non-empty Roles map is delivery-shaped - its Roles/AllowedCapabilities/
-// ApprovalPolicy are a configuration overlay over internal/delivery's own
-// fixed lane/lease/role-stage sequence, not a step graph to execute - so it
-// is invoked by calling StartDeliveryWithOptions and returning the
-// resulting orchestration id. Every other definition keeps going through
-// internal/workflow's existing run engine, the same way the panel's own
-// invoke endpoint already creates a run today, unchanged.
+// resolves a saved definition and hands it to workflowdef.NewInvoker with
+// CreateWorkflowRun, the same shape-aware RunCreator the panel's own invoke
+// endpoint calls (internal/panel/server/server.go's newInvoker) - one
+// dispatch decision shared by both surfaces instead of two independent
+// reimplementations of it. A definition with a non-empty Roles map is
+// delivery-shaped - its Roles/AllowedCapabilities/ApprovalPolicy are a
+// configuration overlay over internal/delivery's own fixed lane/lease/
+// role-stage sequence, not a step graph to execute - so it is invoked by
+// calling StartDeliveryWithOptions and returning the resulting orchestration
+// id. Every other definition keeps going through internal/workflow's
+// existing run engine. Either way, invocation first instantiates a
+// plan.Plan snapshot of the definition (project hygiene refactor plan
+// §5.3) and stamps the resulting plan_id/plan_revision onto whichever run
+// gets created.
 package mcpserver
 
 import (
@@ -20,6 +25,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/workcontext"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -52,7 +58,7 @@ func invokeWorkflowDefinitionHandler(a *app.App) func(context.Context, *mcp.Call
 			return nil, InvokeWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: invoke_workflow_definition: %w", err)
 		}
 		caps := workflowdef.NewCapabilitySet(CapabilityRegistry(a).Names(), nil)
-		invoker := workflowdef.NewInvoker(caps, shapeAwareRunCreator(a))
+		invoker := workflowdef.NewInvoker(caps, CreateWorkflowRun(a))
 		runID, err := invoker.Invoke(ctx, def, in.Inputs)
 		if err != nil {
 			return nil, InvokeWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: invoke_workflow_definition: %w", err)
@@ -61,35 +67,64 @@ func invokeWorkflowDefinitionHandler(a *app.App) func(context.Context, *mcp.Call
 	}
 }
 
-// shapeAwareRunCreator is the second RunCreator workflowdef.Invoker
-// gains alongside the panel's existing legacy one: a definition with a
-// non-empty Roles map is delivery-shaped and routes to
-// createDeliveryRun; every other definition keeps going through
-// createLegacyWorkflowRun exactly as before. Roles is the one signal
-// checked - a definition is either delivery-shaped by that one test, or
-// it is not, with no further capability-taxonomy guessing in between: a
-// definition that mixes delivery roles with steps meant for the general
-// capability-DAG engine is not something this can safely infer its way
-// out of, so it is simply treated as delivery-shaped rather than guessed
-// at.
-func shapeAwareRunCreator(a *app.App) workflowdef.RunCreator {
+// CreateWorkflowRun is the one shape-aware RunCreator both
+// invoke_workflow_definition (above) and the panel's own invoke endpoint
+// (internal/panel/server/server.go's newInvoker) use, so a Roles-shaped
+// definition invoked from either surface produces the same
+// internal/delivery orchestration, and every other definition produces
+// the same internal/workflow run, regardless of which caller invoked it.
+// Roles is the one signal checked - a definition is either
+// delivery-shaped by that one test, or it is not, with no further
+// capability-taxonomy guessing in between: a definition that mixes
+// delivery roles with steps meant for the general capability-DAG engine
+// is not something this can safely infer its way out of, so it is simply
+// treated as delivery-shaped rather than guessed at.
+//
+// Before dispatching, it instantiates a plan.Plan snapshot of def's steps
+// (project hygiene refactor plan §5.3's workflow -> plan -> delivery
+// pipeline) and threads the resulting plan_id/plan_revision onto
+// whichever run gets created.
+func CreateWorkflowRun(a *app.App) workflowdef.RunCreator {
 	return func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
-		if len(def.Roles) > 0 {
-			return createDeliveryRun(ctx, a, def, inputs)
+		planID, planRevision, err := instantiatePlan(ctx, a, def)
+		if err != nil {
+			return "", err
 		}
-		return createLegacyWorkflowRun(ctx, a, def, inputs)
+		if len(def.Roles) > 0 {
+			return createDeliveryRun(ctx, a, def, inputs, planID, planRevision)
+		}
+		return createLegacyWorkflowRun(ctx, a, def, inputs, planID, planRevision)
 	}
+}
+
+// instantiatePlan saves a new plan.Plan lineage built from def, so every
+// invocation - delivery-shaped or not - references an exact
+// plan_id+plan_revision rather than only the workflow definition it came
+// from.
+func instantiatePlan(ctx context.Context, a *app.App, def workflowdef.Definition) (string, int, error) {
+	planStore, err := a.OpenPlan()
+	if err != nil {
+		return "", 0, fmt.Errorf("open plan store for definition %q: %w", def.ID, err)
+	}
+	saved, err := planStore.Save(ctx, plan.FromWorkflowDefinition(def))
+	if err != nil {
+		return "", 0, fmt.Errorf("instantiate plan for definition %q: %w", def.ID, err)
+	}
+	return saved.ID, saved.Revision, nil
 }
 
 // createDeliveryRun turns a delivery-shaped definition's inputs into a
 // StartDeliveryWithOptions call, carrying the definition's id onto
 // the new orchestration so its role-stage gate can consult the
-// definition's Roles map. It returns the orchestration id as this
-// invocation's run id - a real, fetchable-via-get_delivery id, not a
-// legacy workflow run id. No title is passed: a definition's inputs
-// carry only references, so the run gets the same derived title
-// get_delivery would show for it anyway.
-func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any) (string, error) {
+// definition's Roles map, then attaches planID/planRevision via
+// UpdateOrchestrationDetails (OrchestrationOptions itself carries no
+// plan fields - StartDeliveryWithOptions has already minted the
+// orchestration's revision by the time the plan exists). It returns the
+// orchestration id as this invocation's run id - a real,
+// fetchable-via-get_delivery id, not a legacy workflow run id. No title
+// is passed: a definition's inputs carry only references, so the run
+// gets the same derived title get_delivery would show for it anyway.
+func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any, planID string, planRevision int) (string, error) {
 	references, err := referencesFromInputs(inputs)
 	if err != nil {
 		return "", fmt.Errorf("delivery-shaped definition %q: %w", def.ID, err)
@@ -101,6 +136,12 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 	view, err := store.StartDeliveryWithOptions(ctx, delivery.NewID(), references, delivery.OrchestrationOptions{WorkflowDefinitionID: def.ID})
 	if err != nil {
 		return "", fmt.Errorf("start delivery for definition %q: %w", def.ID, err)
+	}
+	if _, err := store.UpdateOrchestrationDetails(ctx, delivery.NewID(), view.Orchestration.Id, view.Orchestration.Revision, delivery.OrchestrationDetails{
+		PlanID:       &planID,
+		PlanRevision: &planRevision,
+	}); err != nil {
+		return "", fmt.Errorf("attach plan to delivery for definition %q: %w", def.ID, err)
 	}
 	return view.Orchestration.Id, nil
 }
@@ -136,11 +177,13 @@ func referencesFromInputs(inputs map[string]any) ([]string, error) {
 // createLegacyWorkflowRun creates a WorkflowRun the same way the
 // panel's own invoke endpoint does: compose the definition's bounded
 // context, then stamp it onto a fresh run under the generic
-// implementation-only carrier. internal/workflow's run engine itself is
-// untouched by this - this is one more caller of its existing,
-// already-used API, scoped to this server's own single workspace rather
-// than the panel's cross-project runtime pool.
-func createLegacyWorkflowRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any) (string, error) {
+// implementation-only carrier, plus the plan_ref instantiatePlan already
+// minted. internal/workflow's run engine itself is untouched by this -
+// this is one more caller of its existing, already-used API, scoped to
+// a *app.App's own workspace root (the panel resolves the right App for
+// a non-primary project before calling in here, so this always operates
+// against the correct root).
+func createLegacyWorkflowRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any, planID string, planRevision int) (string, error) {
 	now := time.Now().UTC()
 	prepared, err := workcontext.Prepare(workcontext.Request{
 		WorkspaceRoot: a.Workspace.Root,
@@ -157,6 +200,7 @@ func createLegacyWorkflowRun(ctx context.Context, a *app.App, def workflowdef.De
 	run := workflow.New(runID, a.Workspace.ID, protocol.WorkflowRunWorkflowNameImplementationOnly, now)
 	objective := def.Name
 	run.Objective = &objective
+	run.PlanRef = &protocol.WorkflowRunPlanRef{Id: planID, Revision: planRevision}
 	defRef := &protocol.WorkflowRunDefinitionRef{Id: def.ID, Revision: def.Revision, ContentHash: def.ContentHash()}
 	run, err = workflow.StampContext(run, defRef, prepared.ResolvedInputs, prepared.StepProgress, &prepared.Snapshot, now)
 	if err != nil {

@@ -9836,6 +9836,12 @@ type WorkflowRun struct {
 	// a traceable input to a learning proposal, not yet canonical knowledge.
 	Outcome *WorkflowRunOutcome `json:"outcome,omitempty,omitzero" yaml:"outcome,omitempty" mapstructure:"outcome,omitempty"`
 
+	// Immutable reference to the internal/plan revision this run was instantiated
+	// from (project hygiene refactor plan §5.3's workflow -> plan -> delivery
+	// pipeline). Absent for a run predating this wiring. Present for a run created by
+	// invoking a workflow definition, mirroring definition_ref's shape.
+	PlanRef *WorkflowRunPlanRef `json:"plan_ref,omitempty,omitzero" yaml:"plan_ref,omitempty" mapstructure:"plan_ref,omitempty"`
+
 	// The roles.yaml revision in effect when this run was created (plan §50,
 	// ROLE-012). Stamped once at creation so a historical run remains reproducible
 	// even after the project role configuration is later edited.
@@ -10265,6 +10271,39 @@ func (j *WorkflowRunOutcome) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	*j = WorkflowRunOutcome(plain)
+	return nil
+}
+
+// Immutable reference to the internal/plan revision this run was instantiated from
+// (project hygiene refactor plan §5.3's workflow -> plan -> delivery pipeline).
+// Absent for a run predating this wiring. Present for a run created by invoking a
+// workflow definition, mirroring definition_ref's shape.
+type WorkflowRunPlanRef struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Revision corresponds to the JSON schema field "revision".
+	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkflowRunPlanRef) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in WorkflowRunPlanRef: required")
+	}
+	if _, ok := raw["revision"]; raw != nil && !ok {
+		return fmt.Errorf("field revision in WorkflowRunPlanRef: required")
+	}
+	type Plain WorkflowRunPlanRef
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = WorkflowRunPlanRef(plain)
 	return nil
 }
 
