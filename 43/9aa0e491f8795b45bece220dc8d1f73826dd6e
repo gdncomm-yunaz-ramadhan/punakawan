@@ -1,0 +1,31 @@
+internal/mcpserver/tools_createpr.go
+  a330ccb60fead87e 49
+internal/mcpserver/tools.go
+  a330ccb60fead87e 49,64,69,79,99,104,114,119,129,140,145,150,160,165,175,180,185,200,210,215,220,225,230,330,340,345,350,366,376,382,387,392
+internal/mcpserver/tools_execution.go
+  a330ccb60fead87e 59
+internal/mcpserver/tools_semar.go
+  a330ccb60fead87e 20
+internal/mcpserver/tools_knowledgesearch.go
+  a330ccb60fead87e 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "439aa0e491f8795b45bece220dc8d1f73826dd6e",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 36,
+      "total_deletions": 36,
+      "accepted_lines": 36,
+      "overriden_lines": 0
+    }
+  }
+}
