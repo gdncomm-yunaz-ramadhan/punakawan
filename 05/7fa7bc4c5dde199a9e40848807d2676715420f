@@ -1,0 +1,57 @@
+internal/panel/api/overview_handler_test.go
+  a330ccb60fead87e 61
+web/panel/tests/ProjectsList.test.ts
+  a330ccb60fead87e 100-101,109
+internal/panel/server/server.go
+  a330ccb60fead87e 278-284
+web/panel/src/routes/projects/projectList.ts
+  a330ccb60fead87e 8
+web/panel/tests/projectList.test.ts
+  a330ccb60fead87e 71-72,79-81,83
+internal/panel/sources/cached_workspace_test.go
+  a330ccb60fead87e 66,68-71,107
+internal/panel/api/overview_handler.go
+  a330ccb60fead87e 13-17,58-63,160-163
+internal/panel/deps.go
+  a330ccb60fead87e 116,134-137
+internal/panel/api/overview_bench_test.go
+  a330ccb60fead87e 57-61
+web/panel/src/lib/components/overlay/Drawer.svelte
+  a330ccb60fead87e 19
+web/panel/src/routes/projects/ProjectDetail.svelte
+  a330ccb60fead87e 99-105
+internal/panel/contract/readers.go
+  a330ccb60fead87e 7,28,58-59
+web/panel/src/lib/api/client.ts
+  a330ccb60fead87e 3,32,110-111,908,912-914
+internal/panel/sources/cached_workspace.go
+  a330ccb60fead87e 188-192
+internal/panel/snapshot/snapshot.go
+  a330ccb60fead87e 6-7
+web/panel/tests/Overview.test.ts
+  a330ccb60fead87e 26,28,36,38
+web/panel/tests/ProjectDetail.test.ts
+  a330ccb60fead87e 50,62-63,110,114,116,120
+internal/panel/sources/workspace_source.go
+  a330ccb60fead87e 217-223,271-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "057fa7bc4c5dde199a9e40848807d2676715420f",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 25,
+      "total_deletions": 39,
+      "accepted_lines": 97,
+      "overriden_lines": 0
+    }
+  }
+}
