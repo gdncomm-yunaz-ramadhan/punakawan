@@ -1,0 +1,45 @@
+internal/mcpserver/tools_knowledgecandidate.go
+  a330ccb60fead87e 1-113
+internal/mcpserver/tools_knowledgecandidate_test.go
+  a330ccb60fead87e 1-98
+internal/mcpserver/tools.go
+  a330ccb60fead87e 93-96,360
+internal/knowledgefacade/legacylocal.go
+  a330ccb60fead87e 1-112
+internal/knowledgefacade/facade.go
+  a330ccb60fead87e 1-114
+internal/knowledgefacade/stubs.go
+  a330ccb60fead87e 1-55
+internal/panel/api/artifact_stores.go
+  a330ccb60fead87e 23-24,41
+internal/mcpserver/tools_knowledgedelete.go
+  a330ccb60fead87e 22-25
+internal/mcpserver/tools_knowledgesearch.go
+  a330ccb60fead87e 10,43-55,65-67,74,80-87,92-93,96-112,114,116-118,121-131,133-143,145-166,171,174-198,200-203,205-208,210-225
+internal/knowledgefacade/legacylocal_test.go
+  a330ccb60fead87e 1-230
+internal/mcpserver/tools_workcontext.go
+  a330ccb60fead87e 13,100,285-287,290
+internal/mcpserver/tools_knowledgesearch_test.go
+  a330ccb60fead87e 4-5,9,123-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "1c1df4d7906f56d75785dba7dca11c369c4c2e21",
+  "prompts": {
+    "a330ccb60fead87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9f8b249-1a81-42fd-b21e-b6ec6c0c6b36",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1081,
+      "total_deletions": 150,
+      "accepted_lines": 1006,
+      "overriden_lines": 0
+    }
+  }
+}
