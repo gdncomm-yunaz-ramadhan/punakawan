@@ -15,6 +15,8 @@ type ResolveJiraDeliveryInput struct {
 	Title                string                 `json:"title,omitempty"`
 	Description          string                 `json:"description,omitempty"`
 	Projects             []StartDeliveryProject `json:"projects,omitempty"`
+	PlanID               string                 `json:"plan_id,omitempty"`
+	PlanRevision         int                    `json:"plan_revision,omitempty"`
 	WorkflowDefinitionID string                 `json:"workflow_definition_id,omitempty"`
 	SnapshotTitle        string                 `json:"snapshot_title,omitempty"`
 	SnapshotBody         string                 `json:"snapshot_body,omitempty"`
@@ -37,7 +39,10 @@ func resolveJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if key == "" {
 			key = delivery.NewID()
 		}
-		resolved, err := store.ResolveJiraDelivery(ctx, key, in.JiraIssueKey, delivery.ResolveJiraDeliveryOptions{Title: in.Title, Description: in.Description, WorkflowDefinitionID: in.WorkflowDefinitionID, SnapshotTitle: in.SnapshotTitle, SnapshotBody: in.SnapshotBody})
+		resolved, err := store.ResolveJiraDelivery(ctx, key, in.JiraIssueKey, delivery.ResolveJiraDeliveryOptions{
+			Title: in.Title, Description: in.Description, WorkflowDefinitionID: in.WorkflowDefinitionID,
+			PlanID: in.PlanID, PlanRevision: in.PlanRevision, SnapshotTitle: in.SnapshotTitle, SnapshotBody: in.SnapshotBody,
+		})
 		if err != nil {
 			return nil, ResolveJiraDeliveryOutput{}, fmt.Errorf("mcpserver: resolve Jira delivery: %w", err)
 		}
@@ -56,6 +61,8 @@ type StartDeliverySessionInput struct {
 	ExecutionID    string `json:"execution_id"`
 	Participant    string `json:"participant"`
 	ResumedFromID  string `json:"resumed_from_id,omitempty"`
+	WorktreePath   string `json:"worktree_path,omitempty"`
+	Provider       string `json:"provider,omitempty"`
 	ID             string `json:"id,omitempty"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
@@ -74,7 +81,7 @@ func startDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallTool
 		if key == "" {
 			key = delivery.NewID()
 		}
-		session, err := store.StartSession(ctx, key, in.ExecutionID, in.ID, in.Participant, in.ResumedFromID)
+		session, err := store.StartSession(ctx, key, in.ExecutionID, in.ID, in.Participant, in.ResumedFromID, in.WorktreePath, in.Provider)
 		if err != nil {
 			return nil, DeliverySessionOutput{}, fmt.Errorf("mcpserver: start delivery session: %w", err)
 		}

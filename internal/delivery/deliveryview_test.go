@@ -527,6 +527,38 @@ func TestStartDeliverySuppliedTitleWinsOverDerivation(t *testing.T) {
 	}
 }
 
+func TestDeliveryViewIncludesHighLevelAndProjectPlans(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	view, err := s.StartDeliveryWithOptions(ctx, "plan-linked-delivery", []string{"PAY-1842"}, OrchestrationOptions{
+		Title: "Migrate billing to v2", Description: "Move every billing caller onto the v2 pricing endpoint.",
+		PlanID: "delivery-plan", PlanRevision: 3,
+	})
+	if err != nil {
+		t.Fatalf("StartDeliveryWithOptions: %v", err)
+	}
+	project := registerProject(t, s, "billing")
+	if err := s.LinkProjectPlan(ctx, "link-billing-plan", view.Orchestration.Id, project.Id, "billing-plan", 2); err != nil {
+		t.Fatalf("LinkProjectPlan: %v", err)
+	}
+
+	got, err := s.BuildDeliveryView(ctx, view.Orchestration.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if got.PlanID != "delivery-plan" || got.PlanRevision != 3 {
+		t.Fatalf("high-level plan = %q r%d, want delivery-plan r3", got.PlanID, got.PlanRevision)
+	}
+	if len(got.ProjectPlans) != 1 {
+		t.Fatalf("ProjectPlans = %+v, want one linked project plan", got.ProjectPlans)
+	}
+	link := got.ProjectPlans[0]
+	if link.ProjectID != project.Id || link.PlanID != "billing-plan" || link.PlanRevision != 2 {
+		t.Fatalf("ProjectPlans[0] = %+v, want project %s plan billing-plan r2", link, project.Id)
+	}
+}
+
 // TestDeliveryViewDerivesTitleFromSingleReference covers the one-reference
 // derivation: with no title supplied, the view must name the single
 // requirement rather than fall back to a count or an empty string, and

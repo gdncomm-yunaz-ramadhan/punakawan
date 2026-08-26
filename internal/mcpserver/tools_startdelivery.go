@@ -31,6 +31,11 @@ type StartDeliveryInput struct {
 	// Omitted, the orchestration simply carries none - nothing invents
 	// prose the way a missing title is derived.
 	Description string `json:"description,omitempty" jsonschema:"longer prose about what this delivery is for and why it exists, for whoever reads the run later. Omitting it leaves the delivery with no description at all; unlike title, nothing is derived in its place"`
+	// PlanID and PlanRevision identify the immutable high-level plan for
+	// the delivery. Project-specific detailed plans belong on the matching
+	// project entries below.
+	PlanID       string `json:"plan_id,omitempty"`
+	PlanRevision int    `json:"plan_revision,omitempty"`
 	// IdempotencyKey is optional: repeating the same key on retry
 	// resolves to the same orchestration instead of minting a second
 	// one for the same request.
@@ -52,10 +57,15 @@ type StartDeliveryInput struct {
 // StartDeliveryProject is one repository the delivery lands in, plus the
 // units of work to open there.
 type StartDeliveryProject struct {
-	Slug          string              `json:"slug" jsonschema:"unique short identifier for this project; a slug already registered under a different id cannot be re-registered, and that project is reported as skipped"`
-	RepositoryUrl string              `json:"repository_url"`
-	DefaultBranch string              `json:"default_branch,omitempty"`
-	Tasks         []StartDeliveryTask `json:"tasks,omitempty" jsonschema:"one entry per unit of work; each becomes a parent task and a lane in this project. A project with no tasks is registered but gets no lanes"`
+	Slug          string `json:"slug" jsonschema:"unique short identifier for this project; a slug already registered under a different id cannot be re-registered, and that project is reported as skipped"`
+	RepositoryUrl string `json:"repository_url"`
+	DefaultBranch string `json:"default_branch,omitempty"`
+	// PlanID and PlanRevision identify this project's detailed plan. They
+	// must be supplied together, and the plan is linked to the delivery
+	// after this project has been registered.
+	PlanID       string              `json:"plan_id,omitempty"`
+	PlanRevision int                 `json:"plan_revision,omitempty"`
+	Tasks        []StartDeliveryTask `json:"tasks,omitempty" jsonschema:"one entry per unit of work; each becomes a parent task and a lane in this project. A project with no tasks is registered but gets no lanes"`
 }
 
 // StartDeliveryTask is one unit of work: a parent task grouping some of
@@ -118,6 +128,7 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 				}
 				resolved, err := store.ResolveJiraDelivery(ctx, key, source.ExternalID, delivery.ResolveJiraDeliveryOptions{
 					Title: in.Title, Description: in.Description, WorkflowDefinitionID: in.WorkflowDefinitionId,
+					PlanID: in.PlanID, PlanRevision: in.PlanRevision,
 				})
 				if err != nil {
 					return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: resolve Jira delivery: %w", err)
@@ -138,6 +149,8 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 			WorkflowDefinitionID: in.WorkflowDefinitionId,
 			Title:                in.Title,
 			Description:          in.Description,
+			PlanID:               in.PlanID,
+			PlanRevision:         in.PlanRevision,
 		})
 		if err != nil {
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: start delivery: %w", err)
@@ -187,6 +200,18 @@ func decomposeStartDelivery(ctx context.Context, store *delivery.Store, orchestr
 			continue
 		}
 		res.ProjectId = project.Id
+		if (p.PlanID == "") != (p.PlanRevision == 0) || p.PlanRevision < 0 {
+			res.Skipped = "project plan_id and positive plan_revision must be supplied together"
+			results = append(results, res)
+			continue
+		}
+		if p.PlanID != "" {
+			if err := store.LinkProjectPlan(ctx, delivery.NewID(), orchestrationID, project.Id, p.PlanID, p.PlanRevision); err != nil {
+				res.Skipped = fmt.Sprintf("link project plan: %v", err)
+				results = append(results, res)
+				continue
+			}
+		}
 
 		var skipped []string
 		for _, task := range p.Tasks {

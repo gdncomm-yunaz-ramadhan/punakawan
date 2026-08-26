@@ -193,6 +193,10 @@ type OrchestrationOptions struct {
 	// requirement the caller supplied, whereas derived prose would be
 	// invention.
 	Description string
+	// PlanID and PlanRevision identify the immutable high-level plan that
+	// coordinates work across every project in the delivery.
+	PlanID       string
+	PlanRevision int
 }
 
 // OrchestrationDetails names the descriptive attributes of an
@@ -267,6 +271,9 @@ func (s *Store) CreateOrchestration(ctx context.Context, idempotencyKey, id stri
 // configured, attaching a definition is rejected outright rather than
 // silently accepted and later ignored by the gate.
 func (s *Store) CreateOrchestrationWithOptions(ctx context.Context, idempotencyKey, id string, inputs []protocol.DeliveryOrchestrationUnresolvedInputsElem, opts OrchestrationOptions) (*protocol.DeliveryOrchestration, error) {
+	if (opts.PlanID == "") != (opts.PlanRevision == 0) || opts.PlanRevision < 0 {
+		return nil, fmt.Errorf("delivery: plan_id and positive plan_revision must be supplied together")
+	}
 	if opts.WorkflowDefinitionID != "" {
 		if s.workflowDefinitions == nil {
 			return nil, fmt.Errorf("delivery: workflow_definition_id %q given but no workflow definition resolver is configured", opts.WorkflowDefinitionID)
@@ -287,6 +294,10 @@ func (s *Store) CreateOrchestrationWithOptions(ctx context.Context, idempotencyK
 	}
 	if description := strings.TrimSpace(opts.Description); description != "" {
 		payloadMap["description"] = description
+	}
+	if opts.PlanID != "" {
+		payloadMap["plan_id"] = opts.PlanID
+		payloadMap["plan_revision"] = opts.PlanRevision
 	}
 	payload, err := json.Marshal(payloadMap)
 	if err != nil {

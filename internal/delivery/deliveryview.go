@@ -8,12 +8,14 @@ package delivery
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -119,6 +121,16 @@ type JiraActivity struct {
 	FiredAt   time.Time `json:"fired_at"`
 }
 
+// ProjectPlanLink connects a delivery to an exact, project-scoped detailed
+// plan. The link records only the durable reference; the plan itself remains
+// owned and rendered by the project that authored it.
+type ProjectPlanLink struct {
+	ProjectID    string    `json:"project_id"`
+	PlanID       string    `json:"plan_id"`
+	PlanRevision int       `json:"plan_revision"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 // DeliveryView is the bounded, human-and-agent-readable snapshot of one
 // orchestration: its own state, every lane grouped by project, every
 // still-blocked lane, every pending approval, every pending question,
@@ -162,6 +174,10 @@ type DeliveryView struct {
 	JiraActivity     []JiraActivity               `json:"jira_activity"`
 	WorkLogs         []WorkLogEntry               `json:"worklogs"`
 	WorkLogSeconds   int                          `json:"worklog_seconds"`
+	// ProjectPlans are the detailed plans a delivery explicitly uses in
+	// each touched project. The delivery's own PlanID/PlanRevision remains
+	// the high-level plan, because it may intentionally span all projects.
+	ProjectPlans []ProjectPlanLink `json:"project_plans"`
 
 	// Lifecycle is present for Jira-backed deliveries resolved through the
 	// canonical case API. It carries the lifetime case, continuation,
@@ -269,6 +285,7 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		Timeline:             []AuditEvent{},
 		JiraActivity:         []JiraActivity{},
 		WorkLogs:             []WorkLogEntry{},
+		ProjectPlans:         []ProjectPlanLink{},
 		NewlyRunnableLaneIDs: []string{},
 	}
 	if orch.Description != nil {
@@ -314,6 +331,11 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		return nil, err
 	}
 	view.Lifecycle = lifecycle
+	projectPlans, err := s.listProjectPlanLinks(ctx, orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	view.ProjectPlans = projectPlans
 
 	laneIDs := make([]string, 0, len(laneMap))
 	for id := range laneMap {
@@ -518,6 +540,67 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	}
 
 	return view, nil
+}
+
+// LinkProjectPlan records the exact project plan a delivery is executing.
+// Project plans are owned by their projects; this aggregate keeps only the
+// immutable cross-project reference required to navigate from a delivery.
+func (s *Store) LinkProjectPlan(ctx context.Context, idempotencyKey, orchestrationID, projectID, planID string, planRevision int) error {
+	if strings.TrimSpace(orchestrationID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(planID) == "" {
+		return fmt.Errorf("delivery: orchestration, project, and plan ids are required")
+	}
+	if planRevision < 1 {
+		return fmt.Errorf("delivery: project plan revision must be positive")
+	}
+	now := time.Now().UTC()
+	err := s.db.Write(ctx, idempotencyKey, "link delivery project plan "+planID, func(tx *sql.Tx) error {
+		if _, err := loadEventsTx(ctx, tx, orchestrationID); err != nil {
+			return err
+		}
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM delivery_projects WHERE id = ?`, projectID).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			return ErrNotFound
+		}
+		_, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO delivery_plan_links (orchestration_id, project_id, plan_id, plan_revision, created_at) VALUES (?, ?, ?, ?, ?)`,
+			orchestrationID, projectID, strings.TrimSpace(planID), planRevision, now.Format(timeLayout))
+		return err
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return fmt.Errorf("delivery: link project plan: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) listProjectPlanLinks(ctx context.Context, orchestrationID string) ([]ProjectPlanLink, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		`SELECT project_id, plan_id, plan_revision, created_at FROM delivery_plan_links WHERE orchestration_id = ? ORDER BY created_at, project_id, plan_id, plan_revision`,
+		orchestrationID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: list project plans for %s: %w", orchestrationID, err)
+	}
+	defer rows.Close()
+	out := []ProjectPlanLink{}
+	for rows.Next() {
+		var link ProjectPlanLink
+		var created string
+		if err := rows.Scan(&link.ProjectID, &link.PlanID, &link.PlanRevision, &created); err != nil {
+			return nil, fmt.Errorf("delivery: scan project plan for %s: %w", orchestrationID, err)
+		}
+		parsed, err := time.Parse(timeLayout, created)
+		if err != nil {
+			return nil, fmt.Errorf("delivery: parse project plan timestamp for %s: %w", orchestrationID, err)
+		}
+		link.CreatedAt = parsed
+		out = append(out, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("delivery: iterate project plans for %s: %w", orchestrationID, err)
+	}
+	return out, nil
 }
 
 func (s *Store) listJiraActivity(ctx context.Context, orchestrationID string) ([]JiraActivity, error) {

@@ -45,6 +45,8 @@ type DeliverySession struct {
 	Status          string     `json:"status"`
 	StartedAt       time.Time  `json:"started_at"`
 	EndedAt         *time.Time `json:"ended_at,omitempty"`
+	WorktreePath    string     `json:"worktree_path,omitempty"`
+	Provider        string     `json:"provider,omitempty"`
 }
 
 type SessionCheckpoint struct {
@@ -173,6 +175,8 @@ type ResolveJiraDeliveryOptions struct {
 	WorkflowDefinitionID string
 	SnapshotTitle        string
 	SnapshotBody         string
+	PlanID               string
+	PlanRevision         int
 }
 
 type ResolvedJiraDelivery struct {
@@ -200,6 +204,9 @@ func (s *Store) ResolveJiraDelivery(ctx context.Context, idempotencyKey, jiraIss
 		if err := s.workflowDefinitions.ValidateEnabled(ctx, opts.WorkflowDefinitionID); err != nil {
 			return nil, fmt.Errorf("delivery: attach workflow definition %q: %w", opts.WorkflowDefinitionID, err)
 		}
+	}
+	if (opts.PlanID == "") != (opts.PlanRevision == 0) || opts.PlanRevision < 0 {
+		return nil, fmt.Errorf("delivery: plan_id and positive plan_revision must be supplied together")
 	}
 	var caseID, executionID, orchestrationID string
 	created := false
@@ -253,6 +260,10 @@ func (s *Store) ResolveJiraDelivery(ctx context.Context, idempotencyKey, jiraIss
 		}
 		if opts.WorkflowDefinitionID != "" {
 			payloadMap["workflow_definition_id"] = opts.WorkflowDefinitionID
+		}
+		if opts.PlanID != "" {
+			payloadMap["plan_id"] = opts.PlanID
+			payloadMap["plan_revision"] = opts.PlanRevision
 		}
 		payload, err := json.Marshal(payloadMap)
 		if err != nil {
@@ -348,7 +359,7 @@ func (s *Store) executionForOrchestration(ctx context.Context, orchestrationID s
 
 // StartSession starts a session for an execution. An active session must be
 // explicitly handed off or closed before another participant resumes it.
-func (s *Store) StartSession(ctx context.Context, idempotencyKey, executionID, id, participant, resumedFromID string) (*DeliverySession, error) {
+func (s *Store) StartSession(ctx context.Context, idempotencyKey, executionID, id, participant, resumedFromID, worktreePath, provider string) (*DeliverySession, error) {
 	if strings.TrimSpace(participant) == "" {
 		return nil, fmt.Errorf("delivery: session participant is required")
 	}
@@ -381,8 +392,12 @@ func (s *Store) StartSession(ctx context.Context, idempotencyKey, executionID, i
 				return ErrScopeMismatch
 			}
 		}
-		out = DeliverySession{ID: id, CaseID: execution.CaseID, ExecutionID: execution.ID, OrchestrationID: execution.OrchestrationID, ResumedFromID: resumedFromID, Participant: strings.TrimSpace(participant), Status: "active", StartedAt: now}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_sessions (id, case_id, execution_id, orchestration_id, resumed_from_id, participant, status, started_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`, out.ID, out.CaseID, out.ExecutionID, out.OrchestrationID, out.ResumedFromID, out.Participant, now.Format(timeLayout)); err != nil {
+		out = DeliverySession{
+			ID: id, CaseID: execution.CaseID, ExecutionID: execution.ID, OrchestrationID: execution.OrchestrationID,
+			ResumedFromID: resumedFromID, Participant: strings.TrimSpace(participant), WorktreePath: strings.TrimSpace(worktreePath),
+			Provider: strings.TrimSpace(provider), Status: "active", StartedAt: now,
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_sessions (id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`, out.ID, out.CaseID, out.ExecutionID, out.OrchestrationID, out.ResumedFromID, out.Participant, out.WorktreePath, out.Provider, now.Format(timeLayout)); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE delivery_executions SET session_id = ? WHERE id = ?`, id, executionID)
@@ -398,7 +413,7 @@ func (s *Store) StartSession(ctx context.Context, idempotencyKey, executionID, i
 }
 
 func (s *Store) GetSession(ctx context.Context, id string) (*DeliverySession, error) {
-	return scanSession(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, id))
+	return scanSession(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, id))
 }
 
 // CheckpointSession records durable handoff-ready state. A non-empty handoff
@@ -416,7 +431,7 @@ func (s *Store) CheckpointSession(ctx context.Context, idempotencyKey, sessionID
 	var out SessionCheckpoint
 	now := time.Now().UTC()
 	err := s.db.Write(ctx, idempotencyKey, "checkpoint delivery session "+sessionID, func(tx *sql.Tx) error {
-		session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, sessionID))
+		session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, sessionID))
 		if err != nil {
 			return err
 		}
@@ -468,7 +483,7 @@ func (s *Store) RecordUsage(ctx context.Context, idempotencyKey, sessionID, id, 
 	var out UsageEntry
 	now := time.Now().UTC()
 	err := s.db.Write(ctx, idempotencyKey, "record delivery usage "+id, func(tx *sql.Tx) error {
-		session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, sessionID))
+		session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, sessionID))
 		if err != nil {
 			return err
 		}
@@ -756,7 +771,7 @@ func (s *Store) ReportProgress(ctx context.Context, idempotencyKey, sessionID, i
 	var out ProgressReport
 	now := time.Now().UTC()
 	err := s.db.Write(ctx, idempotencyKey, "report delivery progress "+id, func(tx *sql.Tx) error {
-		session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, sessionID))
+		session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at, ended_at FROM delivery_sessions WHERE id = ?`, sessionID))
 		if err != nil {
 			return err
 		}
@@ -885,7 +900,7 @@ func scanSession(row lifecycleScanner) (*DeliverySession, error) {
 	var v DeliverySession
 	var started string
 	var ended sql.NullString
-	if err := row.Scan(&v.ID, &v.CaseID, &v.ExecutionID, &v.OrchestrationID, &v.ResumedFromID, &v.Participant, &v.Status, &started, &ended); err != nil {
+	if err := row.Scan(&v.ID, &v.CaseID, &v.ExecutionID, &v.OrchestrationID, &v.ResumedFromID, &v.Participant, &v.WorktreePath, &v.Provider, &v.Status, &started, &ended); err != nil {
 		return nil, noRow(err)
 	}
 	var err error
@@ -1004,7 +1019,7 @@ func scanProgress(row lifecycleScanner) (*ProgressReport, error) {
 }
 
 func listSessions(ctx context.Context, q querier, executionID string) ([]DeliverySession, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, status, started_at, ended_at FROM delivery_sessions WHERE execution_id = ? ORDER BY started_at, id`, executionID)
+	rows, err := q.QueryContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at, ended_at FROM delivery_sessions WHERE execution_id = ? ORDER BY started_at, id`, executionID)
 	if err != nil {
 		return nil, err
 	}

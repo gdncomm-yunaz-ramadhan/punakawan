@@ -870,7 +870,7 @@ export interface DeliveryWorkLog {
 export interface DeliveryLifecycle {
   case: { id: string; jira_source_key: string; jira_issue_key: string; status: string; created_at: string; updated_at: string };
   execution: { id: string; case_id: string; orchestration_id: string; ordinal: number; status: string; session_id?: string; started_at: string; ended_at?: string };
-  sessions: { id: string; case_id: string; execution_id: string; orchestration_id: string; resumed_from_id?: string; participant: string; status: string; started_at: string; ended_at?: string }[];
+  sessions: { id: string; case_id: string; execution_id: string; orchestration_id: string; resumed_from_id?: string; participant: string; worktree_path?: string; provider?: string; status: string; started_at: string; ended_at?: string }[];
   checkpoints: { id: string; case_id: string; execution_id: string; session_id: string; sequence: number; summary: string; progress_percent?: number; handoff_to?: string; created_at: string }[];
   usage: { id: string; case_id: string; execution_id: string; session_id: string; kind: string; category: string; model?: string; quantity: number; unit: string; unit_price?: number; cost_amount?: number; cost_currency?: string; price_source?: string; recorded_at: string }[];
   budgets: { id: string; case_id: string; execution_id: string; session_id?: string; category?: string; amount: number; currency: string; created_at: string }[];
@@ -881,6 +881,13 @@ export interface DeliveryLifecycle {
   progress_reports: { id: string; case_id: string; execution_id: string; session_id: string; summary: string; progress_percent?: number; reported_at: string }[];
   known_cost_by_currency: Record<string, number>;
   unknown_priced_usage: boolean;
+}
+
+export interface DeliveryProjectPlanLink {
+  project_id: string;
+  plan_id: string;
+  plan_revision: number;
+  created_at: string;
 }
 
 export interface DeliveryView {
@@ -898,6 +905,7 @@ export interface DeliveryView {
   plan_revision?: number;
   session_id?: string;
   projects: DeliveryProjectSummary[];
+  project_plans: DeliveryProjectPlanLink[];
   lanes: DeliveryLaneSummary[];
   blockers: DeliveryBlockerSummary[];
   pending_approvals: ApprovalManifest[];

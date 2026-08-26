@@ -55,6 +55,8 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 			// a description nobody wrote is never substituted at all.
 			applyOptionalText(&o.Title, ev.Payload, "title")
 			applyOptionalText(&o.Description, ev.Payload, "description")
+			applyOptionalText(&o.PlanId, ev.Payload, "plan_id")
+			applyOptionalInt(&o.PlanRevision, ev.Payload, "plan_revision")
 		case protocol.DeliveryEventTypeOrchestrationDetailsUpdated:
 			// Only the keys this event actually carries move; the rest of
 			// the run's description is left exactly as an earlier event
