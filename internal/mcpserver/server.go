@@ -38,7 +38,7 @@ func Serve(ctx context.Context, a *app.App) error {
 // consuming project) - so it's the right place for the two things that
 // actually tripped up real usage: the expected tool call sequence, and how
 // the write-approval gate is meant to be satisfied.
-const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. Work through Projects, Workflows, Plans, and Deliveries. Start or resume work with start_delivery, invoke_workflow, or get_delivery. When work is complete on an exact Jira task, record its measured task-bound interval with log_delivery_work before reporting the lane complete. Report provider-observed model usage with report_delivery_usage, including the current unit price and price source whenever the connected agent can obtain them; never ask humans to maintain price tables. For Jira story points, discover the project's field metadata through the connected Atlassian adapter, then queue the field id with the write intent; never guess a custom-field id. Runtime mechanics and provider operations stay delegated to connected adapters. Punakawan does not reason itself; the connected agent remains the reasoning engine.`
+const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. Work through Projects, Workflows, Plans, and Deliveries. Start or resume work with start_delivery, invoke_workflow, or get_delivery. When work is complete on an exact Jira task, record its measured task-bound interval with log_delivery_work before reporting the lane complete. Report provider-observed model usage with report_delivery_usage, including the current unit price and price source whenever the connected agent can obtain them; never ask humans to maintain price tables. To assess a Jira issue: resolve it, hydrate its parent and every subtask, reason over that visible source, then record clarity, approval, and rationale. Propose parent Fibonacci story points from total subtask complexity: 1 trivial, 2 small, 3 medium, 5 many tasks, 8 complex, 13 very complex or uncertain, then continuing Fibonacci. Propose lower agent-assisted original estimates per subtask from expected execution time, never a points-to-hours conversion. Generate a comment containing clarity, rationale, parent points, and each subtask estimate. Before any Jira write, show the user exact comment, parent points, and each subtask estimate, then obtain confirmation. After confirmation, queue and execute the comment, parent points, and subtask estimates. Queueing story points discovers and caches the field metadata by cloud, project, and issue type; use refresh_story_points_field after a Jira field change. Runtime mechanics and provider operations stay delegated to connected adapters. Punakawan does not reason itself; the connected agent remains the reasoning engine.`
 
 // serverInstructionsRevision identifies serverInstructionsBody's exact
 // content: a client reconnecting after a punakawan upgrade can compare
@@ -75,7 +75,6 @@ func assembleServer(a *app.App) (*mcp.Server, *toolIndex, error) {
 	idx := newToolIndex()
 	registerPublicTools(server, a, idx)
 
-	server.AddReceivingMiddleware(compactStructuredToolResults)
 	server.AddReceivingMiddleware(sanitizeToolListSchemas)
 
 	return server, idx, nil
@@ -183,32 +182,5 @@ func sanitizeAnySchema(s *jsonschema.Schema) {
 	}
 	for _, c := range s.Definitions {
 		visit(c)
-	}
-}
-
-// compactStructuredToolResults removes the Go SDK's automatic full JSON copy
-// from content when the same value is already present in structuredContent.
-// Modern MCP clients (including Codex and Claude) consume structuredContent;
-// retaining a two-word content marker keeps the response legible to older
-// clients without charging the model context twice for every result.
-func compactStructuredToolResults(next mcp.MethodHandler) mcp.MethodHandler {
-	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-		result, err := next(ctx, method, req)
-		if err != nil || method != "tools/call" {
-			return result, err
-		}
-		toolResult, ok := result.(*mcp.CallToolResult)
-		if !ok || toolResult.IsError || toolResult.StructuredContent == nil || len(toolResult.Content) != 1 {
-			return result, nil
-		}
-		text, ok := toolResult.Content[0].(*mcp.TextContent)
-		if !ok {
-			return result, nil
-		}
-		structured, marshalErr := json.Marshal(toolResult.StructuredContent)
-		if marshalErr == nil && text.Text == string(structured) {
-			text.Text = "Structured result."
-		}
-		return result, nil
 	}
 }

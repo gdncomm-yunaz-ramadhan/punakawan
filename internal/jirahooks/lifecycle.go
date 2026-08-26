@@ -49,12 +49,37 @@ func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempot
 		Normalized struct {
 			Summary     string `json:"summary"`
 			Description string `json:"description"`
+			Subtasks    []struct {
+				Key     string `json:"key"`
+				Summary string `json:"summary"`
+			} `json:"subtasks"`
 		} `json:"normalized"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, fmt.Errorf("jirahooks: decode Jira issue %s: %w", lifecycle.Case.JiraIssueKey, err)
 	}
-	return l.store.CaptureJiraSnapshot(ctx, idempotencyKey, executionID, sessionID, result.Normalized.Summary, result.Normalized.Description)
+	var body strings.Builder
+	body.WriteString(result.Normalized.Description)
+	for _, subtask := range result.Normalized.Subtasks {
+		if strings.TrimSpace(subtask.Key) == "" {
+			continue
+		}
+		raw, err := gate.Call(ctx, lifecycle.Case.ID, "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": subtask.Key})
+		if err != nil {
+			return nil, fmt.Errorf("jirahooks: hydrate Jira subtask %s: %w", subtask.Key, err)
+		}
+		var child struct {
+			Normalized struct {
+				Summary     string `json:"summary"`
+				Description string `json:"description"`
+			} `json:"normalized"`
+		}
+		if err := json.Unmarshal(raw, &child); err != nil {
+			return nil, fmt.Errorf("jirahooks: decode Jira subtask %s: %w", subtask.Key, err)
+		}
+		fmt.Fprintf(&body, "\n\n## Subtask %s: %s\n%s", subtask.Key, child.Normalized.Summary, child.Normalized.Description)
+	}
+	return l.store.CaptureJiraSnapshot(ctx, idempotencyKey, executionID, sessionID, result.Normalized.Summary, body.String())
 }
 
 // Execute applies one pending Jira write intent. A successful intent is never
