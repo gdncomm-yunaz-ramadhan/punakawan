@@ -160,6 +160,8 @@ type DeliveryView struct {
 	NextAction       string                       `json:"next_action"`
 	Timeline         []AuditEvent                 `json:"timeline"`
 	JiraActivity     []JiraActivity               `json:"jira_activity"`
+	WorkLogs         []WorkLogEntry               `json:"worklogs"`
+	WorkLogSeconds   int                          `json:"worklog_seconds"`
 
 	// LatestSeq is the highest event sequence number reflected in this
 	// view - pass it back as a later call's SinceSeq to learn what
@@ -259,6 +261,7 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		PendingQuestions:     []string{},
 		Timeline:             []AuditEvent{},
 		JiraActivity:         []JiraActivity{},
+		WorkLogs:             []WorkLogEntry{},
 		NewlyRunnableLaneIDs: []string{},
 	}
 	if orch.Description != nil {
@@ -291,6 +294,14 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		return nil, err
 	}
 	view.JiraActivity = jiraActivity
+	workLogs, err := s.ListWorkLogs(ctx, orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	view.WorkLogs = workLogs
+	for _, workLog := range workLogs {
+		view.WorkLogSeconds += workLog.DurationSeconds
+	}
 
 	laneIDs := make([]string, 0, len(laneMap))
 	for id := range laneMap {

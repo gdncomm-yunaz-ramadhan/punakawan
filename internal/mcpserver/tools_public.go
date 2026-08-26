@@ -25,6 +25,7 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "start_delivery", Description: "Start a delivery from requirement references and project routing."}, startDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "get_delivery", Description: "Read a delivery's complete current state and next action."}, getDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "answer_delivery_question", Description: "Answer one pending delivery clarification."}, answerDeliveryQuestionHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "log_delivery_work", Description: "Record measured work on an exact Jira task and synchronize it when configured."}, logDeliveryWorkHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "cancel_delivery", Description: "Cancel a non-terminal delivery while preserving its audit history."}, cancelDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "approve_project_delivery", Description: "Approve or reject a project's pending delivery gate."}, approveProjectDeliveryHandler(a))
 }

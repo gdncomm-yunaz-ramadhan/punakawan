@@ -76,6 +76,12 @@ func WithHooks(hooks ...deliveryhooks.Hook) StoreOption {
 	return func(s *Store) { s.hooks = deliveryhooks.NewDispatcher(hooks...) }
 }
 
+// WithRequiredJiraWorkLogs rejects completion of a lane in a Jira-backed
+// delivery unless its actual work was recorded against an exact Jira task.
+func WithRequiredJiraWorkLogs() StoreOption {
+	return func(s *Store) { s.requireJiraWorkLogs = true }
+}
+
 // resolveRequiredStages looks up which of a lane's four role stages
 // workflowDefinitionID marks required. An empty id (no definition
 // attached to this lane's orchestration) or no configured resolver both

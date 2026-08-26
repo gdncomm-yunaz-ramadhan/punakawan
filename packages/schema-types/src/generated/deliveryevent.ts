@@ -50,6 +50,7 @@ export interface DeliveryEvent {
     | "lease.rejected"
     | "lease.timed_out"
     | "lease.cancelled"
+    | "worklog.recorded"
     | "requirement.captured"
     | "task.created"
     | "task.routed"

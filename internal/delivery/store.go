@@ -38,6 +38,10 @@ type Store struct {
 	// deliveryhooks.Dispatcher.Dispatch), so every existing Store caller
 	// that never configures hooks is unaffected.
 	hooks *deliveryhooks.Dispatcher
+	// requireJiraWorkLogs gates completion of Jira-backed lanes until at
+	// least one explicit task-bound worklog has been recorded. It is opt-in
+	// so existing non-Jira delivery callers remain unchanged.
+	requireJiraWorkLogs bool
 }
 
 // NewStore wraps an opened storage kernel database. opts is variadic so

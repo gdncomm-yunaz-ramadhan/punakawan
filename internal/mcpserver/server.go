@@ -38,7 +38,7 @@ func Serve(ctx context.Context, a *app.App) error {
 // consuming project) - so it's the right place for the two things that
 // actually tripped up real usage: the expected tool call sequence, and how
 // the write-approval gate is meant to be satisfied.
-const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. Work through Projects, Workflows, Plans, and Deliveries. Start or resume work with start_delivery, invoke_workflow, or get_delivery. Runtime mechanics, provider operations, worktrees, verification bookkeeping, and review transitions are internal and are not separate MCP tools. Punakawan does not reason itself; the connected agent remains the reasoning engine.`
+const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. Work through Projects, Workflows, Plans, and Deliveries. Start or resume work with start_delivery, invoke_workflow, or get_delivery. When work is complete on an exact Jira task, record its measured task-bound interval with log_delivery_work before reporting the lane complete. Runtime mechanics, provider operations, worktrees, verification bookkeeping, and review transitions are internal and are not separate MCP tools. Punakawan does not reason itself; the connected agent remains the reasoning engine.`
 
 // serverInstructionsRevision identifies serverInstructionsBody's exact
 // content: a client reconnecting after a punakawan upgrade can compare

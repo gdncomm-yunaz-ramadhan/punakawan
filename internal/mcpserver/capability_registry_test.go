@@ -9,7 +9,7 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 		"upsert_project", "list_projects",
 		"save_workflow", "get_workflow", "list_workflows", "invoke_workflow",
 		"plan_save", "plan_get",
-		"start_delivery", "get_delivery", "answer_delivery_question",
+		"start_delivery", "get_delivery", "answer_delivery_question", "log_delivery_work",
 		"cancel_delivery", "approve_project_delivery",
 	}
 	if reg.Len() != len(want) {

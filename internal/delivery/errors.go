@@ -73,6 +73,10 @@ var (
 	// before Bagong's review has been recorded for the current attempt.
 	ErrRoleStagesIncomplete = errors.New("delivery: bagong review has not been recorded yet")
 
+	// ErrWorkLogRequired is returned when a configured Jira-backed lane is
+	// completed before any explicit task-bound work has been recorded.
+	ErrWorkLogRequired = errors.New("delivery: Jira-backed lane requires a task-bound worklog before completion")
+
 	// ErrGitUnavailable is returned when git cannot be found on PATH.
 	ErrGitUnavailable = errors.New("delivery: git is not available on PATH")
 

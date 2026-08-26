@@ -16,17 +16,14 @@
 // delivery.WithHooks separately (see internal/mcpserver's
 // openDeliveryStore).
 //
-// LogWork (internal/jiraworkflow.Config's log_work toggle) is read but not
-// acted on: a deliveryhooks.Event carries no time-spent value, and none of
-// the delivery state transitions this package's Handle reacts to produces
-// one on its own - inventing a duration (e.g. from wall-clock time between
-// lease grant and completion) would misrepresent actual effort as logged
-// work, so this is left for whatever future change gives an event an
-// explicit duration to act on, rather than approximated here.
+// LogWork projects an explicit, task-bound delivery worklog to Jira when the
+// workspace opts in. It never derives time from a lease or wall clock: only
+// deliveryhooks.EventWorkLogged carries a measured duration and exact target.
 package jirahooks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/ygrip/punakawan/internal/adapters"
@@ -84,15 +81,19 @@ func NewJiraHook(db *storage.DB, store *delivery.Store, registry *adapters.Regis
 // Handle implements deliveryhooks.Hook.
 func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error {
 	if h.cfg == nil || !h.cfg.AutoLog {
-		return nil // master switch is off: this workspace has not opted in to any automatic Jira update
+		return nil
 	}
 
-	issueKey, err := h.resolveIssueKey(ctx, event.DeliveryID)
-	if err != nil {
-		return fmt.Errorf("jirahooks: resolve linked jira issue for delivery %s: %w", event.DeliveryID, err)
+	issueKey := event.JiraIssueKey
+	if issueKey == "" {
+		var err error
+		issueKey, err = h.resolveIssueKey(ctx, event.DeliveryID)
+		if err != nil {
+			return fmt.Errorf("jirahooks: resolve linked jira issue for delivery %s: %w", event.DeliveryID, err)
+		}
 	}
 	if issueKey == "" {
-		return nil // no Jira-sourced requirement has been captured for this delivery: nothing to update
+		return nil
 	}
 
 	fired, err := h.alreadyFired(ctx, event)
@@ -107,24 +108,31 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 	if err != nil {
 		return fmt.Errorf("jirahooks: open atlassian adapter: %w", err)
 	}
-	// This runs from inside a delivery.Store method's post-commit dispatch,
-	// not from an MCP tool call, so there is no client session available to
-	// elicit a human approval decision from - gate.Call is used directly
-	// rather than the MCP-facing invokeAdapterOperation wrapper. Posting a
-	// comment or firing a transition is manifest-declared
-	// approval-required, so until a human has approved adapter writes for
-	// this run, the call below fails and Handle's caller logs and swallows
-	// the error - the same fail-closed behavior every other
-	// approval-gated adapter write in this system has, just without an
-	// interactive prompt to resolve it inline; a later dispatch (the next
-	// event this delivery raises) gets another chance once approved.
 	runID := event.DeliveryID
+	acted := false
 
-	var acted bool
+	if event.Type == deliveryhooks.EventWorkLogged && h.cfg.LogWork {
+		raw, err := gate.Call(ctx, runID, "atlassian.addWorklog", map[string]any{
+			"issueIdOrKey": issueKey, "timeSpentSeconds": event.DurationSeconds, "comment": event.Summary,
+		})
+		if err != nil {
+			return fmt.Errorf("jirahooks: log work on %s: %w", issueKey, err)
+		}
+		var result struct {
+			WorklogID string `json:"worklogId"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return fmt.Errorf("jirahooks: decode worklog result: %w", err)
+		}
+		if err := h.store.MarkWorkLogSynced(ctx, event.DeliveryID, event.EntityID, result.WorklogID); err != nil {
+			return err
+		}
+		acted = true
+	}
+
 	if h.cfg.ShouldComment(string(event.Type)) {
 		if _, err := gate.Call(ctx, runID, "atlassian.addJiraComment", map[string]any{
-			"issueIdOrKey": issueKey,
-			"commentBody":  buildComment(event),
+			"issueIdOrKey": issueKey, "commentBody": buildComment(event),
 		}); err != nil {
 			return fmt.Errorf("jirahooks: post comment for %s on %s: %w", event.Type, issueKey, err)
 		}
@@ -140,7 +148,7 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 	}
 
 	if !acted {
-		return nil // nothing configured for this event type actually happened, so there is nothing to mark as fired
+		return nil
 	}
 	return h.markFired(ctx, event, issueKey)
 }

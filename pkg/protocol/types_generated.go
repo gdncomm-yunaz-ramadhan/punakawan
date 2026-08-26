@@ -3497,6 +3497,7 @@ const DeliveryEventTypeProjectDetached DeliveryEventType = "project.detached"
 const DeliveryEventTypeRequirementCaptured DeliveryEventType = "requirement.captured"
 const DeliveryEventTypeTaskCreated DeliveryEventType = "task.created"
 const DeliveryEventTypeTaskRouted DeliveryEventType = "task.routed"
+const DeliveryEventTypeWorklogRecorded DeliveryEventType = "worklog.recorded"
 
 var enumValues_DeliveryEventType = []interface{}{
 	"orchestration.created",
@@ -3530,6 +3531,7 @@ var enumValues_DeliveryEventType = []interface{}{
 	"lease.rejected",
 	"lease.timed_out",
 	"lease.cancelled",
+	"worklog.recorded",
 	"requirement.captured",
 	"task.created",
 	"task.routed",

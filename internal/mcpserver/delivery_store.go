@@ -56,6 +56,9 @@ func openDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error)
 	} else {
 		hookStore := delivery.NewStore(db, delivery.WithWorkflowDefinitionResolver(resolver))
 		opts = append(opts, delivery.WithHooks(jirahooks.NewJiraHook(db, hookStore, a.AdapterRegistry, cfg)))
+		if cfg.LogWork {
+			opts = append(opts, delivery.WithRequiredJiraWorkLogs())
+		}
 	}
 	return delivery.NewStore(db, opts...), nil
 }

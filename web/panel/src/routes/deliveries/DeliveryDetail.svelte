@@ -111,6 +111,12 @@
     return new Date(value).toLocaleString();
   }
 
+  function formatDuration(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  }
+
   const orchestrationStatusVariants: Record<string, BadgeVariant> = {
     pending: "neutral",
     active: "info",
@@ -219,7 +225,34 @@
       value={v.pending_approvals.length}
       accent={v.pending_approvals.length > 0 ? "gold" : "none"}
     />
+    <MetricCard size="small" columns={3} label="Logged work" value={formatDuration(v.worklog_seconds)} />
   </BentoGrid>
+
+  {#if v.worklogs.length > 0}
+    <section aria-labelledby="worklogs-heading">
+      <h2 id="worklogs-heading">Logged work</h2>
+      <ul class="timeline">
+        {#each v.worklogs as worklog (worklog.id)}
+          <li>
+            <Card>
+              {#snippet children()}
+                <div class="timeline-header">
+                  <strong>{worklog.jira_issue_key}</strong>
+                  <span class="meta">{formatDuration(worklog.duration_seconds)} · {worklog.sync_status}</span>
+                </div>
+                <p>{worklog.summary}</p>
+                <p class="meta">
+                  {formatDate(worklog.started_at)}
+                  {#if worklog.session_id} · session <code class="id">{worklog.session_id}</code>{/if}
+                  {#if worklog.jira_worklog_id} · Jira worklog <code class="id">{worklog.jira_worklog_id}</code>{/if}
+                </p>
+              {/snippet}
+            </Card>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
 
   {#if v.pending_questions.length > 0}
     <section aria-labelledby="questions-heading">

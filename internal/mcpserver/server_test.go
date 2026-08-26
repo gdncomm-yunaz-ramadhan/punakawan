@@ -123,7 +123,7 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 		"upsert_project": true, "list_projects": true,
 		"save_workflow": true, "get_workflow": true, "list_workflows": true, "invoke_workflow": true,
 		"plan_save": true, "plan_get": true,
-		"start_delivery": true, "get_delivery": true, "answer_delivery_question": true,
+		"start_delivery": true, "get_delivery": true, "answer_delivery_question": true, "log_delivery_work": true,
 		"cancel_delivery": true, "approve_project_delivery": true,
 	}
 	if len(names) != len(want) {

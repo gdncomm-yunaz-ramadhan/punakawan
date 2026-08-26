@@ -851,6 +851,22 @@ export interface ApprovalManifest {
   revision: number;
 }
 
+export interface DeliveryWorkLog {
+  id: string;
+  orchestration_id: string;
+  lane_id: string;
+  parent_task_id?: string;
+  session_id?: string;
+  jira_issue_key: string;
+  started_at: string;
+  duration_seconds: number;
+  summary: string;
+  sync_status: "pending" | "synced" | "failed";
+  jira_worklog_id?: string;
+  synced_at?: string;
+  created_at: string;
+}
+
 export interface DeliveryView {
   orchestration: DeliveryOrchestration;
   // Never empty: whatever title the delivery was started with, or one derived
@@ -873,6 +889,8 @@ export interface DeliveryView {
   next_action: string;
   timeline?: DeliveryAuditEvent[];
   jira_activity?: DeliveryJiraActivity[];
+  worklogs: DeliveryWorkLog[];
+  worklog_seconds: number;
   latest_seq: number;
   newly_runnable_lane_ids: string[];
 }

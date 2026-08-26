@@ -25,6 +25,7 @@
         "lane.verification_dimension_recorded", "lane.ci_check_reported", "lane.review_conclusion_recorded",
         "lane.commit_recorded", "lane.pr_published", "lane.repair_cycle_started", "lane.escalated",
         "lease.granted", "lease.heartbeat", "lease.completed", "lease.rejected", "lease.timed_out", "lease.cancelled",
+        "worklog.recorded",
         "requirement.captured",
         "task.created", "task.routed",
         "edge.added", "edge.removed",
