@@ -7,6 +7,7 @@
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import Button from "../../lib/components/Button.svelte";
+  import type { IconName } from "../../lib/components/Icon.svelte";
   import Tabs from "../../lib/components/Tabs.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
 
@@ -18,13 +19,12 @@
   let cancelling = $state(false);
   let cancelError: string | null = $state(null);
   let confirmingCancel = $state(false);
-
   const tabs = [
-    { id: "summary", label: "Summary" },
-    { id: "projects", label: "Projects" },
-    { id: "plans", label: "Plans" },
-    { id: "sessions", label: "Sessions" },
-    { id: "activities", label: "Activities" },
+    { id: "summary", label: "Summary", icon: "dashboard" as IconName },
+    { id: "projects", label: "Projects", icon: "folder" as IconName },
+    { id: "plans", label: "Plans", icon: "file" as IconName },
+    { id: "sessions", label: "Sessions", icon: "users" as IconName },
+    { id: "activities", label: "Activities", icon: "activity" as IconName },
   ];
   const tabIds = new Set(tabs.map((tab) => tab.id));
 
