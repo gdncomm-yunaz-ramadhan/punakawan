@@ -163,6 +163,13 @@ type DeliveryView struct {
 	WorkLogs         []WorkLogEntry               `json:"worklogs"`
 	WorkLogSeconds   int                          `json:"worklog_seconds"`
 
+	// Lifecycle is present for Jira-backed deliveries resolved through the
+	// canonical case API. It carries the lifetime case, continuation,
+	// sessions, economic ledger, assessments, work-item mappings, and
+	// durable external-write state required by the Panel. Legacy
+	// orchestrations remain readable with this absent.
+	Lifecycle *DeliveryLifecycle `json:"lifecycle,omitempty"`
+
 	// LatestSeq is the highest event sequence number reflected in this
 	// view - pass it back as a later call's SinceSeq to learn what
 	// changed since. Always populated, regardless of whether SinceSeq
@@ -302,6 +309,11 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	for _, workLog := range workLogs {
 		view.WorkLogSeconds += workLog.DurationSeconds
 	}
+	lifecycle, err := s.GetDeliveryLifecycle(ctx, orchestrationID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	view.Lifecycle = lifecycle
 
 	laneIDs := make([]string, 0, len(laneMap))
 	for id := range laneMap {

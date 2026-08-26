@@ -117,6 +117,17 @@
     return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   }
 
+  function formatAmount(amount: number, currency: string): string {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+
+  function totalsByCurrency(entries: { amount: number; currency: string }[]): Record<string, number> {
+    return entries.reduce<Record<string, number>>((totals, { amount, currency }) => {
+      totals[currency] = (totals[currency] ?? 0) + amount;
+      return totals;
+    }, {});
+  }
+
   const orchestrationStatusVariants: Record<string, BadgeVariant> = {
     pending: "neutral",
     active: "info",
@@ -225,14 +236,14 @@
       value={v.pending_approvals.length}
       accent={v.pending_approvals.length > 0 ? "gold" : "none"}
     />
-    <MetricCard size="small" columns={3} label="Logged work" value={formatDuration(v.worklog_seconds)} />
+    <MetricCard size="small" columns={3} label="Logged work" value={formatDuration(v.worklog_seconds ?? 0)} />
   </BentoGrid>
 
-  {#if v.worklogs.length > 0}
+  {#if (v.worklogs?.length ?? 0) > 0}
     <section aria-labelledby="worklogs-heading">
       <h2 id="worklogs-heading">Logged work</h2>
       <ul class="timeline">
-        {#each v.worklogs as worklog (worklog.id)}
+        {#each v.worklogs ?? [] as worklog (worklog.id)}
           <li>
             <Card>
               {#snippet children()}
@@ -251,6 +262,228 @@
           </li>
         {/each}
       </ul>
+    </section>
+  {/if}
+
+  {#if v.lifecycle}
+    {@const lifecycle = v.lifecycle}
+    {@const budgetTotals = totalsByCurrency(lifecycle.budgets)}
+    <section aria-labelledby="lifecycle-heading">
+      <h2 id="lifecycle-heading">Delivery lifecycle</h2>
+      <dl class="references lifecycle-overview">
+        <dt>Jira case</dt>
+        <dd><code class="id">{lifecycle.case.jira_issue_key}</code> · {lifecycle.case.status}</dd>
+        <dt>Source</dt>
+        <dd><code class="id">{lifecycle.case.jira_source_key}</code></dd>
+        <dt>Execution</dt>
+        <dd>#{lifecycle.execution.ordinal} · {lifecycle.execution.status} · started {formatDate(lifecycle.execution.started_at)}</dd>
+        <dt>Jira sync health</dt>
+        <dd>
+          {#if lifecycle.jira_write_intents.length === 0}
+            <span class="unset">No Jira writes recorded</span>
+          {:else}
+            {lifecycle.jira_write_intents.filter((intent) => intent.status === "succeeded").length} succeeded ·
+            {lifecycle.jira_write_intents.filter((intent) => intent.status === "pending").length} pending ·
+            {lifecycle.jira_write_intents.filter((intent) => intent.status === "retrying").length} retrying ·
+            {lifecycle.jira_write_intents.filter((intent) => intent.status === "failed").length} failed
+          {/if}
+        </dd>
+      </dl>
+
+      <h3>Sessions</h3>
+      {#if lifecycle.sessions.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <thead><tr><th scope="col">Participant</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Ended</th><th scope="col">Session</th></tr></thead>
+            <tbody>
+              {#each lifecycle.sessions as session (session.id)}
+                <tr>
+                  <td>{session.participant}</td>
+                  <td>{session.status}</td>
+                  <td>{formatDate(session.started_at)}</td>
+                  <td>{session.ended_at ? formatDate(session.ended_at) : "In progress"}</td>
+                  <td><code class="id">{session.id}</code>{#if session.resumed_from_id}<span class="meta"> resumed from <code class="id">{session.resumed_from_id}</code></span>{/if}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No lifecycle sessions recorded.</p>
+      {/if}
+
+      <h3>Checkpoints</h3>
+      {#if lifecycle.checkpoints.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <thead><tr><th scope="col">Sequence</th><th scope="col">Summary</th><th scope="col">Progress</th><th scope="col">Handoff</th><th scope="col">Recorded</th></tr></thead>
+            <tbody>
+              {#each lifecycle.checkpoints as checkpoint (checkpoint.id)}
+                <tr>
+                  <td>{checkpoint.sequence}</td>
+                  <td>{checkpoint.summary}</td>
+                  <td>{checkpoint.progress_percent === undefined ? "Not recorded" : `${checkpoint.progress_percent}%`}</td>
+                  <td>{checkpoint.handoff_to || "—"}</td>
+                  <td>{formatDate(checkpoint.created_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No session checkpoints recorded.</p>
+      {/if}
+
+      <h3>Usage, cost &amp; budgets</h3>
+      <dl class="references lifecycle-totals">
+        <dt>Known cost</dt>
+        <dd>{Object.keys(lifecycle.known_cost_by_currency).length > 0 ? Object.entries(lifecycle.known_cost_by_currency).map(([currency, amount]) => formatAmount(amount, currency)).join(" · ") : "No priced usage recorded"}</dd>
+        <dt>Budget total</dt>
+        <dd>{Object.keys(budgetTotals).length > 0 ? Object.entries(budgetTotals).map(([currency, amount]) => formatAmount(amount, currency)).join(" · ") : "No budgets recorded"}</dd>
+        <dt>Unpriced usage</dt>
+        <dd>{lifecycle.unknown_priced_usage ? "Yes — one or more usage entries have no known price." : "No"}</dd>
+      </dl>
+      {#if lifecycle.usage.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <thead><tr><th scope="col">Category</th><th scope="col">Usage</th><th scope="col">Model</th><th scope="col">Unit price</th><th scope="col">Cost</th><th scope="col">Price source</th><th scope="col">Recorded</th></tr></thead>
+            <tbody>
+              {#each lifecycle.usage as usage (usage.id)}
+                <tr>
+                  <td>{usage.kind} · {usage.category}</td>
+                  <td>{usage.quantity} {usage.unit}</td>
+                  <td>{usage.model || "—"}</td>
+                  <td>{usage.unit_price === undefined || !usage.cost_currency ? "Not recorded" : formatAmount(usage.unit_price, usage.cost_currency)}</td>
+                  <td>{usage.cost_amount === undefined || !usage.cost_currency ? "Unpriced" : formatAmount(usage.cost_amount, usage.cost_currency)}</td>
+                  <td>{usage.price_source || "—"}</td>
+                  <td>{formatDate(usage.recorded_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No usage recorded.</p>
+      {/if}
+      {#if lifecycle.budgets.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <caption>Budgets</caption>
+            <thead><tr><th scope="col">Category</th><th scope="col">Amount</th><th scope="col">Session</th><th scope="col">Recorded</th></tr></thead>
+            <tbody>
+              {#each lifecycle.budgets as budget (budget.id)}
+                <tr>
+                  <td>{budget.category || "Overall"}</td>
+                  <td>{formatAmount(budget.amount, budget.currency)}</td>
+                  <td>{#if budget.session_id}<code class="id">{budget.session_id}</code>{:else}Overall{/if}</td>
+                  <td>{formatDate(budget.created_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No budgets recorded.</p>
+      {/if}
+
+      <h3>Jira source &amp; assessments</h3>
+      {#if lifecycle.jira_snapshots.length > 0}
+        <ul class="lifecycle-cards">
+          {#each lifecycle.jira_snapshots as snapshot (snapshot.id)}
+            <li>
+              <strong>{snapshot.jira_issue_key} · version {snapshot.version}</strong>
+              <span class="meta">{formatDate(snapshot.captured_at)} · hash <code class="id">{snapshot.content_hash}</code></span>
+              <p>{snapshot.title}</p>
+              <details><summary>Snapshot content</summary><p class="snapshot-body">{snapshot.body}</p></details>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="empty">No Jira source snapshots recorded.</p>
+      {/if}
+      {#if lifecycle.jira_assessments.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <caption>Assessments</caption>
+            <thead><tr><th scope="col">Clarity</th><th scope="col">Approval</th><th scope="col">Rationale</th><th scope="col">Snapshot</th><th scope="col">Assessed</th></tr></thead>
+            <tbody>
+              {#each lifecycle.jira_assessments as assessment (assessment.id)}
+                <tr>
+                  <td>{assessment.clarity}</td>
+                  <td>{assessment.approval}</td>
+                  <td>{assessment.rationale}</td>
+                  <td>{#if assessment.snapshot_id}<code class="id">{assessment.snapshot_id}</code>{:else}Not linked{/if}</td>
+                  <td>{formatDate(assessment.assessed_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No Jira assessments recorded.</p>
+      {/if}
+
+      <h3>Jira work-item mappings</h3>
+      {#if lifecycle.jira_work_items.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <thead><tr><th scope="col">Jira issue</th><th scope="col">Parent task</th><th scope="col">Requirement source</th><th scope="col">Session</th><th scope="col">Mapped</th></tr></thead>
+            <tbody>
+              {#each lifecycle.jira_work_items as workItem (workItem.id)}
+                <tr>
+                  <td><code class="id">{workItem.jira_issue_key}</code></td>
+                  <td><code class="id">{workItem.parent_task_id}</code></td>
+                  <td><code class="id">{workItem.requirement_source_id}</code></td>
+                  <td>{#if workItem.session_id}<code class="id">{workItem.session_id}</code>{:else}Not linked{/if}</td>
+                  <td>{formatDate(workItem.created_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No Jira work-item mappings recorded.</p>
+      {/if}
+
+      <h3>Progress reports</h3>
+      {#if lifecycle.progress_reports.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <thead><tr><th scope="col">Summary</th><th scope="col">Progress</th><th scope="col">Session</th><th scope="col">Reported</th></tr></thead>
+            <tbody>
+              {#each lifecycle.progress_reports as report (report.id)}
+                <tr><td>{report.summary}</td><td>{report.progress_percent === undefined ? "Not recorded" : `${report.progress_percent}%`}</td><td><code class="id">{report.session_id}</code></td><td>{formatDate(report.reported_at)}</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No progress reports recorded.</p>
+      {/if}
+
+      <h3>Jira write intents</h3>
+      {#if lifecycle.jira_write_intents.length > 0}
+        <div class="lifecycle-table-wrap">
+          <table class="lifecycle-table">
+            <thead><tr><th scope="col">Jira issue</th><th scope="col">Action</th><th scope="col">Status</th><th scope="col">Attempts</th><th scope="col">Retry</th><th scope="col">External ID</th><th scope="col">Updated</th></tr></thead>
+            <tbody>
+              {#each lifecycle.jira_write_intents as intent (intent.id)}
+                <tr>
+                  <td><code class="id">{intent.jira_issue_key}</code></td>
+                  <td>{intent.action}</td>
+                  <td>{intent.status}{#if intent.last_error}<span class="intent-error"> — {intent.last_error}</span>{/if}</td>
+                  <td>{intent.attempt_count}</td>
+                  <td>{intent.retry_at ? formatDate(intent.retry_at) : "—"}</td>
+                  <td>{#if intent.external_id}<code class="id">{intent.external_id}</code>{:else}—{/if}</td>
+                  <td>{formatDate(intent.updated_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No Jira write intents recorded.</p>
+      {/if}
     </section>
   {/if}
 
@@ -552,6 +785,74 @@
   h2 {
     font-size: 1rem;
     margin: 0 0 0.6rem;
+  }
+  h3 {
+    font-size: 0.9rem;
+    margin: 1.1rem 0 0.45rem;
+  }
+  .lifecycle-totals {
+    margin-bottom: 0.65rem;
+  }
+  .lifecycle-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+  }
+  .lifecycle-table {
+    width: 100%;
+    min-width: 640px;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  .lifecycle-table th,
+  .lifecycle-table td {
+    padding: 0.5rem 0.65rem;
+    vertical-align: top;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .lifecycle-table th {
+    color: var(--color-text-muted);
+    font-weight: 600;
+    background: var(--color-surface-subtle);
+  }
+  .lifecycle-table tr:last-child td {
+    border-bottom: 0;
+  }
+  .lifecycle-table caption {
+    padding: 0.5rem 0.65rem;
+    text-align: left;
+    font-weight: 600;
+    background: var(--color-surface-subtle);
+  }
+  .lifecycle-table .id {
+    overflow-wrap: anywhere;
+  }
+  .lifecycle-cards {
+    list-style: none;
+    display: grid;
+    gap: 0.5rem;
+    padding: 0;
+    margin: 0;
+  }
+  .lifecycle-cards li {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-size: 0.8rem;
+  }
+  .lifecycle-cards p {
+    margin: 0;
+  }
+  .snapshot-body {
+    white-space: pre-wrap;
+    line-height: 1.45;
+    color: var(--color-text-muted);
+  }
+  .intent-error {
+    color: var(--color-danger);
   }
   .questions,
   .approvals,

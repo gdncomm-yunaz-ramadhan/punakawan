@@ -20,6 +20,8 @@ import (
 type WorkLogEntry struct {
 	ID              string     `json:"id"`
 	OrchestrationID string     `json:"orchestration_id"`
+	CaseID          string     `json:"case_id,omitempty"`
+	ExecutionID     string     `json:"execution_id,omitempty"`
 	LaneID          string     `json:"lane_id"`
 	ParentTaskID    string     `json:"parent_task_id,omitempty"`
 	SessionID       string     `json:"session_id,omitempty"`
@@ -38,7 +40,7 @@ type WorkLogEntry struct {
 // source: a delivery may span several Jira subtasks and work must never be
 // silently attributed to the wrong one.
 func (s *Store) RecordWorkLog(ctx context.Context, idempotencyKey, id, orchestrationID, laneID, sessionID, jiraIssueKey string, startedAt time.Time, durationSeconds int, summary string) (*WorkLogEntry, error) {
-	jiraIssueKey = strings.TrimSpace(jiraIssueKey)
+	jiraIssueKey = strings.ToUpper(strings.TrimSpace(jiraIssueKey))
 	summary = strings.TrimSpace(summary)
 	if id == "" || orchestrationID == "" || laneID == "" || jiraIssueKey == "" || summary == "" {
 		return nil, fmt.Errorf("delivery: worklog requires id, orchestration, lane, Jira issue, and summary")
@@ -52,6 +54,7 @@ func (s *Store) RecordWorkLog(ctx context.Context, idempotencyKey, id, orchestra
 	startedAt = startedAt.UTC()
 	createdAt := time.Now().UTC()
 	parentTaskID := ""
+	caseID := ""
 
 	err := s.db.Write(ctx, idempotencyKey, "record worklog "+id, func(tx *sql.Tx) error {
 		events, err := loadEventsTx(ctx, tx, orchestrationID)
@@ -72,17 +75,41 @@ func (s *Store) RecordWorkLog(ctx context.Context, idempotencyKey, id, orchestra
 		if lane.ParentTaskId != nil {
 			parentTaskID = *lane.ParentTaskId
 		}
+
+		// Lifecycle-backed executions require a durable, exact work-item
+		// mapping before measured work can target Jira. Legacy deliveries
+		// retain their pre-lifecycle behavior; new cases never infer a Jira
+		// task from a loosely related source or lane.
+		var executionID string
+		err = tx.QueryRowContext(ctx, `SELECT id, case_id FROM delivery_executions WHERE orchestration_id = ?`, orchestrationID).Scan(&executionID, &caseID)
+		switch {
+		case err == nil:
+			if parentTaskID == "" {
+				return ErrScopeMismatch
+			}
+			var mappings int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM jira_work_item_mappings WHERE execution_id = ? AND parent_task_id = ? AND jira_issue_key = ?`, executionID, parentTaskID, jiraIssueKey).Scan(&mappings); err != nil {
+				return err
+			}
+			if mappings != 1 {
+				return ErrScopeMismatch
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// The orchestration predates lifecycle cases.
+		default:
+			return err
+		}
 		_, err = tx.ExecContext(ctx, `
             INSERT INTO delivery_worklogs
-                (id, orchestration_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds, summary, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, orchestrationID, laneID, parentTaskID, strings.TrimSpace(sessionID), jiraIssueKey,
+                (id, orchestration_id, case_id, execution_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds, summary, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, orchestrationID, caseID, executionID, laneID, parentTaskID, strings.TrimSpace(sessionID), jiraIssueKey,
 			startedAt.Format(timeLayout), durationSeconds, summary, createdAt.Format(timeLayout))
 		if err != nil {
 			return err
 		}
 		encoded, err := json.Marshal(map[string]any{
-			"lane_id": laneID, "parent_task_id": parentTaskID, "session_id": strings.TrimSpace(sessionID),
+			"case_id": caseID, "execution_id": executionID, "lane_id": laneID, "parent_task_id": parentTaskID, "session_id": strings.TrimSpace(sessionID),
 			"jira_issue_key": jiraIssueKey, "duration_seconds": durationSeconds, "summary": summary,
 		})
 		if err != nil {
@@ -110,7 +137,7 @@ func (s *Store) RecordWorkLog(ctx context.Context, idempotencyKey, id, orchestra
 
 func (s *Store) GetWorkLog(ctx context.Context, orchestrationID, id string) (*WorkLogEntry, error) {
 	row := s.db.Reader().QueryRowContext(ctx, `
-        SELECT id, orchestration_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds,
+        SELECT id, orchestration_id, case_id, execution_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds,
                summary, sync_status, jira_worklog_id, synced_at, created_at
         FROM delivery_worklogs WHERE orchestration_id = ? AND id = ?`, orchestrationID, id)
 	return scanWorkLog(row)
@@ -120,7 +147,7 @@ func (s *Store) GetWorkLog(ctx context.Context, orchestrationID, id string) (*Wo
 // order. The panel renders this data even while Jira synchronization is pending.
 func (s *Store) ListWorkLogs(ctx context.Context, orchestrationID string) ([]WorkLogEntry, error) {
 	rows, err := s.db.Reader().QueryContext(ctx, `
-        SELECT id, orchestration_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds,
+        SELECT id, orchestration_id, case_id, execution_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds,
                summary, sync_status, jira_worklog_id, synced_at, created_at
         FROM delivery_worklogs WHERE orchestration_id = ? ORDER BY created_at, id`, orchestrationID)
 	if err != nil {
@@ -191,7 +218,7 @@ func scanWorkLog(row workLogScanner) (*WorkLogEntry, error) {
 	var entry WorkLogEntry
 	var startedAt, createdAt string
 	var syncedAt sql.NullString
-	if err := row.Scan(&entry.ID, &entry.OrchestrationID, &entry.LaneID, &entry.ParentTaskID, &entry.SessionID,
+	if err := row.Scan(&entry.ID, &entry.OrchestrationID, &entry.CaseID, &entry.ExecutionID, &entry.LaneID, &entry.ParentTaskID, &entry.SessionID,
 		&entry.JiraIssueKey, &startedAt, &entry.DurationSeconds, &entry.Summary, &entry.SyncStatus,
 		&entry.JiraWorklogID, &syncedAt, &createdAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

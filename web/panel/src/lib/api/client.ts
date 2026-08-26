@@ -867,6 +867,22 @@ export interface DeliveryWorkLog {
   created_at: string;
 }
 
+export interface DeliveryLifecycle {
+  case: { id: string; jira_source_key: string; jira_issue_key: string; status: string; created_at: string; updated_at: string };
+  execution: { id: string; case_id: string; orchestration_id: string; ordinal: number; status: string; session_id?: string; started_at: string; ended_at?: string };
+  sessions: { id: string; case_id: string; execution_id: string; orchestration_id: string; resumed_from_id?: string; participant: string; status: string; started_at: string; ended_at?: string }[];
+  checkpoints: { id: string; case_id: string; execution_id: string; session_id: string; sequence: number; summary: string; progress_percent?: number; handoff_to?: string; created_at: string }[];
+  usage: { id: string; case_id: string; execution_id: string; session_id: string; kind: string; category: string; model?: string; quantity: number; unit: string; unit_price?: number; cost_amount?: number; cost_currency?: string; price_source?: string; recorded_at: string }[];
+  budgets: { id: string; case_id: string; execution_id: string; session_id?: string; category?: string; amount: number; currency: string; created_at: string }[];
+  jira_snapshots: { id: string; case_id: string; execution_id: string; session_id?: string; jira_issue_key: string; version: number; title: string; body: string; content_hash: string; captured_at: string }[];
+  jira_assessments: { id: string; case_id: string; execution_id: string; session_id?: string; snapshot_id?: string; clarity: string; approval: string; rationale: string; assessed_at: string }[];
+  jira_work_items: { id: string; case_id: string; execution_id: string; session_id?: string; orchestration_id: string; parent_task_id: string; requirement_source_id: string; jira_issue_key: string; created_at: string }[];
+  jira_write_intents: { id: string; case_id: string; execution_id: string; session_id?: string; jira_issue_key: string; action: string; payload: Record<string, unknown>; idempotency_key: string; status: string; attempt_count: number; retry_at?: string; last_error?: string; external_id?: string; created_at: string; updated_at: string }[];
+  progress_reports: { id: string; case_id: string; execution_id: string; session_id: string; summary: string; progress_percent?: number; reported_at: string }[];
+  known_cost_by_currency: Record<string, number>;
+  unknown_priced_usage: boolean;
+}
+
 export interface DeliveryView {
   orchestration: DeliveryOrchestration;
   // Never empty: whatever title the delivery was started with, or one derived
@@ -891,6 +907,7 @@ export interface DeliveryView {
   jira_activity?: DeliveryJiraActivity[];
   worklogs: DeliveryWorkLog[];
   worklog_seconds: number;
+  lifecycle?: DeliveryLifecycle;
   latest_seq: number;
   newly_runnable_lane_ids: string[];
 }

@@ -30,10 +30,11 @@ type SourceInput struct {
 func CanonicalKey(in SourceInput) (string, error) {
 	switch in.Provider {
 	case "jira":
-		if in.ExternalID == "" {
-			return "", fmt.Errorf("delivery: jira source requires external_id (issue key)")
+		key := strings.ToUpper(strings.TrimSpace(in.ExternalID))
+		if !jiraKeyPattern.MatchString(key) {
+			return "", fmt.Errorf("delivery: jira source requires a valid external_id (issue key)")
 		}
-		return "jira:" + in.ExternalID, nil
+		return "jira:" + key, nil
 	case "confluence":
 		if in.ExternalID == "" {
 			return "", fmt.Errorf("delivery: confluence source requires external_id (page id)")

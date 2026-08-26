@@ -105,6 +105,35 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		if err != nil {
 			return nil, StartDeliveryOutput{}, err
 		}
+
+		// A lone, exact Jira reference has a stronger identity than a
+		// generic batch: resolve it to its lifetime case before creating
+		// anything. This keeps the legacy start_delivery facade from
+		// creating a parallel active run beside resolve_jira_delivery.
+		if len(in.References) == 1 {
+			if source, ok := delivery.ClassifyReference(in.References[0]); ok && source.Provider == "jira" {
+				key := in.IdempotencyKey
+				if key == "" {
+					key = delivery.NewID()
+				}
+				resolved, err := store.ResolveJiraDelivery(ctx, key, source.ExternalID, delivery.ResolveJiraDeliveryOptions{
+					Title: in.Title, Description: in.Description, WorkflowDefinitionID: in.WorkflowDefinitionId,
+				})
+				if err != nil {
+					return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: resolve Jira delivery: %w", err)
+				}
+				out := StartDeliveryOutput{OrchestrationId: resolved.Execution.OrchestrationID}
+				if resolved.Created && len(in.Projects) > 0 {
+					out.Decomposition = decomposeStartDelivery(ctx, store, resolved.Execution.OrchestrationID, in.References, in.Projects)
+				}
+				view, err := store.BuildDeliveryView(ctx, resolved.Execution.OrchestrationID)
+				if err != nil {
+					return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
+				}
+				out.View, out.Title = *view, view.Title
+				return nil, out, nil
+			}
+		}
 		view, err := store.StartDeliveryWithOptions(ctx, in.IdempotencyKey, in.References, delivery.OrchestrationOptions{
 			WorkflowDefinitionID: in.WorkflowDefinitionId,
 			Title:                in.Title,
