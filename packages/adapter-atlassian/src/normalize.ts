@@ -27,6 +27,8 @@ export interface NormalizedJiraIssue {
   description: string | undefined;
   status: string | undefined;
   issueType?: string;
+  issueTypeId?: string;
+  projectKey?: string;
   priority?: string;
   assignee?: string;
   labels?: string[];
@@ -193,6 +195,8 @@ export function normalizeJiraIssue(raw: Record<string, unknown>, cloudId: string
   const version = updated ?? (typeof raw.version === 'number' || typeof raw.version === 'string' ? raw.version : undefined);
   const labels = Array.isArray(fields.labels) ? fields.labels.filter((label): label is string => typeof label === 'string') : undefined;
   const timeTracking = Object.keys(asRecord(fields.timetracking)).length ? asRecord(fields.timetracking) : undefined;
+  const issueType = asRecord(fields.issuetype);
+  const project = asRecord(fields.project);
 
   return {
     source: {
@@ -206,7 +210,9 @@ export function normalizeJiraIssue(raw: Record<string, unknown>, cloudId: string
     summary,
     description,
     status,
-    issueType: asString(asRecord(fields.issuetype).name),
+    issueType: asString(issueType.name),
+    issueTypeId: asString(issueType.id),
+    projectKey: asString(project.key),
     priority: asString(asRecord(fields.priority).name),
     assignee: compactAssignee(fields.assignee),
     labels: labels?.length ? labels : undefined,

@@ -63,7 +63,7 @@ export interface GetJiraIssueParams {
 }
 
 export const DEFAULT_JIRA_ISSUE_FIELDS = [
-  'summary', 'description', 'status', 'issuetype', 'priority', 'assignee',
+  'summary', 'description', 'status', 'issuetype', 'project', 'priority', 'assignee',
   'labels', 'parent', 'subtasks', 'issuelinks', 'timetracking', 'updated',
 ] as const;
 
@@ -445,7 +445,7 @@ export interface EditJiraIssueParams {
   /** Jira duration strings such as "8h" or "2d". */
   originalEstimate?: string;
   remainingEstimate?: string;
-  /** Story points require the site's field id, discoverable through getIssueTypeFieldMeta. */
+  /** Story points require the field id returned by Jira issue-type metadata. */
   storyPoints?: number;
   storyPointsFieldId?: string;
   /** Escape hatch for arbitrary Jira fields. Convenience fields above override matching keys. */
@@ -470,8 +470,8 @@ export async function editJiraIssue(client: AtlassianRestClient, params: EditJir
     };
   }
   if (params.storyPoints !== undefined) {
-    if (!params.storyPointsFieldId?.startsWith('customfield_')) {
-      throw new Error('atlassian.editJiraIssue requires "storyPointsFieldId" (customfield_...) when "storyPoints" is set.');
+    if (!params.storyPointsFieldId?.trim()) {
+      throw new Error('atlassian.editJiraIssue requires a non-empty "storyPointsFieldId" when "storyPoints" is set.');
     }
     fields[params.storyPointsFieldId] = params.storyPoints;
   }

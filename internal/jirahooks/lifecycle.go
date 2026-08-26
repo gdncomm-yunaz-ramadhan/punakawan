@@ -209,8 +209,8 @@ func adapterWrite(intent *delivery.JiraWriteIntent) (string, map[string]any, err
 	case "update_story_points":
 		points, ok := payloadNumber(intent.Payload, "story_points", "storyPoints")
 		fieldID, fieldOK := storyPointsFieldID(intent.Payload)
-		if !ok || !fieldOK || !strings.HasPrefix(fieldID, "customfield_") {
-			return "", nil, fmt.Errorf("jirahooks: update_story_points intent requires numeric story_points and configured field_metadata.id (customfield_...)")
+		if !ok || !fieldOK || strings.TrimSpace(fieldID) == "" {
+			return "", nil, fmt.Errorf("jirahooks: update_story_points intent requires numeric story_points and discovered field metadata")
 		}
 		return "atlassian.editJiraIssue", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "storyPoints": points, "storyPointsFieldId": fieldID}, nil
 	case "worklog":

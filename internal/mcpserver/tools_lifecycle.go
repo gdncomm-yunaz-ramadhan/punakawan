@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ygrip/punakawan/internal/app"
@@ -265,12 +266,13 @@ func assessJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 }
 
 type QueueJiraWriteInput struct {
-	ExecutionID    string         `json:"execution_id"`
-	SessionID      string         `json:"session_id,omitempty"`
-	JiraIssueKey   string         `json:"jira_issue_key"`
-	Action         string         `json:"action"`
-	Payload        map[string]any `json:"payload,omitempty"`
-	IdempotencyKey string         `json:"idempotency_key,omitempty"`
+	ExecutionID             string         `json:"execution_id"`
+	SessionID               string         `json:"session_id,omitempty"`
+	JiraIssueKey            string         `json:"jira_issue_key"`
+	Action                  string         `json:"action"`
+	RefreshStoryPointsField bool           `json:"refresh_story_points_field,omitempty"`
+	Payload                 map[string]any `json:"payload,omitempty"`
+	IdempotencyKey          string         `json:"idempotency_key,omitempty"`
 }
 type QueueJiraWriteOutput struct {
 	Intent delivery.JiraWriteIntent `json:"intent"`
@@ -287,6 +289,20 @@ func queueJiraWriteHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		if key == "" {
 			key = delivery.NewID()
 		}
+		if in.Action == "update_story_points" {
+			if in.RefreshStoryPointsField || !hasStoryPointsFieldMapping(in.Payload) {
+				mapping, err := jirahooks.NewLifecycle(store, a.AdapterRegistry).ResolveStoryPointsField(ctx, in.ExecutionID, key+":story-points-field", in.RefreshStoryPointsField)
+				if err != nil {
+					return nil, QueueJiraWriteOutput{}, fmt.Errorf("mcpserver: discover Jira story-points field: %w", err)
+				}
+				payload := make(map[string]any, len(in.Payload)+1)
+				for name, value := range in.Payload {
+					payload[name] = value
+				}
+				payload["field_metadata"] = map[string]any{"id": mapping.FieldID, "name": mapping.FieldName}
+				in.Payload = payload
+			}
+		}
 		intent, err := store.CreateJiraWriteIntent(ctx, key, in.ExecutionID, in.SessionID, in.JiraIssueKey, in.Action, in.Payload)
 		if err != nil {
 			return nil, QueueJiraWriteOutput{}, fmt.Errorf("mcpserver: queue Jira write: %w", err)
@@ -301,6 +317,20 @@ func queueJiraWriteHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		}
 		return nil, QueueJiraWriteOutput{Intent: *intent, View: *view}, nil
 	}
+}
+
+func hasStoryPointsFieldMapping(payload map[string]any) bool {
+	for _, key := range []string{"story_points_field_id", "storyPointsFieldId"} {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	metadata, ok := payload["field_metadata"].(map[string]any)
+	if !ok {
+		return false
+	}
+	value, ok := metadata["id"].(string)
+	return ok && strings.TrimSpace(value) != ""
 }
 
 type MapDeliveryWorkItemInput struct {
