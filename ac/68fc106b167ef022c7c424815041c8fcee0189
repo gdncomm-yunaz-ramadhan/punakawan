@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ac68fc106b167ef022c7c424815041c8fcee0189",
+  "prompts": {
+    "94b329457a2f37b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0348d-a8c1-79c2-8ce4-ce1388b705b0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4129,
+      "overriden_lines": 0
+    }
+  }
+}
