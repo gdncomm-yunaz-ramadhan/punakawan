@@ -86,6 +86,9 @@
     return values.length ? values.join(" · ") : "No estimate";
   }
   function plansFor(v: DeliveryView, projectId: string): number { return (v.project_plans ?? []).filter((plan) => plan.project_id === projectId).length; }
+  function projectSlug(v: DeliveryView, projectId: string): string {
+    return v.projects.find((project) => project.project_id === projectId)?.project_slug || projectId;
+  }
   const statusVariants: Record<string, BadgeVariant> = { pending: "neutral", active: "info", completed: "success", cancelled: "danger" };
 </script>
 
@@ -132,7 +135,7 @@
       <h2>Projects</h2>
       {#if v.projects.length}
         <div class="table-wrap"><table><thead><tr><th>Project</th><th>Project plans</th></tr></thead><tbody>
-          {#each v.projects as project (project.project_id)}<tr><td><a href={`/projects/${encodeURIComponent(project.project_id)}`} onclick={(event) => { event.preventDefault(); navigate(`/projects/${encodeURIComponent(project.project_id)}`); }}>{project.project_id}</a></td><td>{plansFor(v, project.project_id)}</td></tr>{/each}
+          {#each v.projects as project (project.project_id)}<tr><td><a href={`/projects/${encodeURIComponent(project.project_slug || project.project_id)}`} onclick={(event) => { event.preventDefault(); navigate(`/projects/${encodeURIComponent(project.project_slug || project.project_id)}`); }}>{project.project_slug || project.project_id}</a></td><td>{plansFor(v, project.project_id)}</td></tr>{/each}
         </tbody></table></div>
       {:else}<p class="empty">No projects are linked to this delivery.</p>{/if}
     </div>
@@ -141,7 +144,7 @@
       <h2>Project plans</h2>
       {#if (v.project_plans?.length ?? 0) > 0}
         <div class="table-wrap"><table><thead><tr><th>Project</th><th>Plan ID</th><th>Created</th></tr></thead><tbody>
-          {#each v.project_plans ?? [] as plan (`${plan.project_id}-${plan.plan_id}-${plan.plan_revision}`)}<tr><td>{plan.project_id}</td><td><a href={`/projects/${encodeURIComponent(plan.project_id)}?tab=plans&plan=${encodeURIComponent(plan.plan_id)}`} onclick={(event) => { event.preventDefault(); navigate(`/projects/${encodeURIComponent(plan.project_id)}?tab=plans&plan=${encodeURIComponent(plan.plan_id)}`); }}>{plan.plan_id} r{plan.plan_revision}</a></td><td>{formatDate(plan.created_at)}</td></tr>{/each}
+          {#each v.project_plans ?? [] as plan (`${plan.project_id}-${plan.plan_id}-${plan.plan_revision}`)}<tr><td>{projectSlug(v, plan.project_id)}</td><td><a href={`/projects/${encodeURIComponent(projectSlug(v, plan.project_id))}?tab=plans&plan=${encodeURIComponent(plan.plan_id)}`} onclick={(event) => { event.preventDefault(); navigate(`/projects/${encodeURIComponent(projectSlug(v, plan.project_id))}?tab=plans&plan=${encodeURIComponent(plan.plan_id)}`); }}>{plan.plan_id} r{plan.plan_revision}</a></td><td>{formatDate(plan.created_at)}</td></tr>{/each}
         </tbody></table></div>
       {:else}<p class="empty">No project plans linked to this delivery.</p>{/if}
     </div>

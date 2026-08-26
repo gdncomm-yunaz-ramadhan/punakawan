@@ -559,6 +559,27 @@ func TestDeliveryViewIncludesHighLevelAndProjectPlans(t *testing.T) {
 	}
 }
 
+func TestDeliveryViewIncludesCapturedJiraSnapshotAsActivity(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	resolved, err := s.ResolveJiraDelivery(ctx, "resolve-jira-activity", "TRF-19272", ResolveJiraDeliveryOptions{})
+	if err != nil {
+		t.Fatalf("ResolveJiraDelivery: %v", err)
+	}
+	view, err := s.BuildDeliveryView(ctx, resolved.Execution.OrchestrationID)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if len(view.JiraActivity) != 1 {
+		t.Fatalf("JiraActivity = %+v, want one captured source activity", view.JiraActivity)
+	}
+	activity := view.JiraActivity[0]
+	if activity.EventType != "source.snapshot_captured" || activity.IssueKey != "TRF-19272" {
+		t.Fatalf("JiraActivity[0] = %+v, want captured TRF-19272 source", activity)
+	}
+}
+
 // TestDeliveryViewDerivesTitleFromSingleReference covers the one-reference
 // derivation: with no title supplied, the view must name the single
 // requirement rather than fall back to a count or an empty string, and

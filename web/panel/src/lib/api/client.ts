@@ -719,6 +719,7 @@ export type DeliveryLaneStatus = "accepted" | "blocked" | "failed" | "leased" | 
 
 export interface DeliveryProjectSummary {
   project_id: string;
+  project_slug: string;
   // Distinguishes the two ways a project shows up here. True means the
   // delivery explicitly attached it, so it is listed even with no lanes at
   // all. False means it only appears because some lane names it - including a

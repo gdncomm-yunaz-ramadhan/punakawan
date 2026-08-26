@@ -24,6 +24,9 @@ import (
 // lanes belong to the run, and how many sit in each scheduling status.
 type ProjectSummary struct {
 	ProjectID string `json:"project_id"`
+	// ProjectSlug is the human-readable, panel-routable project identity.
+	// ProjectID remains the immutable delivery-store key for joins.
+	ProjectSlug string `json:"project_slug"`
 
 	// Attached distinguishes the two ways a project can show up here. A
 	// project the run explicitly attached is a statement that the run
@@ -330,6 +333,19 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
+	if lifecycle != nil {
+		for _, snapshot := range lifecycle.Snapshots {
+			view.JiraActivity = append(view.JiraActivity, JiraActivity{
+				EventType: "source.snapshot_captured",
+				EntityID:  snapshot.ID,
+				IssueKey:  snapshot.JiraIssueKey,
+				FiredAt:   snapshot.CapturedAt,
+			})
+		}
+		sort.SliceStable(view.JiraActivity, func(i, j int) bool {
+			return view.JiraActivity[i].FiredAt.Before(view.JiraActivity[j].FiredAt)
+		})
+	}
 	view.Lifecycle = lifecycle
 	projectPlans, err := s.listProjectPlanLinks(ctx, orchestrationID)
 	if err != nil {
@@ -499,8 +515,13 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		if laneIDs == nil {
 			laneIDs = []string{}
 		}
+		project, err := s.GetProject(ctx, id)
+		if err != nil {
+			return nil, err
+		}
 		view.Projects = append(view.Projects, ProjectSummary{
 			ProjectID:      id,
+			ProjectSlug:    project.Slug,
 			Attached:       attached[id],
 			LaneIDs:        laneIDs,
 			CountsByStatus: counts,
