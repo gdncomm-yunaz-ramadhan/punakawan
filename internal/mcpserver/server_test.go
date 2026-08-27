@@ -126,7 +126,7 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 		"start_delivery": true, "resolve_jira_delivery": true, "start_delivery_session": true,
 		"checkpoint_delivery_session": true, "report_delivery_usage": true, "report_delivery_progress": true,
 		"assess_jira_delivery": true, "hydrate_jira_delivery": true, "queue_jira_write": true,
-		"execute_jira_writes": true, "map_delivery_work_item": true,
+		"execute_jira_writes": true, "approve_jira_delivery": true, "map_delivery_work_item": true,
 		"get_delivery": true, "answer_delivery_question": true, "log_delivery_work": true,
 		"cancel_delivery": true, "approve_project_delivery": true,
 	}

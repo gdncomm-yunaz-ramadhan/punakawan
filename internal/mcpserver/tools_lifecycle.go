@@ -404,6 +404,38 @@ func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 	}
 }
 
+type ApproveJiraDeliveryInput struct {
+	ExecutionID string `json:"execution_id"`
+	ApprovedBy  string `json:"approved_by"`
+}
+type ApproveJiraDeliveryOutput struct {
+	View delivery.DeliveryView `json:"view"`
+}
+
+func approveJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ApproveJiraDeliveryInput) (*mcp.CallToolResult, ApproveJiraDeliveryOutput, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in ApproveJiraDeliveryInput) (*mcp.CallToolResult, ApproveJiraDeliveryOutput, error) {
+		if in.ExecutionID == "" || in.ApprovedBy == "" {
+			return nil, ApproveJiraDeliveryOutput{}, fmt.Errorf("mcpserver: approve Jira delivery requires execution_id and approved_by")
+		}
+		store, err := openDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, ApproveJiraDeliveryOutput{}, err
+		}
+		if err := jirahooks.NewLifecycle(store, a.AdapterRegistry).ApproveWrites(ctx, in.ExecutionID, in.ApprovedBy); err != nil {
+			return nil, ApproveJiraDeliveryOutput{}, fmt.Errorf("mcpserver: approve Jira delivery: %w", err)
+		}
+		execution, err := store.GetExecution(ctx, in.ExecutionID)
+		if err != nil {
+			return nil, ApproveJiraDeliveryOutput{}, err
+		}
+		view, err := store.BuildDeliveryView(ctx, execution.OrchestrationID)
+		if err != nil {
+			return nil, ApproveJiraDeliveryOutput{}, err
+		}
+		return nil, ApproveJiraDeliveryOutput{View: *view}, nil
+	}
+}
+
 type ExecuteJiraWritesInput struct {
 	IntentID       string `json:"intent_id,omitempty"`
 	ExecutionID    string `json:"execution_id,omitempty"`

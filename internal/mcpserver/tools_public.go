@@ -31,6 +31,7 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "assess_jira_delivery", Description: "Snapshot and assess Jira clarity and approval state."}, assessJiraDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "hydrate_jira_delivery", Description: "Fetch an exact Jira issue through the configured adapter and persist an immutable source snapshot."}, hydrateJiraDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "execute_jira_writes", Description: "Execute or retry durable pending Jira write intents after assessment and adapter approval gates pass."}, executeJiraWritesHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "approve_jira_delivery", Description: "Record one explicit user confirmation for every pending Jira write in a delivery execution."}, approveJiraDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "queue_jira_write", Description: "Record an idempotent Jira write intent before external synchronization."}, queueJiraWriteHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "map_delivery_work_item", Description: "Bind a delivery work item to an exact captured Jira task before worklogging."}, mapDeliveryWorkItemHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "get_delivery", Description: "Read a delivery's complete current state and next action."}, getDeliveryHandler(a))
