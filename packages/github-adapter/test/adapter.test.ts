@@ -17,7 +17,7 @@ describe('manifest', () => {
   });
 
   test('declares every write operation as approval-required', () => {
-    const writeOps = ['github.createPullRequest', 'github.addLabels', 'github.requestReviewers', 'github.replyToReviewComment', 'github.resolveReviewThread'];
+    const writeOps = ['github.createPullRequest', 'github.addLabels', 'github.requestReviewers', 'github.createPullRequestReview', 'github.replyToReviewComment', 'github.resolveReviewThread'];
     for (const op of writeOps) {
       assert.equal(manifest.operations[op]?.side_effect, true, `${op} should be side_effect: true`);
       assert.equal(manifest.operations[op]?.approval, 'required', `${op} should require approval`);
@@ -109,6 +109,30 @@ describe('createHandlers().execute', () => {
     )) as { normalized: { number: number; title: string } };
     assert.equal(result.normalized.title, 'Fix it');
     assert.equal(rest.createdPullRequests[0]?.head, 'punakawan/fix');
+  });
+
+  test('github.createPullRequestReview posts its verdict and inline comments', async () => {
+    const { handlers, rest } = fakeHandlers();
+    const result = (await handlers.execute!(
+      {
+        op: 'github.createPullRequestReview',
+        repository: FIXTURE_REPO,
+        pullRequestNumber: FIXTURE_PR_NUMBER,
+        body: 'Please fix the rounding behavior.',
+        event: 'REQUEST_CHANGES',
+        commitId: 'abc123',
+        comments: [{ path: 'src/refund.ts', line: 12, side: 'RIGHT', body: 'This rounds down.' }],
+      },
+      new AbortController().signal,
+    )) as { ok: boolean; reviewId: string };
+    assert.equal(result.ok, true);
+    assert.equal(result.reviewId, '701');
+    assert.deepEqual(rest.createdPullRequestReviews[0], {
+      body: 'Please fix the rounding behavior.',
+      event: 'REQUEST_CHANGES',
+      commit_id: 'abc123',
+      comments: [{ path: 'src/refund.ts', line: 12, side: 'RIGHT', body: 'This rounds down.' }],
+    });
   });
 
   test('github.addLabels posts the label list', async () => {

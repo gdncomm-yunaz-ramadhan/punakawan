@@ -154,6 +154,48 @@ export async function requestReviewers(client: GitHubRestClient, params: Request
   return { ok: true, reviewers: params.reviewers };
 }
 
+export type PullRequestReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+
+export interface PullRequestReviewComment {
+  path: string;
+  line: number;
+  side: 'LEFT' | 'RIGHT';
+  body: string;
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
+}
+
+export interface CreatePullRequestReviewParams extends RepoRef {
+  pullRequestNumber: number;
+  body: string;
+  event: PullRequestReviewEvent;
+  commitId?: string;
+  comments?: PullRequestReviewComment[];
+}
+
+export async function createPullRequestReview(client: GitHubRestClient, params: CreatePullRequestReviewParams) {
+  const { owner, repo } = splitRepo(params.repository);
+  const raw = await client.request<Record<string, unknown>>(`/repos/${owner}/${repo}/pulls/${params.pullRequestNumber}/reviews`, {
+    method: 'POST',
+    body: {
+      body: params.body,
+      event: params.event,
+      ...(params.commitId ? { commit_id: params.commitId } : {}),
+      ...(params.comments?.length ? {
+        comments: params.comments.map((comment) => ({
+          path: comment.path,
+          line: comment.line,
+          side: comment.side,
+          body: comment.body,
+          ...(comment.startLine ? { start_line: comment.startLine } : {}),
+          ...(comment.startSide ? { start_side: comment.startSide } : {}),
+        })),
+      } : {}),
+    },
+  });
+  return { ok: true, reviewId: typeof raw.data.id === 'number' || typeof raw.data.id === 'string' ? String(raw.data.id) : undefined };
+}
+
 export interface ReplyToReviewCommentParams extends RepoRef {
   pullRequestNumber: number;
   commentId: string;

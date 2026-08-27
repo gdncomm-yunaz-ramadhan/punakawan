@@ -67,6 +67,7 @@ export interface FakeGitHubRest {
   fetch: typeof fetch;
   requests: RecordedRestRequest[];
   createdPullRequests: Record<string, unknown>[];
+  createdPullRequestReviews: Record<string, unknown>[];
   addedLabels: { pullRequestNumber: number; labels: string[] }[];
   requestedReviewers: { pullRequestNumber: number; reviewers: string[] }[];
   repliedComments: { commentId: string; body: string }[];
@@ -81,6 +82,7 @@ function json(data: unknown, status = 200): Response {
 export function createFakeGitHubRest(): FakeGitHubRest {
   const requests: RecordedRestRequest[] = [];
   const createdPullRequests: FakeGitHubRest['createdPullRequests'] = [];
+  const createdPullRequestReviews: FakeGitHubRest['createdPullRequestReviews'] = [];
   const addedLabels: FakeGitHubRest['addedLabels'] = [];
   const requestedReviewers: FakeGitHubRest['requestedReviewers'] = [];
   const repliedComments: FakeGitHubRest['repliedComments'] = [];
@@ -132,6 +134,12 @@ export function createFakeGitHubRest(): FakeGitHubRest {
       return json({ ...FIXTURE_PULL_REQUEST, title: parsedBody.title, body: parsedBody.body, number: 43 }, 201);
     }
 
+    const createReviewMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/);
+    if (createReviewMatch && method === 'POST') {
+      createdPullRequestReviews.push(parsedBody);
+      return json({ id: 701 }, 201);
+    }
+
     const labelsMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)\/labels$/);
     if (labelsMatch && method === 'POST') {
       const labels = Array.isArray(parsedBody.labels) ? (parsedBody.labels as string[]) : [];
@@ -161,6 +169,7 @@ export function createFakeGitHubRest(): FakeGitHubRest {
     fetch: fakeFetch as typeof fetch,
     requests,
     createdPullRequests,
+    createdPullRequestReviews,
     addedLabels,
     requestedReviewers,
     repliedComments,
