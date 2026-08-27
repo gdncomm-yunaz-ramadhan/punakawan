@@ -7,6 +7,8 @@
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import Button from "../../lib/components/Button.svelte";
+  import Icon from "../../lib/components/Icon.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import type { IconName } from "../../lib/components/Icon.svelte";
   import Tabs from "../../lib/components/Tabs.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
@@ -19,6 +21,7 @@
   let cancelling = $state(false);
   let cancelError: string | null = $state(null);
   let confirmingCancel = $state(false);
+  let costDetailsOpen = $state(false);
   const tabs = [
     { id: "summary", label: "Summary", icon: "dashboard" as IconName },
     { id: "projects", label: "Projects", icon: "folder" as IconName },
@@ -85,6 +88,20 @@
     const values = [...totals].map(([currency, amount]) => formatAmount(amount, currency));
     return values.length ? values.join(" · ") : "No estimate";
   }
+  function usageTotals(v: DeliveryView) {
+    let seconds = 0, tokens = 0, unknown = false;
+    const actual = new Map<string, number>();
+    const estimate = new Map<string, number>();
+    for (const usage of v.lifecycle?.usage ?? []) {
+      if (usage.kind === "actual" && usage.unit === "seconds") seconds += usage.quantity;
+      if (usage.kind === "actual" && usage.unit === "tokens") tokens += usage.quantity;
+      if (usage.cost_amount == null || !usage.cost_currency) { unknown = true; continue; }
+      const totals = usage.kind === "estimate" ? estimate : actual;
+      totals.set(usage.cost_currency, (totals.get(usage.cost_currency) ?? 0) + usage.cost_amount);
+    }
+    const amounts = (totals: Map<string, number>) => [...totals].map(([currency, amount]) => formatAmount(amount, currency)).join(" · ") || "Not recorded";
+    return { seconds, tokens, unknown, actual: amounts(actual), estimate: amounts(estimate) };
+  }
   function plansFor(v: DeliveryView, projectId: string): number { return (v.project_plans ?? []).filter((plan) => plan.project_id === projectId).length; }
   function projectSlug(v: DeliveryView, projectId: string): string {
     return v.projects.find((project) => project.project_id === projectId)?.project_slug || projectId;
@@ -106,6 +123,16 @@
     {/snippet}
   </PageHeader>
   <DeliveryCancelDialog open={confirmingCancel} label={v.title} {orchestrationId} busy={cancelling} error={cancelError} onclose={() => !cancelling && (confirmingCancel = false)} onconfirm={cancel} />
+  <Dialog open={costDetailsOpen} title="Cost details" onclose={() => (costDetailsOpen = false)}>
+    {@const totals = usageTotals(v)}
+    <dl class="cost-details">
+      <dt>Time spent</dt><dd>{formatDuration(totals.seconds)}</dd>
+      <dt>Token spent</dt><dd>{totals.tokens.toLocaleString()} tokens</dd>
+      <dt>Estimated cost</dt><dd>{totals.estimate}</dd>
+      <dt>Actual cost</dt><dd>{totals.actual}</dd>
+      {#if totals.unknown}<dt>Unknown cost</dt><dd>Unknown — price rate missing</dd>{/if}
+    </dl>
+  </Dialog>
   {#if cancelError && !confirmingCancel}<p role="alert" class="error">{cancelError}</p>{/if}
 
   <div class="status-row">
@@ -127,7 +154,7 @@
         <MetricCard size="small" columns={3} label="Projects" value={v.projects.length} />
         <MetricCard size="small" columns={3} label="Sessions" value={v.lifecycle?.sessions.length ?? 0} />
         <MetricCard size="small" columns={3} label="Project plans" value={v.project_plans?.length ?? 0} />
-        <MetricCard size="small" columns={3} label="Estimated cost" value={estimatedCost(v)} />
+        <div class="cost-card"><MetricCard size="small" columns={3} label="Estimated cost" value={estimatedCost(v)} /><button type="button" class="cost-info" aria-label="Cost details" onclick={() => (costDetailsOpen = true)}><Icon name="info" size={16} /></button></div>
       </BentoGrid>
     </div>
   {:else if activeId === "projects"}
@@ -170,6 +197,11 @@
 {/if}
 
 <style>
+  .cost-card { position: relative; }
+  .cost-info { position: absolute; top: .45rem; right: .45rem; border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer; }
+  .cost-details { display: grid; grid-template-columns: 1fr auto; gap: .75rem 1.5rem; margin: 0; }
+  .cost-details dt { color: var(--color-text-muted); }
+  .cost-details dd { margin: 0; font-weight: 600; text-align: right; }
   .error { color: var(--color-danger); }
   .status-row { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; margin-bottom: 1rem; color: var(--color-text-muted); font-size: .85rem; }
   .status-row details { margin-left: auto; } .status-row summary { cursor: pointer; } .status-row code { display: block; margin-top: .35rem; }

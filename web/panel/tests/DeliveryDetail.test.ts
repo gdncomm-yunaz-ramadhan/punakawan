@@ -65,4 +65,19 @@ describe("DeliveryDetail", () => {
     expect(within(activities).getByRole("table", { name: "Jira activity" })).toBeTruthy();
     expect(within(activities).getByText("BILL-42")).toBeTruthy();
   });
+
+  it("opens cost details with observed time, tokens, and unknown cost", async () => {
+    renderView(view({ lifecycle: { sessions: [], usage: [
+      { id: "time", case_id: "case-1", execution_id: "exec-1", session_id: "session-1", kind: "actual", category: "wall_clock_time", quantity: 120, unit: "seconds", recorded_at: "2026-08-10T02:00:00Z" },
+      { id: "tokens", case_id: "case-1", execution_id: "exec-1", session_id: "session-1", kind: "actual", category: "tokens_input", quantity: 42, unit: "tokens", recorded_at: "2026-08-10T02:00:00Z" },
+    ] } }));
+    await screen.findByRole("tab", { name: "Summary" });
+    await fireEvent.click(screen.getByRole("tab", { name: "Summary" }));
+    await screen.findByRole("button", { name: "Cost details" });
+    await fireEvent.click(screen.getByRole("button", { name: "Cost details" }));
+    const dialog = screen.getByRole("dialog", { name: "Cost details" });
+    expect(within(dialog).getByText("2m")).toBeTruthy();
+    expect(within(dialog).getByText("42 tokens")).toBeTruthy();
+    expect(within(dialog).getByText("Unknown — price rate missing")).toBeTruthy();
+  });
 });

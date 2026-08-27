@@ -146,6 +146,7 @@ type ReportDeliveryUsageInput struct {
 	PriceSource    string   `json:"price_source,omitempty"`
 	ID             string   `json:"id,omitempty"`
 	IdempotencyKey string   `json:"idempotency_key,omitempty"`
+	CorrectPrice   bool     `json:"correct_price,omitempty" jsonschema:"set only to enrich or clear price metadata for existing id; observed usage fields stay unchanged"`
 }
 type ReportDeliveryUsageOutput struct {
 	Usage delivery.UsageEntry   `json:"usage"`
@@ -162,7 +163,12 @@ func reportDeliveryUsageHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if key == "" {
 			key = delivery.NewID()
 		}
-		usage, err := store.RecordUsage(ctx, key, in.SessionID, in.ID, in.Kind, in.Category, in.Model, in.Quantity, in.Unit, in.UnitPrice, in.Currency, in.PriceSource)
+		var usage *delivery.UsageEntry
+		if in.CorrectPrice {
+			usage, err = store.CorrectUsagePricing(ctx, key, in.SessionID, in.ID, in.UnitPrice, in.Currency, in.PriceSource)
+		} else {
+			usage, err = store.RecordUsage(ctx, key, in.SessionID, in.ID, in.Kind, in.Category, in.Model, in.Quantity, in.Unit, in.UnitPrice, in.Currency, in.PriceSource)
+		}
 		if err != nil {
 			return nil, ReportDeliveryUsageOutput{}, fmt.Errorf("mcpserver: report delivery usage: %w", err)
 		}

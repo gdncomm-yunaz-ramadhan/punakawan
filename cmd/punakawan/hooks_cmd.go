@@ -62,11 +62,6 @@ func recordSubagentUsage(ctx context.Context, stdin io.Reader, stderr io.Writer)
 		logger.Warn("hooks record-usage: decode hook payload", "error", err)
 		return
 	}
-	if strings.TrimSpace(payload.AgentID) == "" {
-		// Not a subagent completion (main-thread Stop, or a malformed
-		// payload) - nothing to report.
-		return
-	}
 	if strings.TrimSpace(payload.TranscriptPath) == "" {
 		logger.Warn("hooks record-usage: hook payload has no transcript_path", "agent_id", payload.AgentID)
 		return

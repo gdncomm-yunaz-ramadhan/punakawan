@@ -133,6 +133,17 @@ func TestRecordSubagentUsageWritesTokenAndTimeEntries(t *testing.T) {
 	}
 }
 
+func TestRecordSubagentUsageAcceptsRootTranscriptUsage(t *testing.T) {
+	worktree, _ := setUpSubagentUsageFixture(t)
+	transcript := writeFakeSubagentTranscript(t,
+		`{"type":"assistant","timestamp":"2026-08-27T07:00:00.000Z","message":{"role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}`,
+	)
+	payload, err := json.Marshal(subagentStopPayload{TranscriptPath: transcript, Cwd: worktree})
+	if err != nil { t.Fatalf("marshal payload: %v", err) }
+	recordSubagentUsage(context.Background(), bytes.NewReader(payload), &bytes.Buffer{})
+	if got := usageEntries(t, worktree)["tokens_input"]; got != 10 { t.Fatalf("tokens_input = %v, want 10", got) }
+}
+
 func TestRecordSubagentUsageNoOpsWithoutAgentID(t *testing.T) {
 	worktree, _ := setUpSubagentUsageFixture(t)
 	payload, _ := json.Marshal(subagentStopPayload{Cwd: worktree})

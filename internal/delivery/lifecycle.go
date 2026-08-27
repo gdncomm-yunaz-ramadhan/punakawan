@@ -477,6 +477,12 @@ func (s *Store) RecordUsage(ctx context.Context, idempotencyKey, sessionID, id, 
 	if unitPrice != nil && strings.TrimSpace(currency) == "" {
 		return nil, fmt.Errorf("delivery: priced usage requires a currency")
 	}
+	if unitPrice != nil && *unitPrice == 0 && strings.TrimSpace(priceSource) == "" {
+		return nil, fmt.Errorf("delivery: zero-priced usage requires a price source")
+	}
+	if unitPrice == nil {
+		currency, priceSource = "", ""
+	}
 	if id == "" {
 		id = newID()
 	}
@@ -506,6 +512,50 @@ func (s *Store) RecordUsage(ctx context.Context, idempotencyKey, sessionID, id, 
 		return nil, fmt.Errorf("delivery: record usage: %w", err)
 	}
 	return &out, nil
+}
+
+// CorrectUsagePricing enriches an observed usage row without changing its
+// immutable measured quantity, unit, model, kind, or recording time.
+func (s *Store) CorrectUsagePricing(ctx context.Context, idempotencyKey, sessionID, id string, unitPrice *float64, currency, priceSource string) (*UsageEntry, error) {
+	if id == "" {
+		return nil, fmt.Errorf("delivery: usage id is required")
+	}
+	if unitPrice != nil && (*unitPrice < 0 || strings.TrimSpace(currency) == "") {
+		return nil, fmt.Errorf("delivery: priced usage requires non-negative price and currency")
+	}
+	if unitPrice != nil && *unitPrice == 0 && strings.TrimSpace(priceSource) == "" {
+		return nil, fmt.Errorf("delivery: zero-priced usage requires a price source")
+	}
+	var out *UsageEntry
+	err := s.db.Write(ctx, idempotencyKey, "correct delivery usage price "+id, func(tx *sql.Tx) error {
+		entry, err := scanUsage(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, session_id, entry_kind, category, model, quantity, unit, unit_price, cost_amount, cost_currency, price_source, recorded_at FROM delivery_usage_ledger WHERE id = ? AND session_id = ?`, id, sessionID))
+		if err != nil {
+			return err
+		}
+		var cost any
+		if unitPrice != nil {
+			value := entry.Quantity * *unitPrice
+			cost = value
+		} else {
+			currency, priceSource = "", ""
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE delivery_usage_ledger SET unit_price = ?, cost_amount = ?, cost_currency = ?, price_source = ? WHERE id = ? AND session_id = ?`, unitPrice, cost, strings.TrimSpace(currency), strings.TrimSpace(priceSource), id, sessionID); err != nil {
+			return err
+		}
+		entry.UnitPrice, entry.CostCurrency, entry.PriceSource = unitPrice, strings.TrimSpace(currency), strings.TrimSpace(priceSource)
+		if unitPrice != nil {
+			value := entry.Quantity * *unitPrice
+			entry.CostAmount = &value
+		} else {
+			entry.CostAmount = nil
+		}
+		out = entry
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("delivery: correct usage pricing: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Store) GetUsage(ctx context.Context, id string) (*UsageEntry, error) {
