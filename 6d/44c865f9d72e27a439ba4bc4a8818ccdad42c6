@@ -1,0 +1,76 @@
+internal/adapters/gate_test.go
+  6c8013e2dd47292c 91-93,96-97,99-100,104-106,165-167,176-177,179-180
+internal/mcpserver/tools_startdelivery.go
+  6c8013e2dd47292c 1-3
+web/panel/tests/DeliveryDetail.test.ts
+  6c8013e2dd47292c 14
+cmd/punakawan/main.go
+  6c8013e2dd47292c 32
+cmd/punakawan/setup_hooks_test.go
+  6c8013e2dd47292c 1-211
+internal/mcpserver/capability_registry_test.go
+  6c8013e2dd47292c 16
+internal/transcriptusage/transcriptusage.go
+  6c8013e2dd47292c 1-118
+internal/adapters/gate.go
+  6c8013e2dd47292c 82-87,151-152,154,157-159,188-193,243-246
+internal/transcriptusage/transcriptusage_test.go
+  6c8013e2dd47292c 1-92
+cmd/punakawan/setup.go
+  6c8013e2dd47292c 29,45-69
+cmd/punakawan/hooks_cmd.go
+  6c8013e2dd47292c 1-159
+cmd/punakawan/hooks_cmd_test.go
+  6c8013e2dd47292c 1-163
+README.md
+  6c8013e2dd47292c 32
+internal/mcpserver/server_test.go
+  6c8013e2dd47292c 131
+protocol/deliveryevent.schema.json
+  6c8013e2dd47292c 31
+internal/mcpserver/session_marker.go
+  6c8013e2dd47292c 1-53
+cmd/punakawan/setup_hooks.go
+  6c8013e2dd47292c 1-121
+pkg/protocol/doc.go
+  6c8013e2dd47292c 6
+internal/delivery/deliveryview.go
+  6c8013e2dd47292c 170-178,206-210,719
+internal/mcpserver/tools_lifecycle.go
+  6c8013e2dd47292c 89
+internal/mcpserver/tools_startdelivery_test.go
+  6c8013e2dd47292c 14,18-21,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "6d44c865f9d72e27a439ba4bc4a8818ccdad42c6",
+  "prompts": {
+    "6c8013e2dd47292c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1fa87d23-255f-47ba-a429-b43724f73257",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1022,
+      "total_deletions": 740,
+      "accepted_lines": 1014,
+      "overriden_lines": 0
+    },
+    "94b329457a2f37b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0348d-a8c1-79c2-8ce4-ce1388b705b0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4129,
+      "overriden_lines": 0
+    }
+  }
+}
