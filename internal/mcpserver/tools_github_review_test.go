@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 const fakeGitHubReviewAdapterEnv = "PUNAKAWAN_TEST_GITHUB_REVIEW_ADAPTER"
@@ -77,30 +76,6 @@ func TestGitHubPRReviewHandlersSubmitThroughApprovedGate(t *testing.T) {
 	}
 	if secondApproved.Review.Status != "approved" {
 		t.Fatalf("second approved review status = %q, want approved", secondApproved.Review.Status)
-	}
-
-	approvalStore, err := a.OpenApprovals()
-	if err != nil {
-		t.Fatalf("OpenApprovals: %v", err)
-	}
-	history, err := approvalStore.List()
-	if err != nil {
-		t.Fatalf("approval history: %v", err)
-	}
-	if len(history) != 2 {
-		t.Fatalf("approval history entries = %d, want one request and one approval", len(history))
-	}
-	current, err := approvalStore.Current()
-	if err != nil {
-		t.Fatalf("current approvals: %v", err)
-	}
-	if len(current) != 1 {
-		t.Fatalf("current approvals = %d, want one retained delivery approval", len(current))
-	}
-	for _, record := range current {
-		if record.RunId != "github-pr-review-execution-execution-1" || record.Status != protocol.ApprovalRecordStatusApproved {
-			t.Fatalf("approval record = %+v, want approved record scoped to delivery execution", record)
-		}
 	}
 
 	_, submitted, err := submitGitHubPRReviewHandler(a)(ctx, nil, SubmitGitHubPRReviewInput{ReviewID: proposed.Review.ID})

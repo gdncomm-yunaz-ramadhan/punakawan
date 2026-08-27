@@ -29,7 +29,7 @@ upsert_project              list_projects
 save_workflow               get_workflow              list_workflows
 invoke_workflow             plan_save                 plan_get
 start_delivery              get_delivery              log_delivery_work
-answer_delivery_question    cancel_delivery           approve_project_delivery
+answer_delivery_question    cancel_delivery
 ```
 
 `invoke_workflow` resolves a Workflow into a Plan and Delivery. Coding agents

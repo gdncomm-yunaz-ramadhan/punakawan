@@ -32,7 +32,7 @@ type ResolveJiraDeliveryOutput struct {
 
 func resolveJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ResolveJiraDeliveryInput) (*mcp.CallToolResult, ResolveJiraDeliveryOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ResolveJiraDeliveryInput) (*mcp.CallToolResult, ResolveJiraDeliveryOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ResolveJiraDeliveryOutput{}, err
 		}
@@ -74,7 +74,7 @@ type DeliverySessionOutput struct {
 
 func startDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartDeliverySessionInput) (*mcp.CallToolResult, DeliverySessionOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in StartDeliverySessionInput) (*mcp.CallToolResult, DeliverySessionOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliverySessionOutput{}, err
 		}
@@ -86,6 +86,7 @@ func startDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallTool
 		if err != nil {
 			return nil, DeliverySessionOutput{}, fmt.Errorf("mcpserver: start delivery session: %w", err)
 		}
+		writeSessionMarker(session)
 		view, err := store.BuildDeliveryView(ctx, session.OrchestrationID)
 		if err != nil {
 			return nil, DeliverySessionOutput{}, err
@@ -109,7 +110,7 @@ type CheckpointDeliverySessionOutput struct {
 
 func checkpointDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CheckpointDeliverySessionInput) (*mcp.CallToolResult, CheckpointDeliverySessionOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in CheckpointDeliverySessionInput) (*mcp.CallToolResult, CheckpointDeliverySessionOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, CheckpointDeliverySessionOutput{}, err
 		}
@@ -153,7 +154,7 @@ type ReportDeliveryUsageOutput struct {
 
 func reportDeliveryUsageHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ReportDeliveryUsageInput) (*mcp.CallToolResult, ReportDeliveryUsageOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ReportDeliveryUsageInput) (*mcp.CallToolResult, ReportDeliveryUsageOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ReportDeliveryUsageOutput{}, err
 		}
@@ -191,7 +192,7 @@ type ReportDeliveryProgressOutput struct {
 
 func reportDeliveryProgressHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ReportDeliveryProgressInput) (*mcp.CallToolResult, ReportDeliveryProgressOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ReportDeliveryProgressInput) (*mcp.CallToolResult, ReportDeliveryProgressOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ReportDeliveryProgressOutput{}, err
 		}
@@ -233,7 +234,7 @@ type AssessJiraDeliveryOutput struct {
 
 func assessJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, AssessJiraDeliveryInput) (*mcp.CallToolResult, AssessJiraDeliveryOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in AssessJiraDeliveryInput) (*mcp.CallToolResult, AssessJiraDeliveryOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, AssessJiraDeliveryOutput{}, err
 		}
@@ -281,7 +282,7 @@ type QueueJiraWriteOutput struct {
 
 func queueJiraWriteHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, QueueJiraWriteInput) (*mcp.CallToolResult, QueueJiraWriteOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in QueueJiraWriteInput) (*mcp.CallToolResult, QueueJiraWriteOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, QueueJiraWriteOutput{}, err
 		}
@@ -348,7 +349,7 @@ type MapDeliveryWorkItemOutput struct {
 
 func mapDeliveryWorkItemHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, MapDeliveryWorkItemInput) (*mcp.CallToolResult, MapDeliveryWorkItemOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in MapDeliveryWorkItemInput) (*mcp.CallToolResult, MapDeliveryWorkItemOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, MapDeliveryWorkItemOutput{}, err
 		}
@@ -380,7 +381,7 @@ type HydrateJiraDeliveryOutput struct {
 
 func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, HydrateJiraDeliveryInput) (*mcp.CallToolResult, HydrateJiraDeliveryOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in HydrateJiraDeliveryInput) (*mcp.CallToolResult, HydrateJiraDeliveryOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, HydrateJiraDeliveryOutput{}, err
 		}
@@ -417,7 +418,7 @@ func approveJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if in.ExecutionID == "" || in.ApprovedBy == "" {
 			return nil, ApproveJiraDeliveryOutput{}, fmt.Errorf("mcpserver: approve Jira delivery requires execution_id and approved_by")
 		}
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ApproveJiraDeliveryOutput{}, err
 		}
@@ -451,7 +452,7 @@ func executeJiraWritesHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		if (in.IntentID == "") == (in.ExecutionID == "") {
 			return nil, ExecuteJiraWritesOutput{}, fmt.Errorf("mcpserver: execute Jira writes requires exactly one of intent_id or execution_id")
 		}
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ExecuteJiraWritesOutput{}, err
 		}

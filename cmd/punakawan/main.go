@@ -29,5 +29,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newMCPCmd())
 	root.AddCommand(newPanelCmd())
 	root.AddCommand(newDaemonCmd())
+	root.AddCommand(newHooksCmd())
 	return root
 }

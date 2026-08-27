@@ -167,16 +167,15 @@ type DeliveryView struct {
 	PlanRevision int    `json:"plan_revision,omitempty"`
 	SessionID    string `json:"session_id,omitempty"`
 
-	Projects         []ProjectSummary             `json:"projects"`
-	Lanes            []LaneSummary                `json:"lanes"`
-	Blockers         []BlockerSummary             `json:"blockers"`
-	PendingApprovals []*protocol.ApprovalManifest `json:"pending_approvals"`
-	PendingQuestions []string                     `json:"pending_questions"`
-	NextAction       string                       `json:"next_action"`
-	Timeline         []AuditEvent                 `json:"timeline"`
-	JiraActivity     []JiraActivity               `json:"jira_activity"`
-	WorkLogs         []WorkLogEntry               `json:"worklogs"`
-	WorkLogSeconds   int                          `json:"worklog_seconds"`
+	Projects         []ProjectSummary `json:"projects"`
+	Lanes            []LaneSummary    `json:"lanes"`
+	Blockers         []BlockerSummary `json:"blockers"`
+	PendingQuestions []string         `json:"pending_questions"`
+	NextAction       string           `json:"next_action"`
+	Timeline         []AuditEvent     `json:"timeline"`
+	JiraActivity     []JiraActivity   `json:"jira_activity"`
+	WorkLogs         []WorkLogEntry   `json:"worklogs"`
+	WorkLogSeconds   int              `json:"worklog_seconds"`
 	// ProjectPlans are the detailed plans a delivery explicitly uses in
 	// each touched project. The delivery's own PlanID/PlanRevision remains
 	// the high-level plan, because it may intentionally span all projects.
@@ -203,37 +202,12 @@ type DeliveryView struct {
 	NewlyRunnableLaneIDs []string `json:"newly_runnable_lane_ids"`
 }
 
-// allApprovalManifests reduces every manifest entity in events into its
-// current ApprovalManifest state, keyed by manifest id. reduce.go gives
-// every other entity type (lanes, parent tasks, dependency edges,
-// requirement sources) its own allX enumeration next to its reduceX
-// function; this one lives here instead because BuildDeliveryView is
-// its only caller and manifests.go itself never needed to enumerate
-// "every manifest in an orchestration" before now.
-func allApprovalManifests(orchestrationID string, events []protocol.DeliveryEvent) (map[string]*protocol.ApprovalManifest, error) {
-	ids := map[string]bool{}
-	for _, ev := range events {
-		if ev.Type == protocol.DeliveryEventTypeManifestCreated && ev.EntityId != nil {
-			ids[*ev.EntityId] = true
-		}
-	}
-	out := make(map[string]*protocol.ApprovalManifest, len(ids))
-	for id := range ids {
-		m, err := reduceApprovalManifest(orchestrationID, id, events)
-		if err != nil {
-			return nil, err
-		}
-		out[id] = m
-	}
-	return out, nil
-}
-
 // BuildDeliveryView assembles orchestrationID's current DeliveryView by
-// replaying its event log once and deriving every lane, parent task,
-// dependency edge, and approval manifest from that single pass - the
-// same enumeration approach list_runnable_lanes/report_discovered_dependency
-// already use (allLanes/ListGraph), not a new one. NewlyRunnableLaneIDs is
-// always left empty; use BuildDeliveryViewSince for that.
+// replaying its event log once and deriving every lane, parent task, and
+// dependency edge from that single pass - the same enumeration approach
+// list_runnable_lanes/report_discovered_dependency already use
+// (allLanes/ListGraph), not a new one. NewlyRunnableLaneIDs is always left
+// empty; use BuildDeliveryViewSince for that.
 func (s *Store) BuildDeliveryView(ctx context.Context, orchestrationID string) (*DeliveryView, error) {
 	return s.buildDeliveryView(ctx, orchestrationID, -1)
 }
@@ -268,10 +242,6 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	if err != nil {
 		return nil, err
 	}
-	manifestMap, err := allApprovalManifests(orchestrationID, events)
-	if err != nil {
-		return nil, err
-	}
 	sourceMap, err := allRequirementSources(orchestrationID, events)
 	if err != nil {
 		return nil, err
@@ -283,7 +253,6 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		Projects:             []ProjectSummary{},
 		Lanes:                []LaneSummary{},
 		Blockers:             []BlockerSummary{},
-		PendingApprovals:     []*protocol.ApprovalManifest{},
 		PendingQuestions:     []string{},
 		Timeline:             []AuditEvent{},
 		JiraActivity:         []JiraActivity{},
@@ -528,29 +497,11 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		})
 	}
 
-	manifestIDs := make([]string, 0, len(manifestMap))
-	for id := range manifestMap {
-		manifestIDs = append(manifestIDs, id)
-	}
-	sort.Slice(manifestIDs, func(i, j int) bool {
-		a, b := manifestMap[manifestIDs[i]], manifestMap[manifestIDs[j]]
-		if !a.CreatedAt.Equal(b.CreatedAt) {
-			return a.CreatedAt.Before(b.CreatedAt)
-		}
-		return a.Id < b.Id
-	})
-	for _, id := range manifestIDs {
-		m := manifestMap[id]
-		if m.Status == protocol.ApprovalManifestStatusPending {
-			view.PendingApprovals = append(view.PendingApprovals, m)
-		}
-	}
-
 	for _, in := range orch.UnresolvedInputs {
 		view.PendingQuestions = append(view.PendingQuestions, in.Reference)
 	}
 
-	view.NextAction = computeNextAction(orch, view.Lanes, view.PendingApprovals)
+	view.NextAction = computeNextAction(orch, view.Lanes)
 
 	if sinceSeq != diffDisabled {
 		newly, err := newlyRunnableLaneIDs(orchestrationID, events, laneMap, sinceSeq)
@@ -757,7 +708,7 @@ func deriveOrchestrationTitle(sources []*protocol.RequirementSource, pending []p
 // fixed priority order wins, and every other true condition is simply
 // not mentioned this time - a caller polls get_delivery again once it
 // acts on this one.
-func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary, pendingApprovals []*protocol.ApprovalManifest) string {
+func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary) string {
 	if orch.Status == protocol.DeliveryOrchestrationStatusPending && len(orch.UnresolvedInputs) > 0 {
 		refs := make([]string, 0, len(orch.UnresolvedInputs))
 		for _, in := range orch.UnresolvedInputs {
@@ -765,11 +716,8 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 		}
 		return fmt.Sprintf("resolve %d pending question(s) via answer_delivery_question: %s", len(refs), strings.Join(refs, ", "))
 	}
-	if len(lanes) == 0 && len(pendingApprovals) == 0 {
+	if len(lanes) == 0 {
 		return "no lanes yet — decompose the delivery via register_project, create_parent_task, and create_lane"
-	}
-	if len(pendingApprovals) > 0 {
-		return fmt.Sprintf("approve project delivery for project %s via approve_project_delivery", pendingApprovals[0].ProjectId)
 	}
 
 	var blocked, active, accepted, failed int

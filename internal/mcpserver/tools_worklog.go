@@ -33,7 +33,7 @@ type LogDeliveryWorkOutput struct {
 
 func logDeliveryWorkHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, LogDeliveryWorkInput) (*mcp.CallToolResult, LogDeliveryWorkOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in LogDeliveryWorkInput) (*mcp.CallToolResult, LogDeliveryWorkOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, LogDeliveryWorkOutput{}, err
 		}

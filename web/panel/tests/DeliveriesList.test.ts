@@ -31,7 +31,6 @@ function deliveryView(id: string) {
       { lane_id: "lane-2", project_id: "proj-b", status: "blocked", blocked_by: ["lane-1"] },
     ],
     blockers: [{ lane_id: "lane-2", blocked_by: ["lane-1"] }],
-    pending_approvals: [],
     pending_questions: [],
     next_action: "Wait for lane-1 to finish before lane-2 can start.",
     latest_seq: 3,

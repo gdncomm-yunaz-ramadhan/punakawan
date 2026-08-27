@@ -26,6 +26,7 @@ func newSetupCmd() *cobra.Command {
 				_, err = fmt.Fprint(cmd.OutOrStdout(), script)
 				return err
 			}
+			reportUsageTrackingHookSetup(cmd)
 			return runSetupShell(shell, script, cmd)
 		},
 	}
@@ -39,6 +40,31 @@ func defaultSetupShell() string {
 		return "powershell"
 	}
 	return "sh"
+}
+
+// reportUsageTrackingHookSetup ensures the current directory's
+// .claude/settings.json declares punakawan's SubagentStop usage-tracking
+// hook (see ensureUsageTrackingHook), printing one line to stderr reporting
+// the outcome. It never fails setup over a hook-config hiccup - same
+// never-fail philosophy as the hook's own CLI verb (cmd/punakawan
+// hooks record-usage): a tracking convenience must never block getting a
+// working credentialed shell.
+func reportUsageTrackingHookSetup(cmd *cobra.Command) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "setup: skip usage-tracking hook: %v\n", err)
+		return
+	}
+	changed, err := ensureUsageTrackingHook(cwd)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "setup: could not configure usage-tracking hook: %v\n", err)
+		return
+	}
+	if changed {
+		fmt.Fprintln(cmd.ErrOrStderr(), "setup: configured SubagentStop usage-tracking hook in .claude/settings.json")
+	} else {
+		fmt.Fprintln(cmd.ErrOrStderr(), "setup: usage-tracking hook already configured")
+	}
 }
 
 func runSetupShell(shell, script string, cmd *cobra.Command) error {

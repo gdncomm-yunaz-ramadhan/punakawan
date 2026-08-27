@@ -1,6 +1,6 @@
-// tools_startdelivery.go implements the five delivery-facade MCP tools:
-// start_delivery, get_delivery, answer_delivery_question,
-// approve_project_delivery, and cancel_delivery. Each one wraps the
+// tools_startdelivery.go implements the four delivery-facade MCP tools:
+// start_delivery, get_delivery, answer_delivery_question, and
+// cancel_delivery. Each one wraps the
 // already-built, already-tested internal/delivery Store API
 // (deliveryview.go's DeliveryView and StartDelivery, plus the
 // manifest/orchestration/routing methods store.go, manifests.go, and
@@ -111,7 +111,7 @@ type StartDeliveryOutput struct {
 
 func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, StartDeliveryOutput{}, err
 		}
@@ -330,7 +330,7 @@ type DeliveryViewOutput struct {
 
 func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, GetDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in GetDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
@@ -373,7 +373,7 @@ type AnswerDeliveryQuestionInput struct {
 
 func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, AnswerDeliveryQuestionInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in AnswerDeliveryQuestionInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
@@ -406,42 +406,6 @@ func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallTo
 	}
 }
 
-// ApproveProjectDeliveryInput is approve_project_delivery's input.
-// Setting reject decides the manifest rejected instead of approved,
-// rather than adding a seventh dedicated tool for that one-bit
-// difference.
-type ApproveProjectDeliveryInput struct {
-	OrchestrationId string `json:"orchestration_id"`
-	ManifestId      string `json:"manifest_id"`
-	ApprovedBy      string `json:"approved_by" jsonschema:"identifies the human deciding this manifest; never one of the agent role names (semar/gareng/petruk/bagong) - Store rejects self-approval"`
-	Reject          bool   `json:"reject,omitempty" jsonschema:"set true to reject the manifest instead of approving it"`
-}
-
-func approveProjectDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ApproveProjectDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in ApproveProjectDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, DeliveryViewOutput{}, err
-		}
-
-		if in.Reject {
-			if _, err := store.RejectManifest(ctx, delivery.NewID(), in.OrchestrationId, in.ManifestId, in.ApprovedBy); err != nil {
-				return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: reject manifest: %w", err)
-			}
-		} else {
-			if _, err := store.ApproveManifest(ctx, delivery.NewID(), in.OrchestrationId, in.ManifestId, in.ApprovedBy); err != nil {
-				return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: approve manifest: %w", err)
-			}
-		}
-
-		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
-		if err != nil {
-			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
-		}
-		return nil, DeliveryViewOutput{View: *view}, nil
-	}
-}
-
 // CancelDeliveryInput is cancel_delivery's input. reason is accepted
 // for a caller's own audit trail but is not persisted anywhere:
 // CancelOrchestration's signature has no reason parameter to store it
@@ -454,7 +418,7 @@ type CancelDeliveryInput struct {
 
 func cancelDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CancelDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CancelDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}

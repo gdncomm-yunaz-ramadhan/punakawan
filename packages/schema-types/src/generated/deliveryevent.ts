@@ -55,10 +55,7 @@ export interface DeliveryEvent {
     | "task.created"
     | "task.routed"
     | "edge.added"
-    | "edge.removed"
-    | "manifest.created"
-    | "manifest.approved"
-    | "manifest.rejected";
+    | "edge.removed";
   payload: {
     [k: string]: unknown;
   };

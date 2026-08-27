@@ -43,7 +43,6 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "answer_delivery_question", Description: "Answer one pending delivery clarification."}, answerDeliveryQuestionHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "log_delivery_work", Description: "Record measured work on an exact Jira task and synchronize it when configured."}, logDeliveryWorkHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "cancel_delivery", Description: "Cancel a non-terminal delivery while preserving its audit history."}, cancelDeliveryHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "approve_project_delivery", Description: "Approve or reject a project's pending delivery gate."}, approveProjectDeliveryHandler(a))
 }
 
 type UpsertProjectInput struct {
@@ -63,7 +62,7 @@ func upsertProjectHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		if in.Slug == "" || in.RepositoryURL == "" {
 			return nil, UpsertProjectOutput{}, fmt.Errorf("mcpserver: upsert_project: slug and repository_url are required")
 		}
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, UpsertProjectOutput{}, err
 		}
@@ -81,7 +80,7 @@ type ListProjectsOutput struct {
 
 func listProjectsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, ListProjectsOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ListProjectsOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ListProjectsOutput{}, err
 		}

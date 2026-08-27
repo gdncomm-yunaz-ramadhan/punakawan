@@ -814,44 +814,6 @@ export interface DeliveryBlockerSummary {
   blocked_by: string[];
 }
 
-export type ApprovalManifestStatus = "pending" | "approved" | "rejected";
-
-export interface ApprovalManifestCheck {
-  name: string;
-  status: string;
-  classification: string;
-  detail?: string;
-}
-
-export interface ApprovalManifestWorklogEntry {
-  bucket: string;
-  hours: number;
-  subtask_key: string;
-  subtask_name?: string;
-}
-
-export interface ApprovalManifest {
-  id: string;
-  orchestration_id: string;
-  project_id: string;
-  parent_task_ids: string[];
-  planned_base_ref: string;
-  planned_branches?: string[];
-  checks: ApprovalManifestCheck[];
-  expects_commits?: boolean;
-  expects_jira_writes?: boolean;
-  expects_prs?: boolean;
-  expects_pushes?: boolean;
-  proposed_worklog?: ApprovalManifestWorklogEntry[];
-  proposed_worklog_total_hours?: number;
-  proposed_worklog_unmapped_hours?: number;
-  status: ApprovalManifestStatus;
-  approved_by?: string;
-  created_at: string;
-  decided_at?: string;
-  revision: number;
-}
-
 export interface DeliveryWorkLog {
   id: string;
   orchestration_id: string;
@@ -909,7 +871,6 @@ export interface DeliveryView {
   project_plans: DeliveryProjectPlanLink[];
   lanes: DeliveryLaneSummary[];
   blockers: DeliveryBlockerSummary[];
-  pending_approvals: ApprovalManifest[];
   pending_questions: string[];
   next_action: string;
   timeline?: DeliveryAuditEvent[];
@@ -957,23 +918,6 @@ export interface AnswerDeliveryQuestionRequest {
 
 export function answerDeliveryQuestion(orchestrationId: string, body: AnswerDeliveryQuestionRequest): Promise<DeliveryView> {
   return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/answer-question`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-// approveProjectDelivery resolves one project's ApprovalManifest
-// independently of any other project's - reject:false approves,
-// reject:true rejects. There is no project_id field: manifest_id alone
-// identifies which project's approval this decides.
-export interface ApproveProjectDeliveryRequest {
-  manifest_id: string;
-  approved_by: string;
-  reject?: boolean;
-}
-
-export function approveProjectDelivery(orchestrationId: string, body: ApproveProjectDeliveryRequest): Promise<DeliveryView> {
-  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/approve`, {
     method: "POST",
     body: JSON.stringify(body),
   });

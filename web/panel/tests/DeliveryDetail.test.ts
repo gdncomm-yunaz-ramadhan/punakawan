@@ -11,7 +11,7 @@ function view(overrides: Record<string, unknown> = {}) {
     title: "Migrate billing to v2", description: "Move every billing caller onto the v2 pricing endpoint.", plan_id: "delivery-plan", plan_revision: 3,
     projects: [{ project_id: "billing", attached: true, lane_ids: [], counts_by_status: {} }],
     project_plans: [{ project_id: "billing", plan_id: "plan-billing", plan_revision: 2, created_at: "2026-08-10T00:00:00Z" }],
-    lanes: [], blockers: [], pending_approvals: [], pending_questions: [], next_action: "", latest_seq: 1, newly_runnable_lane_ids: [],
+    lanes: [], blockers: [], pending_questions: [], next_action: "", latest_seq: 1, newly_runnable_lane_ids: [],
     jira_activity: [{ issue_key: "BILL-42", event_type: "implementation.completed", entity_id: "task-9", fired_at: "2026-08-10T02:00:00Z" }],
     lifecycle: { sessions: [{ id: "session-1", case_id: "case-1", execution_id: "exec-1", orchestration_id: "orc-1", participant: "codex", worktree_path: "/repo/billing", provider: "openai", status: "closed", started_at: "2026-08-10T00:00:00Z", ended_at: "2026-08-10T01:30:00Z" }], usage: [{ id: "usage-1", case_id: "case-1", execution_id: "exec-1", session_id: "session-1", kind: "estimate", category: "model", quantity: 1, unit: "request", cost_amount: 12.5, cost_currency: "USD", recorded_at: "2026-08-10T02:00:00Z" }] },
     ...overrides,

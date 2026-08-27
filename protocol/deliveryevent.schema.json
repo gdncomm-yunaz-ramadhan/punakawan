@@ -28,8 +28,7 @@
         "worklog.recorded",
         "requirement.captured",
         "task.created", "task.routed",
-        "edge.added", "edge.removed",
-        "manifest.created", "manifest.approved", "manifest.rejected"
+        "edge.added", "edge.removed"
       ]
     },
     "payload": { "type": "object" },

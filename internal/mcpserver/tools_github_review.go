@@ -90,7 +90,7 @@ type ProposeGitHubPRReviewOutput struct {
 
 func proposeGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ProposeGitHubPRReviewInput) (*mcp.CallToolResult, ProposeGitHubPRReviewOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ProposeGitHubPRReviewInput) (*mcp.CallToolResult, ProposeGitHubPRReviewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ProposeGitHubPRReviewOutput{}, err
 		}
@@ -119,7 +119,7 @@ func getGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 		if strings.TrimSpace(in.ReviewID) == "" {
 			return nil, GetGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: get GitHub PR review requires review_id")
 		}
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, GetGitHubPRReviewOutput{}, err
 		}
@@ -146,7 +146,7 @@ func approveGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToo
 		if strings.TrimSpace(in.ReviewID) == "" || strings.TrimSpace(in.ApprovedBy) == "" {
 			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: approve GitHub PR review requires review_id and approved_by")
 		}
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ApproveGitHubPRReviewOutput{}, err
 		}
@@ -214,7 +214,7 @@ func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallTool
 		if strings.TrimSpace(in.ReviewID) == "" {
 			return nil, SubmitGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: submit GitHub PR review requires review_id")
 		}
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, SubmitGitHubPRReviewOutput{}, err
 		}

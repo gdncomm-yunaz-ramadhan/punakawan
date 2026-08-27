@@ -90,7 +90,7 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 	if err != nil {
 		return "", fmt.Errorf("delivery-shaped definition %q: %w", def.ID, err)
 	}
-	store, err := openDeliveryStore(ctx, a)
+	store, err := OpenDeliveryStore(ctx, a)
 	if err != nil {
 		return "", err
 	}

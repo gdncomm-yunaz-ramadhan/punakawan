@@ -24,7 +24,6 @@ type fakeDeliveryReader struct {
 	lastID   string
 	lastSeq  int
 	lastAns  daemon.AnswerDeliveryQuestionRequest
-	lastAppr daemon.ApproveProjectDeliveryRequest
 	lastCanc daemon.CancelDeliveryRequest
 
 	evidenceData []byte
@@ -47,11 +46,6 @@ func (f *fakeDeliveryReader) WatchDeliveryView(ctx context.Context, orchestratio
 
 func (f *fakeDeliveryReader) AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in daemon.AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error) {
 	f.lastID, f.lastAns = orchestrationID, in
-	return f.view, f.err
-}
-
-func (f *fakeDeliveryReader) ApproveProjectDelivery(ctx context.Context, orchestrationID string, in daemon.ApproveProjectDeliveryRequest) (*delivery.DeliveryView, error) {
-	f.lastID, f.lastAppr = orchestrationID, in
 	return f.view, f.err
 }
 
@@ -180,30 +174,6 @@ func TestAnswerDeliveryQuestionHandlerInvalidBodyIs400(t *testing.T) {
 	rec := doDelivery(http.MethodPost, "/api/v1/deliveries/orc-1/answer-question", "orc-1", "not-json", AnswerDeliveryQuestionHandler(&fakeDeliveryReader{}))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
-	}
-}
-
-func TestApproveProjectDeliveryHandlerApprove(t *testing.T) {
-	reader := &fakeDeliveryReader{view: &delivery.DeliveryView{}}
-	body := `{"manifest_id":"man-1","approved_by":"alice"}`
-	rec := doDelivery(http.MethodPost, "/api/v1/deliveries/orc-1/approve", "orc-1", body, ApproveProjectDeliveryHandler(reader))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	if reader.lastAppr.ManifestId != "man-1" || reader.lastAppr.ApprovedBy != "alice" || reader.lastAppr.Reject {
-		t.Fatalf("request = %+v, want manifest_id=man-1 approved_by=alice reject=false", reader.lastAppr)
-	}
-}
-
-func TestApproveProjectDeliveryHandlerReject(t *testing.T) {
-	reader := &fakeDeliveryReader{view: &delivery.DeliveryView{}}
-	body := `{"manifest_id":"man-1","approved_by":"alice","reject":true}`
-	rec := doDelivery(http.MethodPost, "/api/v1/deliveries/orc-1/approve", "orc-1", body, ApproveProjectDeliveryHandler(reader))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	if !reader.lastAppr.Reject {
-		t.Fatalf("request = %+v, want reject=true", reader.lastAppr)
 	}
 }
 

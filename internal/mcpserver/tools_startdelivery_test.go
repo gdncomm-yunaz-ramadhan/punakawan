@@ -11,15 +11,14 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// TestStartDeliveryGetDeliveryAnswerApproveCancelEndToEnd drives the five
+// TestStartDeliveryGetDeliveryAnswerCancelEndToEnd drives the four
 // delivery-facade tools over the real MCP wire protocol end to end:
 // start_delivery bootstraps an orchestration with one ambiguous
 // reference among clear ones, get_delivery reads it back,
-// answer_delivery_question resolves the ambiguous one, a directly
-// seeded pending approval manifest is decided via
-// approve_project_delivery (covering both the reject and approve
-// paths), and cancel_delivery ends the orchestration.
-func TestStartDeliveryGetDeliveryAnswerApproveCancelEndToEnd(t *testing.T) {
+// answer_delivery_question resolves the ambiguous one (both the
+// resolved-requirement and routing cases), and cancel_delivery ends
+// the orchestration.
+func TestStartDeliveryGetDeliveryAnswerCancelEndToEnd(t *testing.T) {
 	a := newTestApp(t)
 	cs := connect(t, a)
 	ctx := context.Background()
@@ -101,52 +100,10 @@ func TestStartDeliveryGetDeliveryAnswerApproveCancelEndToEnd(t *testing.T) {
 		t.Fatalf("task ProjectId = %v, want %s after routing via answer_delivery_question", routedTask.ProjectId, proj.Id)
 	}
 
-	// Seed one pending approval manifest directly (create_approval_manifest
-	// has no MCP tool either) to exercise approve_project_delivery's reject
-	// path.
-	rejectManifest, err := store.CreateApprovalManifest(ctx, "manifest-reject-"+delivery.NewID(), delivery.NewID(), started.OrchestrationId, proj.Id, []string{routedTask.Id}, delivery.ManifestPlan{PlannedBaseRef: "main"})
-	if err != nil {
-		t.Fatalf("CreateApprovalManifest(reject): %v", err)
-	}
-
-	var rejected DeliveryViewOutput
-	callTool(t, cs, "approve_project_delivery", map[string]any{
-		"orchestration_id": started.OrchestrationId,
-		"manifest_id":      rejectManifest.Id,
-		"approved_by":      "a-human-reviewer",
-		"reject":           true,
-	}, &rejected)
-	for _, m := range rejected.View.PendingApprovals {
-		if m.Id == rejectManifest.Id {
-			t.Fatalf("manifest %s still reported pending after reject: %+v", rejectManifest.Id, m)
-		}
-	}
-
-	// A second manifest, this time approved.
-	approveManifest, err := store.CreateApprovalManifest(ctx, "manifest-approve-"+delivery.NewID(), delivery.NewID(), started.OrchestrationId, proj.Id, []string{routedTask.Id}, delivery.ManifestPlan{PlannedBaseRef: "main"})
-	if err != nil {
-		t.Fatalf("CreateApprovalManifest(approve): %v", err)
-	}
-
-	var approved DeliveryViewOutput
-	callTool(t, cs, "approve_project_delivery", map[string]any{
-		"orchestration_id": started.OrchestrationId,
-		"manifest_id":      approveManifest.Id,
-		"approved_by":      "a-human-reviewer",
-	}, &approved)
-	for _, m := range approved.View.PendingApprovals {
-		if m.Id == approveManifest.Id {
-			t.Fatalf("manifest %s still reported pending after approve: %+v", approveManifest.Id, m)
-		}
-	}
-	if strings.Contains(approved.View.NextAction, string(rejectManifest.Id)) {
-		t.Fatalf("NextAction unexpectedly references the already-decided reject manifest: %q", approved.View.NextAction)
-	}
-
 	var cancelled DeliveryViewOutput
 	callTool(t, cs, "cancel_delivery", map[string]any{
 		"orchestration_id":  started.OrchestrationId,
-		"expected_revision": approved.View.Orchestration.Revision,
+		"expected_revision": routed.View.Orchestration.Revision,
 		"reason":            "end to end test cleanup",
 	}, &cancelled)
 	if cancelled.View.Orchestration.Status != protocol.DeliveryOrchestrationStatusCancelled {

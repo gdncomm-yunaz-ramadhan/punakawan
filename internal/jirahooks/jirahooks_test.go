@@ -377,32 +377,3 @@ func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 	}
 }
 
-func TestHandle_MissingApprovalFailsAndIsSwallowableByCaller(t *testing.T) {
-	// A hook fired outside any MCP tool call has no session to elicit an
-	// approval decision from - gate.Call fails closed exactly like any
-	// other unapproved adapter write, and Handle surfaces that as an
-	// ordinary error for its caller (deliveryhooks.Dispatcher) to log and
-	// swallow.
-	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	approvalStore := approvals.New(db, "test-project")
-	fc := &fakeAdapterCaller{}
-	gate := adapters.NewGate("atlassian", testManifest(), fc, approvalStore) // never approved
-	store := delivery.NewStore(db)
-	hook := &JiraHook{db: db, store: store, registry: &fakeGateResolver{gate: gate}, cfg: cfg}
-
-	ctx := context.Background()
-	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
-	if err != nil {
-		t.Fatalf("CreateOrchestration: %v", err)
-	}
-	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-
-	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}); err == nil {
-		t.Fatal("expected an error when addJiraComment has not been approved")
-	}
-}

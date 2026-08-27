@@ -86,38 +86,6 @@ func (s *deliveryTestServer) do(t *testing.T, method, path string, body any) *ht
 	return resp
 }
 
-// newApprovableFixture builds one orchestration with a project, a routed
-// parent task, and a pending approval manifest - the minimum needed to
-// exercise the approve/reject route.
-func newApprovableFixture(t *testing.T, store *delivery.Store) (orchestrationID, manifestID string) {
-	t.Helper()
-	ctx := context.Background()
-	orch, err := store.CreateOrchestration(ctx, "orch-"+delivery.NewID(), delivery.NewID(), nil)
-	if err != nil {
-		t.Fatalf("CreateOrchestration: %v", err)
-	}
-	project, err := store.RegisterProject(ctx, "project-"+delivery.NewID(), delivery.NewID(), "svc-"+delivery.NewID(), "https://example.test/svc.git", "main")
-	if err != nil {
-		t.Fatalf("RegisterProject: %v", err)
-	}
-	source, err := store.CaptureRequirement(ctx, delivery.NewID(), orch.Id, delivery.SourceInput{Provider: "freetext", Title: "T", Summary: "S"})
-	if err != nil {
-		t.Fatalf("CaptureRequirement: %v", err)
-	}
-	taskID := delivery.NewID()
-	if _, err := store.CreateParentTask(ctx, delivery.NewID(), taskID, orch.Id, "Task", []string{source.Id}); err != nil {
-		t.Fatalf("CreateParentTask: %v", err)
-	}
-	if _, err := store.RouteParentTask(ctx, delivery.NewID(), orch.Id, taskID, project.Id); err != nil {
-		t.Fatalf("RouteParentTask: %v", err)
-	}
-	manifestID = delivery.NewID()
-	if _, err := store.CreateApprovalManifest(ctx, delivery.NewID(), manifestID, orch.Id, project.Id, []string{taskID}, delivery.ManifestPlan{}); err != nil {
-		t.Fatalf("CreateApprovalManifest: %v", err)
-	}
-	return orch.Id, manifestID
-}
-
 func TestHandleListDeliveriesReturnsEveryOrchestration(t *testing.T) {
 	s := newDeliveryTestServer(t)
 	ctx := context.Background()
@@ -283,44 +251,6 @@ func TestHandleAnswerDeliveryQuestionRequiresProviderOrRouting(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
-	}
-}
-
-func TestHandleApproveProjectDeliveryApproves(t *testing.T) {
-	s := newDeliveryTestServer(t)
-	orchID, manifestID := newApprovableFixture(t, s.store)
-
-	body := approveProjectDeliveryRequest{ManifestId: manifestID, ApprovedBy: "human-1"}
-	resp := s.do(t, http.MethodPost, "/api/v1/deliveries/"+orchID+"/approve", body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	var view delivery.DeliveryView
-	if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(view.PendingApprovals) != 0 {
-		t.Fatalf("expected manifest no longer pending, got %+v", view.PendingApprovals)
-	}
-}
-
-func TestHandleApproveProjectDeliveryRejects(t *testing.T) {
-	s := newDeliveryTestServer(t)
-	orchID, manifestID := newApprovableFixture(t, s.store)
-
-	body := approveProjectDeliveryRequest{ManifestId: manifestID, ApprovedBy: "human-1", Reject: true}
-	resp := s.do(t, http.MethodPost, "/api/v1/deliveries/"+orchID+"/approve", body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	var view delivery.DeliveryView
-	if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(view.PendingApprovals) != 0 {
-		t.Fatalf("expected manifest no longer pending, got %+v", view.PendingApprovals)
 	}
 }
 
@@ -626,35 +556,6 @@ func TestClientMethodErrorIsStatusError(t *testing.T) {
 	}
 	if statusErr.Message == "" {
 		t.Fatal("expected a non-empty Message")
-	}
-}
-
-func TestClientApproveProjectDeliveryRoundTrip(t *testing.T) {
-	paths := testPaths(t)
-	d, err := Run(context.Background(), "127.0.0.1", "0", paths)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	go d.Serve()
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		d.Shutdown(ctx)
-	}()
-
-	client, err := Discover(paths)
-	if err != nil {
-		t.Fatalf("Discover: %v", err)
-	}
-	store := delivery.NewStore(d.DB())
-	orchID, manifestID := newApprovableFixture(t, store)
-
-	view, err := client.ApproveProjectDelivery(context.Background(), orchID, ApproveProjectDeliveryRequest{ManifestId: manifestID, ApprovedBy: "human-1"})
-	if err != nil {
-		t.Fatalf("ApproveProjectDelivery: %v", err)
-	}
-	if len(view.PendingApprovals) != 0 {
-		t.Fatalf("expected manifest resolved, got %+v", view.PendingApprovals)
 	}
 }
 

@@ -97,11 +97,6 @@ func (l *Lifecycle) Execute(ctx context.Context, intentID, resolutionKey string)
 		return nil, fmt.Errorf("jirahooks: Jira write intent %s is %q, not pending or retrying", intent.ID, intent.Status)
 	}
 	attemptKey := resolutionKey + ":" + strconv.Itoa(intent.AttemptCount+1)
-	if !isClarificationComment(intent.Action) {
-		if err := l.requireApprovedAssessment(ctx, intent.ExecutionID); err != nil {
-			return nil, err
-		}
-	}
 	op, params, err := adapterWrite(intent)
 	if err != nil {
 		return nil, err
@@ -214,25 +209,6 @@ func (l *Lifecycle) ExecutePending(ctx context.Context, executionID, resolutionK
 	return out, firstErr
 }
 
-func (l *Lifecycle) requireApprovedAssessment(ctx context.Context, executionID string) error {
-	execution, err := l.store.GetExecution(ctx, executionID)
-	if err != nil {
-		return fmt.Errorf("jirahooks: get delivery execution: %w", err)
-	}
-	lifecycle, err := l.store.GetDeliveryLifecycle(ctx, execution.OrchestrationID)
-	if err != nil {
-		return fmt.Errorf("jirahooks: get delivery lifecycle: %w", err)
-	}
-	if len(lifecycle.Assessments) == 0 {
-		return fmt.Errorf("jirahooks: Jira mutation requires a clear, approved assessment")
-	}
-	assessment := lifecycle.Assessments[len(lifecycle.Assessments)-1]
-	if assessment.Clarity != "clear" || (assessment.Approval != "approved" && assessment.Approval != "not_required") {
-		return fmt.Errorf("jirahooks: Jira mutation blocked by assessment clarity=%q approval=%q", assessment.Clarity, assessment.Approval)
-	}
-	return nil
-}
-
 func (l *Lifecycle) resolveFailure(ctx context.Context, intent *delivery.JiraWriteIntent, resolutionKey string, failure error) (*delivery.JiraWriteIntent, error) {
 	retryAt := time.Now().UTC().Add(time.Minute)
 	resolved, err := l.store.ResolveJiraWriteIntent(ctx, resolutionKey, intent.ID, "", failure.Error(), &retryAt)
@@ -241,8 +217,6 @@ func (l *Lifecycle) resolveFailure(ctx context.Context, intent *delivery.JiraWri
 	}
 	return resolved, fmt.Errorf("jirahooks: execute Jira write intent %s: %w", intent.ID, failure)
 }
-
-func isClarificationComment(action string) bool { return action == "clarification_comment" }
 
 func adapterWrite(intent *delivery.JiraWriteIntent) (string, map[string]any, error) {
 	switch intent.Action {

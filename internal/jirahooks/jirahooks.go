@@ -14,7 +14,7 @@
 // internal/deliveryhooks' generic Event/Hook types; a caller that wants
 // Jira updates wires a *JiraHook into a delivery.Store via
 // delivery.WithHooks separately (see internal/mcpserver's
-// openDeliveryStore).
+// OpenDeliveryStore).
 //
 // LogWork projects an explicit, task-bound delivery worklog to Jira when the
 // workspace opts in. It never derives time from a lease or wall clock: only

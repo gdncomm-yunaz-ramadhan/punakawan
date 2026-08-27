@@ -178,38 +178,6 @@ func (t *Transport) handleAnswerDeliveryQuestion(w http.ResponseWriter, r *http.
 	t.writeCurrentDeliveryView(w, r, id)
 }
 
-// approveProjectDeliveryRequest is POST
-// /api/v1/deliveries/{orchestrationId}/approve's body, mirroring
-// mcpserver.ApproveProjectDeliveryInput minus orchestration_id (from the
-// URL path).
-type approveProjectDeliveryRequest struct {
-	ManifestId string `json:"manifest_id"`
-	ApprovedBy string `json:"approved_by"`
-	Reject     bool   `json:"reject,omitempty"`
-}
-
-func (t *Transport) handleApproveProjectDelivery(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("orchestrationId")
-	var body approveProjectDeliveryRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
-	var err error
-	if body.Reject {
-		_, err = t.delivery.RejectManifest(r.Context(), delivery.NewID(), id, body.ManifestId, body.ApprovedBy)
-	} else {
-		_, err = t.delivery.ApproveManifest(r.Context(), delivery.NewID(), id, body.ManifestId, body.ApprovedBy)
-	}
-	if err != nil {
-		writeDeliveryError(w, err)
-		return
-	}
-
-	t.writeCurrentDeliveryView(w, r, id)
-}
-
 // cancelDeliveryRequest is POST /api/v1/deliveries/{orchestrationId}/cancel's
 // body, mirroring mcpserver.CancelDeliveryInput minus orchestration_id
 // (from the URL path).
@@ -388,26 +356,6 @@ func (c *Client) AnswerDeliveryQuestion(ctx context.Context, orchestrationID str
 	}
 	var view delivery.DeliveryView
 	path := "/api/v1/deliveries/" + url.PathEscape(orchestrationID) + "/answer-question"
-	if err := c.doJSON(ctx, c.http, http.MethodPost, path, body, &view); err != nil {
-		return nil, err
-	}
-	return &view, nil
-}
-
-// ApproveProjectDeliveryRequest is ApproveProjectDelivery's input,
-// mirroring mcpserver.ApproveProjectDeliveryInput minus OrchestrationId.
-type ApproveProjectDeliveryRequest struct {
-	ManifestId string
-	ApprovedBy string
-	Reject     bool
-}
-
-// ApproveProjectDelivery approves (or, with Reject set, rejects) one
-// approval manifest and returns the refreshed DeliveryView.
-func (c *Client) ApproveProjectDelivery(ctx context.Context, orchestrationID string, in ApproveProjectDeliveryRequest) (*delivery.DeliveryView, error) {
-	body := approveProjectDeliveryRequest{ManifestId: in.ManifestId, ApprovedBy: in.ApprovedBy, Reject: in.Reject}
-	var view delivery.DeliveryView
-	path := "/api/v1/deliveries/" + url.PathEscape(orchestrationID) + "/approve"
 	if err := c.doJSON(ctx, c.http, http.MethodPost, path, body, &view); err != nil {
 		return nil, err
 	}
