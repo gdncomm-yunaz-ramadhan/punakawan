@@ -55,6 +55,14 @@ if [ "${ATLASSIAN_API_TOKEN_SCOPED:-}" != "true" ] && [ "${ATLASSIAN_API_TOKEN_S
   IFS= read -r ATLASSIAN_EMAIL
   export ATLASSIAN_EMAIL
 fi
+if [ -z "${GITHUB_TOKEN:-}" ] && [ -z "${GH_TOKEN:-}" ]; then
+  printf 'GITHUB_TOKEN: ' >&2
+  stty -echo
+  IFS= read -r GITHUB_TOKEN
+  stty echo
+  printf '\n' >&2
+  export GITHUB_TOKEN
+fi
 `, nil
 	case "powershell", "ps1":
 		return `if ([string]::IsNullOrWhiteSpace($env:ATLASSIAN_HOST)) { $env:ATLASSIAN_HOST = Read-Host 'ATLASSIAN_HOST (for example team.atlassian.net)' }
@@ -64,11 +72,17 @@ if ([string]::IsNullOrWhiteSpace($env:ATLASSIAN_API_TOKEN)) {
   try { $env:ATLASSIAN_API_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
 }
 if ($env:ATLASSIAN_API_TOKEN_SCOPED -notin @('true', '1') -and [string]::IsNullOrWhiteSpace($env:ATLASSIAN_EMAIL)) { $env:ATLASSIAN_EMAIL = Read-Host 'ATLASSIAN_EMAIL' }
+if ([string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN) -and [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+  $secure = Read-Host 'GITHUB_TOKEN' -AsSecureString
+  $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try { $env:GITHUB_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
 `, nil
 	case "cmd", "bat":
 		return `@if "%ATLASSIAN_HOST%"=="" set /p ATLASSIAN_HOST=ATLASSIAN_HOST (for example team.atlassian.net): 
 @if "%ATLASSIAN_API_TOKEN%"=="" set /p ATLASSIAN_API_TOKEN=ATLASSIAN_API_TOKEN: 
 @if not "%ATLASSIAN_API_TOKEN_SCOPED%"=="true" if not "%ATLASSIAN_API_TOKEN_SCOPED%"=="1" if "%ATLASSIAN_EMAIL%"=="" set /p ATLASSIAN_EMAIL=ATLASSIAN_EMAIL: 
+@if "%GITHUB_TOKEN%"=="" if "%GH_TOKEN%"=="" set /p GITHUB_TOKEN=GITHUB_TOKEN: 
 `, nil
 	default:
 		return "", fmt.Errorf("unsupported setup shell %q; use sh, powershell, or cmd", shell)

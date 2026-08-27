@@ -84,7 +84,7 @@ func TestSetupPrintsSourceableScripts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup sh: %v\n%s", err, sh)
 	}
-	for _, want := range []string{"ATLASSIAN_HOST", "ATLASSIAN_API_TOKEN", "ATLASSIAN_EMAIL", "stty -echo"} {
+	for _, want := range []string{"ATLASSIAN_HOST", "ATLASSIAN_API_TOKEN", "ATLASSIAN_EMAIL", "GITHUB_TOKEN", "GH_TOKEN", "stty -echo"} {
 		if !strings.Contains(sh, want) {
 			t.Errorf("setup sh missing %q:\n%s", want, sh)
 		}
