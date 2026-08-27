@@ -9,6 +9,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/jirahooks"
 )
 
 // LogDeliveryWorkInput records an actual, task-bound interval of agent work.
@@ -27,6 +28,19 @@ type LogDeliveryWorkInput struct {
 }
 
 type LogDeliveryWorkOutput struct {
+	WorkLog delivery.WorkLogEntry `json:"worklog"`
+	View    delivery.DeliveryView `json:"view"`
+}
+
+// RetryWorkLogSyncInput identifies an already-recorded worklog to replay to
+// Jira. It deliberately accepts no duration or summary: recovery must use the
+// immutable values in the worklog ledger.
+type RetryWorkLogSyncInput struct {
+	OrchestrationID string `json:"orchestration_id"`
+	WorkLogID       string `json:"worklog_id"`
+}
+
+type RetryWorkLogSyncOutput struct {
 	WorkLog delivery.WorkLogEntry `json:"worklog"`
 	View    delivery.DeliveryView `json:"view"`
 }
@@ -51,5 +65,26 @@ func logDeliveryWorkHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			return nil, LogDeliveryWorkOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
 		return nil, LogDeliveryWorkOutput{WorkLog: *entry, View: *view}, nil
+	}
+}
+
+func retryWorkLogSyncHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RetryWorkLogSyncInput) (*mcp.CallToolResult, RetryWorkLogSyncOutput, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in RetryWorkLogSyncInput) (*mcp.CallToolResult, RetryWorkLogSyncOutput, error) {
+		if in.OrchestrationID == "" || in.WorkLogID == "" {
+			return nil, RetryWorkLogSyncOutput{}, fmt.Errorf("mcpserver: retry worklog sync requires orchestration_id and worklog_id")
+		}
+		store, err := OpenDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, RetryWorkLogSyncOutput{}, err
+		}
+		worklog, err := jirahooks.NewLifecycle(store, a.AdapterRegistry).RetryWorkLogSync(ctx, in.OrchestrationID, in.WorkLogID)
+		if err != nil {
+			return nil, RetryWorkLogSyncOutput{}, fmt.Errorf("mcpserver: retry worklog sync: %w", err)
+		}
+		view, err := store.BuildDeliveryView(ctx, in.OrchestrationID)
+		if err != nil {
+			return nil, RetryWorkLogSyncOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
+		}
+		return nil, RetryWorkLogSyncOutput{WorkLog: *worklog, View: *view}, nil
 	}
 }

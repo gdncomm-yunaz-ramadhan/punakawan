@@ -127,7 +127,7 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 		"checkpoint_delivery_session": true, "report_delivery_usage": true, "report_delivery_progress": true,
 		"assess_jira_delivery": true, "hydrate_jira_delivery": true, "hydrate_github_pull_request": true, "propose_github_pr_review": true, "get_github_pr_review": true, "approve_github_pr_review": true, "submit_github_pr_review": true, "queue_jira_write": true,
 		"execute_jira_writes": true, "approve_jira_delivery": true, "map_delivery_work_item": true,
-		"get_delivery": true, "answer_delivery_question": true, "log_delivery_work": true,
+		"get_delivery": true, "answer_delivery_question": true, "log_delivery_work": true, "retry_worklog_sync": true,
 		"cancel_delivery": true,
 	}
 	if len(names) != len(want) {

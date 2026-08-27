@@ -42,6 +42,7 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "get_delivery", Description: "Read a delivery's complete current state and next action."}, getDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "answer_delivery_question", Description: "Answer one pending delivery clarification."}, answerDeliveryQuestionHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "log_delivery_work", Description: "Record measured work on an exact Jira task and synchronize it when configured."}, logDeliveryWorkHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "retry_worklog_sync", Description: "Retry Jira synchronization for one existing worklog without recording duplicate time."}, retryWorkLogSyncHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "cancel_delivery", Description: "Cancel a non-terminal delivery while preserving its audit history."}, cancelDeliveryHandler(a))
 }
 

@@ -49,6 +49,7 @@ func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempot
 		Normalized struct {
 			Summary     string `json:"summary"`
 			Description string `json:"description"`
+			Status      string `json:"status"`
 			Subtasks    []struct {
 				Key     string `json:"key"`
 				Summary string `json:"summary"`
@@ -60,6 +61,9 @@ func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempot
 	}
 	var body strings.Builder
 	body.WriteString(result.Normalized.Description)
+	if status := strings.TrimSpace(result.Normalized.Status); status != "" {
+		fmt.Fprintf(&body, "\n\nJira status: %s", status)
+	}
 	for _, subtask := range result.Normalized.Subtasks {
 		if strings.TrimSpace(subtask.Key) == "" {
 			continue
@@ -78,6 +82,17 @@ func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempot
 			return nil, fmt.Errorf("jirahooks: decode Jira subtask %s: %w", subtask.Key, err)
 		}
 		fmt.Fprintf(&body, "\n\n## Subtask %s: %s\n%s", subtask.Key, child.Normalized.Summary, child.Normalized.Description)
+	}
+	raw, err = gate.Call(ctx, lifecycle.Case.ID, "atlassian.getTransitionsForJiraIssue", map[string]any{"issueIdOrKey": lifecycle.Case.JiraIssueKey})
+	if err != nil {
+		return nil, fmt.Errorf("jirahooks: hydrate Jira transitions for %s: %w", lifecycle.Case.JiraIssueKey, err)
+	}
+	transitions, err := adapters.DecodeJiraTransitions(raw)
+	if err != nil {
+		return nil, fmt.Errorf("jirahooks: decode Jira transitions for %s: %w", lifecycle.Case.JiraIssueKey, err)
+	}
+	if catalog := formatTransitionCatalog(transitions); catalog != "" {
+		fmt.Fprintf(&body, "\n\n%s", catalog)
 	}
 	return l.store.CaptureJiraSnapshot(ctx, idempotencyKey, executionID, sessionID, result.Normalized.Summary, body.String())
 }
@@ -106,6 +121,14 @@ func (l *Lifecycle) Execute(ctx context.Context, intentID, resolutionKey string)
 		return l.resolveFailure(ctx, intent, attemptKey, fmt.Errorf("open atlassian adapter: %w", err))
 	}
 	runID := "jira-execution-" + intent.ExecutionID
+	if targetStatus, ok := params["targetStatus"].(string); ok {
+		transitionID, err := resolveTransitionID(ctx, gate, runID, intent.JiraIssueKey, targetStatus)
+		if err != nil {
+			return l.resolveFailure(ctx, intent, attemptKey, err)
+		}
+		delete(params, "targetStatus")
+		params["transitionId"] = transitionID
+	}
 	if gate.RequiresApproval(op) {
 		if _, err := gate.RequestApproval(runID, op, protocol.ApprovalRecordRequestedBySemar, adapters.BuildApprovalPreview(op, params)); err != nil {
 			return l.resolveFailure(ctx, intent, attemptKey, fmt.Errorf("request adapter approval: %w", err))
@@ -136,6 +159,68 @@ func (l *Lifecycle) Execute(ctx context.Context, intentID, resolutionKey string)
 		}
 	}
 	return resolved, nil
+}
+
+// RetryWorkLogSync replays one existing unsynced worklog through Jira without
+// recording a second ledger row. Jira's returned ID marks that same interval
+// synced, so duplicate local worklogs cannot be created during recovery.
+func (l *Lifecycle) RetryWorkLogSync(ctx context.Context, orchestrationID, worklogID string) (*delivery.WorkLogEntry, error) {
+	entry, err := l.store.GetWorkLog(ctx, orchestrationID, worklogID)
+	if err != nil {
+		return nil, fmt.Errorf("jirahooks: get worklog: %w", err)
+	}
+	if entry.SyncStatus == "synced" {
+		return entry, nil
+	}
+	gate, err := l.registry.Gate(ctx, "atlassian")
+	if err != nil {
+		return nil, fmt.Errorf("jirahooks: open atlassian adapter: %w", err)
+	}
+	raw, err := gate.Call(ctx, "jira-worklog-"+entry.ID, "atlassian.addWorklog", map[string]any{
+		"issueIdOrKey": entry.JiraIssueKey, "timeSpentSeconds": entry.DurationSeconds, "comment": entry.Summary,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("jirahooks: retry worklog %s: %w", entry.ID, err)
+	}
+	jiraWorklogID, err := externalID("worklog", raw)
+	if err != nil {
+		return nil, fmt.Errorf("jirahooks: decode retried worklog %s: %w", entry.ID, err)
+	}
+	if err := l.store.MarkWorkLogSynced(ctx, orchestrationID, entry.ID, jiraWorklogID); err != nil {
+		return nil, fmt.Errorf("jirahooks: mark retried worklog synced: %w", err)
+	}
+	return l.store.GetWorkLog(ctx, orchestrationID, entry.ID)
+}
+
+// resolveTransitionID obtains Jira's currently available transitions for this
+// exact issue. Jira workflows vary by project and issue type, so IDs must not
+// be inferred or cached globally.
+func resolveTransitionID(ctx context.Context, gate *adapters.Gate, runID, issueKey, targetStatus string) (string, error) {
+	raw, err := gate.Call(ctx, runID, "atlassian.getTransitionsForJiraIssue", map[string]any{"issueIdOrKey": issueKey})
+	if err != nil {
+		return "", fmt.Errorf("list Jira transitions for %s: %w", issueKey, err)
+	}
+	transitions, err := adapters.DecodeJiraTransitions(raw)
+	if err != nil {
+		return "", err
+	}
+	match, available, ok := adapters.MatchJiraTransition(transitions, targetStatus)
+	if !ok {
+		return "", fmt.Errorf("Jira transition to %q unavailable for %s; available targets: %s", targetStatus, issueKey, strings.Join(available, ", "))
+	}
+	return match.ID, nil
+}
+
+func formatTransitionCatalog(transitions []adapters.JiraTransition) string {
+	if len(transitions) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	out.WriteString("Available transitions:")
+	for _, transition := range transitions {
+		fmt.Fprintf(&out, "\n- %s (%s) -> %s", transition.Name, transition.ID, transition.ToStatusName)
+	}
+	return out.String()
 }
 
 // ApproveWrites records one explicit human approval for every pending Jira
@@ -234,10 +319,14 @@ func adapterWrite(intent *delivery.JiraWriteIntent) (string, map[string]any, err
 		return "atlassian.editJiraIssue", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "description": description}, nil
 	case "transition_status", "transition":
 		transitionID, ok := payloadString(intent.Payload, "transition_id", "transitionId")
-		if !ok {
-			return "", nil, fmt.Errorf("jirahooks: %s intent requires payload.transition_id", intent.Action)
+		if ok {
+			return "atlassian.transitionJiraIssue", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "transitionId": transitionID}, nil
 		}
-		return "atlassian.transitionJiraIssue", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "transitionId": transitionID}, nil
+		targetStatus, ok := payloadString(intent.Payload, "target_status", "targetStatus", "status")
+		if !ok {
+			return "", nil, fmt.Errorf("jirahooks: %s intent requires payload.transition_id or target_status", intent.Action)
+		}
+		return "atlassian.transitionJiraIssue", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "targetStatus": targetStatus}, nil
 	case "create_subtask":
 		projectKey, projectOK := payloadString(intent.Payload, "project_key", "projectKey")
 		issueTypeName, typeOK := payloadString(intent.Payload, "issue_type_name", "issueTypeName")
