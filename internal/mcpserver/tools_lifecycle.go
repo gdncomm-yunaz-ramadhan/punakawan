@@ -453,6 +453,37 @@ type ExecuteJiraWritesOutput struct {
 	View    delivery.DeliveryView      `json:"view"`
 }
 
+type CancelJiraWriteIntentInput struct {
+	IntentID       string `json:"intent_id"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+}
+
+func cancelJiraWriteIntentHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CancelJiraWriteIntentInput) (*mcp.CallToolResult, QueueJiraWriteOutput, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in CancelJiraWriteIntentInput) (*mcp.CallToolResult, QueueJiraWriteOutput, error) {
+		store, err := OpenDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, QueueJiraWriteOutput{}, err
+		}
+		key := in.IdempotencyKey
+		if key == "" {
+			key = delivery.NewID()
+		}
+		intent, err := store.CancelJiraWriteIntent(ctx, key, in.IntentID)
+		if err != nil {
+			return nil, QueueJiraWriteOutput{}, fmt.Errorf("mcpserver: cancel Jira write intent: %w", err)
+		}
+		execution, err := store.GetExecution(ctx, intent.ExecutionID)
+		if err != nil {
+			return nil, QueueJiraWriteOutput{}, err
+		}
+		view, err := store.BuildDeliveryView(ctx, execution.OrchestrationID)
+		if err != nil {
+			return nil, QueueJiraWriteOutput{}, err
+		}
+		return nil, QueueJiraWriteOutput{Intent: *intent, View: *view}, nil
+	}
+}
+
 func executeJiraWritesHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ExecuteJiraWritesInput) (*mcp.CallToolResult, ExecuteJiraWritesOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ExecuteJiraWritesInput) (*mcp.CallToolResult, ExecuteJiraWritesOutput, error) {
 		if (in.IntentID == "") == (in.ExecutionID == "") {

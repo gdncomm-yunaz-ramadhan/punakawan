@@ -11,8 +11,8 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 		"plan_save", "plan_get",
 		"start_delivery", "resolve_jira_delivery", "start_delivery_session", "checkpoint_delivery_session",
 		"report_delivery_usage", "report_delivery_progress", "assess_jira_delivery", "hydrate_jira_delivery",
-		"hydrate_github_pull_request", "propose_github_pr_review", "get_github_pr_review", "approve_github_pr_review", "submit_github_pr_review", "queue_jira_write", "execute_jira_writes", "approve_jira_delivery", "map_delivery_work_item", "get_delivery",
-		"answer_delivery_question", "log_delivery_work", "retry_worklog_sync",
+		"hydrate_github_pull_request", "propose_github_pr_review", "get_github_pr_review", "submit_github_pr_review", "queue_jira_write", "execute_jira_writes", "map_delivery_work_item", "get_delivery",
+		"answer_delivery_question", "log_delivery_work", "retry_worklog_sync", "cancel_jira_write_intent",
 		"cancel_delivery",
 	}
 	if reg.Len() != len(want) {

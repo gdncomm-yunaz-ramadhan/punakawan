@@ -363,6 +363,7 @@ func (s *Store) StartSession(ctx context.Context, idempotencyKey, executionID, i
 	if strings.TrimSpace(participant) == "" {
 		return nil, fmt.Errorf("delivery: session participant is required")
 	}
+	reuseActive := id == "" && strings.TrimSpace(resumedFromID) == ""
 	if id == "" {
 		id = newID()
 	}
@@ -381,6 +382,14 @@ func (s *Store) StartSession(ctx context.Context, idempotencyKey, executionID, i
 			return err
 		}
 		if active != 0 {
+			if reuseActive {
+				existing, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at, ended_at FROM delivery_sessions WHERE execution_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`, executionID))
+				if err != nil {
+					return err
+				}
+				out = *existing
+				return nil
+			}
 			return ErrInvalidState
 		}
 		if resumedFromID != "" {
@@ -797,6 +806,40 @@ func (s *Store) ResolveJiraWriteIntent(ctx context.Context, idempotencyKey, inte
 	})
 	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
 		return nil, err
+	}
+	return s.GetJiraWriteIntent(ctx, intentID)
+}
+
+// CancelJiraWriteIntent prevents a stale pending or retrying intent from being
+// executed. Repeating cancellation returns the same durable intent.
+func (s *Store) CancelJiraWriteIntent(ctx context.Context, idempotencyKey, intentID string) (*JiraWriteIntent, error) {
+	now := time.Now().UTC()
+	err := s.db.Write(ctx, idempotencyKey, "cancel Jira write intent "+intentID, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `UPDATE jira_write_intents SET status = 'cancelled', retry_at = NULL, updated_at = ? WHERE id = ? AND status IN ('pending', 'retrying')`, now.Format(timeLayout), intentID)
+		if err != nil {
+			return err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if changed == 1 {
+			return nil
+		}
+		var status string
+		if err := tx.QueryRowContext(ctx, `SELECT status FROM jira_write_intents WHERE id = ?`, intentID).Scan(&status); err != nil {
+			return noRow(err)
+		}
+		if status == "cancelled" {
+			return nil
+		}
+		return ErrInvalidState
+	})
+	if errors.Is(err, storage.ErrDuplicateWrite) {
+		return s.GetJiraWriteIntent(ctx, intentID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("delivery: cancel Jira write intent: %w", err)
 	}
 	return s.GetJiraWriteIntent(ctx, intentID)
 }

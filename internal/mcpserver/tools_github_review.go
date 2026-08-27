@@ -225,7 +225,7 @@ func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallTool
 		if review.Status == "submitted" {
 			return nil, SubmitGitHubPRReviewOutput{Review: *review}, nil
 		}
-		if review.Status != "approved" {
+		if review.Status != "proposed" && review.Status != "approved" {
 			return nil, SubmitGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: submit GitHub PR review: %w", delivery.ErrInvalidState)
 		}
 		key := strings.TrimSpace(in.IdempotencyKey)
@@ -236,15 +236,11 @@ func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallTool
 		if err != nil {
 			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, fmt.Errorf("prepare GitHub PR review: %w", err))
 		}
-		runID, err := githubPRReviewApprovalRunID(review.DeliveryExecutionID)
-		if err != nil {
-			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, err)
-		}
 		gate, err := a.AdapterRegistry.Gate(ctx, "github")
 		if err != nil {
 			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, fmt.Errorf("open GitHub adapter: %w", err))
 		}
-		raw, err := gate.Call(ctx, runID, githubCreatePullRequestReviewOperation, params)
+		raw, err := gate.Call(ctx, "github-pr-review-"+review.ID, githubCreatePullRequestReviewOperation, params)
 		if err != nil {
 			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, err)
 		}

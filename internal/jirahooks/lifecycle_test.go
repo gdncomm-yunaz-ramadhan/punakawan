@@ -101,3 +101,25 @@ func TestRetryWorkLogSyncReplaysExistingLedgerEntry(t *testing.T) {
 		t.Fatalf("worklogs = %+v, want exactly one retained ledger entry", worklogs)
 	}
 }
+
+func TestAdapterWriteAcceptsLegacyPayloadAliases(t *testing.T) {
+	tests := []struct {
+		name    string
+		action  string
+		payload map[string]any
+		wantOp  string
+		wantKey string
+		want    string
+	}{
+		{"comment", "add_comment", map[string]any{"comment": "legacy comment"}, "atlassian.addJiraComment", "commentBody", "legacy comment"},
+		{"description", "update_description", map[string]any{"description_body": "legacy description"}, "atlassian.editJiraIssue", "description", "legacy description"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			op, params, err := adapterWrite(&delivery.JiraWriteIntent{JiraIssueKey: "TRF-19272", Action: tt.action, Payload: tt.payload})
+			if err != nil || op != tt.wantOp || params[tt.wantKey] != tt.want {
+				t.Fatalf("adapterWrite = %q, %#v, %v", op, params, err)
+			}
+		})
+	}
+}

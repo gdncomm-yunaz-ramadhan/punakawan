@@ -306,13 +306,13 @@ func (l *Lifecycle) resolveFailure(ctx context.Context, intent *delivery.JiraWri
 func adapterWrite(intent *delivery.JiraWriteIntent) (string, map[string]any, error) {
 	switch intent.Action {
 	case "add_comment", "comment", "clarification_comment":
-		body, ok := payloadString(intent.Payload, "comment_body", "body")
+		body, ok := payloadString(intent.Payload, "comment_body", "comment", "body")
 		if !ok || body == "" {
 			return "", nil, fmt.Errorf("jirahooks: %s intent requires payload.comment_body", intent.Action)
 		}
 		return "atlassian.addJiraComment", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "commentBody": body}, nil
 	case "update_description", "description":
-		description, ok := stringPayload(intent.Payload, "description")
+		description, ok := payloadString(intent.Payload, "description", "description_body")
 		if !ok {
 			return "", nil, fmt.Errorf("jirahooks: %s intent requires payload.description", intent.Action)
 		}
