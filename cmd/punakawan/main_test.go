@@ -80,7 +80,7 @@ func TestWorkspaceShow(t *testing.T) {
 func TestSetupPrintsSourceableScripts(t *testing.T) {
 	dir := newSmokeWorkspace(t)
 
-	sh, err := runCLI(t, dir, "setup", "--shell", "sh")
+	sh, err := runCLI(t, dir, "setup", "--shell", "sh", "--print")
 	if err != nil {
 		t.Fatalf("setup sh: %v\n%s", err, sh)
 	}
@@ -90,7 +90,7 @@ func TestSetupPrintsSourceableScripts(t *testing.T) {
 		}
 	}
 
-	powershell, err := runCLI(t, dir, "setup", "--shell", "powershell")
+	powershell, err := runCLI(t, dir, "setup", "--shell", "powershell", "--print")
 	if err != nil {
 		t.Fatalf("setup powershell: %v\n%s", err, powershell)
 	}
@@ -98,7 +98,7 @@ func TestSetupPrintsSourceableScripts(t *testing.T) {
 		t.Fatalf("setup powershell does not hide token input:\n%s", powershell)
 	}
 
-	_, err = runCLI(t, dir, "setup", "--shell", "fish")
+	_, err = runCLI(t, dir, "setup", "--shell", "fish", "--print")
 	if err == nil || !strings.Contains(err.Error(), "unsupported setup shell") {
 		t.Fatalf("setup fish error = %v, want unsupported shell", err)
 	}

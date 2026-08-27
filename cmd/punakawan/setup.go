@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -10,20 +12,25 @@ import (
 
 func newSetupCmd() *cobra.Command {
 	var shell string
+	var printScript bool
 	cmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Print a sourceable Jira credential setup script",
-		Long:  "Prints a script that prompts only for unset Jira environment variables. Run it in the current shell: eval \"$(punakawan setup)\" on POSIX shells, or punakawan setup --shell powershell | Invoke-Expression in PowerShell. Credentials are never written to Punakawan's database.",
+		Short: "Open a credential-configured subshell",
+		Long:  "Prompts only for unset credentials, exports them, then opens a child shell where Punakawan commands inherit them. Credentials are never written to disk or Punakawan's database.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			script, err := setupScript(shell)
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprint(cmd.OutOrStdout(), script)
-			return err
+			if printScript {
+				_, err = fmt.Fprint(cmd.OutOrStdout(), script)
+				return err
+			}
+			return runSetupShell(shell, script, cmd)
 		},
 	}
 	cmd.Flags().StringVar(&shell, "shell", defaultSetupShell(), "target shell: sh, powershell, or cmd")
+	cmd.Flags().BoolVar(&printScript, "print", false, "print the sourceable setup script instead of executing it")
 	return cmd
 }
 
@@ -32,6 +39,29 @@ func defaultSetupShell() string {
 		return "powershell"
 	}
 	return "sh"
+}
+
+func runSetupShell(shell, script string, cmd *cobra.Command) error {
+	switch strings.ToLower(strings.TrimSpace(shell)) {
+	case "sh", "bash", "zsh":
+		target := os.Getenv("SHELL")
+		if target == "" {
+			target = "/bin/sh"
+		}
+		process := exec.Command(target, "-ic", script+"\nexec \""+target+"\" -i")
+		process.Stdin, process.Stdout, process.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
+		return process.Run()
+	case "powershell", "ps1":
+		process := exec.Command("powershell", "-NoExit", "-Command", script)
+		process.Stdin, process.Stdout, process.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
+		return process.Run()
+	case "cmd", "bat":
+		process := exec.Command("cmd", "/K", script)
+		process.Stdin, process.Stdout, process.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
+		return process.Run()
+	default:
+		return fmt.Errorf("unsupported setup shell %q; use sh, powershell, or cmd", shell)
+	}
 }
 
 func setupScript(shell string) (string, error) {
