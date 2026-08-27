@@ -50,14 +50,12 @@ export interface DeliveryEvent {
     | "lease.rejected"
     | "lease.timed_out"
     | "lease.cancelled"
+    | "worklog.recorded"
     | "requirement.captured"
     | "task.created"
     | "task.routed"
     | "edge.added"
-    | "edge.removed"
-    | "manifest.created"
-    | "manifest.approved"
-    | "manifest.rejected";
+    | "edge.removed";
   payload: {
     [k: string]: unknown;
   };

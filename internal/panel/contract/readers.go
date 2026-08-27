@@ -375,7 +375,6 @@ type DeliveryReader interface {
 	// method's only caller, long-polling it in a loop per orchestration.
 	WatchDeliveryView(ctx context.Context, orchestrationID string, sinceSeq, waitSeconds int) (*delivery.DeliveryView, error)
 	AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in daemon.AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error)
-	ApproveProjectDelivery(ctx context.Context, orchestrationID string, in daemon.ApproveProjectDeliveryRequest) (*delivery.DeliveryView, error)
 	CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error)
 	// GetDeliveryEvidence fetches one lane-scoped evidence artifact's raw
 	// bytes and media type by id, scoped to orchestrationID.

@@ -55,6 +55,8 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 			// a description nobody wrote is never substituted at all.
 			applyOptionalText(&o.Title, ev.Payload, "title")
 			applyOptionalText(&o.Description, ev.Payload, "description")
+			applyOptionalText(&o.PlanId, ev.Payload, "plan_id")
+			applyOptionalInt(&o.PlanRevision, ev.Payload, "plan_revision")
 		case protocol.DeliveryEventTypeOrchestrationDetailsUpdated:
 			// Only the keys this event actually carries move; the rest of
 			// the run's description is left exactly as an earlier event
@@ -497,113 +499,6 @@ func allDependencyEdges(orchestrationID string, events []protocol.DeliveryEvent)
 		out[id] = e
 	}
 	return out, nil
-}
-
-// reduceApprovalManifest derives one ApprovalManifest's current state
-// from the manifest.created/approved/rejected events scoped to
-// manifestID. The manifest's declared scope (project, tasks, planned
-// ref/branches/writes, checks) is fixed at manifest.created and never
-// changes - only status/approved_by/decided_at move afterward.
-func reduceApprovalManifest(orchestrationID, manifestID string, events []protocol.DeliveryEvent) (*protocol.ApprovalManifest, error) {
-	var own []protocol.DeliveryEvent
-	for _, ev := range events {
-		if ev.EntityId != nil && *ev.EntityId == manifestID &&
-			(ev.Type == protocol.DeliveryEventTypeManifestCreated ||
-				ev.Type == protocol.DeliveryEventTypeManifestApproved ||
-				ev.Type == protocol.DeliveryEventTypeManifestRejected) {
-			own = append(own, ev)
-		}
-	}
-	if len(own) == 0 {
-		return nil, ErrNotFound
-	}
-	if own[0].Type != protocol.DeliveryEventTypeManifestCreated {
-		return nil, fmt.Errorf("delivery: manifest %s event log does not start with manifest.created", manifestID)
-	}
-
-	m := &protocol.ApprovalManifest{
-		Id: manifestID, OrchestrationId: orchestrationID, CreatedAt: own[0].OccurredAt,
-		ProjectId:      stringField(own[0].Payload, "project_id"),
-		PlannedBaseRef: stringField(own[0].Payload, "planned_base_ref"),
-		Status:         protocol.ApprovalManifestStatusPending,
-	}
-	if raw, ok := own[0].Payload["parent_task_ids"].([]interface{}); ok {
-		for _, v := range raw {
-			if s, ok := v.(string); ok {
-				m.ParentTaskIds = append(m.ParentTaskIds, s)
-			}
-		}
-	}
-	if raw, ok := own[0].Payload["planned_branches"].([]interface{}); ok {
-		for _, v := range raw {
-			if s, ok := v.(string); ok {
-				m.PlannedBranches = append(m.PlannedBranches, s)
-			}
-		}
-	}
-	m.ExpectsJiraWrites, _ = own[0].Payload["expects_jira_writes"].(bool)
-	m.ExpectsCommits, _ = own[0].Payload["expects_commits"].(bool)
-	m.ExpectsPushes, _ = own[0].Payload["expects_pushes"].(bool)
-	m.ExpectsPrs, _ = own[0].Payload["expects_prs"].(bool)
-	if totalHours := numberField(own[0].Payload, "proposed_worklog_total_hours"); totalHours != 0 {
-		m.ProposedWorklogTotalHours = &totalHours
-	}
-	if unmapped := numberField(own[0].Payload, "proposed_worklog_unmapped_hours"); unmapped != 0 {
-		m.ProposedWorklogUnmappedHours = &unmapped
-	}
-	if raw, ok := own[0].Payload["proposed_worklog"].([]interface{}); ok {
-		for _, v := range raw {
-			if wm, ok := v.(map[string]interface{}); ok {
-				elem := protocol.ApprovalManifestProposedWorklogElem{
-					Bucket:     protocol.ApprovalManifestProposedWorklogElemBucket(stringField(wm, "bucket")),
-					SubtaskKey: stringField(wm, "subtask_key"),
-					Hours:      numberField(wm, "hours"),
-				}
-				if name := stringField(wm, "subtask_name"); name != "" {
-					elem.SubtaskName = &name
-				}
-				m.ProposedWorklog = append(m.ProposedWorklog, elem)
-			}
-		}
-	}
-	if raw, ok := own[0].Payload["checks"].([]interface{}); ok {
-		for _, v := range raw {
-			if cm, ok := v.(map[string]interface{}); ok {
-				elem := protocol.ApprovalManifestChecksElem{
-					Name:           stringField(cm, "name"),
-					Status:         protocol.ApprovalManifestChecksElemStatus(stringField(cm, "status")),
-					Classification: protocol.ApprovalManifestChecksElemClassification(stringField(cm, "classification")),
-				}
-				if d := stringField(cm, "detail"); d != "" {
-					elem.Detail = &d
-				}
-				m.Checks = append(m.Checks, elem)
-			}
-		}
-	}
-
-	for _, ev := range own {
-		m.Revision++
-		switch ev.Type {
-		case protocol.DeliveryEventTypeManifestCreated:
-			// scope already applied above
-		case protocol.DeliveryEventTypeManifestApproved:
-			m.Status = protocol.ApprovalManifestStatusApproved
-			by := stringField(ev.Payload, "approved_by")
-			m.ApprovedBy = &by
-			at := ev.OccurredAt
-			m.DecidedAt = &at
-		case protocol.DeliveryEventTypeManifestRejected:
-			m.Status = protocol.ApprovalManifestStatusRejected
-			by := stringField(ev.Payload, "approved_by")
-			m.ApprovedBy = &by
-			at := ev.OccurredAt
-			m.DecidedAt = &at
-		default:
-			return nil, fmt.Errorf("delivery: unknown manifest event type %q", ev.Type)
-		}
-	}
-	return m, nil
 }
 
 func stringField(payload protocol.DeliveryEventPayload, key string) string {

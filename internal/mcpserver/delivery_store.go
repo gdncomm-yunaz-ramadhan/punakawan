@@ -38,9 +38,9 @@ func (r workflowDefinitionResolver) RequiredRoleStages(_ context.Context, id str
 	return stages, nil
 }
 
-// openDeliveryStore is the single MCP binding from the public Delivery tools
+// OpenDeliveryStore is the single MCP binding from the public Delivery tools
 // to the delivery domain and its configured integration hooks.
-func openDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error) {
+func OpenDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error) {
 	db, err := a.OpenStorage(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("mcpserver: open storage kernel: %w", err)
@@ -56,6 +56,9 @@ func openDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error)
 	} else {
 		hookStore := delivery.NewStore(db, delivery.WithWorkflowDefinitionResolver(resolver))
 		opts = append(opts, delivery.WithHooks(jirahooks.NewJiraHook(db, hookStore, a.AdapterRegistry, cfg)))
+		if cfg.LogWork {
+			opts = append(opts, delivery.WithRequiredJiraWorkLogs())
+		}
 	}
 	return delivery.NewStore(db, opts...), nil
 }

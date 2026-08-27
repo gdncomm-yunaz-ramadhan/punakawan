@@ -76,3 +76,30 @@ func TestWorkspaceShow(t *testing.T) {
 		t.Fatalf("unexpected output: %s", out)
 	}
 }
+
+func TestSetupPrintsSourceableScripts(t *testing.T) {
+	dir := newSmokeWorkspace(t)
+
+	sh, err := runCLI(t, dir, "setup", "--shell", "sh", "--print")
+	if err != nil {
+		t.Fatalf("setup sh: %v\n%s", err, sh)
+	}
+	for _, want := range []string{"ATLASSIAN_HOST", "ATLASSIAN_API_TOKEN", "ATLASSIAN_EMAIL", "GITHUB_TOKEN", "GH_TOKEN", "stty -echo"} {
+		if !strings.Contains(sh, want) {
+			t.Errorf("setup sh missing %q:\n%s", want, sh)
+		}
+	}
+
+	powershell, err := runCLI(t, dir, "setup", "--shell", "powershell", "--print")
+	if err != nil {
+		t.Fatalf("setup powershell: %v\n%s", err, powershell)
+	}
+	if !strings.Contains(powershell, "SecureStringToBSTR") {
+		t.Fatalf("setup powershell does not hide token input:\n%s", powershell)
+	}
+
+	_, err = runCLI(t, dir, "setup", "--shell", "fish", "--print")
+	if err == nil || !strings.Contains(err.Error(), "unsupported setup shell") {
+		t.Fatalf("setup fish error = %v, want unsupported shell", err)
+	}
+}

@@ -24,9 +24,11 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.AddCommand(newWorkspaceCmd())
+	root.AddCommand(newSetupCmd())
 	root.AddCommand(newDoctorCmd())
 	root.AddCommand(newMCPCmd())
 	root.AddCommand(newPanelCmd())
 	root.AddCommand(newDaemonCmd())
+	root.AddCommand(newHooksCmd())
 	return root
 }

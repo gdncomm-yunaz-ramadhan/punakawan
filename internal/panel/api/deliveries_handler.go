@@ -138,37 +138,6 @@ func AnswerDeliveryQuestionHandler(reader contract.DeliveryReader) http.HandlerF
 	}
 }
 
-// approveProjectDeliveryBody is POST .../approve's request body, mirroring
-// daemon's unexported approveProjectDeliveryRequest.
-type approveProjectDeliveryBody struct {
-	ManifestId string `json:"manifest_id"`
-	ApprovedBy string `json:"approved_by"`
-	Reject     bool   `json:"reject,omitempty"`
-}
-
-// ApproveProjectDeliveryHandler serves
-// POST /api/v1/deliveries/{orchestrationId}/approve.
-func ApproveProjectDeliveryHandler(reader contract.DeliveryReader) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if reader == nil {
-			writeError(w, http.StatusServiceUnavailable, errDeliveryUnavailable)
-			return
-		}
-		var body approveProjectDeliveryBody
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		in := daemon.ApproveProjectDeliveryRequest{ManifestId: body.ManifestId, ApprovedBy: body.ApprovedBy, Reject: body.Reject}
-		view, err := reader.ApproveProjectDelivery(r.Context(), r.PathValue("orchestrationId"), in)
-		if err != nil {
-			writeError(w, deliveryErrorStatus(err), err)
-			return
-		}
-		writeJSON(w, http.StatusOK, view)
-	}
-}
-
 // cancelDeliveryBody is POST .../cancel's request body, mirroring daemon's
 // unexported cancelDeliveryRequest.
 type cancelDeliveryBody struct {

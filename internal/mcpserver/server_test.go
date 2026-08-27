@@ -123,8 +123,12 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 		"upsert_project": true, "list_projects": true,
 		"save_workflow": true, "get_workflow": true, "list_workflows": true, "invoke_workflow": true,
 		"plan_save": true, "plan_get": true,
-		"start_delivery": true, "get_delivery": true, "answer_delivery_question": true,
-		"cancel_delivery": true, "approve_project_delivery": true,
+		"start_delivery": true, "resolve_jira_delivery": true, "start_delivery_session": true,
+		"checkpoint_delivery_session": true, "report_delivery_usage": true, "report_delivery_progress": true,
+		"assess_jira_delivery": true, "hydrate_jira_delivery": true, "hydrate_github_pull_request": true, "propose_github_pr_review": true, "get_github_pr_review": true, "submit_github_pr_review": true, "queue_jira_write": true,
+		"execute_jira_writes": true, "map_delivery_work_item": true,
+		"get_delivery": true, "answer_delivery_question": true, "log_delivery_work": true,
+		"cancel_delivery": true, "retry_worklog_sync": true, "cancel_jira_write_intent": true,
 	}
 	if len(names) != len(want) {
 		t.Fatalf("tools/list = %d tools %v, want exactly %d tools %v", len(names), names, len(want), want)
@@ -149,15 +153,18 @@ func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]
 		t.Fatalf("CallTool(%s) returned an error result: %+v", name, res.Content)
 	}
 	if len(res.Content) != 1 {
-		t.Fatalf("CallTool(%s) content blocks = %d, want compact marker", name, len(res.Content))
+		t.Fatalf("CallTool(%s) content blocks = %d, want JSON result", name, len(res.Content))
 	}
-	if text, ok := res.Content[0].(*mcp.TextContent); !ok || text.Text != "Structured result." {
-		t.Fatalf("CallTool(%s) content = %+v, want compact structured-result marker", name, res.Content)
+	text, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("CallTool(%s) content = %+v, want text JSON", name, res.Content)
 	}
-
 	data, err := json.Marshal(res.StructuredContent)
 	if err != nil {
 		t.Fatalf("marshal structured content: %v", err)
+	}
+	if text.Text != string(data) {
+		t.Fatalf("CallTool(%s) content = %q, want structured JSON", name, text.Text)
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		t.Fatalf("unmarshal structured content into %T: %v", out, err)

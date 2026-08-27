@@ -36,9 +36,9 @@ func Serve(ctx context.Context, a *app.App) error {
 // hand an agent automatically, regardless of which project repo it is
 // running in (unlike a CLAUDE.md, which would have to be copied into every
 // consuming project) - so it's the right place for the two things that
-// actually tripped up real usage: the expected tool call sequence, and how
-// the write-approval gate is meant to be satisfied.
-const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. Work through Projects, Workflows, Plans, and Deliveries. Start or resume work with start_delivery, invoke_workflow, or get_delivery. Runtime mechanics, provider operations, worktrees, verification bookkeeping, and review transitions are internal and are not separate MCP tools. Punakawan does not reason itself; the connected agent remains the reasoning engine.`
+// actually tripped up real usage: the expected tool call sequence and durable
+// retry behavior.
+const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. Work through Projects, Workflows, Plans, and Deliveries. Start or resume work with start_delivery, invoke_workflow, or get_delivery. When work is complete on an exact Jira task, record its measured task-bound interval with log_delivery_work before reporting the lane complete. Retry an unsynced interval with retry_worklog_sync rather than recording it again. Report provider-observed model usage with report_delivery_usage, including current unit price and price source whenever connected agent can obtain them; never ask humans to maintain price tables. To assess a Jira issue: resolve it, hydrate its parent and every subtask, reason over visible source, then record clarity and rationale. Propose parent Fibonacci story points from total subtask complexity and lower agent-assisted original estimates per subtask from expected execution time. Queue Jira writes as durable intents, then execute one by intent_id or all pending intents by execution_id. Cancel stale pending intents with cancel_jira_write_intent. Queueing story points discovers and caches field metadata by cloud, project, and issue type; use refresh_story_points_field after a Jira field change. Runtime mechanics and provider operations stay delegated to connected adapters. Punakawan does not reason itself; connected agent remains reasoning engine.`
 
 // serverInstructionsRevision identifies serverInstructionsBody's exact
 // content: a client reconnecting after a punakawan upgrade can compare
@@ -75,7 +75,6 @@ func assembleServer(a *app.App) (*mcp.Server, *toolIndex, error) {
 	idx := newToolIndex()
 	registerPublicTools(server, a, idx)
 
-	server.AddReceivingMiddleware(compactStructuredToolResults)
 	server.AddReceivingMiddleware(sanitizeToolListSchemas)
 
 	return server, idx, nil
@@ -183,32 +182,5 @@ func sanitizeAnySchema(s *jsonschema.Schema) {
 	}
 	for _, c := range s.Definitions {
 		visit(c)
-	}
-}
-
-// compactStructuredToolResults removes the Go SDK's automatic full JSON copy
-// from content when the same value is already present in structuredContent.
-// Modern MCP clients (including Codex and Claude) consume structuredContent;
-// retaining a two-word content marker keeps the response legible to older
-// clients without charging the model context twice for every result.
-func compactStructuredToolResults(next mcp.MethodHandler) mcp.MethodHandler {
-	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-		result, err := next(ctx, method, req)
-		if err != nil || method != "tools/call" {
-			return result, err
-		}
-		toolResult, ok := result.(*mcp.CallToolResult)
-		if !ok || toolResult.IsError || toolResult.StructuredContent == nil || len(toolResult.Content) != 1 {
-			return result, nil
-		}
-		text, ok := toolResult.Content[0].(*mcp.TextContent)
-		if !ok {
-			return result, nil
-		}
-		structured, marshalErr := json.Marshal(toolResult.StructuredContent)
-		if marshalErr == nil && text.Text == string(structured) {
-			text.Text = "Structured result."
-		}
-		return result, nil
 	}
 }

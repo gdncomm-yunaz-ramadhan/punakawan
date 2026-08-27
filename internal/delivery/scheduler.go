@@ -337,6 +337,9 @@ func (s *Store) Heartbeat(ctx context.Context, idempotencyKey, orchestrationID, 
 // stage before it can be reported done (ErrRoleStagesIncomplete
 // otherwise).
 func (s *Store) CompleteLease(ctx context.Context, idempotencyKey, orchestrationID, laneID, leaseToken string, expectedRevision int) (*protocol.DeliveryLane, error) {
+	if err := s.requireLaneWorkLog(ctx, orchestrationID, laneID); err != nil {
+		return nil, err
+	}
 	lane, fresh, err := s.transitionLeasedLane(ctx, idempotencyKey, orchestrationID, laneID, leaseToken, expectedRevision, protocol.DeliveryEventTypeLeaseCompleted, func(lane *protocol.DeliveryLane, requiredStages map[string]bool) error {
 		if lane.SemarRecordId == nil {
 			return nil

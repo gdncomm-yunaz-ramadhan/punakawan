@@ -43,11 +43,6 @@ func (s *Source) AnswerDeliveryQuestion(ctx context.Context, orchestrationID str
 	return s.Client.AnswerDeliveryQuestion(ctx, orchestrationID, in)
 }
 
-// ApproveProjectDelivery approves (or rejects) one approval manifest.
-func (s *Source) ApproveProjectDelivery(ctx context.Context, orchestrationID string, in daemon.ApproveProjectDeliveryRequest) (*delivery.DeliveryView, error) {
-	return s.Client.ApproveProjectDelivery(ctx, orchestrationID, in)
-}
-
 // CancelDelivery cancels orchestrationID.
 func (s *Source) CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error) {
 	return s.Client.CancelDelivery(ctx, orchestrationID, in)

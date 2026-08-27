@@ -33,7 +33,6 @@ function view(over: Partial<DeliveryView> = {}): DeliveryView {
     projects: [],
     lanes: [],
     blockers: [],
-    pending_approvals: [],
     pending_questions: [],
     next_action: "",
     latest_seq: 0,

@@ -207,7 +207,6 @@
                   <span class:danger={row.view.blockers.length > 0}
                     ><strong>{row.view.blockers.length}</strong> blocked</span
                   >
-                  <span><strong>{row.view.pending_approvals.length}</strong> pending approvals</span>
                   <span><strong>{row.view.pending_questions.length}</strong> pending questions</span>
                 </span>
               {/if}

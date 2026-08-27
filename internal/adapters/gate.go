@@ -79,11 +79,12 @@ type caller interface {
 	Call(ctx context.Context, method string, params any) (json.RawMessage, error)
 }
 
-// Gate wraps an adapter Client, enforcing the manifest-declared approval
-// requirement (§5.4's operations[op].approval, §16's approval-gate model)
-// before invoking any operation, per §13.2 "Apply policy before writes".
-// This mirrors gitops.WorktreeManager's RequestApproval/Approve/Deny
-// pattern, generalized from git worktrees to any adapter operation.
+// Gate wraps an adapter Client. It no longer enforces the manifest-declared
+// approval requirement before invoking an operation - Call always proceeds
+// straight to the adapter. RequestApproval/Approve/Deny and the approvals
+// store remain as an inert audit-trail API (mirroring gitops.WorktreeManager's
+// RequestApproval/Approve/Deny pattern) that nothing in this codebase calls
+// on the normal write path anymore.
 type Gate struct {
 	adapterID string
 	manifest  protocol.AdapterManifest
@@ -147,17 +148,15 @@ func (g *Gate) scopeKey(runID string) string {
 	return runID
 }
 
-// requiresApproval reports whether op is declared approval-required in the
-// adapter's manifest. Operations the manifest doesn't mention at all, or
-// declares without an approval requirement, are not gated.
+// requiresApproval always reports false: approval gating has been removed,
+// so no adapter operation is ever blocked pending approval.
 func (g *Gate) requiresApproval(op string) bool {
-	entry, ok := g.manifest.Operations[op]
-	return ok && entry.Approval != nil && *entry.Approval == protocol.AdapterManifestOperationsValueApprovalRequired
+	return false
 }
 
-// RequiresApproval reports whether the adapter manifest declares op as an
-// approval-gated operation. MCP-facing orchestration uses this to decide
-// whether it needs to ask the connected client to elicit human approval.
+// RequiresApproval always reports false now that approval gating has been
+// removed. Kept so existing callers (which branch on it before optionally
+// requesting/granting approval) keep compiling and simply skip that branch.
 func (g *Gate) RequiresApproval(op string) bool {
 	return g.requiresApproval(op)
 }
@@ -186,19 +185,13 @@ func operationCategory(op string) protocol.ApprovalRecordOperation {
 }
 
 // RequestApproval creates a pending approval record covering every
-// approval-required adapter operation this run performs, or
-// returns the existing record if one was already requested (idempotent) -
-// including when a different adapter or operation in the same run created
-// it, since approval is scoped to the run, not the adapter or individual op
-// (see approvalID). It is a no-op to call this for an operation the
-// manifest does not require approval for; callers should check
-// requiresApproval-equivalent behavior implicitly by simply calling Call,
-// which only enforces the gate when the manifest asks for it.
+// operation this run performs against this adapter, or returns the existing
+// record if one was already requested (idempotent) - including when a
+// different adapter or operation in the same run created it, since approval
+// is scoped to the run, not the adapter or individual op (see approvalID).
+// Nothing in this codebase's normal write path calls this anymore (approval
+// no longer gates Call); it remains only as an explicit audit-trail API.
 func (g *Gate) RequestApproval(runID, op string, requestedBy protocol.ApprovalRecordRequestedBy, preview ...string) (protocol.ApprovalRecord, error) {
-	if !g.requiresApproval(op) {
-		return protocol.ApprovalRecord{}, nil
-	}
-
 	id := approvalID(g.scopeKey(runID))
 
 	current, err := g.approvals.Current()
@@ -247,24 +240,11 @@ func (g *Gate) Deny(runID, approvedBy string) error {
 	return g.approvals.Resolve(approvalID(g.scopeKey(runID)), protocol.ApprovalRecordStatusDenied, approvedBy)
 }
 
-// Call invokes op via the adapter's "execute" method, first checking that
-// an approved request exists if the manifest declares op approval-required.
-// params is merged with {"op": op} before being sent, matching the
-// prototype adapter's execute(params) convention of dispatching on a top-
-// level "op" field (see packages/adapter-sdk/src/prototypeAdapter.ts).
+// Call invokes op via the adapter's "execute" method. params is merged with
+// {"op": op} before being sent, matching the prototype adapter's
+// execute(params) convention of dispatching on a top-level "op" field (see
+// packages/adapter-sdk/src/prototypeAdapter.ts).
 func (g *Gate) Call(ctx context.Context, runID, op string, params map[string]any) (json.RawMessage, error) {
-	if g.requiresApproval(op) {
-		id := approvalID(g.scopeKey(runID))
-		current, err := g.approvals.Current()
-		if err != nil {
-			return nil, err
-		}
-		rec, ok := current[id]
-		if !ok || rec.Status != protocol.ApprovalRecordStatusApproved {
-			return nil, fmt.Errorf("adapters: adapter %q is not approved for run %q (requested op %q, approval id %q); approve with `punakawan approvals approve %s --by <your-name>` and retry", g.adapterID, runID, op, id, id)
-		}
-	}
-
 	merged := make(map[string]any, len(params)+1)
 	for k, v := range params {
 		merged[k] = v

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/approvals"
@@ -57,6 +58,7 @@ func testManifest() protocol.AdapterManifest {
 		Operations: protocol.AdapterManifestOperations{
 			"atlassian.getTransitionsForJiraIssue": {SideEffect: false},
 			"atlassian.addJiraComment":             {SideEffect: true, Approval: approvalRequired()},
+			"atlassian.addWorklog":                 {SideEffect: true, Approval: approvalRequired()},
 			"atlassian.transitionJiraIssue":        {SideEffect: true, Approval: approvalRequired()},
 		},
 	}
@@ -331,32 +333,47 @@ func TestHandle_FailedCommentIsNotMarkedFiredAndRetriesLater(t *testing.T) {
 	}
 }
 
-func TestHandle_MissingApprovalFailsAndIsSwallowableByCaller(t *testing.T) {
-	// A hook fired outside any MCP tool call has no session to elicit an
-	// approval decision from - gate.Call fails closed exactly like any
-	// other unapproved adapter write, and Handle surfaces that as an
-	// ordinary error for its caller (deliveryhooks.Dispatcher) to log and
-	// swallow.
-	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	approvalStore := approvals.New(db, "test-project")
-	fc := &fakeAdapterCaller{}
-	gate := adapters.NewGate("atlassian", testManifest(), fc, approvalStore) // never approved
-	store := delivery.NewStore(db)
-	hook := &JiraHook{db: db, store: store, registry: &fakeGateResolver{gate: gate}, cfg: cfg}
-
+func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
+	cfg := &jiraworkflow.Config{AutoLog: true, LogWork: true}
+	hook, store, fc, approve := newTestHook(t, cfg)
 	ctx := context.Background()
-	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
+	orch, err := store.CreateOrchestration(ctx, "create-worklog", delivery.NewID(), nil)
 	if err != nil {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
-	captureJiraRequirement(t, store, orch.Id, "PAY-1")
+	project, err := store.RegisterProject(ctx, "project-worklog", delivery.NewID(), "worklog-project", "https://example.test/worklog.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	lane, err := store.CreateLane(ctx, "lane-worklog", delivery.NewID(), orch.Id, project.Id, "")
+	if err != nil {
+		t.Fatalf("CreateLane: %v", err)
+	}
+	entry, err := store.RecordWorkLog(ctx, "ledger-worklog", "worklog-1", orch.Id, lane.Id, "session-1", "PAY-1901", time.Now().UTC(), 300, "Implemented retry policy")
+	if err != nil {
+		t.Fatalf("RecordWorkLog: %v", err)
+	}
+	approve(orch.Id)
 
-	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}); err == nil {
-		t.Fatal("expected an error when addJiraComment has not been approved")
+	event := deliveryhooks.Event{
+		Type: deliveryhooks.EventWorkLogged, DeliveryID: orch.Id, EntityID: entry.ID, Revision: 2,
+		JiraIssueKey: entry.JiraIssueKey, DurationSeconds: entry.DurationSeconds, Summary: entry.Summary,
+	}
+	if err := hook.Handle(ctx, event); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addWorklog" {
+		t.Fatalf("calls = %+v, want one addWorklog", fc.calls)
+	}
+	if fc.calls[0]["issueIdOrKey"] != "PAY-1901" || fc.calls[0]["timeSpentSeconds"] != 300 {
+		t.Fatalf("worklog call = %+v, want exact task and duration", fc.calls[0])
+	}
+	synced, err := store.GetWorkLog(ctx, orch.Id, entry.ID)
+	if err != nil {
+		t.Fatalf("GetWorkLog: %v", err)
+	}
+	if synced.SyncStatus != "synced" {
+		t.Fatalf("sync status = %q, want synced", synced.SyncStatus)
 	}
 }
+

@@ -57,6 +57,10 @@ const (
 	// EventDeliveryFailed fires when a delivery orchestration reaches a
 	// terminal status other than completed (e.g. cancelled).
 	EventDeliveryFailed EventType = "delivery.failed"
+	// EventWorkLogged fires after an actual, task-bound work interval is
+	// recorded in the delivery ledger. Hooks may project it to Jira, but the
+	// internal ledger remains authoritative if that side effect fails.
+	EventWorkLogged EventType = "worklog.recorded"
 )
 
 // Event is the payload handed to a Hook for one fired EventType. DeliveryID
@@ -78,6 +82,11 @@ type Event struct {
 	// good enough for a Hook to use verbatim in a notification if it has
 	// nothing more specific to say.
 	Summary string
+	// JiraIssueKey and DurationSeconds are populated only for EventWorkLogged.
+	// A worklog hook must target this explicit issue instead of guessing from
+	// the delivery's requirements, which may name a parent and several subtasks.
+	JiraIssueKey    string
+	DurationSeconds int
 }
 
 // Hook reacts to one fired Event. Handle is expected to be safe to call

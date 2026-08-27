@@ -20,7 +20,7 @@ import (
 // risks matching unrelated text in generated or third-party files.
 var excludedDirs = map[string]bool{
 	".git": true, ".github": true, "node_modules": true, "dist": true,
-	".beads": true, "packages": true, ".punakawan": true, ".serena": true,
+	".beads": true, "packages": true, ".punakawan": true,
 	".codex": true, ".claude": true, "docs": true, "prompts": true,
 }
 

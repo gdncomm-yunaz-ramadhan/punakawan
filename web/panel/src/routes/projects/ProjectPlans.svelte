@@ -23,6 +23,11 @@
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
 
+  function requestedPlanId(): string | null {
+    if (typeof window === "undefined") return null;
+    return new URL(window.location.href).searchParams.get("plan");
+  }
+
   async function load() {
     loading = true;
     error = null;
@@ -32,6 +37,10 @@
       // JSON `null`, not `[]`): a project with no plans must render the
       // empty state, never trip the catch below into "Failed to load plans".
       plans = res.items ?? [];
+      const requested = requestedPlanId();
+      if (requested && plans.some((plan) => plan.id === requested)) {
+        await select(requested);
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

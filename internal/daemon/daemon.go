@@ -94,7 +94,7 @@ func Run(ctx context.Context, host, port string, paths Paths) (*Daemon, error) {
 	// The daemon is the only process allowed to storage.Open DBPath (see
 	// Daemon's own doc comment), so it mints the one delivery.Store every
 	// HTTP route in this package reads and writes through - no MCP-style
-	// openDeliveryStore-per-call here, since there is nothing else for the
+	// OpenDeliveryStore-per-call here, since there is nothing else for the
 	// daemon to scope storage.Open against.
 	deliveryStore := delivery.NewStore(db)
 	// Best-effort startup janitor (PR1 §3.6): reconciles orphaned lane

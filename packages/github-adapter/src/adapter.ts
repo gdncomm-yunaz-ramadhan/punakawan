@@ -4,6 +4,7 @@ import { GitHubRestClient, loadConfigFromEnv } from './restClient.js';
 import { manifest } from './manifest.js';
 import {
   addLabels,
+  createPullRequestReview,
   createPullRequest,
   getPullRequest,
   getPullRequestChecks,
@@ -109,6 +110,19 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
             throw new Error('github.requestReviewers requires "repository", "pullRequestNumber", and "reviewers"');
           }
           return requestReviewers(getClient(), { repository, pullRequestNumber, reviewers });
+        }
+        case 'github.createPullRequestReview': {
+          const { repository, pullRequestNumber, body, event, commitId, comments } = rest as {
+            repository: string; pullRequestNumber: number; body: string; event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; commitId?: string;
+            comments?: { path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string; startLine?: number; startSide?: 'LEFT' | 'RIGHT' }[];
+          };
+          if (!repository || pullRequestNumber === undefined || !body || !event) {
+            throw new Error('github.createPullRequestReview requires "repository", "pullRequestNumber", "body", and "event"');
+          }
+          if (!['APPROVE', 'REQUEST_CHANGES', 'COMMENT'].includes(event)) {
+            throw new Error('github.createPullRequestReview event must be APPROVE, REQUEST_CHANGES, or COMMENT');
+          }
+          return createPullRequestReview(getClient(), { repository, pullRequestNumber, body, event, commitId, comments });
         }
         case 'github.replyToReviewComment': {
           const { repository, pullRequestNumber, commentId, body } = rest as {

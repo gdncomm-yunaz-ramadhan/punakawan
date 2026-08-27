@@ -88,27 +88,27 @@ func TestGateAllowsUnrestrictedOperation(t *testing.T) {
 	}
 }
 
-func TestGateBlocksApprovalRequiredOperationWithoutApproval(t *testing.T) {
+func TestGateAllowsApprovalRequiredOperationWithoutApproval(t *testing.T) {
+	// Approval gating has been removed: an operation the manifest still
+	// marks approval-required executes immediately, same as any other op.
 	g, fc := newTestGate(t)
 
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
-		t.Fatal("expected error for unapproved operation")
+	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
+		t.Fatalf("Call: %v", err)
 	}
-	if len(fc.calls) != 0 {
-		t.Fatalf("expected no adapter call, got %+v", fc.calls)
+	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addJiraComment" {
+		t.Fatalf("calls = %+v", fc.calls)
 	}
 }
 
-func TestGateAllowsApprovalRequiredOperationOnceApproved(t *testing.T) {
+func TestGateRequestApprovalAndApproveRemainInertBookkeeping(t *testing.T) {
+	// RequestApproval/Approve still work as an audit-trail API, but nothing
+	// about calling them changes whether Call proceeds.
 	g, fc := newTestGate(t)
 
 	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
 		t.Fatalf("RequestApproval: %v", err)
 	}
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", nil); err == nil {
-		t.Fatal("expected error before approval is granted")
-	}
-
 	if err := g.Approve("run-1", "ygrip"); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
@@ -162,7 +162,9 @@ func TestRequestApprovalWithoutPreviewLeavesPreviewUnset(t *testing.T) {
 	}
 }
 
-func TestGateDeniedOperationStaysBlocked(t *testing.T) {
+func TestGateDeniedOperationStillProceeds(t *testing.T) {
+	// Deny still records a denial in the audit trail, but no longer blocks
+	// the call - there is nothing left to enforce it.
 	g, fc := newTestGate(t)
 
 	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
@@ -171,11 +173,11 @@ func TestGateDeniedOperationStaysBlocked(t *testing.T) {
 	if err := g.Deny("run-1", "ygrip"); err != nil {
 		t.Fatalf("Deny: %v", err)
 	}
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", nil); err == nil {
-		t.Fatal("expected error for denied operation")
+	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
+		t.Fatalf("Call: %v", err)
 	}
-	if len(fc.calls) != 0 {
-		t.Fatalf("expected no adapter call, got %+v", fc.calls)
+	if len(fc.calls) != 1 {
+		t.Fatalf("expected the adapter call to go through despite denial, got %+v", fc.calls)
 	}
 }
 
@@ -244,21 +246,6 @@ func TestGateDayScopeSharesApprovalAcrossRunIDs(t *testing.T) {
 	}
 	if len(fc.calls) != 1 {
 		t.Fatalf("calls = %+v, want one", fc.calls)
-	}
-}
-
-func TestGateRunScopeIsTheDefaultAndDoesNotShareAcrossRunIDs(t *testing.T) {
-	g, _ := newTestGate(t)
-
-	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval run-1: %v", err)
-	}
-	if err := g.Approve("run-1", "ygrip"); err != nil {
-		t.Fatalf("Approve run-1: %v", err)
-	}
-
-	if _, err := g.Call(context.Background(), "run-2", "atlassian.addJiraComment", nil); err == nil {
-		t.Fatal("expected run-2 to still need its own approval under the default run scope")
 	}
 }
 

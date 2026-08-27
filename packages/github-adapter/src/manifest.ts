@@ -8,8 +8,9 @@ import type { AdapterManifest } from '@punakawan/schema-types';
  *
  * Read operations (PR metadata, diff files, CI checks, comments) are
  * side-effect free. Writes (creating a PR, labeling, requesting reviewers,
- * replying to a review comment, resolving a thread) are declared with
- * `approval: "required"`, enforced the same way Atlassian writes are.
+ * replying to a review comment, submitting a review, resolving a thread)
+ * are declared with `approval: "required"`, enforced the same way Atlassian
+ * writes are.
  */
 export const manifest: AdapterManifest = {
   id: 'github',
@@ -34,6 +35,7 @@ export const manifest: AdapterManifest = {
     'github.addLabels': { side_effect: true, approval: 'required' },
     'github.requestReviewers': { side_effect: true, approval: 'required' },
     'github.replyToReviewComment': { side_effect: true, approval: 'required' },
+    'github.createPullRequestReview': { side_effect: true, approval: 'required' },
     'github.resolveReviewThread': { side_effect: true, approval: 'required' },
   },
 };

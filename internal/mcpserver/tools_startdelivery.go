@@ -1,6 +1,6 @@
-// tools_startdelivery.go implements the five delivery-facade MCP tools:
-// start_delivery, get_delivery, answer_delivery_question,
-// approve_project_delivery, and cancel_delivery. Each one wraps the
+// tools_startdelivery.go implements the four delivery-facade MCP tools:
+// start_delivery, get_delivery, answer_delivery_question, and
+// cancel_delivery. Each one wraps the
 // already-built, already-tested internal/delivery Store API
 // (deliveryview.go's DeliveryView and StartDelivery, plus the
 // manifest/orchestration/routing methods store.go, manifests.go, and
@@ -31,6 +31,11 @@ type StartDeliveryInput struct {
 	// Omitted, the orchestration simply carries none - nothing invents
 	// prose the way a missing title is derived.
 	Description string `json:"description,omitempty" jsonschema:"longer prose about what this delivery is for and why it exists, for whoever reads the run later. Omitting it leaves the delivery with no description at all; unlike title, nothing is derived in its place"`
+	// PlanID and PlanRevision identify the immutable high-level plan for
+	// the delivery. Project-specific detailed plans belong on the matching
+	// project entries below.
+	PlanID       string `json:"plan_id,omitempty"`
+	PlanRevision int    `json:"plan_revision,omitempty"`
 	// IdempotencyKey is optional: repeating the same key on retry
 	// resolves to the same orchestration instead of minting a second
 	// one for the same request.
@@ -52,10 +57,15 @@ type StartDeliveryInput struct {
 // StartDeliveryProject is one repository the delivery lands in, plus the
 // units of work to open there.
 type StartDeliveryProject struct {
-	Slug          string              `json:"slug" jsonschema:"unique short identifier for this project; a slug already registered under a different id cannot be re-registered, and that project is reported as skipped"`
-	RepositoryUrl string              `json:"repository_url"`
-	DefaultBranch string              `json:"default_branch,omitempty"`
-	Tasks         []StartDeliveryTask `json:"tasks,omitempty" jsonschema:"one entry per unit of work; each becomes a parent task and a lane in this project. A project with no tasks is registered but gets no lanes"`
+	Slug          string `json:"slug" jsonschema:"unique short identifier for this project; a slug already registered under a different id cannot be re-registered, and that project is reported as skipped"`
+	RepositoryUrl string `json:"repository_url"`
+	DefaultBranch string `json:"default_branch,omitempty"`
+	// PlanID and PlanRevision identify this project's detailed plan. They
+	// must be supplied together, and the plan is linked to the delivery
+	// after this project has been registered.
+	PlanID       string              `json:"plan_id,omitempty"`
+	PlanRevision int                 `json:"plan_revision,omitempty"`
+	Tasks        []StartDeliveryTask `json:"tasks,omitempty" jsonschema:"one entry per unit of work; each becomes a parent task and a lane in this project. A project with no tasks is registered but gets no lanes"`
 }
 
 // StartDeliveryTask is one unit of work: a parent task grouping some of
@@ -101,14 +111,46 @@ type StartDeliveryOutput struct {
 
 func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, StartDeliveryOutput{}, err
+		}
+
+		// A lone, exact Jira reference has a stronger identity than a
+		// generic batch: resolve it to its lifetime case before creating
+		// anything. This keeps the legacy start_delivery facade from
+		// creating a parallel active run beside resolve_jira_delivery.
+		if len(in.References) == 1 {
+			if source, ok := delivery.ClassifyReference(in.References[0]); ok && source.Provider == "jira" {
+				key := in.IdempotencyKey
+				if key == "" {
+					key = delivery.NewID()
+				}
+				resolved, err := store.ResolveJiraDelivery(ctx, key, source.ExternalID, delivery.ResolveJiraDeliveryOptions{
+					Title: in.Title, Description: in.Description, WorkflowDefinitionID: in.WorkflowDefinitionId,
+					PlanID: in.PlanID, PlanRevision: in.PlanRevision,
+				})
+				if err != nil {
+					return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: resolve Jira delivery: %w", err)
+				}
+				out := StartDeliveryOutput{OrchestrationId: resolved.Execution.OrchestrationID}
+				if resolved.Created && len(in.Projects) > 0 {
+					out.Decomposition = decomposeStartDelivery(ctx, store, resolved.Execution.OrchestrationID, in.References, in.Projects)
+				}
+				view, err := store.BuildDeliveryView(ctx, resolved.Execution.OrchestrationID)
+				if err != nil {
+					return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
+				}
+				out.View, out.Title = *view, view.Title
+				return nil, out, nil
+			}
 		}
 		view, err := store.StartDeliveryWithOptions(ctx, in.IdempotencyKey, in.References, delivery.OrchestrationOptions{
 			WorkflowDefinitionID: in.WorkflowDefinitionId,
 			Title:                in.Title,
 			Description:          in.Description,
+			PlanID:               in.PlanID,
+			PlanRevision:         in.PlanRevision,
 		})
 		if err != nil {
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: start delivery: %w", err)
@@ -158,6 +200,18 @@ func decomposeStartDelivery(ctx context.Context, store *delivery.Store, orchestr
 			continue
 		}
 		res.ProjectId = project.Id
+		if (p.PlanID == "") != (p.PlanRevision == 0) || p.PlanRevision < 0 {
+			res.Skipped = "project plan_id and positive plan_revision must be supplied together"
+			results = append(results, res)
+			continue
+		}
+		if p.PlanID != "" {
+			if err := store.LinkProjectPlan(ctx, delivery.NewID(), orchestrationID, project.Id, p.PlanID, p.PlanRevision); err != nil {
+				res.Skipped = fmt.Sprintf("link project plan: %v", err)
+				results = append(results, res)
+				continue
+			}
+		}
 
 		var skipped []string
 		for _, task := range p.Tasks {
@@ -276,7 +330,7 @@ type DeliveryViewOutput struct {
 
 func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, GetDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in GetDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
@@ -319,7 +373,7 @@ type AnswerDeliveryQuestionInput struct {
 
 func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, AnswerDeliveryQuestionInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in AnswerDeliveryQuestionInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
@@ -352,42 +406,6 @@ func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallTo
 	}
 }
 
-// ApproveProjectDeliveryInput is approve_project_delivery's input.
-// Setting reject decides the manifest rejected instead of approved,
-// rather than adding a seventh dedicated tool for that one-bit
-// difference.
-type ApproveProjectDeliveryInput struct {
-	OrchestrationId string `json:"orchestration_id"`
-	ManifestId      string `json:"manifest_id"`
-	ApprovedBy      string `json:"approved_by" jsonschema:"identifies the human deciding this manifest; never one of the agent role names (semar/gareng/petruk/bagong) - Store rejects self-approval"`
-	Reject          bool   `json:"reject,omitempty" jsonschema:"set true to reject the manifest instead of approving it"`
-}
-
-func approveProjectDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ApproveProjectDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in ApproveProjectDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, DeliveryViewOutput{}, err
-		}
-
-		if in.Reject {
-			if _, err := store.RejectManifest(ctx, delivery.NewID(), in.OrchestrationId, in.ManifestId, in.ApprovedBy); err != nil {
-				return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: reject manifest: %w", err)
-			}
-		} else {
-			if _, err := store.ApproveManifest(ctx, delivery.NewID(), in.OrchestrationId, in.ManifestId, in.ApprovedBy); err != nil {
-				return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: approve manifest: %w", err)
-			}
-		}
-
-		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
-		if err != nil {
-			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
-		}
-		return nil, DeliveryViewOutput{View: *view}, nil
-	}
-}
-
 // CancelDeliveryInput is cancel_delivery's input. reason is accepted
 // for a caller's own audit trail but is not persisted anywhere:
 // CancelOrchestration's signature has no reason parameter to store it
@@ -400,7 +418,7 @@ type CancelDeliveryInput struct {
 
 func cancelDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CancelDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CancelDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
-		store, err := openDeliveryStore(ctx, a)
+		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}

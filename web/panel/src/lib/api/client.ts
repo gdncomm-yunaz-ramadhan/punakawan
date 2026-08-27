@@ -719,6 +719,7 @@ export type DeliveryLaneStatus = "accepted" | "blocked" | "failed" | "leased" | 
 
 export interface DeliveryProjectSummary {
   project_id: string;
+  project_slug: string;
   // Distinguishes the two ways a project shows up here. True means the
   // delivery explicitly attached it, so it is listed even with no lanes at
   // all. False means it only appears because some lane names it - including a
@@ -813,42 +814,43 @@ export interface DeliveryBlockerSummary {
   blocked_by: string[];
 }
 
-export type ApprovalManifestStatus = "pending" | "approved" | "rejected";
-
-export interface ApprovalManifestCheck {
-  name: string;
-  status: string;
-  classification: string;
-  detail?: string;
-}
-
-export interface ApprovalManifestWorklogEntry {
-  bucket: string;
-  hours: number;
-  subtask_key: string;
-  subtask_name?: string;
-}
-
-export interface ApprovalManifest {
+export interface DeliveryWorkLog {
   id: string;
   orchestration_id: string;
-  project_id: string;
-  parent_task_ids: string[];
-  planned_base_ref: string;
-  planned_branches?: string[];
-  checks: ApprovalManifestCheck[];
-  expects_commits?: boolean;
-  expects_jira_writes?: boolean;
-  expects_prs?: boolean;
-  expects_pushes?: boolean;
-  proposed_worklog?: ApprovalManifestWorklogEntry[];
-  proposed_worklog_total_hours?: number;
-  proposed_worklog_unmapped_hours?: number;
-  status: ApprovalManifestStatus;
-  approved_by?: string;
+  lane_id: string;
+  parent_task_id?: string;
+  session_id?: string;
+  jira_issue_key: string;
+  started_at: string;
+  duration_seconds: number;
+  summary: string;
+  sync_status: "pending" | "synced" | "failed";
+  jira_worklog_id?: string;
+  synced_at?: string;
   created_at: string;
-  decided_at?: string;
-  revision: number;
+}
+
+export interface DeliveryLifecycle {
+  case: { id: string; jira_source_key: string; jira_issue_key: string; status: string; created_at: string; updated_at: string };
+  execution: { id: string; case_id: string; orchestration_id: string; ordinal: number; status: string; session_id?: string; started_at: string; ended_at?: string };
+  sessions: { id: string; case_id: string; execution_id: string; orchestration_id: string; resumed_from_id?: string; participant: string; worktree_path?: string; provider?: string; status: string; started_at: string; ended_at?: string }[];
+  checkpoints: { id: string; case_id: string; execution_id: string; session_id: string; sequence: number; summary: string; progress_percent?: number; handoff_to?: string; created_at: string }[];
+  usage: { id: string; case_id: string; execution_id: string; session_id: string; kind: string; category: string; model?: string; quantity: number; unit: string; unit_price?: number; cost_amount?: number; cost_currency?: string; price_source?: string; recorded_at: string }[];
+  budgets: { id: string; case_id: string; execution_id: string; session_id?: string; category?: string; amount: number; currency: string; created_at: string }[];
+  jira_snapshots: { id: string; case_id: string; execution_id: string; session_id?: string; jira_issue_key: string; version: number; title: string; body: string; content_hash: string; captured_at: string }[];
+  jira_assessments: { id: string; case_id: string; execution_id: string; session_id?: string; snapshot_id?: string; clarity: string; approval: string; rationale: string; assessed_at: string }[];
+  jira_work_items: { id: string; case_id: string; execution_id: string; session_id?: string; orchestration_id: string; parent_task_id: string; requirement_source_id: string; jira_issue_key: string; created_at: string }[];
+  jira_write_intents: { id: string; case_id: string; execution_id: string; session_id?: string; jira_issue_key: string; action: string; payload: Record<string, unknown>; idempotency_key: string; status: string; attempt_count: number; retry_at?: string; last_error?: string; external_id?: string; created_at: string; updated_at: string }[];
+  progress_reports: { id: string; case_id: string; execution_id: string; session_id: string; summary: string; progress_percent?: number; reported_at: string }[];
+  known_cost_by_currency: Record<string, number>;
+  unknown_priced_usage: boolean;
+}
+
+export interface DeliveryProjectPlanLink {
+  project_id: string;
+  plan_id: string;
+  plan_revision: number;
+  created_at: string;
 }
 
 export interface DeliveryView {
@@ -866,13 +868,16 @@ export interface DeliveryView {
   plan_revision?: number;
   session_id?: string;
   projects: DeliveryProjectSummary[];
+  project_plans: DeliveryProjectPlanLink[];
   lanes: DeliveryLaneSummary[];
   blockers: DeliveryBlockerSummary[];
-  pending_approvals: ApprovalManifest[];
   pending_questions: string[];
   next_action: string;
   timeline?: DeliveryAuditEvent[];
   jira_activity?: DeliveryJiraActivity[];
+  worklogs: DeliveryWorkLog[];
+  worklog_seconds: number;
+  lifecycle?: DeliveryLifecycle;
   latest_seq: number;
   newly_runnable_lane_ids: string[];
 }
@@ -913,23 +918,6 @@ export interface AnswerDeliveryQuestionRequest {
 
 export function answerDeliveryQuestion(orchestrationId: string, body: AnswerDeliveryQuestionRequest): Promise<DeliveryView> {
   return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/answer-question`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-// approveProjectDelivery resolves one project's ApprovalManifest
-// independently of any other project's - reject:false approves,
-// reject:true rejects. There is no project_id field: manifest_id alone
-// identifies which project's approval this decides.
-export interface ApproveProjectDeliveryRequest {
-  manifest_id: string;
-  approved_by: string;
-  reject?: boolean;
-}
-
-export function approveProjectDelivery(orchestrationId: string, body: ApproveProjectDeliveryRequest): Promise<DeliveryView> {
-  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/approve`, {
     method: "POST",
     body: JSON.stringify(body),
   });

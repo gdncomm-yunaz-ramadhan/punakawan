@@ -60,37 +60,6 @@ func TestBuildDeliveryViewPendingWithNoLanesPromptsToDecompose(t *testing.T) {
 	}
 }
 
-// TestBuildDeliveryViewPendingApprovalManifestPromptsToApprove covers the
-// second-priority case: once every input is resolved but a manifest is
-// still pending, NextAction must point at approve_project_delivery for
-// that manifest's project, ahead of any lane-status-derived message.
-func TestBuildDeliveryViewPendingApprovalManifestPromptsToApprove(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	orch := createTestOrchestration(t, s)
-	proj := registerProject(t, s, "approve-me")
-	task := createTestTask(t, s, orch.Id, "task")
-	if _, err := s.RouteParentTask(ctx, "route-"+NewID(), orch.Id, task.Id, proj.Id); err != nil {
-		t.Fatalf("RouteParentTask: %v", err)
-	}
-
-	manifest, err := s.CreateApprovalManifest(ctx, "manifest-"+NewID(), NewID(), orch.Id, proj.Id, []string{task.Id}, ManifestPlan{PlannedBaseRef: "main"})
-	if err != nil {
-		t.Fatalf("CreateApprovalManifest: %v", err)
-	}
-
-	view, err := s.BuildDeliveryView(ctx, orch.Id)
-	if err != nil {
-		t.Fatalf("BuildDeliveryView: %v", err)
-	}
-	if len(view.PendingApprovals) != 1 || view.PendingApprovals[0].Id != manifest.Id {
-		t.Fatalf("PendingApprovals = %+v, want exactly the one pending manifest", view.PendingApprovals)
-	}
-	if !strings.Contains(view.NextAction, "approve_project_delivery") || !strings.Contains(view.NextAction, proj.Id) {
-		t.Fatalf("NextAction = %q, want it to mention approve_project_delivery and project %s", view.NextAction, proj.Id)
-	}
-}
-
 // TestBuildDeliveryViewAllLanesAcceptedSaysComplete covers the "delivery
 // complete" case, and also that a lane with zero lanes total never
 // vacuously claims completion (computeNextAction guards len(lanes) > 0).
@@ -524,6 +493,59 @@ func TestStartDeliverySuppliedTitleWinsOverDerivation(t *testing.T) {
 	}
 	if reread.Title != view.Title {
 		t.Fatalf("Title after replay = %q, want %q", reread.Title, view.Title)
+	}
+}
+
+func TestDeliveryViewIncludesHighLevelAndProjectPlans(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	view, err := s.StartDeliveryWithOptions(ctx, "plan-linked-delivery", []string{"PAY-1842"}, OrchestrationOptions{
+		Title: "Migrate billing to v2", Description: "Move every billing caller onto the v2 pricing endpoint.",
+		PlanID: "delivery-plan", PlanRevision: 3,
+	})
+	if err != nil {
+		t.Fatalf("StartDeliveryWithOptions: %v", err)
+	}
+	project := registerProject(t, s, "billing")
+	if err := s.LinkProjectPlan(ctx, "link-billing-plan", view.Orchestration.Id, project.Id, "billing-plan", 2); err != nil {
+		t.Fatalf("LinkProjectPlan: %v", err)
+	}
+
+	got, err := s.BuildDeliveryView(ctx, view.Orchestration.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if got.PlanID != "delivery-plan" || got.PlanRevision != 3 {
+		t.Fatalf("high-level plan = %q r%d, want delivery-plan r3", got.PlanID, got.PlanRevision)
+	}
+	if len(got.ProjectPlans) != 1 {
+		t.Fatalf("ProjectPlans = %+v, want one linked project plan", got.ProjectPlans)
+	}
+	link := got.ProjectPlans[0]
+	if link.ProjectID != project.Id || link.PlanID != "billing-plan" || link.PlanRevision != 2 {
+		t.Fatalf("ProjectPlans[0] = %+v, want project %s plan billing-plan r2", link, project.Id)
+	}
+}
+
+func TestDeliveryViewIncludesCapturedJiraSnapshotAsActivity(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	resolved, err := s.ResolveJiraDelivery(ctx, "resolve-jira-activity", "TRF-19272", ResolveJiraDeliveryOptions{})
+	if err != nil {
+		t.Fatalf("ResolveJiraDelivery: %v", err)
+	}
+	view, err := s.BuildDeliveryView(ctx, resolved.Execution.OrchestrationID)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if len(view.JiraActivity) != 1 {
+		t.Fatalf("JiraActivity = %+v, want one captured source activity", view.JiraActivity)
+	}
+	activity := view.JiraActivity[0]
+	if activity.EventType != "source.snapshot_captured" || activity.IssueKey != "TRF-19272" {
+		t.Fatalf("JiraActivity[0] = %+v, want captured TRF-19272 source", activity)
 	}
 }
 

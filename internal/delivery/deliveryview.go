@@ -8,12 +8,14 @@ package delivery
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -22,6 +24,9 @@ import (
 // lanes belong to the run, and how many sit in each scheduling status.
 type ProjectSummary struct {
 	ProjectID string `json:"project_id"`
+	// ProjectSlug is the human-readable, panel-routable project identity.
+	// ProjectID remains the immutable delivery-store key for joins.
+	ProjectSlug string `json:"project_slug"`
 
 	// Attached distinguishes the two ways a project can show up here. A
 	// project the run explicitly attached is a statement that the run
@@ -119,6 +124,16 @@ type JiraActivity struct {
 	FiredAt   time.Time `json:"fired_at"`
 }
 
+// ProjectPlanLink connects a delivery to an exact, project-scoped detailed
+// plan. The link records only the durable reference; the plan itself remains
+// owned and rendered by the project that authored it.
+type ProjectPlanLink struct {
+	ProjectID    string    `json:"project_id"`
+	PlanID       string    `json:"plan_id"`
+	PlanRevision int       `json:"plan_revision"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 // DeliveryView is the bounded, human-and-agent-readable snapshot of one
 // orchestration: its own state, every lane grouped by project, every
 // still-blocked lane, every pending approval, every pending question,
@@ -152,14 +167,26 @@ type DeliveryView struct {
 	PlanRevision int    `json:"plan_revision,omitempty"`
 	SessionID    string `json:"session_id,omitempty"`
 
-	Projects         []ProjectSummary             `json:"projects"`
-	Lanes            []LaneSummary                `json:"lanes"`
-	Blockers         []BlockerSummary             `json:"blockers"`
-	PendingApprovals []*protocol.ApprovalManifest `json:"pending_approvals"`
-	PendingQuestions []string                     `json:"pending_questions"`
-	NextAction       string                       `json:"next_action"`
-	Timeline         []AuditEvent                 `json:"timeline"`
-	JiraActivity     []JiraActivity               `json:"jira_activity"`
+	Projects         []ProjectSummary `json:"projects"`
+	Lanes            []LaneSummary    `json:"lanes"`
+	Blockers         []BlockerSummary `json:"blockers"`
+	PendingQuestions []string         `json:"pending_questions"`
+	NextAction       string           `json:"next_action"`
+	Timeline         []AuditEvent     `json:"timeline"`
+	JiraActivity     []JiraActivity   `json:"jira_activity"`
+	WorkLogs         []WorkLogEntry   `json:"worklogs"`
+	WorkLogSeconds   int              `json:"worklog_seconds"`
+	// ProjectPlans are the detailed plans a delivery explicitly uses in
+	// each touched project. The delivery's own PlanID/PlanRevision remains
+	// the high-level plan, because it may intentionally span all projects.
+	ProjectPlans []ProjectPlanLink `json:"project_plans"`
+
+	// Lifecycle is present for Jira-backed deliveries resolved through the
+	// canonical case API. It carries the lifetime case, continuation,
+	// sessions, economic ledger, assessments, work-item mappings, and
+	// durable external-write state required by the Panel. Legacy
+	// orchestrations remain readable with this absent.
+	Lifecycle *DeliveryLifecycle `json:"lifecycle,omitempty"`
 
 	// LatestSeq is the highest event sequence number reflected in this
 	// view - pass it back as a later call's SinceSeq to learn what
@@ -175,37 +202,12 @@ type DeliveryView struct {
 	NewlyRunnableLaneIDs []string `json:"newly_runnable_lane_ids"`
 }
 
-// allApprovalManifests reduces every manifest entity in events into its
-// current ApprovalManifest state, keyed by manifest id. reduce.go gives
-// every other entity type (lanes, parent tasks, dependency edges,
-// requirement sources) its own allX enumeration next to its reduceX
-// function; this one lives here instead because BuildDeliveryView is
-// its only caller and manifests.go itself never needed to enumerate
-// "every manifest in an orchestration" before now.
-func allApprovalManifests(orchestrationID string, events []protocol.DeliveryEvent) (map[string]*protocol.ApprovalManifest, error) {
-	ids := map[string]bool{}
-	for _, ev := range events {
-		if ev.Type == protocol.DeliveryEventTypeManifestCreated && ev.EntityId != nil {
-			ids[*ev.EntityId] = true
-		}
-	}
-	out := make(map[string]*protocol.ApprovalManifest, len(ids))
-	for id := range ids {
-		m, err := reduceApprovalManifest(orchestrationID, id, events)
-		if err != nil {
-			return nil, err
-		}
-		out[id] = m
-	}
-	return out, nil
-}
-
 // BuildDeliveryView assembles orchestrationID's current DeliveryView by
-// replaying its event log once and deriving every lane, parent task,
-// dependency edge, and approval manifest from that single pass - the
-// same enumeration approach list_runnable_lanes/report_discovered_dependency
-// already use (allLanes/ListGraph), not a new one. NewlyRunnableLaneIDs is
-// always left empty; use BuildDeliveryViewSince for that.
+// replaying its event log once and deriving every lane, parent task, and
+// dependency edge from that single pass - the same enumeration approach
+// list_runnable_lanes/report_discovered_dependency already use
+// (allLanes/ListGraph), not a new one. NewlyRunnableLaneIDs is always left
+// empty; use BuildDeliveryViewSince for that.
 func (s *Store) BuildDeliveryView(ctx context.Context, orchestrationID string) (*DeliveryView, error) {
 	return s.buildDeliveryView(ctx, orchestrationID, -1)
 }
@@ -240,10 +242,6 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	if err != nil {
 		return nil, err
 	}
-	manifestMap, err := allApprovalManifests(orchestrationID, events)
-	if err != nil {
-		return nil, err
-	}
 	sourceMap, err := allRequirementSources(orchestrationID, events)
 	if err != nil {
 		return nil, err
@@ -255,10 +253,11 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		Projects:             []ProjectSummary{},
 		Lanes:                []LaneSummary{},
 		Blockers:             []BlockerSummary{},
-		PendingApprovals:     []*protocol.ApprovalManifest{},
 		PendingQuestions:     []string{},
 		Timeline:             []AuditEvent{},
 		JiraActivity:         []JiraActivity{},
+		WorkLogs:             []WorkLogEntry{},
+		ProjectPlans:         []ProjectPlanLink{},
 		NewlyRunnableLaneIDs: []string{},
 	}
 	if orch.Description != nil {
@@ -291,6 +290,37 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		return nil, err
 	}
 	view.JiraActivity = jiraActivity
+	workLogs, err := s.ListWorkLogs(ctx, orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	view.WorkLogs = workLogs
+	for _, workLog := range workLogs {
+		view.WorkLogSeconds += workLog.DurationSeconds
+	}
+	lifecycle, err := s.GetDeliveryLifecycle(ctx, orchestrationID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	if lifecycle != nil {
+		for _, snapshot := range lifecycle.Snapshots {
+			view.JiraActivity = append(view.JiraActivity, JiraActivity{
+				EventType: "source.snapshot_captured",
+				EntityID:  snapshot.ID,
+				IssueKey:  snapshot.JiraIssueKey,
+				FiredAt:   snapshot.CapturedAt,
+			})
+		}
+		sort.SliceStable(view.JiraActivity, func(i, j int) bool {
+			return view.JiraActivity[i].FiredAt.Before(view.JiraActivity[j].FiredAt)
+		})
+	}
+	view.Lifecycle = lifecycle
+	projectPlans, err := s.listProjectPlanLinks(ctx, orchestrationID)
+	if err != nil {
+		return nil, err
+	}
+	view.ProjectPlans = projectPlans
 
 	laneIDs := make([]string, 0, len(laneMap))
 	for id := range laneMap {
@@ -454,37 +484,24 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 		if laneIDs == nil {
 			laneIDs = []string{}
 		}
+		project, err := s.GetProject(ctx, id)
+		if err != nil {
+			return nil, err
+		}
 		view.Projects = append(view.Projects, ProjectSummary{
 			ProjectID:      id,
+			ProjectSlug:    project.Slug,
 			Attached:       attached[id],
 			LaneIDs:        laneIDs,
 			CountsByStatus: counts,
 		})
 	}
 
-	manifestIDs := make([]string, 0, len(manifestMap))
-	for id := range manifestMap {
-		manifestIDs = append(manifestIDs, id)
-	}
-	sort.Slice(manifestIDs, func(i, j int) bool {
-		a, b := manifestMap[manifestIDs[i]], manifestMap[manifestIDs[j]]
-		if !a.CreatedAt.Equal(b.CreatedAt) {
-			return a.CreatedAt.Before(b.CreatedAt)
-		}
-		return a.Id < b.Id
-	})
-	for _, id := range manifestIDs {
-		m := manifestMap[id]
-		if m.Status == protocol.ApprovalManifestStatusPending {
-			view.PendingApprovals = append(view.PendingApprovals, m)
-		}
-	}
-
 	for _, in := range orch.UnresolvedInputs {
 		view.PendingQuestions = append(view.PendingQuestions, in.Reference)
 	}
 
-	view.NextAction = computeNextAction(orch, view.Lanes, view.PendingApprovals)
+	view.NextAction = computeNextAction(orch, view.Lanes)
 
 	if sinceSeq != diffDisabled {
 		newly, err := newlyRunnableLaneIDs(orchestrationID, events, laneMap, sinceSeq)
@@ -495,6 +512,67 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	}
 
 	return view, nil
+}
+
+// LinkProjectPlan records the exact project plan a delivery is executing.
+// Project plans are owned by their projects; this aggregate keeps only the
+// immutable cross-project reference required to navigate from a delivery.
+func (s *Store) LinkProjectPlan(ctx context.Context, idempotencyKey, orchestrationID, projectID, planID string, planRevision int) error {
+	if strings.TrimSpace(orchestrationID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(planID) == "" {
+		return fmt.Errorf("delivery: orchestration, project, and plan ids are required")
+	}
+	if planRevision < 1 {
+		return fmt.Errorf("delivery: project plan revision must be positive")
+	}
+	now := time.Now().UTC()
+	err := s.db.Write(ctx, idempotencyKey, "link delivery project plan "+planID, func(tx *sql.Tx) error {
+		if _, err := loadEventsTx(ctx, tx, orchestrationID); err != nil {
+			return err
+		}
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM delivery_projects WHERE id = ?`, projectID).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			return ErrNotFound
+		}
+		_, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO delivery_plan_links (orchestration_id, project_id, plan_id, plan_revision, created_at) VALUES (?, ?, ?, ?, ?)`,
+			orchestrationID, projectID, strings.TrimSpace(planID), planRevision, now.Format(timeLayout))
+		return err
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return fmt.Errorf("delivery: link project plan: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) listProjectPlanLinks(ctx context.Context, orchestrationID string) ([]ProjectPlanLink, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		`SELECT project_id, plan_id, plan_revision, created_at FROM delivery_plan_links WHERE orchestration_id = ? ORDER BY created_at, project_id, plan_id, plan_revision`,
+		orchestrationID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: list project plans for %s: %w", orchestrationID, err)
+	}
+	defer rows.Close()
+	out := []ProjectPlanLink{}
+	for rows.Next() {
+		var link ProjectPlanLink
+		var created string
+		if err := rows.Scan(&link.ProjectID, &link.PlanID, &link.PlanRevision, &created); err != nil {
+			return nil, fmt.Errorf("delivery: scan project plan for %s: %w", orchestrationID, err)
+		}
+		parsed, err := time.Parse(timeLayout, created)
+		if err != nil {
+			return nil, fmt.Errorf("delivery: parse project plan timestamp for %s: %w", orchestrationID, err)
+		}
+		link.CreatedAt = parsed
+		out = append(out, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("delivery: iterate project plans for %s: %w", orchestrationID, err)
+	}
+	return out, nil
 }
 
 func (s *Store) listJiraActivity(ctx context.Context, orchestrationID string) ([]JiraActivity, error) {
@@ -630,7 +708,7 @@ func deriveOrchestrationTitle(sources []*protocol.RequirementSource, pending []p
 // fixed priority order wins, and every other true condition is simply
 // not mentioned this time - a caller polls get_delivery again once it
 // acts on this one.
-func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary, pendingApprovals []*protocol.ApprovalManifest) string {
+func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary) string {
 	if orch.Status == protocol.DeliveryOrchestrationStatusPending && len(orch.UnresolvedInputs) > 0 {
 		refs := make([]string, 0, len(orch.UnresolvedInputs))
 		for _, in := range orch.UnresolvedInputs {
@@ -638,11 +716,8 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 		}
 		return fmt.Sprintf("resolve %d pending question(s) via answer_delivery_question: %s", len(refs), strings.Join(refs, ", "))
 	}
-	if len(lanes) == 0 && len(pendingApprovals) == 0 {
+	if len(lanes) == 0 {
 		return "no lanes yet — decompose the delivery via register_project, create_parent_task, and create_lane"
-	}
-	if len(pendingApprovals) > 0 {
-		return fmt.Sprintf("approve project delivery for project %s via approve_project_delivery", pendingApprovals[0].ProjectId)
 	}
 
 	var blocked, active, accepted, failed int

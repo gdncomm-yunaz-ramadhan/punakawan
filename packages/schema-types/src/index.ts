@@ -8,8 +8,6 @@ export * from './generated/adapter.js';
 export * from './generated/adapter.zod.js';
 export * from './generated/approval.js';
 export * from './generated/approval.zod.js';
-export * from './generated/approvalmanifest.js';
-export * from './generated/approvalmanifest.zod.js';
 export * from './generated/artifactcomment.js';
 export * from './generated/artifactcomment.zod.js';
 export * from './generated/artifactreference.js';
