@@ -246,12 +246,24 @@ func isClarificationComment(action string) bool { return action == "clarificatio
 
 func adapterWrite(intent *delivery.JiraWriteIntent) (string, map[string]any, error) {
 	switch intent.Action {
-	case "add_comment", "clarification_comment":
-		body, ok := stringPayload(intent.Payload, "comment_body")
+	case "add_comment", "comment", "clarification_comment":
+		body, ok := payloadString(intent.Payload, "comment_body", "body")
 		if !ok || body == "" {
 			return "", nil, fmt.Errorf("jirahooks: %s intent requires payload.comment_body", intent.Action)
 		}
 		return "atlassian.addJiraComment", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "commentBody": body}, nil
+	case "update_description", "description":
+		description, ok := stringPayload(intent.Payload, "description")
+		if !ok {
+			return "", nil, fmt.Errorf("jirahooks: %s intent requires payload.description", intent.Action)
+		}
+		return "atlassian.editJiraIssue", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "description": description}, nil
+	case "transition_status", "transition":
+		transitionID, ok := payloadString(intent.Payload, "transition_id", "transitionId")
+		if !ok {
+			return "", nil, fmt.Errorf("jirahooks: %s intent requires payload.transition_id", intent.Action)
+		}
+		return "atlassian.transitionJiraIssue", map[string]any{"issueIdOrKey": intent.JiraIssueKey, "transitionId": transitionID}, nil
 	case "create_subtask":
 		projectKey, projectOK := payloadString(intent.Payload, "project_key", "projectKey")
 		issueTypeName, typeOK := payloadString(intent.Payload, "issue_type_name", "issueTypeName")
