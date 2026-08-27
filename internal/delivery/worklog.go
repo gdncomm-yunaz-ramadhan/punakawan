@@ -143,6 +143,19 @@ func (s *Store) GetWorkLog(ctx context.Context, orchestrationID, id string) (*Wo
 	return scanWorkLog(row)
 }
 
+// RetryWorkLogSync replays sync projection for an already-recorded ledger row.
+func (s *Store) RetryWorkLogSync(ctx context.Context, orchestrationID, id string) (*WorkLogEntry, error) {
+	entry, err := s.GetWorkLog(ctx, orchestrationID, id)
+	if err != nil {
+		return nil, err
+	}
+	if entry.SyncStatus == "synced" {
+		return entry, nil
+	}
+	s.dispatchWorkLogEvent(ctx, entry)
+	return s.GetWorkLog(ctx, orchestrationID, id)
+}
+
 // ListWorkLogs returns the delivery's authoritative work ledger in recording
 // order. The panel renders this data even while Jira synchronization is pending.
 func (s *Store) ListWorkLogs(ctx context.Context, orchestrationID string) ([]WorkLogEntry, error) {

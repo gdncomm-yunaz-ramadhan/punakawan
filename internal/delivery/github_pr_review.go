@@ -138,7 +138,7 @@ func (s *Store) ResolveGitHubPRReview(ctx context.Context, key, id, externalRevi
 		result, err := tx.ExecContext(ctx, `
 			UPDATE github_pr_reviews
 			SET status = ?, external_review_id = ?, failure = ?, updated_at = ?
-			WHERE id = ? AND status = 'approved'`,
+			WHERE id = ? AND status IN ('proposed', 'approved')`,
 			status, externalReviewID, failure, time.Now().UTC().Format(timeLayout), id)
 		if err != nil {
 			return err

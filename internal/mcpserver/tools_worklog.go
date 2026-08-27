@@ -31,6 +31,29 @@ type LogDeliveryWorkOutput struct {
 	View    delivery.DeliveryView `json:"view"`
 }
 
+type RetryWorklogSyncInput struct {
+	OrchestrationID string `json:"orchestration_id"`
+	WorklogID       string `json:"worklog_id"`
+}
+
+func retryWorklogSyncHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, RetryWorklogSyncInput) (*mcp.CallToolResult, LogDeliveryWorkOutput, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in RetryWorklogSyncInput) (*mcp.CallToolResult, LogDeliveryWorkOutput, error) {
+		store, err := OpenDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, LogDeliveryWorkOutput{}, err
+		}
+		entry, err := store.RetryWorkLogSync(ctx, in.OrchestrationID, in.WorklogID)
+		if err != nil {
+			return nil, LogDeliveryWorkOutput{}, fmt.Errorf("mcpserver: retry worklog sync: %w", err)
+		}
+		view, err := store.BuildDeliveryView(ctx, in.OrchestrationID)
+		if err != nil {
+			return nil, LogDeliveryWorkOutput{}, err
+		}
+		return nil, LogDeliveryWorkOutput{WorkLog: *entry, View: *view}, nil
+	}
+}
+
 func logDeliveryWorkHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, LogDeliveryWorkInput) (*mcp.CallToolResult, LogDeliveryWorkOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in LogDeliveryWorkInput) (*mcp.CallToolResult, LogDeliveryWorkOutput, error) {
 		store, err := OpenDeliveryStore(ctx, a)
