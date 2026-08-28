@@ -72,6 +72,12 @@ A generic MCP configuration is always written for other clients:
 - macOS: `~/Library/Application Support/punakawan/mcp-config.json`
 - Windows: `%APPDATA%\punakawan\mcp-config.json`
 
+On macOS, direct GitHub and Atlassian adapters are registered in
+`~/Library/Application Support/punakawan/config.yaml`. The MCP launcher loads
+credentials from `~/Library/Application Support/punakawan/.env`; set
+`GITHUB_TOKEN` there (or export it before rerunning `scripts/install.sh`) for
+GitHub pull-request tools. Restart the MCP client after installation.
+
 Use `--dry-run` on macOS or `-DryRun` on Windows to preview every action.
 Open a new shell after installation, then verify on macOS:
 

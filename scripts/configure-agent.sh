@@ -4,11 +4,15 @@ set -euo pipefail
 
 PUNAKAWAN_BIN="${1:-}"
 CONFIG_DIR="${2:-}"
+ENV_FILE="${3:-}"
 DRY_RUN="${PUNAKAWAN_DRY_RUN:-0}"
 
 if [[ -z "$PUNAKAWAN_BIN" || -z "$CONFIG_DIR" ]]; then
-  printf 'Usage: %s /absolute/path/to/punakawan /absolute/config/directory\n' "$0" >&2
+  printf 'Usage: %s /absolute/path/to/punakawan /absolute/config/directory [global-env-file]\n' "$0" >&2
   exit 2
+fi
+if [[ -z "$ENV_FILE" ]]; then
+  ENV_FILE="$CONFIG_DIR/.env"
 fi
 if [[ "$DRY_RUN" != "1" && ! -x "$PUNAKAWAN_BIN" ]]; then
   printf 'Punakawan binary is not executable: %s\n' "$PUNAKAWAN_BIN" >&2
@@ -51,11 +55,11 @@ find_claude() {
 }
 
 manual_codex() {
-  printf 'Manual setup: codex mcp add punakawan -- %q mcp serve\n' "$PUNAKAWAN_BIN" >&2
+  printf 'Manual setup: codex mcp add punakawan -- %q mcp serve\n' "$LAUNCHER" >&2
 }
 
 manual_claude() {
-  printf 'Manual setup: claude mcp add punakawan --scope user -- %q mcp serve\n' "$PUNAKAWAN_BIN" >&2
+  printf 'Manual setup: claude mcp add punakawan --scope user -- %q mcp serve\n' "$LAUNCHER" >&2
 }
 
 register_codex() {
@@ -63,11 +67,11 @@ register_codex() {
   log "Registering Punakawan with Codex"
   if [[ "$DRY_RUN" == "1" ]]; then
     print_command "$client" mcp remove punakawan
-    print_command "$client" mcp add punakawan -- "$PUNAKAWAN_BIN" mcp serve
+    print_command "$client" mcp add punakawan -- "$LAUNCHER" mcp serve
     return
   fi
   "$client" mcp remove punakawan >/dev/null 2>&1 || true
-  if "$client" mcp add punakawan -- "$PUNAKAWAN_BIN" mcp serve; then
+  if "$client" mcp add punakawan -- "$LAUNCHER" mcp serve; then
     printf 'Codex configured. Restart Codex to load Punakawan.\n'
   else
     warn "Codex registration failed. Punakawan remains installed."
@@ -80,11 +84,11 @@ register_claude() {
   log "Registering Punakawan with Claude Code"
   if [[ "$DRY_RUN" == "1" ]]; then
     print_command "$client" mcp remove punakawan --scope user
-    print_command "$client" mcp add punakawan --scope user -- "$PUNAKAWAN_BIN" mcp serve
+    print_command "$client" mcp add punakawan --scope user -- "$LAUNCHER" mcp serve
     return
   fi
   "$client" mcp remove punakawan --scope user >/dev/null 2>&1 || true
-  if "$client" mcp add punakawan --scope user -- "$PUNAKAWAN_BIN" mcp serve; then
+  if "$client" mcp add punakawan --scope user -- "$LAUNCHER" mcp serve; then
     printf 'Claude Code configured. Restart Claude Code to load Punakawan.\n'
   else
     warn "Claude Code registration failed. Punakawan remains installed."
@@ -102,7 +106,7 @@ json_escape() {
 write_generic_config() {
   local path="$CONFIG_DIR/mcp-config.json"
   local escaped_bin
-  escaped_bin="$(json_escape "$PUNAKAWAN_BIN")"
+  escaped_bin="$(json_escape "$LAUNCHER")"
   if [[ "$DRY_RUN" == "1" ]]; then
     log "Generic MCP config: $path"
     return
@@ -122,6 +126,26 @@ JSON
   log "Wrote generic MCP config: $path"
 }
 
+write_launcher() {
+  LAUNCHER="$CONFIG_DIR/run-mcp.sh"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "MCP launcher: $LAUNCHER"
+    return
+  fi
+  mkdir -p "$CONFIG_DIR"
+  {
+    printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail'
+    printf 'if [[ -f %q ]]; then\n' "$ENV_FILE"
+    printf '%s\n' '  set -a'
+    printf '  source %q\n' "$ENV_FILE"
+    printf '%s\n' '  set +a' 'fi'
+    printf 'exec %q "$@"\n' "$PUNAKAWAN_BIN"
+  } >"$LAUNCHER"
+  chmod 700 "$LAUNCHER"
+  log "Wrote MCP launcher: $LAUNCHER"
+}
+
+write_launcher
 codex_bin="$(find_codex || true)"
 claude_bin="$(find_claude || true)"
 
