@@ -78,6 +78,10 @@ credentials from `~/Library/Application Support/punakawan/.env`; set
 `GITHUB_TOKEN` there (or export it before rerunning `scripts/install.sh`) for
 GitHub pull-request tools. Restart the MCP client after installation.
 
+On Windows, `scripts/install.ps1` writes the equivalent `%APPDATA%\punakawan`
+`config.yaml`, `.env`, and `run-mcp.ps1` launcher. Set `GITHUB_TOKEN` before
+rerunning the installer, then restart the MCP client.
+
 Use `--dry-run` on macOS or `-DryRun` on Windows to preview every action.
 Open a new shell after installation, then verify on macOS:
 
