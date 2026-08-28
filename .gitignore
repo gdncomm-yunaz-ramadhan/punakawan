@@ -20,4 +20,7 @@ packages/*/dist-test/
 # Punakawan local state
 .punakawan/
 
+# Agent-local implementation plans and specifications
+docs/superpowers/
+
 affiliate-platform-delivery-feedback-2026-08-07.md
