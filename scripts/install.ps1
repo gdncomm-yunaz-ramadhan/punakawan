@@ -16,7 +16,8 @@ Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
-$InstallDir = if ($env:PUNAKAWAN_INSTALL_DIR) {
+$InstallDirOverridden = [bool]$env:PUNAKAWAN_INSTALL_DIR
+$InstallDir = if ($InstallDirOverridden) {
     $env:PUNAKAWAN_INSTALL_DIR
 } else {
     Join-Path $env:LOCALAPPDATA 'Programs\Punakawan'
@@ -122,12 +123,15 @@ function Find-McpClient {
 function Write-ManualMcpSetup {
     param(
         [string]$Client,
-        [string]$PunakawanPath
+        [string]$McpCommand,
+        [string[]]$McpArguments
     )
+    $quotedArguments = ($McpArguments | ForEach-Object { "`"$_`"" }) -join ' '
+    $invocation = "`"$McpCommand`" $quotedArguments"
     if ($Client -eq 'Codex') {
-        Write-Host "Manual setup: codex mcp add punakawan -- `"$PunakawanPath`" mcp serve"
+        Write-Host "Manual setup: codex mcp add punakawan -- $invocation"
     } else {
-        Write-Host "Manual setup: claude mcp add punakawan --scope user -- `"$PunakawanPath`" mcp serve"
+        Write-Host "Manual setup: claude mcp add punakawan --scope user -- $invocation"
     }
 }
 
@@ -137,11 +141,12 @@ function Register-McpClient {
         [string]$ClientPath,
         [string[]]$RemoveArguments,
         [string[]]$AddArguments,
-        [string]$PunakawanPath
+        [string]$McpCommand,
+        [string[]]$McpArguments
     )
     if (-not $ClientPath) {
         Write-Warning "$Label not detected; skipping automatic registration."
-        Write-ManualMcpSetup -Client $Label -PunakawanPath $PunakawanPath
+        Write-ManualMcpSetup -Client $Label -McpCommand $McpCommand -McpArguments $McpArguments
         return
     }
 
@@ -163,24 +168,108 @@ function Register-McpClient {
         Write-Host "$Label configured. Restart $Label to load Punakawan."
     } else {
         Write-Warning "$Label registration failed. Punakawan remains installed."
-        Write-ManualMcpSetup -Client $Label -PunakawanPath $PunakawanPath
+        Write-ManualMcpSetup -Client $Label -McpCommand $McpCommand -McpArguments $McpArguments
     }
 }
 
+function Write-AdapterConfig {
+    param(
+        [string]$ConfigPath,
+        [string]$AdapterId,
+        [string]$EntryPoint,
+        [string]$NodePath,
+        [string[]]$EnvPassthrough
+    )
+
+    $directory = Split-Path -Parent $ConfigPath
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    if (-not (Test-Path $ConfigPath)) {
+        Set-Content -Path $ConfigPath -Value 'adapters:' -Encoding UTF8
+    } elseif (-not ((Get-Content -Raw -Path $ConfigPath) -match '(?m)^adapters:\s*$')) {
+        throw "Cannot safely add adapters to $ConfigPath; expected a block-style top-level adapters key."
+    }
+
+    if ((Get-Content -Raw -Path $ConfigPath) -match "(?m)^\s{2}$([regex]::Escape($AdapterId)):\s*(?:#.*)?$") {
+        return
+    }
+
+    $lines = @("  $AdapterId:", "    command: $NodePath", '    args:', "      - $EntryPoint", '    env_passthrough:')
+    foreach ($name in $EnvPassthrough) {
+        $lines += "      - $name"
+    }
+    Add-Content -Path $ConfigPath -Value $lines -Encoding UTF8
+}
+
+function Write-EnvironmentFile {
+    param([string]$EnvironmentPath)
+
+    $directory = Split-Path -Parent $EnvironmentPath
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    if (-not (Test-Path $EnvironmentPath)) {
+        New-Item -ItemType File -Path $EnvironmentPath | Out-Null
+    }
+    $contents = Get-Content -Raw -Path $EnvironmentPath
+    if ($contents -notmatch '(?m)^(GITHUB_TOKEN|GH_TOKEN)=') {
+        if ($env:GITHUB_TOKEN) {
+            Add-Content -Path $EnvironmentPath -Value "GITHUB_TOKEN=$($env:GITHUB_TOKEN)" -Encoding UTF8
+        } elseif ($env:GH_TOKEN) {
+            Add-Content -Path $EnvironmentPath -Value "GH_TOKEN=$($env:GH_TOKEN)" -Encoding UTF8
+        }
+    }
+}
+
+function Write-McpLauncher {
+    param(
+        [string]$PunakawanPath,
+        [string]$EnvironmentPath,
+        [string]$LauncherPath
+    )
+
+    $escapedPunakawan = $PunakawanPath.Replace("'", "''")
+    $escapedEnvironment = $EnvironmentPath.Replace("'", "''")
+    $script = @"
+param([Parameter(ValueFromRemainingArguments = `$true)][string[]]`$McpArguments)
+`$ErrorActionPreference = 'Stop'
+if (Test-Path -LiteralPath '$escapedEnvironment') {
+    Get-Content -LiteralPath '$escapedEnvironment' | ForEach-Object {
+        if (`$_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            [Environment]::SetEnvironmentVariable(`$matches[1], `$matches[2], 'Process')
+        }
+    }
+}
+& '$escapedPunakawan' @McpArguments
+exit `$LASTEXITCODE
+"@
+    Set-Content -Path $LauncherPath -Value $script -Encoding UTF8
+    return $LauncherPath
+}
+
 function Configure-McpClients {
-    param([string]$PunakawanPath)
+    param(
+        [string]$PunakawanPath,
+        [string]$EnvironmentPath
+    )
+
+    $launcherPath = Join-Path $ConfigDir 'run-mcp.ps1'
+    if (-not $DryRun) {
+        Write-McpLauncher -PunakawanPath $PunakawanPath -EnvironmentPath $EnvironmentPath -LauncherPath $launcherPath | Out-Null
+        Write-Step "Wrote MCP launcher: $launcherPath"
+    }
+    $mcpCommand = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path $mcpCommand)) { $mcpCommand = 'powershell.exe' }
+    $mcpArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launcherPath, 'mcp', 'serve')
 
     $codex = Find-McpClient -Name 'codex' -Override $env:PUNAKAWAN_CODEX_BIN
     $claude = Find-McpClient -Name 'claude' -Override $env:PUNAKAWAN_CLAUDE_BIN
 
     Register-McpClient -Label 'Codex' -ClientPath $codex `
         -RemoveArguments @('mcp', 'remove', 'punakawan') `
-        -AddArguments @('mcp', 'add', 'punakawan', '--', $PunakawanPath, 'mcp', 'serve') `
-        -PunakawanPath $PunakawanPath
+        -AddArguments (@('mcp', 'add', 'punakawan', '--', $mcpCommand) + $mcpArguments) `
+        -McpCommand $mcpCommand -McpArguments $mcpArguments
     Register-McpClient -Label 'Claude Code' -ClientPath $claude `
         -RemoveArguments @('mcp', 'remove', 'punakawan', '--scope', 'user') `
-        -AddArguments @('mcp', 'add', 'punakawan', '--scope', 'user', '--', $PunakawanPath, 'mcp', 'serve') `
-        -PunakawanPath $PunakawanPath
+        -AddArguments (@('mcp', 'add', 'punakawan', '--scope', 'user', '--', $mcpCommand) + $mcpArguments) `
+        -McpCommand $mcpCommand -McpArguments $mcpArguments
 
     $genericConfig = Join-Path $ConfigDir 'mcp-config.json'
     if ($DryRun) {
@@ -191,8 +280,8 @@ function Configure-McpClients {
     @{
         mcpServers = @{
             punakawan = @{
-                command = $PunakawanPath
-                args = @('mcp', 'serve')
+                command = $mcpCommand
+                args = $mcpArguments
             }
         }
     } | ConvertTo-Json -Depth 4 | Set-Content -Path $genericConfig -Encoding UTF8
@@ -239,7 +328,7 @@ Push-Location $RepoRoot
 try {
     Invoke-External -Display 'go mod download' -Action { go mod download }
     Invoke-External -Display 'pnpm install --frozen-lockfile' -Action { pnpm install --frozen-lockfile }
-    Invoke-External -Display 'pnpm --filter @punakawan/panel build' -Action { pnpm --filter '@punakawan/panel' build }
+    Invoke-External -Display 'pnpm -r --if-present build' -Action { pnpm -r --if-present build }
 
     Write-Step 'Installing punakawan and punakawand'
     if ($DryRun) {
@@ -259,9 +348,26 @@ try {
     Pop-Location
 }
 
+$atlassianAdapter = Join-Path $RepoRoot 'packages\adapter-atlassian\dist\run.js'
+$githubAdapter = Join-Path $RepoRoot 'packages\github-adapter\dist\run.js'
+if (-not $DryRun) {
+    if (-not (Test-Path $atlassianAdapter)) { throw "Build did not produce $atlassianAdapter" }
+    if (-not (Test-Path $githubAdapter)) { throw "Build did not produce $githubAdapter" }
+}
+$globalConfig = Join-Path $ConfigDir 'config.yaml'
+$globalEnvironment = Join-Path $ConfigDir '.env'
+if ($DryRun) {
+    Write-Step "Configuring global adapters: $globalConfig"
+} else {
+    $nodePath = (Get-Command node -CommandType Application).Source
+    Write-AdapterConfig -ConfigPath $globalConfig -AdapterId 'atlassian' -EntryPoint $atlassianAdapter -NodePath $nodePath -EnvPassthrough @('ATLASSIAN_API_TOKEN', 'ATLASSIAN_API_TOKEN_SCOPED', 'ATLASSIAN_HOST', 'ATLASSIAN_EMAIL')
+    Write-AdapterConfig -ConfigPath $globalConfig -AdapterId 'github' -EntryPoint $githubAdapter -NodePath $nodePath -EnvPassthrough @('GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_API_URL', 'GITHUB_GRAPHQL_URL')
+    Write-EnvironmentFile -EnvironmentPath $globalEnvironment
+}
+
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $userPathParts = @($userPath -split ';' | Where-Object { $_ })
-if ($userPathParts -notcontains $InstallDir) {
+if (-not $InstallDirOverridden -and $userPathParts -notcontains $InstallDir) {
     if ($DryRun) {
         Write-Host "    Add `"$InstallDir`" to user PATH"
     } else {
@@ -285,13 +391,15 @@ if ($DryRun) {
 }
 
 Write-Step 'Auto-configuring detected MCP clients'
-Configure-McpClients -PunakawanPath $punakawan
+Configure-McpClients -PunakawanPath $punakawan -EnvironmentPath $globalEnvironment
 
 Write-Host @"
 
 ==> Done.
 Binary directory: $InstallDir
 Generic MCP config: $ConfigDir\mcp-config.json
+Credentials: $globalEnvironment
+Global adapters: $globalConfig
 Panel: punakawan panel --workspace C:\absolute\path\to\project
 MCP: punakawan mcp serve
 "@

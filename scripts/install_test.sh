@@ -77,6 +77,16 @@ failure_output="$(
 assert_contains "$failure_output" "codex mcp add punakawan -- $launcher mcp serve"
 
 bash -n "$SCRIPT_DIR/install.sh"
+for expected in \
+  'function Write-AdapterConfig' \
+  'function Write-EnvironmentFile' \
+  'function Write-McpLauncher' \
+  'GITHUB_TOKEN' \
+  'github-adapter' \
+  'run-mcp.ps1'
+do
+  grep -F "$expected" "$SCRIPT_DIR/install.ps1" >/dev/null || fail "Windows installer missing: $expected"
+done
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   mac_output="$(bash "$SCRIPT_DIR/install.sh" --dry-run)"
@@ -103,10 +113,11 @@ fi
 
 if [[ -n "$powershell_command" ]]; then
   windows_output="$($powershell_command -NoProfile -File "$SCRIPT_DIR/install.ps1" -DryRun)"
-  assert_contains "$windows_output" "pnpm --filter @punakawan/panel build"
+  assert_contains "$windows_output" "pnpm -r --if-present build"
   assert_contains "$windows_output" "go install ./cmd/punakawan ./cmd/punakawand"
   assert_contains "$windows_output" "mcp add punakawan"
   assert_contains "$windows_output" "Generic MCP config"
+  assert_contains "$windows_output" "Configuring global adapters"
   assert_contains "$windows_output" "punakawan panel"
 fi
 
