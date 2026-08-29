@@ -5,13 +5,14 @@
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
-  import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
+  import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import Button from "../../lib/components/Button.svelte";
   import Icon from "../../lib/components/Icon.svelte";
   import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import type { IconName } from "../../lib/components/Icon.svelte";
   import Tabs from "../../lib/components/Tabs.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
+  import { deliveryStatusInfo } from "./deliveryList";
 
   interface Props { orchestrationId: string; }
   let { orchestrationId }: Props = $props();
@@ -106,7 +107,6 @@
   function projectSlug(v: DeliveryView, projectId: string): string {
     return v.projects.find((project) => project.project_id === projectId)?.project_slug || projectId;
   }
-  const statusVariants: Record<string, BadgeVariant> = { pending: "neutral", active: "info", completed: "success", cancelled: "danger" };
 </script>
 
 {#if loading}
@@ -136,7 +136,7 @@
   {#if cancelError && !confirmingCancel}<p role="alert" class="error">{cancelError}</p>{/if}
 
   <div class="status-row">
-    <StatusBadge variant={statusVariants[v.orchestration.status] ?? "neutral"} label={v.orchestration.status} />
+    <StatusBadge variant={deliveryStatusInfo(v.orchestration.status).variant} label={deliveryStatusInfo(v.orchestration.status).label} />
     <span>Created {formatDate(v.orchestration.created_at)}</span>
     <details><summary>Technical reference</summary><code>{orchestrationId}</code></details>
   </div>
@@ -154,7 +154,11 @@
         <MetricCard size="small" columns={3} label="Projects" value={v.projects.length} />
         <MetricCard size="small" columns={3} label="Sessions" value={v.lifecycle?.sessions.length ?? 0} />
         <MetricCard size="small" columns={3} label="Project plans" value={v.project_plans?.length ?? 0} />
-        <div class="cost-card"><MetricCard size="small" columns={3} label="Estimated cost" value={estimatedCost(v)} /><button type="button" class="cost-info" aria-label="Cost details" onclick={() => (costDetailsOpen = true)}><Icon name="info" size={16} /></button></div>
+        <MetricCard size="small" columns={3} label="Estimated cost" value={estimatedCost(v)}>
+          {#snippet cornerAction()}
+            <button type="button" aria-label="Cost details" onclick={() => (costDetailsOpen = true)}><Icon name="info" size={16} /></button>
+          {/snippet}
+        </MetricCard>
       </BentoGrid>
     </div>
   {:else if activeId === "projects"}
@@ -197,8 +201,6 @@
 {/if}
 
 <style>
-  .cost-card { position: relative; }
-  .cost-info { position: absolute; top: .45rem; right: .45rem; border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer; }
   .cost-details { display: grid; grid-template-columns: 1fr auto; gap: .75rem 1.5rem; margin: 0; }
   .cost-details dt { color: var(--color-text-muted); }
   .cost-details dd { margin: 0; font-weight: 600; text-align: right; }

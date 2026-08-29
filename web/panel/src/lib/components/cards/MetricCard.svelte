@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import BentoCard, { type BentoSize } from "./BentoCard.svelte";
   import type { CardState } from "./Card.svelte";
   import Icon, { type IconName } from "../Icon.svelte";
@@ -22,6 +23,8 @@
     accent?: MetricAccent;
     /** Optional glyph shown in the emphasis chip when accent is set. */
     icon?: IconName;
+    /** Optional control positioned in the metric's top-right corner. */
+    cornerAction?: Snippet;
   }
   let {
     label,
@@ -34,6 +37,7 @@
     emptyMessage,
     accent = "none",
     icon,
+    cornerAction,
   }: Props = $props();
 
   // Maps each accent to the semantic/batik token it tints with. Kept as
@@ -64,6 +68,9 @@
       {#if accent !== "none" && icon}
         <span class="chip" aria-hidden="true"><Icon name={icon} size={18} strokeWidth={1.9} /></span>
       {/if}
+      {#if cornerAction}
+        <span class="corner-action">{@render cornerAction()}</span>
+      {/if}
       <span class="value">{value}</span>
       <span class="label">{label}</span>
       {#if trendDirection && trendDelta}
@@ -83,6 +90,28 @@
     gap: 0.2rem;
     align-content: center;
     height: 100%;
+  }
+  .corner-action {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+  .corner-action :global(button) {
+    display: inline-flex;
+    padding: 0.2rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+  .corner-action :global(button:hover) {
+    color: var(--color-text);
+    background: var(--color-surface-subtle);
+  }
+  .corner-action :global(button:focus-visible) {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
   }
   /* Colored left edge + inset padding when an accent is set. The plain
      (accent="none") metric is untouched. */

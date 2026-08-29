@@ -11,17 +11,21 @@
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
-  import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
+  import StatusBadge from "../../lib/components/StatusBadge.svelte";
   import Icon from "../../lib/components/Icon.svelte";
   import Button from "../../lib/components/Button.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
   import {
     deliveryLabel,
     filterDeliveries,
+    filterDeliveriesByStatus,
     sortDeliveries,
     deliverySortOptions,
+    deliveryStatusFilterOptions,
+    deliveryStatusInfo,
     isCancellableDelivery,
     type DeliverySortKey,
+    type DeliveryStatusFilter,
   } from "./deliveryList";
 
   interface DeliveryRow {
@@ -39,11 +43,12 @@
   let loaded = $state(false);
 
   let search = $state("");
-  let sortKey: DeliverySortKey = $state("updated");
+  let sortKey: DeliverySortKey = $state("recent");
+  let statusFilter: DeliveryStatusFilter = $state("all");
 
   // Both lists are already fully in memory (one view fetch per card happens at
   // load), so search and sort are pure derivations over them.
-  const visible = $derived(sortDeliveries(filterDeliveries(rows, search), sortKey));
+  const visible = $derived(sortDeliveries(filterDeliveriesByStatus(filterDeliveries(rows, search), statusFilter), sortKey));
 
   // A delivery is an append-only event log: there is no remove, so the only
   // lifecycle action the panel can offer is cancelling one still in flight.
@@ -126,12 +131,6 @@
     }
   }
 
-  const statusVariants: Record<string, BadgeVariant> = {
-    pending: "neutral",
-    active: "info",
-    completed: "success",
-    cancelled: "danger",
-  };
 </script>
 
 <PageHeader
@@ -165,12 +164,20 @@
         {/each}
       </select>
     </div>
+    <div class="field">
+      <label for="delivery-status">Status</label>
+      <select id="delivery-status" bind:value={statusFilter}>
+        {#each deliveryStatusFilterOptions as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </div>
   </div>
 
   {#if visible.length === 0}
     <EmptyStateCard
       title="No deliveries match your search"
-      message={`Nothing matches “${search}”. Try a shorter search, or clear it to see all ${rows.length} deliveries.`}
+      message="Try adjusting the search or status filter to see more deliveries."
     />
   {:else}
     <ul class="deliveries" aria-label="Deliveries">
@@ -194,10 +201,7 @@
                     <span class="id">{row.orchestration.id}</span>
                   </span>
                 </span>
-                <StatusBadge
-                  variant={statusVariants[row.orchestration.status] ?? "neutral"}
-                  label={row.orchestration.status}
-                />
+                <StatusBadge variant={deliveryStatusInfo(row.orchestration.status).variant} label={deliveryStatusInfo(row.orchestration.status).label} />
               </span>
               {#if row.view}
                 <span class="next-action">{row.view.next_action}</span>

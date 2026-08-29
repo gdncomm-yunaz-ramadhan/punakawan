@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   deliveryLabel,
+  deliveryStatusInfo,
   deliverySortOptions,
+  filterDeliveriesByStatus,
   filterDeliveries,
   isCancellableDelivery,
   shortDeliveryId,
@@ -160,6 +162,27 @@ describe("filterDeliveries", () => {
   });
 });
 
+describe("filterDeliveriesByStatus", () => {
+  const rows: DeliveryListRow[] = [
+    row({ id: "orc-active", title: "Still running", status: "active" }),
+    row({ id: "orc-done", title: "All finished", status: "completed" }),
+  ];
+
+  it("keeps every row for all statuses and returns only the requested lifecycle state", () => {
+    expect(filterDeliveriesByStatus(rows, "all")).toHaveLength(2);
+    expect(filterDeliveriesByStatus(rows, "completed").map((item) => item.orchestration.id)).toEqual(["orc-done"]);
+  });
+});
+
+describe("deliveryStatusInfo", () => {
+  it("uses readable labels and non-error semantics for delivery lifecycle states", () => {
+    expect(deliveryStatusInfo("pending")).toMatchObject({ label: "Pending", variant: "warning" });
+    expect(deliveryStatusInfo("active")).toMatchObject({ label: "Active", variant: "info" });
+    expect(deliveryStatusInfo("completed")).toMatchObject({ label: "Completed", variant: "success" });
+    expect(deliveryStatusInfo("cancelled")).toMatchObject({ label: "Cancelled", variant: "neutral" });
+  });
+});
+
 describe("sortDeliveries", () => {
   const rows: DeliveryListRow[] = [
     row({ id: "a", title: "Beta", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-05-01T00:00:00Z" }),
@@ -167,45 +190,25 @@ describe("sortDeliveries", () => {
   ];
   const ids = (list: DeliveryListRow[]) => list.map((r) => r.orchestration.id);
 
-  it("puts the most recently updated first", () => {
-    expect(ids(sortDeliveries(rows, "updated"))).toEqual(["a", "b"]);
+  it("puts the most recently updated first for recent", () => {
+    expect(ids(sortDeliveries(rows, "recent"))).toEqual(["a", "b"]);
   });
 
-  it("puts the most recently created first", () => {
-    expect(ids(sortDeliveries(rows, "created"))).toEqual(["b", "a"]);
+  it("puts the least recently updated first for oldest", () => {
+    expect(ids(sortDeliveries(rows, "oldest"))).toEqual(["b", "a"]);
   });
 
   it("sorts by the rendered label, not the raw id", () => {
     expect(ids(sortDeliveries(rows, "title"))).toEqual(["b", "a"]);
   });
 
-  it("groups by status and breaks ties by label", () => {
-    const mixed: DeliveryListRow[] = [
-      row({ id: "x", title: "Zulu", status: "pending" }),
-      row({ id: "y", title: "Bravo", status: "active" }),
-      row({ id: "z", title: "Alpha", status: "active" }),
-    ];
-    expect(ids(sortDeliveries(mixed, "status"))).toEqual(["z", "y", "x"]);
-  });
-
-  it("orders statuses by what needs attention, not alphabetically", () => {
-    // Alphabetically this would be active, cancelled, completed, pending -
-    // burying a still-pending delivery behind the finished ones.
-    const mixed: DeliveryListRow[] = [
-      row({ id: "cancelled", title: "A", status: "cancelled" }),
-      row({ id: "completed", title: "A", status: "completed" }),
-      row({ id: "pending", title: "A", status: "pending" }),
-      row({ id: "active", title: "A", status: "active" }),
-    ];
-    expect(ids(sortDeliveries(mixed, "status"))).toEqual(["active", "pending", "completed", "cancelled"]);
-  });
-
-  it("sorts rows with an unparseable timestamp last instead of scrambling the order", () => {
+  it("sorts rows with an unparseable timestamp last for both date orders", () => {
     const broken: DeliveryListRow[] = [
       row({ id: "bad", title: "Bad", updated_at: "not-a-date" }),
       row({ id: "good", title: "Good", updated_at: "2026-05-01T00:00:00Z" }),
     ];
-    expect(ids(sortDeliveries(broken, "updated"))).toEqual(["good", "bad"]);
+    expect(ids(sortDeliveries(broken, "recent"))).toEqual(["good", "bad"]);
+    expect(ids(sortDeliveries(broken, "oldest"))).toEqual(["good", "bad"]);
   });
 
   it("does not mutate the input array", () => {
