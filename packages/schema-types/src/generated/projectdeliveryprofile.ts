@@ -5,7 +5,7 @@
  */
 
 /**
- * Versioned, per-project delivery configuration: local path, canonical remote, branch policy, build/test commands, required services, and CI/worker policy. Explicit repository configuration takes precedence over global detected or learned defaults; this record only stores the merged, effective values a preflight run and approval manifest are computed against.
+ * Versioned, per-project delivery configuration: local path, canonical remote, branch policy, build/test commands, required services, and CI/worker policy. Explicit repository configuration takes precedence over global detected or learned defaults; this record only stores the merged, effective values a preflight run is computed against.
  */
 export interface ProjectDeliveryProfile {
   /**

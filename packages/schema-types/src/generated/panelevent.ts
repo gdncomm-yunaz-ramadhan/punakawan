@@ -27,8 +27,6 @@ export interface PanelEvent {
     | "knowledge.created"
     | "knowledge.updated"
     | "knowledge.superseded"
-    | "approval.requested"
-    | "approval.resolved"
     | "evidence.created"
     | "git.state_changed"
     | "adapter.health_changed"

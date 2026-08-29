@@ -74,7 +74,7 @@ func TestRetryWorkLogSyncReplaysExistingLedgerEntry(t *testing.T) {
 		t.Fatalf("insert worklog: %v", err)
 	}
 	caller := &fakeAdapterCaller{responses: map[string]string{"atlassian.addWorklog": `{"ok":true,"worklogId":"jira-worklog-1"}`}, failOps: map[string]bool{}}
-	gate := adapters.NewGate("atlassian", testManifest(), caller, nil)
+	gate := adapters.NewGate("atlassian", testManifest(), caller)
 	lifecycle := NewLifecycle(store, &fakeGateResolver{gate: gate})
 
 	entry, err := lifecycle.RetryWorkLogSync(ctx, resolved.Execution.OrchestrationID, worklogID)

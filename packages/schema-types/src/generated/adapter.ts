@@ -30,7 +30,6 @@ export interface AdapterManifest {
   operations: {
     [k: string]: {
       side_effect: boolean;
-      approval?: "required";
     };
   };
 }

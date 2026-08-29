@@ -28,7 +28,7 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "checkpoint_delivery_session", Description: "Persist a session checkpoint and optional handoff."}, checkpointDeliverySessionHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "report_delivery_usage", Description: "Record estimated or actual usage with explicit price provenance."}, reportDeliveryUsageHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "report_delivery_progress", Description: "Record a durable delivery progress report."}, reportDeliveryProgressHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "assess_jira_delivery", Description: "Snapshot and assess Jira clarity and approval state."}, assessJiraDeliveryHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "assess_jira_delivery", Description: "Record Jira source clarity and rationale."}, assessJiraDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "hydrate_jira_delivery", Description: "Fetch an exact Jira issue through the configured adapter and persist an immutable source snapshot."}, hydrateJiraDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "hydrate_github_pull_request", Description: "Fetch a GitHub pull request, diff files, checks, comments, and unresolved review threads for agent review."}, hydrateGitHubPullRequestHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "propose_github_pr_review", Description: "Persist agent review findings and an exact GitHub pull-request review proposal before submission."}, proposeGitHubPRReviewHandler(a))

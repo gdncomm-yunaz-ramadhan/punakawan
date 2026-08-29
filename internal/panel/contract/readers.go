@@ -187,17 +187,6 @@ type EvidencePreview struct {
 	DiffSummary *DiffSummary
 }
 
-// ApprovalFilter narrows ApprovalReader.List.
-type ApprovalFilter struct {
-	Status string
-}
-
-// ApprovalReader lists approval records, per §8.5. The panel's MVP is
-// read-only: no Approve/Resolve method exists here on purpose.
-type ApprovalReader interface {
-	List(ctx context.Context, workspaceID string, filter ApprovalFilter) ([]protocol.ApprovalRecord, error)
-}
-
 // GlobalSearchResult pairs one workspace's search.Result with the
 // workspace it came from and its fused rank score, per §10.1's global
 // search: every registered workspace is queried through the same

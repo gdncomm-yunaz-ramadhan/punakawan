@@ -10,7 +10,6 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/delivery"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // Lifecycle hydrates a delivery's Jira source and projects its durable Jira
@@ -129,12 +128,6 @@ func (l *Lifecycle) Execute(ctx context.Context, intentID, resolutionKey string)
 		delete(params, "targetStatus")
 		params["transitionId"] = transitionID
 	}
-	if gate.RequiresApproval(op) {
-		if _, err := gate.RequestApproval(runID, op, protocol.ApprovalRecordRequestedBySemar, adapters.BuildApprovalPreview(op, params)); err != nil {
-			return l.resolveFailure(ctx, intent, attemptKey, fmt.Errorf("request adapter approval: %w", err))
-		}
-
-	}
 	raw, err := gate.Call(ctx, runID, op, params)
 	if err != nil {
 		return l.resolveFailure(ctx, intent, attemptKey, err)
@@ -221,48 +214,6 @@ func formatTransitionCatalog(transitions []adapters.JiraTransition) string {
 		fmt.Fprintf(&out, "\n- %s (%s) -> %s", transition.Name, transition.ID, transition.ToStatusName)
 	}
 	return out.String()
-}
-
-// ApproveWrites records one explicit human approval for every pending Jira
-// write in this delivery execution. Gate approvals are scoped to the execution
-// run id, so subsequent comment, estimate, and story-point writes reuse it.
-func (l *Lifecycle) ApproveWrites(ctx context.Context, executionID, approvedBy string) error {
-	execution, err := l.store.GetExecution(ctx, executionID)
-	if err != nil {
-		return fmt.Errorf("jirahooks: get delivery execution: %w", err)
-	}
-	lifecycle, err := l.store.GetDeliveryLifecycle(ctx, execution.OrchestrationID)
-	if err != nil {
-		return fmt.Errorf("jirahooks: get delivery lifecycle: %w", err)
-	}
-	var intent *delivery.JiraWriteIntent
-	for i := range lifecycle.WriteIntents {
-		if lifecycle.WriteIntents[i].Status == "pending" || lifecycle.WriteIntents[i].Status == "retrying" {
-			intent = &lifecycle.WriteIntents[i]
-			break
-		}
-	}
-	if intent == nil {
-		return fmt.Errorf("jirahooks: delivery execution %s has no pending Jira writes", executionID)
-	}
-	op, params, err := adapterWrite(intent)
-	if err != nil {
-		return err
-	}
-	gate, err := l.registry.Gate(ctx, "atlassian")
-	if err != nil {
-		return fmt.Errorf("jirahooks: open atlassian adapter: %w", err)
-	}
-	runID := "jira-execution-" + executionID
-	if gate.RequiresApproval(op) {
-		if _, err := gate.RequestApproval(runID, op, protocol.ApprovalRecordRequestedBySemar, adapters.BuildApprovalPreview(op, params)); err != nil {
-			return fmt.Errorf("jirahooks: request adapter approval: %w", err)
-		}
-		if err := gate.Approve(runID, approvedBy); err != nil {
-			return fmt.Errorf("jirahooks: approve adapter writes: %w", err)
-		}
-	}
-	return nil
 }
 
 // ExecutePending applies every pending/retrying intent in creation order for

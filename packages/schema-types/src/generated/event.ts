@@ -22,7 +22,6 @@ export interface Event {
   operation: string;
   duration_ms?: number;
   result: "success" | "failure" | "cancelled" | "timeout";
-  approval_id?: string;
   payload?: {
     [k: string]: unknown;
   };

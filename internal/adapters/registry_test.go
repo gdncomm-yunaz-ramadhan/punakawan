@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 )
@@ -19,16 +18,10 @@ func newTestRegistry(t *testing.T) *Registry {
 	if _, err := os.Stat(prototypeAdapterPath); err != nil {
 		t.Skipf("prototype adapter not built (%s): %v; run `pnpm --filter @punakawan/adapter-sdk build` first", prototypeAdapterPath, err)
 	}
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	store := approvals.New(db, "test-project")
 	specs := map[string]AdapterSpec{
 		"prototype": {Command: "node", Args: []string{prototypeAdapterPath}},
 	}
-	return NewRegistry(specs, func() (*approvals.Store, error) { return store, nil })
+	return NewRegistry(specs)
 }
 
 func TestRegistryGateStartsAndFetchesManifest(t *testing.T) {
@@ -134,30 +127,6 @@ func waitUntilDead(t *testing.T, c *Client) {
 			t.Fatal("client not marked Dead within 2s of Kill")
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func TestRegistrySetApprovalScopePropagatesToGates(t *testing.T) {
-	r := newTestRegistry(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	defer r.Close(ctx)
-
-	// Set before the Gate exists: newly created Gates must pick it up.
-	r.SetApprovalScope("day")
-	g, err := r.Gate(ctx, "prototype")
-	if err != nil {
-		t.Fatalf("Gate: %v", err)
-	}
-	if g.scopeMode != "day" {
-		t.Fatalf("scopeMode = %q, want day (set before Gate creation)", g.scopeMode)
-	}
-
-	// Set after the Gate already exists: the memoized instance must also
-	// pick it up, not just future Gate(...) callers.
-	r.SetApprovalScope("run")
-	if g.scopeMode != "run" {
-		t.Fatalf("scopeMode = %q, want run (set after Gate creation)", g.scopeMode)
 	}
 }
 

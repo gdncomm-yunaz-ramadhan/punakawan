@@ -105,7 +105,6 @@ func TestAdvanceFollowsFullHappyPath(t *testing.T) {
 	path := []protocol.WorkflowRunState{
 		protocol.WorkflowRunStateContextBuilding,
 		protocol.WorkflowRunStatePlanning,
-		protocol.WorkflowRunStateAwaitingApproval,
 		protocol.WorkflowRunStateExecuting,
 		protocol.WorkflowRunStateReviewing,
 		protocol.WorkflowRunStateCompleted,

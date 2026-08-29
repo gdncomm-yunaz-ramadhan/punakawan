@@ -85,18 +85,19 @@ describe('manifest', () => {
     assert.deepEqual(parsed.permissions.secrets, ['ATLASSIAN_API_TOKEN', 'ATLASSIAN_EMAIL']);
   });
 
-  test('declares the write operation as side-effecting and requiring approval', () => {
-    assert.deepEqual(manifest.operations['atlassian.addJiraComment'], { side_effect: true, approval: 'required' });
+  test('declares the write operation as side-effecting with no approval member', () => {
+    assert.deepEqual(manifest.operations['atlassian.addJiraComment'], { side_effect: true });
+    assert.equal('approval' in manifest.operations['atlassian.addJiraComment'], false);
   });
 
   test('declares read operations as side-effect free', () => {
     for (const op of ['atlassian.searchJira', 'atlassian.searchConfluence', 'atlassian.getJiraIssue', 'atlassian.getConfluencePage']) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
-      assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 
-  test('declares the new write operations as side-effecting and requiring approval', () => {
+  test('declares the new write operations as side-effecting with no approval member', () => {
     for (const op of [
       'atlassian.transitionJiraIssue',
       'atlassian.editJiraIssueFields',
@@ -108,7 +109,8 @@ describe('manifest', () => {
       'atlassian.uploadJiraAttachment',
       'atlassian.deleteJiraAttachment',
     ]) {
-      assert.deepEqual(manifest.operations[op], { side_effect: true, approval: 'required' }, `${op} should require approval`);
+      assert.equal(manifest.operations[op]?.side_effect, true, `${op} should be side_effect: true`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 
@@ -124,7 +126,7 @@ describe('manifest', () => {
       'atlassian.listJiraSprints',
     ]) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
-      assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 });

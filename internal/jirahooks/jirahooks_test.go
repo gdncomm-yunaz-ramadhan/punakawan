@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
@@ -41,11 +40,6 @@ func (f *fakeAdapterCaller) Call(ctx context.Context, method string, params any)
 	return json.RawMessage(`{"ok":true}`), nil
 }
 
-func approvalRequired() *protocol.AdapterManifestOperationsValueApproval {
-	v := protocol.AdapterManifestOperationsValueApprovalRequired
-	return &v
-}
-
 func testManifest() protocol.AdapterManifest {
 	return protocol.AdapterManifest{
 		Id: "atlassian", Name: "atlassian", Version: "0.1.0", Protocol: "punakawan.adapter/v1",
@@ -57,9 +51,9 @@ func testManifest() protocol.AdapterManifest {
 		},
 		Operations: protocol.AdapterManifestOperations{
 			"atlassian.getTransitionsForJiraIssue": {SideEffect: false},
-			"atlassian.addJiraComment":             {SideEffect: true, Approval: approvalRequired()},
-			"atlassian.addWorklog":                 {SideEffect: true, Approval: approvalRequired()},
-			"atlassian.transitionJiraIssue":        {SideEffect: true, Approval: approvalRequired()},
+			"atlassian.addJiraComment":             {SideEffect: true},
+			"atlassian.addWorklog":                 {SideEffect: true},
+			"atlassian.transitionJiraIssue":        {SideEffect: true},
 		},
 	}
 }
@@ -74,12 +68,9 @@ func (f *fakeGateResolver) Gate(ctx context.Context, adapterID string) (*adapter
 
 // newTestHook builds a JiraHook wired to a fake adapter caller and a fresh
 // delivery.Store/storage kernel. Returns the hook, the underlying
-// delivery.Store (for capturing requirements), the fake caller (for
-// asserting on calls made), and an approve func a test calls with a
-// delivery id - Handle's own runID is the delivery id (see JiraHook.Handle),
-// and internal/adapters.Gate scopes one approval per run id, so approving
-// for a run must happen after that delivery id is known, not up front.
-func newTestHook(t *testing.T, cfg *jiraworkflow.Config) (hook *JiraHook, store *delivery.Store, fc *fakeAdapterCaller, approve func(deliveryID string)) {
+// delivery.Store (for capturing requirements), and the fake caller (for
+// asserting on calls made).
+func newTestHook(t *testing.T, cfg *jiraworkflow.Config) (hook *JiraHook, store *delivery.Store, fc *fakeAdapterCaller) {
 	t.Helper()
 	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
@@ -87,25 +78,12 @@ func newTestHook(t *testing.T, cfg *jiraworkflow.Config) (hook *JiraHook, store 
 	}
 	t.Cleanup(func() { db.Close() })
 
-	approvalStore := approvals.New(db, "test-project")
 	fc = &fakeAdapterCaller{}
-	gate := adapters.NewGate("atlassian", testManifest(), fc, approvalStore)
+	gate := adapters.NewGate("atlassian", testManifest(), fc)
 
 	store = delivery.NewStore(db)
 	hook = &JiraHook{db: db, store: store, registry: &fakeGateResolver{gate: gate}, cfg: cfg}
-	approve = func(deliveryID string) {
-		t.Helper()
-		// addJiraComment and transitionJiraIssue share one run-scoped
-		// approval (internal/adapters.Gate's own semantics), so requesting
-		// against either op and approving covers both.
-		if _, err := gate.RequestApproval(deliveryID, "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-			t.Fatalf("RequestApproval(addJiraComment): %v", err)
-		}
-		if err := gate.Approve(deliveryID, "tester"); err != nil {
-			t.Fatalf("Approve: %v", err)
-		}
-	}
-	return hook, store, fc, approve
+	return hook, store, fc
 }
 
 // captureJiraRequirement seeds orchestrationID with a Jira-sourced
@@ -121,7 +99,7 @@ func captureJiraRequirement(t *testing.T, store *delivery.Store, orchestrationID
 
 func TestHandle_AutoLogOffIsANoOp(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: false, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -139,7 +117,7 @@ func TestHandle_AutoLogOffIsANoOp(t *testing.T) {
 
 func TestHandle_NoLinkedIssueSkipsSilently(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -158,14 +136,13 @@ func TestHandle_NoLinkedIssueSkipsSilently(t *testing.T) {
 
 func TestHandle_PostsCommentForConfiguredEventAndDedupesOnRetry(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 
 	event := deliveryhooks.Event{
 		Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1,
@@ -199,14 +176,13 @@ func TestHandle_PostsCommentForConfiguredEventAndDedupesOnRetry(t *testing.T) {
 
 func TestHandle_LaneEventsDeduplicatePerLane(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"implementation.started", "implementation.completed"}}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 
 	for _, eventType := range []deliveryhooks.EventType{
 		deliveryhooks.EventImplementationStarted,
@@ -233,7 +209,7 @@ func TestHandle_LaneEventsDeduplicatePerLane(t *testing.T) {
 
 func TestHandle_EventNotInCommentEventsDoesNothing(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.completed"}}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -251,7 +227,7 @@ func TestHandle_EventNotInCommentEventsDoesNothing(t *testing.T) {
 
 func TestHandle_TransitionOnCompleteFiresMatchingTransition(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, TransitionOnComplete: true}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	fc.responses = map[string]string{
 		"atlassian.getTransitionsForJiraIssue": `{"transitions":[{"id":"31","name":"Close","toStatus":{"id":"3","name":"Done"}}]}`,
 	}
@@ -261,7 +237,6 @@ func TestHandle_TransitionOnCompleteFiresMatchingTransition(t *testing.T) {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 
 	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryCompleted, DeliveryID: orch.Id, Revision: 1}); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -286,7 +261,7 @@ func TestHandle_TransitionOnCompleteFiresMatchingTransition(t *testing.T) {
 
 func TestHandle_TransitionOnCompleteFalseNeverCallsTransition(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, TransitionOnComplete: false}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -304,7 +279,7 @@ func TestHandle_TransitionOnCompleteFalseNeverCallsTransition(t *testing.T) {
 
 func TestHandle_FailedCommentIsNotMarkedFiredAndRetriesLater(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	fc.failOps = map[string]bool{"atlassian.addJiraComment": true}
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
@@ -312,7 +287,6 @@ func TestHandle_FailedCommentIsNotMarkedFiredAndRetriesLater(t *testing.T) {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 	event := deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}
 
 	if err := hook.Handle(ctx, event); err == nil {
@@ -335,7 +309,7 @@ func TestHandle_FailedCommentIsNotMarkedFiredAndRetriesLater(t *testing.T) {
 
 func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, LogWork: true}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-worklog", delivery.NewID(), nil)
 	if err != nil {
@@ -353,7 +327,6 @@ func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordWorkLog: %v", err)
 	}
-	approve(orch.Id)
 
 	event := deliveryhooks.Event{
 		Type: deliveryhooks.EventWorkLogged, DeliveryID: orch.Id, EntityID: entry.ID, Revision: 2,

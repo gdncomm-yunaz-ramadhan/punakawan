@@ -16,11 +16,11 @@ describe('manifest', () => {
     assert.doesNotThrow(() => AdapterManifestSchema.parse(manifest));
   });
 
-  test('declares every write operation as approval-required', () => {
+  test('declares every write operation as side-effecting with no approval member', () => {
     const writeOps = ['github.createPullRequest', 'github.addLabels', 'github.requestReviewers', 'github.createPullRequestReview', 'github.replyToReviewComment', 'github.resolveReviewThread'];
     for (const op of writeOps) {
       assert.equal(manifest.operations[op]?.side_effect, true, `${op} should be side_effect: true`);
-      assert.equal(manifest.operations[op]?.approval, 'required', `${op} should require approval`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 

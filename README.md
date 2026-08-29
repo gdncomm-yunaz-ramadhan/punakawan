@@ -14,11 +14,18 @@ and delivery.
 - **Project** identifies a repository and its default branch.
 - **Workflow** is a reusable, role-aware delivery definition.
 - **Plan** is an immutable, reviewable revision of intended work.
-- **Delivery** records execution state, questions, approvals, workers, commits,
-  pull requests, verification, review, Jira activity, and timeline events.
+- **Delivery** records execution state, clarification questions, workers,
+  commits, pull requests, verification, review, Jira activity, and timeline
+  events.
 
 Semar orchestrates, Gareng challenges risk and feasibility, Petruk plans and
-implements, and Bagong independently reviews the result.
+implements, and Bagong independently reviews the result. A connected agent
+executes complete, authorized work without asking for confirmation; it only
+returns `needs_input` when required context is missing or a decision has
+more than one defensible outcome. An adapter operation declaring
+`side_effect: true` is meant to route that write through schema validation,
+a durable outbox, and an audit trail on the way to the target system - it
+never means the write is held for a human to confirm.
 
 ## MCP tools
 

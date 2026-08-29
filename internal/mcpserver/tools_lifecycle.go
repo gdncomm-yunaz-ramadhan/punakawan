@@ -229,7 +229,6 @@ type AssessJiraDeliveryInput struct {
 	SnapshotTitle  string `json:"snapshot_title,omitempty"`
 	SnapshotBody   string `json:"snapshot_body,omitempty"`
 	Clarity        string `json:"clarity"`
-	Approval       string `json:"approval"`
 	Rationale      string `json:"rationale"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
@@ -256,7 +255,7 @@ func assessJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 			}
 			snapshotID = snapshot.ID
 		}
-		assessment, err := store.AssessJira(ctx, key, in.ExecutionID, in.SessionID, snapshotID, in.Clarity, in.Approval, in.Rationale)
+		assessment, err := store.AssessJira(ctx, key, in.ExecutionID, in.SessionID, snapshotID, in.Clarity, in.Rationale)
 		if err != nil {
 			return nil, AssessJiraDeliveryOutput{}, fmt.Errorf("mcpserver: assess Jira delivery: %w", err)
 		}
@@ -408,38 +407,6 @@ func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 			return nil, HydrateJiraDeliveryOutput{}, err
 		}
 		return nil, HydrateJiraDeliveryOutput{Snapshot: *snapshot, View: *view}, nil
-	}
-}
-
-type ApproveJiraDeliveryInput struct {
-	ExecutionID string `json:"execution_id"`
-	ApprovedBy  string `json:"approved_by"`
-}
-type ApproveJiraDeliveryOutput struct {
-	View delivery.DeliveryView `json:"view"`
-}
-
-func approveJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ApproveJiraDeliveryInput) (*mcp.CallToolResult, ApproveJiraDeliveryOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in ApproveJiraDeliveryInput) (*mcp.CallToolResult, ApproveJiraDeliveryOutput, error) {
-		if in.ExecutionID == "" || in.ApprovedBy == "" {
-			return nil, ApproveJiraDeliveryOutput{}, fmt.Errorf("mcpserver: approve Jira delivery requires execution_id and approved_by")
-		}
-		store, err := OpenDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, ApproveJiraDeliveryOutput{}, err
-		}
-		if err := jirahooks.NewLifecycle(store, a.AdapterRegistry).ApproveWrites(ctx, in.ExecutionID, in.ApprovedBy); err != nil {
-			return nil, ApproveJiraDeliveryOutput{}, fmt.Errorf("mcpserver: approve Jira delivery: %w", err)
-		}
-		execution, err := store.GetExecution(ctx, in.ExecutionID)
-		if err != nil {
-			return nil, ApproveJiraDeliveryOutput{}, err
-		}
-		view, err := store.BuildDeliveryView(ctx, execution.OrchestrationID)
-		if err != nil {
-			return nil, ApproveJiraDeliveryOutput{}, err
-		}
-		return nil, ApproveJiraDeliveryOutput{View: *view}, nil
 	}
 }
 

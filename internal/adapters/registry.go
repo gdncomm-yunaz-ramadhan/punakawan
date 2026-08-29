@@ -7,7 +7,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -40,15 +39,10 @@ type AdapterSpec struct {
 // capabilities cannot silently drift apart.
 type Registry struct {
 	specs map[string]AdapterSpec
-	// approvals lazily resolves the shared approval store on first use, so a
-	// Registry built at app.Load never forces the SQLite kernel open until an
-	// adapter operation actually needs to gate on an approval.
-	approvals func() (*approvals.Store, error)
 
-	mu            sync.Mutex
-	clients       map[string]*Client
-	gates         map[string]*Gate
-	approvalScope string
+	mu      sync.Mutex
+	clients map[string]*Client
+	gates   map[string]*Gate
 	// syncQueue lazily resolves the shared sync queue on first use, so a
 	// Registry built at app.Load never forces the SQLite kernel open until an
 	// adapter write actually fails and needs recording.
@@ -57,29 +51,12 @@ type Registry struct {
 	syncQueue func() (*syncqueue.Queue, error)
 }
 
-// NewRegistry constructs a Registry for the given adapter specs. store is a
-// provider resolved lazily the first time a Gate is created, not at
-// construction. Every Gate it creates defaults to per-run_id approval scope;
-// call SetApprovalScope to widen it for every adapter this Registry serves.
-func NewRegistry(specs map[string]AdapterSpec, store func() (*approvals.Store, error)) *Registry {
+// NewRegistry constructs a Registry for the given adapter specs.
+func NewRegistry(specs map[string]AdapterSpec) *Registry {
 	return &Registry{
-		specs:     specs,
-		approvals: store,
-		clients:   make(map[string]*Client),
-		gates:     make(map[string]*Gate),
-	}
-}
-
-// SetApprovalScope sets the approval scope (policy.ApprovalsPolicy.Scope)
-// applied to every Gate this Registry creates from this point on, and to
-// every Gate already memoized (punokawan-cy8). Call once, before the first
-// Gate(ctx, ...) call, e.g. right after NewRegistry in internal/app.
-func (r *Registry) SetApprovalScope(mode string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.approvalScope = mode
-	for _, g := range r.gates {
-		g.SetApprovalScope(mode)
+		specs:   specs,
+		clients: make(map[string]*Client),
+		gates:   make(map[string]*Gate),
 	}
 }
 
@@ -152,14 +129,7 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 		return nil, fmt.Errorf("adapters: initialize %q: %w", adapterID, err)
 	}
 
-	store, err := r.approvals()
-	if err != nil {
-		_ = client.Kill()
-		return nil, fmt.Errorf("adapters: open approval store for %q: %w", adapterID, err)
-	}
-
-	gate := NewGate(adapterID, manifest, client, store)
-	gate.SetApprovalScope(r.approvalScope)
+	gate := NewGate(adapterID, manifest, client)
 	gate.SetSyncQueue(r.syncQueue)
 	r.clients[adapterID] = client
 	r.gates[adapterID] = gate

@@ -140,6 +140,21 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 	}
 }
 
+// TestPublicToolsContainNoExecutionApprovalTools guards the removal of the
+// execution-approval contract: no tool that would let a caller gate or grant
+// authorization for adapter writes is exposed on the public MCP surface.
+func TestPublicToolsContainNoExecutionApprovalTools(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	names := listToolNames(t, cs)
+	for _, forbidden := range []string{"approve_jira_delivery", "approve_github_pr_review"} {
+		if names[forbidden] {
+			t.Fatalf("obsolete approval tool %q is registered", forbidden)
+		}
+	}
+}
+
 // callTool invokes a tool and decodes its structured output into out.
 func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any, out any) {
 	t.Helper()

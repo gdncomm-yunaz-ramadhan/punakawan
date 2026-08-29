@@ -109,7 +109,6 @@ type JiraAssessment struct {
 	SessionID   string    `json:"session_id,omitempty"`
 	SnapshotID  string    `json:"snapshot_id,omitempty"`
 	Clarity     string    `json:"clarity"`
-	Approval    string    `json:"approval"`
 	Rationale   string    `json:"rationale"`
 	AssessedAt  time.Time `json:"assessed_at"`
 }
@@ -636,12 +635,9 @@ func (s *Store) CaptureJiraSnapshot(ctx context.Context, idempotencyKey, executi
 	return &out, nil
 }
 
-func (s *Store) AssessJira(ctx context.Context, idempotencyKey, executionID, sessionID, snapshotID, clarity, approval, rationale string) (*JiraAssessment, error) {
-	if clarity != "clear" && clarity != "needs_clarification" && clarity != "blocked" {
+func (s *Store) AssessJira(ctx context.Context, idempotencyKey, executionID, sessionID, snapshotID, clarity, rationale string) (*JiraAssessment, error) {
+	if clarity != "clear" && clarity != "needs_clarification" {
 		return nil, fmt.Errorf("delivery: invalid Jira clarity")
-	}
-	if approval != "not_required" && approval != "pending" && approval != "approved" && approval != "rejected" {
-		return nil, fmt.Errorf("delivery: invalid Jira approval")
 	}
 	if strings.TrimSpace(rationale) == "" {
 		return nil, fmt.Errorf("delivery: assessment rationale is required")
@@ -667,8 +663,8 @@ func (s *Store) AssessJira(ctx context.Context, idempotencyKey, executionID, ses
 				return ErrScopeMismatch
 			}
 		}
-		out = JiraAssessment{ID: newID(), CaseID: exec.CaseID, ExecutionID: exec.ID, SessionID: sessionID, SnapshotID: snapshotID, Clarity: clarity, Approval: approval, Rationale: strings.TrimSpace(rationale), AssessedAt: now}
-		_, err := tx.ExecContext(ctx, `INSERT INTO jira_assessments (id, case_id, execution_id, session_id, snapshot_id, clarity, approval, rationale, assessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, out.ID, out.CaseID, out.ExecutionID, out.SessionID, out.SnapshotID, out.Clarity, out.Approval, out.Rationale, now.Format(timeLayout))
+		out = JiraAssessment{ID: newID(), CaseID: exec.CaseID, ExecutionID: exec.ID, SessionID: sessionID, SnapshotID: snapshotID, Clarity: clarity, Rationale: strings.TrimSpace(rationale), AssessedAt: now}
+		_, err := tx.ExecContext(ctx, `INSERT INTO jira_assessments (id, case_id, execution_id, session_id, snapshot_id, clarity, rationale, assessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, out.ID, out.CaseID, out.ExecutionID, out.SessionID, out.SnapshotID, out.Clarity, out.Rationale, now.Format(timeLayout))
 		return err
 	})
 	if err != nil {
@@ -1057,7 +1053,7 @@ func scanSnapshot(row lifecycleScanner) (*JiraSourceSnapshot, error) {
 func scanAssessment(row lifecycleScanner) (*JiraAssessment, error) {
 	var v JiraAssessment
 	var assessed string
-	if err := row.Scan(&v.ID, &v.CaseID, &v.ExecutionID, &v.SessionID, &v.SnapshotID, &v.Clarity, &v.Approval, &v.Rationale, &assessed); err != nil {
+	if err := row.Scan(&v.ID, &v.CaseID, &v.ExecutionID, &v.SessionID, &v.SnapshotID, &v.Clarity, &v.Rationale, &assessed); err != nil {
 		return nil, noRow(err)
 	}
 	var err error
@@ -1192,7 +1188,7 @@ func listSnapshots(ctx context.Context, q querier, caseID string) ([]JiraSourceS
 	return out, rows.Err()
 }
 func listAssessments(ctx context.Context, q querier, executionID string) ([]JiraAssessment, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, case_id, execution_id, session_id, snapshot_id, clarity, approval, rationale, assessed_at FROM jira_assessments WHERE execution_id = ? ORDER BY assessed_at, id`, executionID)
+	rows, err := q.QueryContext(ctx, `SELECT id, case_id, execution_id, session_id, snapshot_id, clarity, rationale, assessed_at FROM jira_assessments WHERE execution_id = ? ORDER BY assessed_at, id`, executionID)
 	if err != nil {
 		return nil, err
 	}

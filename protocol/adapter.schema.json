@@ -50,8 +50,7 @@
         "required": ["side_effect"],
         "additionalProperties": false,
         "properties": {
-          "side_effect": { "type": "boolean" },
-          "approval": { "type": "string", "enum": ["required"] }
+          "side_effect": { "type": "boolean" }
         }
       }
     }

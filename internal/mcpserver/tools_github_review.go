@@ -7,10 +7,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 type HydrateGitHubPullRequestInput struct {
@@ -131,75 +129,6 @@ func getGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToolReq
 	}
 }
 
-type ApproveGitHubPRReviewInput struct {
-	ReviewID       string `json:"review_id"`
-	ApprovedBy     string `json:"approved_by"`
-	IdempotencyKey string `json:"idempotency_key,omitempty"`
-}
-
-type ApproveGitHubPRReviewOutput struct {
-	Review delivery.GitHubPRReview `json:"review"`
-}
-
-func approveGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ApproveGitHubPRReviewInput) (*mcp.CallToolResult, ApproveGitHubPRReviewOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in ApproveGitHubPRReviewInput) (*mcp.CallToolResult, ApproveGitHubPRReviewOutput, error) {
-		if strings.TrimSpace(in.ReviewID) == "" || strings.TrimSpace(in.ApprovedBy) == "" {
-			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: approve GitHub PR review requires review_id and approved_by")
-		}
-		store, err := OpenDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, ApproveGitHubPRReviewOutput{}, err
-		}
-		review, err := store.GetGitHubPRReview(ctx, in.ReviewID)
-		if err != nil {
-			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: get GitHub PR review for approval: %w", err)
-		}
-		if review.Status != "proposed" {
-			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: approve GitHub PR review: %w", delivery.ErrInvalidState)
-		}
-		params, err := githubPRReviewAdapterParams(review)
-		if err != nil {
-			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: prepare GitHub PR review approval: %w", err)
-		}
-		runID, err := githubPRReviewApprovalRunID(review.DeliveryExecutionID)
-		if err != nil {
-			return nil, ApproveGitHubPRReviewOutput{}, err
-		}
-		gate, err := a.AdapterRegistry.Gate(ctx, "github")
-		if err != nil {
-			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: open GitHub adapter: %w", err)
-		}
-		if gate.RequiresApproval(githubCreatePullRequestReviewOperation) {
-			approval, err := gate.RequestApproval(runID, githubCreatePullRequestReviewOperation, protocol.ApprovalRecordRequestedBySemar, adapters.BuildApprovalPreview(githubCreatePullRequestReviewOperation, params))
-			if err != nil {
-				return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: request GitHub PR review approval: %w", err)
-			}
-			switch approval.Status {
-			case protocol.ApprovalRecordStatusPending:
-				if err := gate.Approve(runID, strings.TrimSpace(in.ApprovedBy)); err != nil {
-					return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: approve GitHub PR review submission: %w", err)
-				}
-			case protocol.ApprovalRecordStatusApproved:
-				// This delivery execution already has its one retained approval.
-			default:
-				return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: GitHub PR review submission approval for delivery execution %q is %s", review.DeliveryExecutionID, approval.Status)
-			}
-		}
-		key := strings.TrimSpace(in.IdempotencyKey)
-		if key == "" {
-			key = delivery.NewID()
-		}
-		if err := store.ApproveGitHubPRReview(ctx, key, review.ID); err != nil {
-			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: approve GitHub PR review: %w", err)
-		}
-		approved, err := store.GetGitHubPRReview(ctx, review.ID)
-		if err != nil {
-			return nil, ApproveGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: get approved GitHub PR review: %w", err)
-		}
-		return nil, ApproveGitHubPRReviewOutput{Review: *approved}, nil
-	}
-}
-
 type SubmitGitHubPRReviewInput struct {
 	ReviewID       string `json:"review_id"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
@@ -225,7 +154,7 @@ func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallTool
 		if review.Status == "submitted" {
 			return nil, SubmitGitHubPRReviewOutput{Review: *review}, nil
 		}
-		if review.Status != "proposed" && review.Status != "approved" {
+		if review.Status != "proposed" {
 			return nil, SubmitGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: submit GitHub PR review: %w", delivery.ErrInvalidState)
 		}
 		key := strings.TrimSpace(in.IdempotencyKey)
@@ -257,14 +186,6 @@ func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallTool
 }
 
 const githubCreatePullRequestReviewOperation = "github.createPullRequestReview"
-
-func githubPRReviewApprovalRunID(executionID string) (string, error) {
-	executionID = strings.TrimSpace(executionID)
-	if executionID == "" {
-		return "", fmt.Errorf("mcpserver: GitHub PR review requires delivery_execution_id for approval-scoped submission")
-	}
-	return "github-pr-review-execution-" + executionID, nil
-}
 
 func resolveGitHubPRReviewFailure(ctx context.Context, store *delivery.Store, key, reviewID string, cause error) error {
 	if _, err := store.ResolveGitHubPRReview(ctx, key, reviewID, "", cause.Error()); err != nil {

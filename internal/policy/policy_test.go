@@ -3,6 +3,7 @@ package policy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -17,8 +18,8 @@ func TestLoadFromFixture(t *testing.T) {
 	if p.Capabilities.Git.Commit != LevelAllow {
 		t.Errorf("git.commit: got %q, want %q", p.Capabilities.Git.Commit, LevelAllow)
 	}
-	if p.Capabilities.Git.Push != LevelRequireApproval {
-		t.Errorf("git.push: got %q, want %q", p.Capabilities.Git.Push, LevelRequireApproval)
+	if p.Capabilities.Git.Push != LevelAllow {
+		t.Errorf("git.push: got %q, want %q", p.Capabilities.Git.Push, LevelAllow)
 	}
 	if p.Capabilities.Git.ForcePush != LevelDeny {
 		t.Errorf("git.force_push: got %q, want %q", p.Capabilities.Git.ForcePush, LevelDeny)
@@ -29,26 +30,20 @@ func TestLoadFromFixture(t *testing.T) {
 	if p.Capabilities.Execution.TimeoutSeconds != 600 {
 		t.Errorf("execution.timeout_seconds: got %d, want 600", p.Capabilities.Execution.TimeoutSeconds)
 	}
-	if p.Approvals.Scope != "run" {
-		t.Errorf("approvals.scope: got %q, want the Default() value \"run\" to survive a fixture that doesn't override it", p.Approvals.Scope)
-	}
 }
 
-func TestLoadApprovalsScopeOverride(t *testing.T) {
+func TestLoadRejectsRemovedApprovalLevel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(path, []byte("approvals:\n  scope: day\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("capabilities:\n  git:\n    push: require-approval\n"), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	p, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected Load to reject the removed require-approval level")
 	}
-	if p.Approvals.Scope != "day" {
-		t.Errorf("approvals.scope: got %q, want day", p.Approvals.Scope)
-	}
-	// Everything else must still fall back to Default(), not zero out.
-	if p.Capabilities.Git.ForcePush != LevelDeny {
-		t.Errorf("git.force_push: got %q, want the Default() value to survive an unrelated override", p.Capabilities.Git.ForcePush)
+	want := `policy: level "require-approval" was removed; choose "allow" or "deny"`
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), want)
 	}
 }
 

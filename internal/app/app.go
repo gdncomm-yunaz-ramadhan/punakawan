@@ -1,7 +1,7 @@
 // Package app wires a discovered workspace to the services built from it
-// (policy, tool supervisor, approvals, git inspection, worktree lifecycle),
-// giving the CLI (and eventually the daemon, §3.1) a single bootstrap path
-// instead of each entrypoint wiring these individually.
+// (policy, tool supervisor, git inspection, worktree lifecycle), giving the
+// CLI (and eventually the daemon, §3.1) a single bootstrap path instead of
+// each entrypoint wiring these individually.
 package app
 
 import (
@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
@@ -59,9 +58,6 @@ type App struct {
 
 	storageMu sync.Mutex
 	storageDB *storage.DB
-
-	approvalsMu    sync.Mutex
-	approvalsStore *approvals.Store
 
 	planMu    sync.Mutex
 	planStore *plan.Store
@@ -195,16 +191,12 @@ func load(ws *workspace.Workspace) (*App, error) {
 		a.ephemeralRoot = ws.Root
 	}
 
-	// The approval store and sync queue now live in the shared SQLite kernel,
-	// opened lazily so a command that never touches an approval or records a
-	// failed adapter write never pays to open the kernel. The registry
-	// therefore takes a provider (a.OpenApprovals, a.OpenSyncQueue) rather
-	// than an already-opened store, deferring the open to the first
-	// operation that actually needs it. The worktree manager needs no
-	// approval store at all: creating a worktree is internal execution
-	// infrastructure, not a human-approval-gated action.
-	registry := adapters.NewRegistry(specs, a.OpenApprovals)
-	registry.SetApprovalScope(pol.Approvals.Scope)
+	// The sync queue now lives in the shared SQLite kernel, opened lazily so
+	// a command that never records a failed adapter write never pays to open
+	// the kernel. The registry therefore takes a provider (a.OpenSyncQueue)
+	// rather than an already-opened queue, deferring the open to the first
+	// operation that actually needs it.
+	registry := adapters.NewRegistry(specs)
 	registry.SetSyncQueue(a.OpenSyncQueue)
 	a.AdapterRegistry = registry
 	a.Worktrees = gitops.NewWorktreeManager(sup, pol)
@@ -391,48 +383,11 @@ func (a *App) OpenPlanExec() (*planexec.Store, error) {
 	return a.planExecStore, nil
 }
 
-// OpenApprovals lazily opens the approval store, memoizing the result, scoped
-// to this workspace's id within the shared storage kernel. It is a thin
-// scope over the one shared *storage.DB rather than a per-project server,
-// so it starts nothing: the deferral simply avoids opening the kernel for
-// commands that never touch an approval. The adapter registry and
-// worktree manager hold this method as a provider, so the kernel opens on
-// the first approval-gated operation, not at Load.
-func (a *App) OpenApprovals() (*approvals.Store, error) {
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	a.approvalsMu.Lock()
-	defer a.approvalsMu.Unlock()
-
-	if a.approvalsStore != nil {
-		return a.approvalsStore, nil
-	}
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	db, err := a.OpenStorage(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	store := approvals.New(db, a.Workspace.ID)
-	// One-time import of any pre-kernel JSONL approvals file this workspace
-	// still has on disk. A failure is non-fatal: the store must still open,
-	// so the warning is logged rather than returned (losing old data beats a
-	// store that will not open). Runs once - OpenApprovals memoizes the store.
-	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
-		slog.Warn("approvals: legacy import failed; opening without imported data", "error", warn)
-	}
-	a.approvalsStore = store
-	return a.approvalsStore, nil
-}
-
 // OpenLearning lazily opens the learning-proposal side-store, memoizing the
-// result, scoped to this workspace's id within the shared storage kernel.
-// Like OpenApprovals, it is a thin scope over the one
-// shared *storage.DB rather than a per-project server, so it starts nothing:
-// the deferral simply avoids opening the kernel for commands that never touch
-// a learning proposal.
+// result, scoped to this workspace's id within the shared storage kernel. It
+// is a thin scope over the one shared *storage.DB rather than a per-project
+// server, so it starts nothing: the deferral simply avoids opening the
+// kernel for commands that never touch a learning proposal.
 func (a *App) OpenLearning() (*learning.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -452,8 +407,9 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 	}
 	store := learning.New(db, a.Workspace.ID)
 	// One-time import of any pre-kernel JSONL proposals file this workspace
-	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
-	// OpenLearning memoizes the store.
+	// still has on disk. A failure is non-fatal: the store must still open,
+	// so the warning is logged rather than returned (losing old data beats a
+	// store that will not open). Runs once - OpenLearning memoizes the store.
 	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
 		slog.Warn("learning: legacy import failed; opening without imported data", "error", warn)
 	}
@@ -462,13 +418,12 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 }
 
 // OpenSyncQueue lazily opens the outbound-adapter-write sync queue, memoizing
-// the result, scoped to this workspace's id within the shared storage kernel.
-// Like OpenApprovals, it is a thin scope over the one
-// shared *storage.DB rather than a per-project server, so it starts nothing:
-// the deferral simply avoids opening the kernel for commands that never record
-// or inspect a failed adapter write. The adapter registry holds this method as
-// a provider, so the kernel opens on the first adapter write that fails, not at
-// Load.
+// the result, scoped to this workspace's id within the shared storage
+// kernel. It is a thin scope over the one shared *storage.DB rather than a
+// per-project server, so it starts nothing: the deferral simply avoids
+// opening the kernel for commands that never record or inspect a failed
+// adapter write. The adapter registry holds this method as a provider, so
+// the kernel opens on the first adapter write that fails, not at Load.
 func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -488,8 +443,9 @@ func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
 	}
 	queue := syncqueue.New(db, a.Workspace.ID)
 	// One-time import of any pre-kernel JSONL sync-queue file this workspace
-	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
-	// OpenSyncQueue memoizes the queue.
+	// still has on disk. A failure is non-fatal: the queue must still open,
+	// so the warning is logged rather than returned (losing old data beats a
+	// queue that will not open). Runs once - OpenSyncQueue memoizes the queue.
 	if warn := queue.ImportLegacy(a.Workspace.Root); warn != nil {
 		slog.Warn("syncqueue: legacy import failed; opening without imported data", "error", warn)
 	}
@@ -596,10 +552,6 @@ func (a *App) Close() error {
 	a.knowledgeMu.Lock()
 	a.knowledgeStore = nil
 	a.knowledgeMu.Unlock()
-
-	a.approvalsMu.Lock()
-	a.approvalsStore = nil
-	a.approvalsMu.Unlock()
 
 	a.learningMu.Lock()
 	a.learningStore = nil

@@ -677,51 +677,6 @@ func TestGlobalSearchSourceFusesAcrossWorkspaces(t *testing.T) {
 	}
 }
 
-func TestApprovalSourceListFiltersByStatus(t *testing.T) {
-	a := newTestApp(t)
-	as := &ApprovalSource{App: a}
-
-	rec := protocol.ApprovalRecord{
-		Id:          "appr-1",
-		RunId:       "run-1",
-		Operation:   protocol.ApprovalRecordOperationGitPush,
-		RequestedBy: protocol.ApprovalRecordRequestedByPetruk,
-		Status:      protocol.ApprovalRecordStatusPending,
-		CreatedAt:   time.Now().UTC(),
-	}
-	store, err := a.OpenApprovals()
-	if err != nil {
-		t.Fatalf("OpenApprovals: %v", err)
-	}
-	if err := store.Append(rec); err != nil {
-		t.Fatalf("Approvals.Append: %v", err)
-	}
-
-	all, err := as.List(context.Background(), a.Workspace.ID, contract.ApprovalFilter{})
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(all) != 1 {
-		t.Fatalf("List = %+v, want 1", all)
-	}
-
-	pending, err := as.List(context.Background(), a.Workspace.ID, contract.ApprovalFilter{Status: "pending"})
-	if err != nil {
-		t.Fatalf("List(pending): %v", err)
-	}
-	if len(pending) != 1 {
-		t.Fatalf("List(pending) = %+v, want 1", pending)
-	}
-
-	approved, err := as.List(context.Background(), a.Workspace.ID, contract.ApprovalFilter{Status: "approved"})
-	if err != nil {
-		t.Fatalf("List(approved): %v", err)
-	}
-	if len(approved) != 0 {
-		t.Fatalf("List(approved) = %+v, want 0", approved)
-	}
-}
-
 func TestWorkspaceSourceGetIncludesGitHealth(t *testing.T) {
 	requireBd(t)
 	a := newTestApp(t)

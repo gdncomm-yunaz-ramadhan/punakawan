@@ -281,6 +281,105 @@ func TestConcurrentReadersDuringWrite(t *testing.T) {
 	}
 }
 
+func TestRemoveExecutionApprovalsMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	ctx := context.Background()
+
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version    INTEGER PRIMARY KEY,
+			name       TEXT NOT NULL,
+			checksum   TEXT NOT NULL,
+			applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+		)`); err != nil {
+		t.Fatalf("bootstrap schema_migrations: %v", err)
+	}
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	for _, m := range migrations {
+		if m.version >= 26 {
+			continue
+		}
+		if err := applyMigration(ctx, raw, m); err != nil {
+			t.Fatalf("apply migration %04d: %v", m.version, err)
+		}
+	}
+
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO approvals (project_id, id, data) VALUES ('proj-1', 'appr-1', '{"status":"pending"}')`,
+	); err != nil {
+		t.Fatalf("seed pending approval: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO delivery_cases (id, jira_source_key, jira_issue_key, status, created_at, updated_at)
+		 VALUES ('case-1', 'jira:ABC-1', 'ABC-1', 'active', '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed delivery_cases: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO jira_assessments (id, case_id, execution_id, session_id, snapshot_id, clarity, approval, rationale, assessed_at)
+		 VALUES ('assess-1', 'case-1', 'exec-1', '', '', 'clear', 'approved', 'looks good', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed jira_assessments: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO github_pr_reviews (id, repository, pull_request_number, head_sha, findings_json, body, verdict, status, delivery_execution_id, external_review_id, created_at, updated_at, failure)
+		 VALUES ('review-1', 'org/repo', 1, 'deadbeef', '[]', 'lgtm', 'APPROVE', 'approved', 'exec-1', '', '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z', '')`,
+	); err != nil {
+		t.Fatalf("seed github_pr_reviews: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (apply remaining migrations): %v", err)
+	}
+	defer db.Close()
+
+	var approvalsTableCount int
+	if err := db.write.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'approvals'`,
+	).Scan(&approvalsTableCount); err != nil {
+		t.Fatalf("check approvals table: %v", err)
+	}
+	if approvalsTableCount != 0 {
+		t.Fatal("approvals table still exists after migration")
+	}
+
+	var clarity, rationale string
+	if err := db.write.QueryRow(
+		`SELECT clarity, rationale FROM jira_assessments WHERE id = 'assess-1'`,
+	).Scan(&clarity, &rationale); err != nil {
+		t.Fatalf("read migrated jira_assessments row: %v", err)
+	}
+	if clarity != "clear" || rationale != "looks good" {
+		t.Fatalf("jira_assessments row = clarity=%q rationale=%q, want clarity=clear rationale=%q", clarity, rationale, "looks good")
+	}
+
+	var reviewStatus string
+	if err := db.write.QueryRow(
+		`SELECT status FROM github_pr_reviews WHERE id = 'review-1'`,
+	).Scan(&reviewStatus); err != nil {
+		t.Fatalf("read migrated github_pr_reviews row: %v", err)
+	}
+	if reviewStatus != "proposed" {
+		t.Fatalf("github_pr_reviews status = %q, want proposed", reviewStatus)
+	}
+
+	if _, err := db.write.Exec(`UPDATE github_pr_reviews SET status = 'approved' WHERE id = 'review-1'`); err == nil {
+		t.Fatal("expected the rebuilt github_pr_reviews CHECK constraint to reject status = 'approved'")
+	}
+}
+
 func TestCheckLocationAllowsTempDir(t *testing.T) {
 	if err := CheckLocation(filepath.Join(t.TempDir(), "x.db")); err != nil {
 		t.Fatalf("CheckLocation on local temp dir: %v", err)

@@ -171,6 +171,23 @@ func TestStoreIncrementalReadRecoversFromTruncatedFile(t *testing.T) {
 	}
 }
 
+// TestLegacyAwaitingApprovalResumesAsExecuting guards the removal of the
+// approval-gated workflow state: a run persisted before that state was
+// retired must still decode, resuming as executing rather than failing to
+// load or getting stuck on a state that no longer exists.
+func TestLegacyAwaitingApprovalResumesAsExecuting(t *testing.T) {
+	store := newTestStore(t)
+	appendRaw(t, store.path, `{"id":"run-1","workspace":"ws","workflow_name":"feature-delivery","state":"awaiting-approval","created_at":"2026-08-29T00:00:00Z","updated_at":"2026-08-29T00:00:00Z"}`+"\n")
+
+	run, err := store.Get("run-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if run.State != protocol.WorkflowRunStateExecuting {
+		t.Fatalf("state = %q, want executing", run.State)
+	}
+}
+
 // TestStoreIncrementalReadSeenByASeparateStoreInstance confirms the cache is
 // purely a same-process read optimization, not a source of staleness across
 // processes: a second Store instance opened against the same directory must
