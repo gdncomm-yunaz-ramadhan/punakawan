@@ -1,0 +1,72 @@
+internal/workflow/store.go
+  c81065fbff0350f9 10,120,140-155
+docs/development.md
+  c81065fbff0350f9 1-10
+internal/workflow/workflow_test.go
+  c81065fbff0350f9 4,11-30,155-167
+scripts/repo_hygiene_test.sh
+  c81065fbff0350f9 1-20
+Makefile
+  c81065fbff0350f9 1,7-10,22,25-26,42-49
+internal/panel/assets/dist/index.html
+  d8bb17b4f3dff06a 12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "52738ad97d60a5d50649645834fad5f5640eacbf",
+  "prompts": {
+    "2808621207fa03ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a042b6-1e6d-7080-9d7a-a9b81989d8a4",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4111,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 127,
+      "total_deletions": 5,
+      "accepted_lines": 127,
+      "overriden_lines": 0
+    },
+    "d8bb17b4f3dff06a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0433f-dcb2-7de0-a747-d5d5f79ecb87",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 2,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
