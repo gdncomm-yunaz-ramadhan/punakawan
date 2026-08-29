@@ -1,0 +1,90 @@
+internal/panel/api/plan_handler.go
+  c81065fbff0350f9 5,7,9-10,13-24,26-31,34-37,39-40,43-44,48-51,53-79,82-86,88-89,97-105,107-115,119-126,128-129,133-134,136-148,150,159-172,175-179,181
+internal/delivery/deliveryview_test.go
+  c81065fbff0350f9 511-512
+web/panel/tests/DeliveryDetail.test.ts
+  c81065fbff0350f9 55
+internal/storage/migrations/0028_plan_integrity.sql
+  c81065fbff0350f9 1-79
+internal/delivery/lifecycle.go
+  c81065fbff0350f9 141-152,945-1008,1367-1368,1373-1382,1518
+internal/plan/plan.go
+  c81065fbff0350f9 97-102
+internal/planimport/import_test.go
+  c81065fbff0350f9 1-163
+internal/panel/server/server.go
+  c81065fbff0350f9 14,23,190-201
+web/panel/src/lib/api/client.ts
+  c81065fbff0350f9 596,598-603,605-608,613,615-617,620-628,632-633,640-646
+internal/panel/api/plan_handler_test.go
+  c81065fbff0350f9 4,8,11-14,17-20,22-33,36-38,40-42,44-45,47-56,62,77,80-81,84-85,90,94,101,105,120-124,126-127,134,143-172,174-189,191-192,194-195,200,205,212,217
+internal/jirahooks/lifecycle.go
+  c81065fbff0350f9 5-6,28-103,116-117,119,121-122,124-125,128,132,134,136-137,139-140,151-162,164,222-247,251-279
+internal/deliveryservice/types.go
+  c81065fbff0350f9 10,15,19-27
+web/panel/src/routes/projects/ProjectPlans.svelte
+  c81065fbff0350f9 18-20,22,27-37,49-51,62,66-68,73,78,92-93,137,139-140,155,157-158,173-174,178-183,185-187,189-195,199-201
+internal/artifact/project_stores_test.go
+  c81065fbff0350f9 35,42
+internal/delivery/normalize.go
+  c81065fbff0350f9 24-29,43-45
+web/panel/tests/ProjectPlans.test.ts
+  c81065fbff0350f9 1-92
+internal/artifact/project_stores.go
+  c81065fbff0350f9 19-21,27-28,42-45
+internal/delivery/requirements.go
+  c81065fbff0350f9 55,91-110
+internal/mcpserver/tools_lifecycle.go
+  c81065fbff0350f9 336-337,350,362
+internal/planimport/import.go
+  c81065fbff0350f9 1-139
+internal/delivery/store_test.go
+  c81065fbff0350f9 6,9,12,50-73
+internal/deliveryservice/reconcile_test.go
+  c81065fbff0350f9 1-266
+internal/delivery/deliveryview.go
+  c81065fbff0350f9 12,518-524,544-552,561-600,603-626,631
+internal/plan/store.go
+  c81065fbff0350f9 40-52,55-61,82,84,101,109-112,121-133,140,155,170-173,220-345
+internal/artifact/store.go
+  c81065fbff0350f9 4,10-12,25-27
+internal/deliveryservice/reconcile.go
+  c81065fbff0350f9 1-215
+internal/deliveryservice/service.go
+  c81065fbff0350f9 19-23,26-33,37-42,76-85,91
+web/panel/src/routes/deliveries/DeliveryDetail.svelte
+  c81065fbff0350f9 174-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "85a1326154a8052d1d2875b99c93090cca59e9cb",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2002,
+      "total_deletions": 419,
+      "accepted_lines": 1954,
+      "overriden_lines": 0
+    }
+  }
+}
