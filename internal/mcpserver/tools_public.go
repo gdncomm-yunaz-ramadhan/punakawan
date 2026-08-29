@@ -22,8 +22,7 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "invoke_workflow", Description: "Resolve a reusable workflow into a plan and runtime."}, invokeWorkflowDefinitionHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "plan_save", Description: "Save an immutable Plan revision."}, planSaveHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "plan_get", Description: "Fetch a Plan revision."}, planGetHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "start_delivery", Description: "Start a delivery from requirement references and project routing."}, startDeliveryHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "resolve_jira_delivery", Description: "Resolve an exact Jira source to its lifetime delivery case and active continuation."}, resolveJiraDeliveryHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "start_delivery", Description: "Start a delivery from a provider-neutral source (jira | adhoc) or, for one compatibility release, requirement references and project routing."}, startDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "start_delivery_session", Description: "Start or resume a durable session for a delivery execution."}, startDeliverySessionHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "checkpoint_delivery_session", Description: "Persist a session checkpoint and optional handoff."}, checkpointDeliverySessionHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "report_delivery_usage", Description: "Record estimated or actual usage with explicit price provenance."}, reportDeliveryUsageHandler(a))
@@ -43,6 +42,7 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "retry_worklog_sync", Description: "Retry Jira synchronization for one existing worklog without recording duplicate time."}, retryWorkLogSyncHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "cancel_jira_write_intent", Description: "Cancel one stale pending or retrying Jira write intent."}, cancelJiraWriteIntentHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "cancel_delivery", Description: "Cancel a non-terminal delivery while preserving its audit history."}, cancelDeliveryHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "complete_delivery", Description: "Atomically complete a delivery execution's terminal state."}, completeDeliveryHandler(a))
 }
 
 type UpsertProjectInput struct {

@@ -42,6 +42,29 @@ type Store struct {
 	// least one explicit task-bound worklog has been recorded. It is opt-in
 	// so existing non-Jira delivery callers remain unchanged.
 	requireJiraWorkLogs bool
+	// terminalEffects is nil unless WithTerminalEffectEnqueuer is passed to
+	// NewStore. It is the seam Task 6's durable provider outbox fills in to
+	// enqueue a delivery's terminal provider writes inside
+	// CompleteOrchestration's own transaction; with none configured there is
+	// nothing to enqueue yet.
+	terminalEffects TerminalEffectEnqueuer
+}
+
+// TerminalEffectEnqueuer enqueues a delivery's terminal provider effects
+// (e.g. closing a linked Jira issue, a final PR comment) from inside the
+// same transaction that marks its execution terminal. It is a narrow seam
+// for Task 6's durable outbox, not the outbox itself - CompleteOrchestration
+// calls it, if configured, after every other completion mutation in that
+// transaction has already been written.
+type TerminalEffectEnqueuer interface {
+	EnqueueTerminalEffects(ctx context.Context, tx *sql.Tx, orchestrationID string) error
+}
+
+// WithTerminalEffectEnqueuer configures Store to enqueue terminal provider
+// effects atomically with CompleteOrchestration. Without this option (the
+// default), completion enqueues nothing extra.
+func WithTerminalEffectEnqueuer(e TerminalEffectEnqueuer) StoreOption {
+	return func(s *Store) { s.terminalEffects = e }
 }
 
 // NewStore wraps an opened storage kernel database. opts is variadic so
@@ -197,6 +220,10 @@ type OrchestrationOptions struct {
 	// coordinates work across every project in the delivery.
 	PlanID       string
 	PlanRevision int
+	// SnapshotTitle and SnapshotBody are StartOrResolveExecution's initial
+	// Jira source snapshot content, used only when the source is Jira.
+	SnapshotTitle string
+	SnapshotBody  string
 }
 
 // OrchestrationDetails names the descriptive attributes of an
@@ -398,11 +425,23 @@ func (s *Store) CancelOrchestration(ctx context.Context, idempotencyKey, id stri
 		if isTerminal(current.Status) {
 			return ErrInvalidState
 		}
-		return insertEvent(ctx, tx, eventRow{
+		if err := insertEvent(ctx, tx, eventRow{
 			ID: newID(), OrchestrationID: id, IdempotencyKey: idempotencyKey,
 			Type: string(protocol.DeliveryEventTypeOrchestrationCancelled), Payload: "{}",
 			Sequence: len(events), OccurredAt: time.Now().UTC(),
-		})
+		}); err != nil {
+			return err
+		}
+		var caseID string
+		err = tx.QueryRowContext(ctx, `SELECT case_id FROM delivery_executions WHERE orchestration_id = ?`, id).Scan(&caseID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE delivery_cases SET status = 'cancelled', updated_at = ? WHERE id = ?`, time.Now().UTC().Format(timeLayout), caseID)
+		return err
 	})
 	if !errors.Is(err, storage.ErrDuplicateWrite) && err != nil {
 		return nil, err

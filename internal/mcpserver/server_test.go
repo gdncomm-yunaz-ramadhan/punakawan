@@ -123,12 +123,12 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 		"upsert_project": true, "list_projects": true,
 		"save_workflow": true, "get_workflow": true, "list_workflows": true, "invoke_workflow": true,
 		"plan_save": true, "plan_get": true,
-		"start_delivery": true, "resolve_jira_delivery": true, "start_delivery_session": true,
+		"start_delivery": true, "start_delivery_session": true,
 		"checkpoint_delivery_session": true, "report_delivery_usage": true, "report_delivery_progress": true,
 		"assess_jira_delivery": true, "hydrate_jira_delivery": true, "hydrate_github_pull_request": true, "propose_github_pr_review": true, "get_github_pr_review": true, "submit_github_pr_review": true, "queue_jira_write": true,
 		"execute_jira_writes": true, "map_delivery_work_item": true,
 		"get_delivery": true, "answer_delivery_question": true, "log_delivery_work": true,
-		"cancel_delivery": true, "retry_worklog_sync": true, "cancel_jira_write_intent": true,
+		"cancel_delivery": true, "complete_delivery": true, "retry_worklog_sync": true, "cancel_jira_write_intent": true,
 	}
 	if len(names) != len(want) {
 		t.Fatalf("tools/list = %d tools %v, want exactly %d tools %v", len(names), names, len(want), want)

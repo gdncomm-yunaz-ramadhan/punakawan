@@ -17,12 +17,43 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/deliveryservice"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// StartDeliverySource names the exact provider-neutral source
+// start_delivery resolves identity against: SourceOrchestration and its
+// lifetime reuse/continuation rules live in internal/deliveryservice.
+type StartDeliverySource struct {
+	Kind   string `json:"kind" jsonschema:"jira | adhoc"`
+	Tenant string `json:"tenant,omitempty" jsonschema:"required when kind is jira: a stable identity for the connected Jira adapter instance"`
+	Key    string `json:"key,omitempty" jsonschema:"required when kind is jira: the exact issue key, e.g. ABC-123"`
+}
+
+// StartDeliveryResultDelivery is the compact delivery identity
+// start_delivery's source-driven path reports.
+type StartDeliveryResultDelivery struct {
+	ID                 string `json:"id"`
+	ProjectionRevision int    `json:"projection_revision"`
+}
+
+// StartDeliveryResultSession is the compact session identity
+// start_delivery's source-driven path reports, when a session was opened.
+type StartDeliveryResultSession struct {
+	ID string `json:"id"`
+}
 
 // StartDeliveryInput is start_delivery's input: a batch of requirement
 // references to bootstrap one new delivery orchestration from.
 type StartDeliveryInput struct {
-	References []string `json:"references" jsonschema:"one entry per requirement source - a Jira PROJECT-123 key, a GitHub owner/repo#123 reference, an absolute http(s) URL, or free text; a reference this call cannot confidently classify becomes a pending question (visible in the returned view's pending_questions) instead of erroring the whole call"`
+	// Source is the provider-neutral identity path: when set, this call
+	// routes through deliveryservice.Service.StartOrResolve instead of the
+	// legacy references-based path below.
+	Source *StartDeliverySource `json:"source,omitempty" jsonschema:"provider-neutral delivery identity - jira reuses its non-cancelled lifetime by tenant+key and starts the next execution ordinal after completion; adhoc always starts a new lifetime"`
+	// References is kept as a requirement-draft compatibility alias for
+	// one release: when Source is not set, this call behaves exactly as
+	// it did before Source existed.
+	References []string `json:"references,omitempty" jsonschema:"compatibility alias for one release - one entry per requirement source - a Jira PROJECT-123 key, a GitHub owner/repo#123 reference, an absolute http(s) URL, or free text; a reference this call cannot confidently classify becomes a pending question (visible in the returned view's pending_questions) instead of erroring the whole call"`
 	// Title is optional: the label humans and agents see in place of the
 	// orchestration's opaque id. Omitted, one is derived from the
 	// references this call captured.
@@ -99,13 +130,26 @@ type StartDeliveryProjectResult struct {
 // is rebuilt after the decomposition so it shows the lanes just created
 // rather than the empty pre-decomposition snapshot.
 type StartDeliveryOutput struct {
-	OrchestrationId string `json:"orchestration_id"`
+	// Status is set only on the source-driven path (Source given on the
+	// request): "started" or "needs_input". The legacy references-only
+	// path (Source omitted) leaves it empty, keeping that path's wire
+	// shape unchanged for one release.
+	Status     string                       `json:"status,omitempty"`
+	NeedsInput *protocol.NeedUserInput      `json:"needs_input,omitempty"`
+	Delivery   *StartDeliveryResultDelivery `json:"delivery,omitempty"`
+	Session    *StartDeliveryResultSession  `json:"session,omitempty"`
+	// Reconciliation is always present once a delivery starts on the
+	// source-driven path; Task 4 (not yet implemented) is what actually
+	// populates it with created/updated projects, requirements, and plans.
+	Reconciliation *deliveryservice.ReconcileReport `json:"reconciliation,omitempty"`
+
+	OrchestrationId string `json:"orchestration_id,omitempty"`
 	// Title sits beside the id so a caller quoting this response back to a
 	// human has something to quote other than 26 opaque characters. It is
 	// the supplied title when there was one, and the derived one
 	// otherwise, matching view.title exactly.
-	Title         string                       `json:"title"`
-	View          delivery.DeliveryView        `json:"view"`
+	Title         string                       `json:"title,omitempty"`
+	View          *delivery.DeliveryView       `json:"view,omitempty"`
 	Decomposition []StartDeliveryProjectResult `json:"decomposition,omitempty"`
 }
 
@@ -116,10 +160,14 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 			return nil, StartDeliveryOutput{}, err
 		}
 
+		if in.Source != nil && strings.TrimSpace(in.Source.Kind) != "" {
+			return startDeliveryFromSource(ctx, a, store, in)
+		}
+
 		// A lone, exact Jira reference has a stronger identity than a
 		// generic batch: resolve it to its lifetime case before creating
-		// anything. This keeps the legacy start_delivery facade from
-		// creating a parallel active run beside resolve_jira_delivery.
+		// anything, exactly like the source-driven path above does for an
+		// explicit source.kind=jira request.
 		if len(in.References) == 1 {
 			if source, ok := delivery.ClassifyReference(in.References[0]); ok && source.Provider == "jira" {
 				key := in.IdempotencyKey
@@ -141,7 +189,7 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 				if err != nil {
 					return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 				}
-				out.View, out.Title = *view, view.Title
+				out.View, out.Title = view, view.Title
 				return nil, out, nil
 			}
 		}
@@ -155,7 +203,7 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		if err != nil {
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: start delivery: %w", err)
 		}
-		out := StartDeliveryOutput{OrchestrationId: view.Orchestration.Id, Title: view.Title, View: *view}
+		out := StartDeliveryOutput{OrchestrationId: view.Orchestration.Id, Title: view.Title, View: view}
 		if len(in.Projects) == 0 {
 			return nil, out, nil
 		}
@@ -169,10 +217,57 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		if err != nil {
 			return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
-		out.View = *rebuilt
+		out.View = rebuilt
 		out.Title = rebuilt.Title
 		return nil, out, nil
 	}
+}
+
+// startDeliveryFromSource is start_delivery's provider-neutral identity
+// path (Source given on the request): it routes through
+// deliveryservice.Service.StartOrResolve rather than the legacy
+// references-based path, returning the exact "started"/"needs_input"
+// shape the improvement plan's Public result semantics describes.
+// Reconciliation (projects/requirements/plans) is Task 4's job - not yet
+// implemented - so it is always reported empty here.
+func startDeliveryFromSource(ctx context.Context, a *app.App, store *delivery.Store, in StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
+	plans, err := a.OpenPlan()
+	if err != nil {
+		return nil, StartDeliveryOutput{}, err
+	}
+	svc := deliveryservice.New(store, plans)
+
+	key := in.IdempotencyKey
+	if key == "" {
+		key = delivery.NewID()
+	}
+	result, needsInput, err := svc.StartOrResolve(ctx, deliveryservice.StartRequest{
+		IdempotencyKey:       key,
+		Source:               &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceKind(in.Source.Kind), Tenant: in.Source.Tenant, Key: in.Source.Key},
+		Title:                in.Title,
+		Description:          in.Description,
+		WorkflowDefinitionID: in.WorkflowDefinitionId,
+	})
+	if err != nil {
+		return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: start_delivery: %w", err)
+	}
+	if needsInput != nil {
+		return nil, StartDeliveryOutput{Status: "needs_input", NeedsInput: needsInput}, nil
+	}
+
+	revision, err := store.GetProjectionRevision(ctx, result.Execution.OrchestrationID)
+	if err != nil {
+		return nil, StartDeliveryOutput{}, fmt.Errorf("mcpserver: read projection revision: %w", err)
+	}
+	out := StartDeliveryOutput{
+		Status:         "started",
+		Delivery:       &StartDeliveryResultDelivery{ID: result.Execution.OrchestrationID, ProjectionRevision: revision},
+		Reconciliation: &result.Reconciliation,
+	}
+	if result.Session != nil {
+		out.Session = &StartDeliveryResultSession{ID: result.Session.ID}
+	}
+	return nil, out, nil
 }
 
 // decomposeStartDelivery registers each requested project and opens one
@@ -424,6 +519,29 @@ func cancelDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		}
 		if _, err := store.CancelOrchestration(ctx, delivery.NewID(), in.OrchestrationId, in.ExpectedRevision); err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: cancel orchestration: %w", err)
+		}
+		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
+		if err != nil {
+			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
+		}
+		return nil, DeliveryViewOutput{View: *view}, nil
+	}
+}
+
+// CompleteDeliveryInput is complete_delivery's input.
+type CompleteDeliveryInput struct {
+	OrchestrationId  string `json:"orchestration_id"`
+	ExpectedRevision int    `json:"expected_revision" jsonschema:"the orchestration's current revision from get_delivery, so completing an already-superseded view is never silently accepted"`
+}
+
+func completeDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CompleteDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in CompleteDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
+		store, err := OpenDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, DeliveryViewOutput{}, err
+		}
+		if _, err := store.CompleteOrchestration(ctx, delivery.NewID(), in.OrchestrationId, in.ExpectedRevision); err != nil {
+			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: complete orchestration: %w", err)
 		}
 		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
 		if err != nil {

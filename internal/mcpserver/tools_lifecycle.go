@@ -11,53 +11,6 @@ import (
 	"github.com/ygrip/punakawan/internal/jirahooks"
 )
 
-type ResolveJiraDeliveryInput struct {
-	JiraIssueKey         string                 `json:"jira_issue_key"`
-	Title                string                 `json:"title,omitempty"`
-	Description          string                 `json:"description,omitempty"`
-	Projects             []StartDeliveryProject `json:"projects,omitempty"`
-	PlanID               string                 `json:"plan_id,omitempty"`
-	PlanRevision         int                    `json:"plan_revision,omitempty"`
-	WorkflowDefinitionID string                 `json:"workflow_definition_id,omitempty"`
-	SnapshotTitle        string                 `json:"snapshot_title,omitempty"`
-	SnapshotBody         string                 `json:"snapshot_body,omitempty"`
-	IdempotencyKey       string                 `json:"idempotency_key,omitempty"`
-}
-type ResolveJiraDeliveryOutput struct {
-	Case      delivery.DeliveryCase      `json:"case"`
-	Execution delivery.DeliveryExecution `json:"execution"`
-	Created   bool                       `json:"created"`
-	View      delivery.DeliveryView      `json:"view"`
-}
-
-func resolveJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ResolveJiraDeliveryInput) (*mcp.CallToolResult, ResolveJiraDeliveryOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in ResolveJiraDeliveryInput) (*mcp.CallToolResult, ResolveJiraDeliveryOutput, error) {
-		store, err := OpenDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, ResolveJiraDeliveryOutput{}, err
-		}
-		key := in.IdempotencyKey
-		if key == "" {
-			key = delivery.NewID()
-		}
-		resolved, err := store.ResolveJiraDelivery(ctx, key, in.JiraIssueKey, delivery.ResolveJiraDeliveryOptions{
-			Title: in.Title, Description: in.Description, WorkflowDefinitionID: in.WorkflowDefinitionID,
-			PlanID: in.PlanID, PlanRevision: in.PlanRevision, SnapshotTitle: in.SnapshotTitle, SnapshotBody: in.SnapshotBody,
-		})
-		if err != nil {
-			return nil, ResolveJiraDeliveryOutput{}, fmt.Errorf("mcpserver: resolve Jira delivery: %w", err)
-		}
-		if resolved.Created && len(in.Projects) > 0 {
-			decomposeStartDelivery(ctx, store, resolved.Execution.OrchestrationID, []string{in.JiraIssueKey}, in.Projects)
-		}
-		view, err := store.BuildDeliveryView(ctx, resolved.Execution.OrchestrationID)
-		if err != nil {
-			return nil, ResolveJiraDeliveryOutput{}, err
-		}
-		return nil, ResolveJiraDeliveryOutput{Case: *resolved.Case, Execution: *resolved.Execution, Created: resolved.Created, View: *view}, nil
-	}
-}
-
 type StartDeliverySessionInput struct {
 	ExecutionID    string `json:"execution_id"`
 	Participant    string `json:"participant"`
