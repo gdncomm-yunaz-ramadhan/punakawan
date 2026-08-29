@@ -52,7 +52,7 @@ func (s *Store) CaptureRequirement(ctx context.Context, idempotencyKey, orchestr
 
 		var parentSourceID string
 		if in.ParentKey != "" {
-			parentCanonicalKey, err := CanonicalKey(SourceInput{Provider: in.Provider, ExternalID: in.ParentKey})
+			parentCanonicalKey, err := CanonicalKey(SourceInput{Provider: in.Provider, ExternalID: in.ParentKey, Tenant: in.Tenant})
 			if err == nil {
 				if parent, err := findByCanonicalKey(orchestrationID, parentCanonicalKey, events); err == nil && parent != nil {
 					parentSourceID = parent.Id
@@ -87,6 +87,26 @@ func (s *Store) CaptureRequirement(ctx context.Context, idempotencyKey, orchestr
 	})
 	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
 		return nil, err
+	}
+	if errors.Is(err, storage.ErrDuplicateWrite) && resultID == "" {
+		// A genuinely repeated idempotencyKey for this exact canonical_key
+		// (e.g. a reconciliation retry that reuses the same derived key on
+		// purpose) never runs the write callback above, so resultID was
+		// never assigned - resolve it the same way that callback would
+		// have, by canonical key against the orchestration's current
+		// events.
+		events, loadErr := loadEvents(ctx, s.db.Reader(), orchestrationID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		existing, findErr := findByCanonicalKey(orchestrationID, canonicalKey, events)
+		if findErr != nil {
+			return nil, findErr
+		}
+		if existing == nil {
+			return nil, ErrNotFound
+		}
+		resultID = existing.Id
 	}
 	return s.GetRequirementSource(ctx, orchestrationID, resultID)
 }

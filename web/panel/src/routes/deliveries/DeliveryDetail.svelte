@@ -171,7 +171,10 @@
       <h2>Project plans</h2>
       {#if (v.project_plans?.length ?? 0) > 0}
         <div class="table-wrap"><table><thead><tr><th>Project</th><th>Plan ID</th><th>Created</th></tr></thead><tbody>
-          {#each v.project_plans ?? [] as plan (`${plan.project_id}-${plan.plan_id}-${plan.plan_revision}`)}<tr><td>{projectSlug(v, plan.project_id)}</td><td><a href={`/projects/${encodeURIComponent(projectSlug(v, plan.project_id))}?tab=plans&plan=${encodeURIComponent(plan.plan_id)}`} onclick={(event) => { event.preventDefault(); navigate(`/projects/${encodeURIComponent(projectSlug(v, plan.project_id))}?tab=plans&plan=${encodeURIComponent(plan.plan_id)}`); }}>{plan.plan_id} r{plan.plan_revision}</a></td><td>{formatDate(plan.created_at)}</td></tr>{/each}
+          {#each v.project_plans ?? [] as plan (`${plan.project_id}-${plan.plan_id}-${plan.plan_revision}`)}
+            {@const planHref = `/projects/${encodeURIComponent(projectSlug(v, plan.project_id))}?${new URLSearchParams({ tab: "plans", plan: plan.plan_id, revision: String(plan.plan_revision) })}`}
+            <tr><td>{projectSlug(v, plan.project_id)}</td><td><a href={planHref} onclick={(event) => { event.preventDefault(); navigate(planHref); }}>{plan.plan_id} r{plan.plan_revision}</a></td><td>{formatDate(plan.created_at)}</td></tr>
+          {/each}
         </tbody></table></div>
       {:else}<p class="empty">No project plans linked to this delivery.</p>{/if}
     </div>

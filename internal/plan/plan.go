@@ -94,6 +94,12 @@ type Plan struct {
 	PreviousRevision *int   `json:"previous_revision,omitempty"`
 	ReasonForChange  string `json:"reason_for_change,omitempty"`
 
+	// LegacyMarkdown carries the exact content of one imported
+	// .punakawan/plans/<id>/versions/<n>.md file, for a revision that
+	// originated in the retired filesystem PlanStore (internal/planimport).
+	// Empty for every revision authored directly against this aggregate.
+	LegacyMarkdown string `json:"legacy_markdown,omitempty"`
+
 	// The remaining fields are folded in from
 	// protocol.KnowledgeRecordFinalPlan (§4.4): richer optional content
 	// that proved useful there and is kept here rather than dropped, now

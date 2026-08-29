@@ -52,7 +52,7 @@ describe("DeliveryDetail", () => {
 
     await fireEvent.click(screen.getByRole("tab", { name: "Plans" }));
     const plans = screen.getByRole("tabpanel", { name: "Plans" });
-    expect(within(plans).getByRole("link", { name: "plan-billing r2" }).getAttribute("href")).toBe("/projects/billing?tab=plans&plan=plan-billing");
+    expect(within(plans).getByRole("link", { name: "plan-billing r2" }).getAttribute("href")).toBe("/projects/billing?tab=plans&plan=plan-billing&revision=2");
 
     await fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
     const sessions = screen.getByRole("tabpanel", { name: "Sessions" });

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/daemon"
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
@@ -20,6 +20,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/session"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 )
 
@@ -186,13 +187,18 @@ func (s *Server) Start() error {
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/roles/{role}", session.RequireSession(s.sessions, api.RoleUpdateHandler(s.readers.Roles)))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/roles/{role}/reset", session.RequireSession(s.sessions, api.RoleResetHandler(s.readers.Roles)))
 
-	// Project-scoped plans (Phase 7), workflow definitions (Phase 6), and
-	// cached health (Phase 8). All resolve a {projectId} to its workspace
-	// root through the registry, falling back to the primary workspace so it
-	// stays reachable even before it is registered.
-	projectStores := artifact.NewProjectStores(s.resolveRoot)
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans", api.ListPlansHandler(projectStores))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(projectStores))
+	// Project-scoped plans read the same shared SQLite kernel every delivery
+	// tool writes through - internal/plan's plan_revisions and
+	// internal/delivery's project registry/plan links - rather than a
+	// per-workspace filesystem store, so a plan a delivery links stays
+	// exact (its own revision, not whatever the lineage moved on to) no
+	// matter which project page renders it from.
+	planDeliveries, err := s.app.OpenStorage(context.Background())
+	if err != nil {
+		return fmt.Errorf("server: open storage kernel for project plans: %w", err)
+	}
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans", api.ListPlansHandler(delivery.NewStore(planDeliveries), plan.NewStore(planDeliveries)))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(delivery.NewStore(planDeliveries), plan.NewStore(planDeliveries)))
 
 	// The capability set a workflow definition is validated against is derived
 	// from the MCP server's actual tool registration (agent-context plan §4.3),

@@ -3,10 +3,13 @@ package delivery
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -42,6 +45,30 @@ func (s *Store) disableProjectForTest(ctx context.Context, id string) error {
 		_, err := tx.ExecContext(ctx, `UPDATE delivery_projects SET status = 'disabled' WHERE id = ?`, id)
 		return err
 	})
+}
+
+// seedPlanRevision inserts a plan_revisions row directly, bypassing
+// internal/plan (importing it here would be an unnecessary test
+// dependency across packages that otherwise never depend on each other -
+// they only meet at the shared SQLite kernel LinkProjectPlan/
+// LinkDeliveryPlan validate against). Only the fields those two
+// validations actually read (project_ids) are populated.
+func seedPlanRevision(t *testing.T, s *Store, planID string, revision int, projectIDs []string) {
+	t.Helper()
+	encoded, err := json.Marshal(map[string]any{"id": planID, "revision": revision, "project_ids": projectIDs, "objective": "seeded for test"})
+	if err != nil {
+		t.Fatalf("encode seeded plan revision: %v", err)
+	}
+	err = s.db.Write(context.Background(), "seed-plan-"+planID+"-"+strconv.Itoa(revision), "seed plan revision "+planID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(),
+			`INSERT INTO plan_revisions (plan_id, revision, data, created_at) VALUES (?, ?, ?, ?)`,
+			planID, revision, string(encoded), time.Now().UTC().Format(timeLayout),
+		)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("seed plan revision %s@%d: %v", planID, revision, err)
+	}
 }
 
 func registerProject(t *testing.T, s *Store, slug string) *protocol.DeliveryProject {

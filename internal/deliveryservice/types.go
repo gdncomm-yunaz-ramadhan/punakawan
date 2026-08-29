@@ -7,12 +7,24 @@
 package deliveryservice
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/jirahooks"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// JiraHydrator is the exact shape jirahooks.Lifecycle.Hydrate already has:
+// reconcile.go depends on this interface, not the concrete type, so a test
+// can substitute a fake that never talks to a real Jira adapter. Hydrate
+// captures each source as its own durable requirement entry before
+// returning, so callers here can rely on that having already happened by
+// the time they see the returned sources.
+type JiraHydrator interface {
+	Hydrate(ctx context.Context, executionID, sessionID, idempotencyKey string) ([]jirahooks.HydratedJiraSource, error)
+}
 
 // SourceKind distinguishes a Jira-sourced delivery (reused by canonical
 // key until cancelled) from an ad-hoc one (always a new lifetime).

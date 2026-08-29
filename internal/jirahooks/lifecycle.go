@@ -2,6 +2,8 @@ package jirahooks
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -23,11 +25,82 @@ func NewLifecycle(store *delivery.Store, registry gateResolver) *Lifecycle {
 	return &Lifecycle{store: store, registry: registry}
 }
 
-// Hydrate reads the delivery case's exact Jira issue through the configured
-// adapter and records the returned title and description as an immutable
-// snapshot. The idempotency key is owned by the caller so repeated MCP calls
-// return the snapshot from the original read rather than silently replacing it.
-func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempotencyKey string) (*delivery.JiraSourceSnapshot, error) {
+// HydratedJiraSource is one Jira issue (the delivery's parent issue, or
+// one of its subtasks) as read fresh from the adapter, before it becomes
+// a durable requirement source. ContentHash lets a caller detect whether
+// a re-hydrated issue actually changed without comparing every field.
+type HydratedJiraSource struct {
+	IssueKey    string
+	ParentKey   string
+	Title       string
+	Body        string
+	Status      string
+	IssueType   string
+	ContentHash string
+}
+
+// jiraIssueFields is the subset of atlassian.getJiraIssue's normalized
+// envelope Hydrate needs, for both the parent issue and every subtask.
+type jiraIssueFields struct {
+	Key         string `json:"key"`
+	Summary     string `json:"summary"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	IssueType   string `json:"issueType"`
+	Parent      *struct {
+		Key string `json:"key"`
+	} `json:"parent"`
+	Subtasks []struct {
+		Key     string `json:"key"`
+		Summary string `json:"summary"`
+	} `json:"subtasks"`
+}
+
+func fetchJiraIssueFields(ctx context.Context, gate *adapters.Gate, runID, issueKey string) (jiraIssueFields, error) {
+	raw, err := gate.Call(ctx, runID, "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": issueKey})
+	if err != nil {
+		return jiraIssueFields{}, fmt.Errorf("jirahooks: hydrate Jira issue %s: %w", issueKey, err)
+	}
+	var result struct {
+		Normalized jiraIssueFields `json:"normalized"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return jiraIssueFields{}, fmt.Errorf("jirahooks: decode Jira issue %s: %w", issueKey, err)
+	}
+	if result.Normalized.Key == "" {
+		result.Normalized.Key = issueKey
+	}
+	return result.Normalized, nil
+}
+
+func toHydratedSource(fields jiraIssueFields, parentKey string) HydratedJiraSource {
+	src := HydratedJiraSource{
+		IssueKey: fields.Key, ParentKey: parentKey,
+		Title: fields.Summary, Body: fields.Description,
+		Status: fields.Status, IssueType: fields.IssueType,
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{src.Title, src.Body, src.Status, src.IssueType}, "\x00")))
+	src.ContentHash = "sha256:" + hex.EncodeToString(sum[:])
+	return src
+}
+
+// Hydrate reads the delivery case's exact Jira issue and every one of its
+// subtasks through the configured adapter, capturing each as its own
+// durable requirement source (canonical key jira:<TENANT>:<KEY> when the
+// case has a tenant, matching every pre-0028 tenant-less case exactly as
+// before). It also records the parent's title, body, transition catalog,
+// and a rollup of every subtask as one immutable snapshot for callers
+// still reading DeliveryView.JiraActivity/lifecycle.jira_snapshots.
+// idempotencyKey is owned by the caller so repeated MCP calls update the
+// observed snapshot on real content changes without duplicating either
+// the snapshot or any requirement source.
+//
+// Jira's own REST API returns every subtask inline on the parent issue's
+// own fields.subtasks - there is no separate cursor/page token to walk
+// for subtasks in this adapter - so every subtask currently returned by
+// the parent is individually re-fetched here for its own full content;
+// there is no further adapter-level pagination to drive.
+func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempotencyKey string) ([]HydratedJiraSource, error) {
 	execution, err := l.store.GetExecution(ctx, executionID)
 	if err != nil {
 		return nil, fmt.Errorf("jirahooks: get delivery execution: %w", err)
@@ -40,49 +113,31 @@ func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempot
 	if err != nil {
 		return nil, fmt.Errorf("jirahooks: open atlassian adapter: %w", err)
 	}
-	raw, err := gate.Call(ctx, lifecycle.Case.ID, "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": lifecycle.Case.JiraIssueKey})
+
+	parentFields, err := fetchJiraIssueFields(ctx, gate, lifecycle.Case.ID, lifecycle.Case.JiraIssueKey)
 	if err != nil {
-		return nil, fmt.Errorf("jirahooks: hydrate Jira issue %s: %w", lifecycle.Case.JiraIssueKey, err)
+		return nil, err
 	}
-	var result struct {
-		Normalized struct {
-			Summary     string `json:"summary"`
-			Description string `json:"description"`
-			Status      string `json:"status"`
-			Subtasks    []struct {
-				Key     string `json:"key"`
-				Summary string `json:"summary"`
-			} `json:"subtasks"`
-		} `json:"normalized"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("jirahooks: decode Jira issue %s: %w", lifecycle.Case.JiraIssueKey, err)
-	}
+	sources := []HydratedJiraSource{toHydratedSource(parentFields, "")}
+
 	var body strings.Builder
-	body.WriteString(result.Normalized.Description)
-	if status := strings.TrimSpace(result.Normalized.Status); status != "" {
+	body.WriteString(parentFields.Description)
+	if status := strings.TrimSpace(parentFields.Status); status != "" {
 		fmt.Fprintf(&body, "\n\nJira status: %s", status)
 	}
-	for _, subtask := range result.Normalized.Subtasks {
+	for _, subtask := range parentFields.Subtasks {
 		if strings.TrimSpace(subtask.Key) == "" {
 			continue
 		}
-		raw, err := gate.Call(ctx, lifecycle.Case.ID, "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": subtask.Key})
+		childFields, err := fetchJiraIssueFields(ctx, gate, lifecycle.Case.ID, subtask.Key)
 		if err != nil {
-			return nil, fmt.Errorf("jirahooks: hydrate Jira subtask %s: %w", subtask.Key, err)
+			return nil, err
 		}
-		var child struct {
-			Normalized struct {
-				Summary     string `json:"summary"`
-				Description string `json:"description"`
-			} `json:"normalized"`
-		}
-		if err := json.Unmarshal(raw, &child); err != nil {
-			return nil, fmt.Errorf("jirahooks: decode Jira subtask %s: %w", subtask.Key, err)
-		}
-		fmt.Fprintf(&body, "\n\n## Subtask %s: %s\n%s", subtask.Key, child.Normalized.Summary, child.Normalized.Description)
+		sources = append(sources, toHydratedSource(childFields, lifecycle.Case.JiraIssueKey))
+		fmt.Fprintf(&body, "\n\n## Subtask %s: %s\n%s", childFields.Key, childFields.Summary, childFields.Description)
 	}
-	raw, err = gate.Call(ctx, lifecycle.Case.ID, "atlassian.getTransitionsForJiraIssue", map[string]any{"issueIdOrKey": lifecycle.Case.JiraIssueKey})
+
+	raw, err := gate.Call(ctx, lifecycle.Case.ID, "atlassian.getTransitionsForJiraIssue", map[string]any{"issueIdOrKey": lifecycle.Case.JiraIssueKey})
 	if err != nil {
 		return nil, fmt.Errorf("jirahooks: hydrate Jira transitions for %s: %w", lifecycle.Case.JiraIssueKey, err)
 	}
@@ -93,7 +148,20 @@ func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempot
 	if catalog := formatTransitionCatalog(transitions); catalog != "" {
 		fmt.Fprintf(&body, "\n\n%s", catalog)
 	}
-	return l.store.CaptureJiraSnapshot(ctx, idempotencyKey, executionID, sessionID, result.Normalized.Summary, body.String())
+
+	for _, src := range sources {
+		if _, err := l.store.CaptureRequirement(ctx, idempotencyKey+":source:"+src.IssueKey, execution.OrchestrationID, delivery.SourceInput{
+			Provider: "jira", ExternalID: src.IssueKey, ParentKey: src.ParentKey,
+			Title: src.Title, Summary: src.Body, Tenant: lifecycle.Case.SourceTenant,
+		}); err != nil {
+			return nil, fmt.Errorf("jirahooks: capture requirement for %s: %w", src.IssueKey, err)
+		}
+	}
+
+	if _, err := l.store.CaptureJiraSnapshot(ctx, idempotencyKey, executionID, sessionID, parentFields.Summary, body.String()); err != nil {
+		return nil, err
+	}
+	return sources, nil
 }
 
 // Execute applies one pending Jira write intent. A successful intent is never
@@ -151,7 +219,64 @@ func (l *Lifecycle) Execute(ctx context.Context, intentID, resolutionKey string)
 			}
 		}
 	}
+	if intent.Action == "create_subtask" {
+		// createJiraSubtask can create several candidates (or report some
+		// already existing) in one call; JiraWriteIntent.ExternalID has room
+		// for only the first (resolved above), so every key - created and
+		// pre-existing alike - is separately captured as its own durable
+		// requirement source here, parented under the issue this intent
+		// targeted. This mirrors Hydrate's own capture path and is
+		// best-effort local bookkeeping on an external write that already
+		// irreversibly succeeded: a capture failure here is not returned as
+		// this call's error, the same way DeliveryView's own supplementary
+		// evidence lookups degrade rather than fail an otherwise-successful
+		// result.
+		if keys, keyErr := allCreatedOrExistingKeys(raw); keyErr == nil {
+			if execution, execErr := l.store.GetExecution(ctx, intent.ExecutionID); execErr == nil {
+				tenant := ""
+				if lifecycle, lcErr := l.store.GetDeliveryLifecycle(ctx, execution.OrchestrationID); lcErr == nil {
+					tenant = lifecycle.Case.SourceTenant
+				}
+				for _, key := range keys {
+					_, _ = l.store.CaptureRequirement(ctx, attemptKey+":subtask:"+key, execution.OrchestrationID, delivery.SourceInput{
+						Provider: "jira", ExternalID: key, ParentKey: intent.JiraIssueKey, Tenant: tenant,
+					})
+				}
+			}
+		}
+	}
 	return resolved, nil
+}
+
+// allCreatedOrExistingKeys extracts every subtask key
+// atlassian.createJiraSubtask's result names, both freshly created ones
+// and ones it reports as already existing - externalID above only ever
+// reports the first, so this is the one call site that sees the full set.
+func allCreatedOrExistingKeys(raw json.RawMessage) ([]string, error) {
+	var result map[string]any
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	var keys []string
+	if created, ok := result["created"].([]any); ok {
+		for _, item := range created {
+			if m, ok := item.(map[string]any); ok {
+				if key, ok := stringPayload(m, "key"); ok && key != "" {
+					keys = append(keys, key)
+				}
+			}
+		}
+	}
+	if skipped, ok := result["skipped"].([]any); ok {
+		for _, item := range skipped {
+			if m, ok := item.(map[string]any); ok {
+				if key, ok := stringPayload(m, "existingKey"); ok && key != "" {
+					keys = append(keys, key)
+				}
+			}
+		}
+	}
+	return keys, nil
 }
 
 // RetryWorkLogSync replays one existing unsynced worklog through Jira without

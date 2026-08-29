@@ -593,47 +593,57 @@ export function invokeWorkflow(
   );
 }
 
-// --- Project Plans (Phase 7, plan §7) ------------------------------------
+// --- Project Plans --------------------------------------------------------
 //
-// Plans are read-only from the panel's perspective: they are authored and
-// versioned through the review protocol elsewhere. Here we only list their
-// summaries and render a selected plan's manifest + current version text.
+// Plans are read-only from the panel's perspective: they are the
+// internal/plan aggregate's own immutable plan_revisions, authored and
+// versioned through plan_save elsewhere. Here we only list their
+// summaries (each with every delivery that links one of its revisions)
+// and render one exact revision - the plan's current head by default, or
+// the exact revision a specific delivery link named, via ?revision=.
 
-export interface PlanDerivedFrom {
-  knowledge?: string[];
-  workflows?: string[];
-  metadata?: string[];
+export interface LinkedDeliveryRef {
+  orchestration_id: string;
+  scope: string;
+  plan_revision: number;
 }
 
 export interface PlanSummary {
   id: string;
-  title: string;
+  objective: string;
   status: string;
-  current_version: string;
-  related_tasks?: string[];
-  derived_from?: PlanDerivedFrom;
+  current_revision: number;
+  project_ids?: string[];
+  linked_deliveries?: LinkedDeliveryRef[];
 }
 
-// The plan manifest carries at least the summary fields; the backend may
-// attach further descriptive fields, so the known summary shape is
-// extended rather than re-listed. Optional fields are surfaced when
-// present and skipped otherwise.
-export interface PlanManifest extends PlanSummary {
-  description?: string;
-  versions?: string[];
+export interface PlanRevision {
+  id: string;
+  objective: string;
+  status?: string;
+  revision: number;
+  project_ids?: string[];
+  legacy_markdown?: string;
+  requirements?: string[];
+  acceptance_criteria?: string[];
 }
 
 export interface PlanDetail {
-  manifest: PlanManifest;
-  current_version_content?: string;
+  plan: PlanRevision;
+  linked_deliveries?: LinkedDeliveryRef[];
 }
 
 export function listPlans(id: string): Promise<{ items: PlanSummary[] }> {
   return getJSON<{ items: PlanSummary[] }>(`/projects/${encodeURIComponent(id)}/plans`);
 }
 
-export function getPlan(id: string, planId: string): Promise<PlanDetail> {
-  return getJSON<PlanDetail>(`/projects/${encodeURIComponent(id)}/plans/${encodeURIComponent(planId)}`);
+// getPlan fetches planId's current head revision, or the exact revision
+// named by revision when given - a delivery link's own plan_revision, so
+// following that link always renders the revision the delivery actually
+// used rather than whatever the lineage has moved on to since.
+export function getPlan(id: string, planId: string, revision?: number): Promise<PlanDetail> {
+  const query = revision !== undefined ? `?${new URLSearchParams({ revision: String(revision) })}` : "";
+  return getJSON<PlanDetail>(`/projects/${encodeURIComponent(id)}/plans/${encodeURIComponent(planId)}${query}`);
 }
 
 // --- Project Health (Phase 8, plan §8) -----------------------------------

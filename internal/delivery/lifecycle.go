@@ -138,15 +138,18 @@ type JiraAssessment struct {
 }
 
 type JiraWorkItemMapping struct {
-	ID                  string    `json:"id"`
-	CaseID              string    `json:"case_id"`
-	ExecutionID         string    `json:"execution_id"`
-	SessionID           string    `json:"session_id,omitempty"`
-	OrchestrationID     string    `json:"orchestration_id"`
-	ParentTaskID        string    `json:"parent_task_id"`
-	RequirementSourceID string    `json:"requirement_source_id"`
-	JiraIssueKey        string    `json:"jira_issue_key"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                  string     `json:"id"`
+	CaseID              string     `json:"case_id"`
+	ExecutionID         string     `json:"execution_id"`
+	SessionID           string     `json:"session_id,omitempty"`
+	OrchestrationID     string     `json:"orchestration_id"`
+	ParentTaskID        string     `json:"parent_task_id"`
+	RequirementSourceID string     `json:"requirement_source_id"`
+	JiraIssueKey        string     `json:"jira_issue_key"`
+	CreatedAt           time.Time  `json:"created_at"`
+	FirstTouchedAt      *time.Time `json:"first_touched_at,omitempty"`
+	LastTouchedAt       *time.Time `json:"last_touched_at,omitempty"`
+	TouchCount          int        `json:"touch_count"`
 }
 
 type JiraWriteIntent struct {
@@ -939,6 +942,70 @@ func (s *Store) MapWorkItemToJiraTask(ctx context.Context, idempotencyKey, execu
 	return &out, nil
 }
 
+// TouchJiraWorkItem records that key's caller (typically one MCP tool
+// call) engaged with an already-mapped Jira work item, incrementing its
+// touch_count at most once per unique (session_id, key) pair - key
+// doubles as this call's tool-call identity, the same way every other
+// method in this package treats its idempotency key as the identity of
+// one exact call. Touching an issue with no existing mapping in this
+// orchestration fails closed (ErrNotFound): a touch can only ever
+// enrich an already-durable mapping, never invent one.
+func (s *Store) TouchJiraWorkItem(ctx context.Context, key, executionID, sessionID, jiraIssueKey string, at time.Time) (*JiraWorkItemMapping, error) {
+	_, issueKey, err := canonicalJiraSource(jiraIssueKey)
+	if err != nil {
+		return nil, err
+	}
+	var mappingID string
+	err = s.db.Write(ctx, key, "touch jira work item "+issueKey, func(tx *sql.Tx) error {
+		var exec DeliveryExecution
+		if err := scanExecution(tx.QueryRowContext(ctx, `SELECT id, case_id, orchestration_id, ordinal, status, session_id, started_at, ended_at FROM delivery_executions WHERE id = ?`, executionID), &exec); err != nil {
+			return err
+		}
+		if sessionID != "" {
+			if err := requireSessionScope(ctx, tx, sessionID, &exec); err != nil {
+				return err
+			}
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM jira_work_item_mappings WHERE orchestration_id = ? AND jira_issue_key = ?`, exec.OrchestrationID, issueKey).Scan(&mappingID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		formatted := at.UTC().Format(timeLayout)
+		res, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO jira_work_item_touches (mapping_id, session_id, tool_call_id, touched_at) VALUES (?, ?, ?, ?)`, mappingID, sessionID, key, formatted)
+		if err != nil {
+			return err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			// Already touched by exactly this (session, tool call) before:
+			// nothing new to count.
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE jira_work_item_mappings SET touch_count = touch_count + 1, last_touched_at = ?, first_touched_at = CASE WHEN first_touched_at = '' THEN ? ELSE first_touched_at END WHERE id = ?`, formatted, formatted, mappingID)
+		return err
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return nil, fmt.Errorf("delivery: touch Jira work item %s: %w", issueKey, err)
+	}
+	if mappingID == "" {
+		// The duplicate-idempotency-key path never ran the body above, so
+		// mappingID must be resolved the same way it would have been.
+		var orchestrationID string
+		if err := s.db.Reader().QueryRowContext(ctx, `SELECT orchestration_id FROM delivery_executions WHERE id = ?`, executionID).Scan(&orchestrationID); err != nil {
+			return nil, noRow(err)
+		}
+		if err := s.db.Reader().QueryRowContext(ctx, `SELECT id FROM jira_work_item_mappings WHERE orchestration_id = ? AND jira_issue_key = ?`, orchestrationID, issueKey).Scan(&mappingID); err != nil {
+			return nil, noRow(err)
+		}
+	}
+	return scanWorkItem(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, session_id, orchestration_id, parent_task_id, requirement_source_id, jira_issue_key, created_at, first_touched_at, last_touched_at, touch_count FROM jira_work_item_mappings WHERE id = ?`, mappingID))
+}
+
 func (s *Store) CreateJiraWriteIntent(ctx context.Context, idempotencyKey, executionID, sessionID, jiraIssueKey, action string, payload map[string]any) (*JiraWriteIntent, error) {
 	_, issueKey, err := canonicalJiraSource(jiraIssueKey)
 	if err != nil {
@@ -1297,12 +1364,22 @@ func scanAssessment(row lifecycleScanner) (*JiraAssessment, error) {
 func scanWorkItem(row lifecycleScanner) (*JiraWorkItemMapping, error) {
 	var v JiraWorkItemMapping
 	var created string
-	if err := row.Scan(&v.ID, &v.CaseID, &v.ExecutionID, &v.SessionID, &v.OrchestrationID, &v.ParentTaskID, &v.RequirementSourceID, &v.JiraIssueKey, &created); err != nil {
+	var firstTouched, lastTouched sql.NullString
+	if err := row.Scan(&v.ID, &v.CaseID, &v.ExecutionID, &v.SessionID, &v.OrchestrationID, &v.ParentTaskID, &v.RequirementSourceID, &v.JiraIssueKey, &created, &firstTouched, &lastTouched, &v.TouchCount); err != nil {
 		return nil, noRow(err)
 	}
 	var err error
 	v.CreatedAt, err = scanTime(created)
-	return &v, err
+	if err != nil {
+		return nil, err
+	}
+	if v.FirstTouchedAt, err = scanOptionalTime(firstTouched); err != nil {
+		return nil, err
+	}
+	if v.LastTouchedAt, err = scanOptionalTime(lastTouched); err != nil {
+		return nil, err
+	}
+	return &v, nil
 }
 func scanWriteIntent(row lifecycleScanner) (*JiraWriteIntent, error) {
 	var v JiraWriteIntent
@@ -1438,7 +1515,7 @@ func listAssessments(ctx context.Context, q querier, executionID string) ([]Jira
 	return out, rows.Err()
 }
 func listWorkItems(ctx context.Context, q querier, executionID string) ([]JiraWorkItemMapping, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, case_id, execution_id, session_id, orchestration_id, parent_task_id, requirement_source_id, jira_issue_key, created_at FROM jira_work_item_mappings WHERE execution_id = ? ORDER BY created_at, id`, executionID)
+	rows, err := q.QueryContext(ctx, `SELECT id, case_id, execution_id, session_id, orchestration_id, parent_task_id, requirement_source_id, jira_issue_key, created_at, first_touched_at, last_touched_at, touch_count FROM jira_work_item_mappings WHERE execution_id = ? ORDER BY created_at, id`, executionID)
 	if err != nil {
 		return nil, err
 	}

@@ -333,8 +333,8 @@ type HydrateJiraDeliveryInput struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 type HydrateJiraDeliveryOutput struct {
-	Snapshot delivery.JiraSourceSnapshot `json:"snapshot"`
-	View     delivery.DeliveryView       `json:"view"`
+	Sources []jirahooks.HydratedJiraSource `json:"sources"`
+	View    delivery.DeliveryView          `json:"view"`
 }
 
 func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, HydrateJiraDeliveryInput) (*mcp.CallToolResult, HydrateJiraDeliveryOutput, error) {
@@ -347,7 +347,7 @@ func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if key == "" {
 			key = delivery.NewID()
 		}
-		snapshot, err := jirahooks.NewLifecycle(store, a.AdapterRegistry).Hydrate(ctx, in.ExecutionID, in.SessionID, key)
+		sources, err := jirahooks.NewLifecycle(store, a.AdapterRegistry).Hydrate(ctx, in.ExecutionID, in.SessionID, key)
 		if err != nil {
 			return nil, HydrateJiraDeliveryOutput{}, fmt.Errorf("mcpserver: hydrate Jira delivery: %w", err)
 		}
@@ -359,7 +359,7 @@ func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if err != nil {
 			return nil, HydrateJiraDeliveryOutput{}, err
 		}
-		return nil, HydrateJiraDeliveryOutput{Snapshot: *snapshot, View: *view}, nil
+		return nil, HydrateJiraDeliveryOutput{Sources: sources, View: *view}, nil
 	}
 }
 

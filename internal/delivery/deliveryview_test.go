@@ -508,6 +508,8 @@ func TestDeliveryViewIncludesHighLevelAndProjectPlans(t *testing.T) {
 		t.Fatalf("StartDeliveryWithOptions: %v", err)
 	}
 	project := registerProject(t, s, "billing")
+	seedPlanRevision(t, s, "billing-plan", 1, []string{project.Id})
+	seedPlanRevision(t, s, "billing-plan", 2, []string{project.Id})
 	if err := s.LinkProjectPlan(ctx, "link-billing-plan", view.Orchestration.Id, project.Id, "billing-plan", 2); err != nil {
 		t.Fatalf("LinkProjectPlan: %v", err)
 	}

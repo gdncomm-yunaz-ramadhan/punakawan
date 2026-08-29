@@ -16,11 +16,30 @@ import (
 type Service struct {
 	deliveries *delivery.Store
 	plans      *plan.Store
+	// hydrator is nil unless WithJiraHydrator is passed to New, in which
+	// case StartOrResolve's reconciliation step never hydrates a Jira
+	// source's parent/subtasks into requirement sources - a caller with no
+	// hydrator configured is expected to supply RequirementDrafts itself.
+	hydrator JiraHydrator
+}
+
+// Option configures optional Service dependencies. Every existing New
+// call site (no options) keeps compiling and behaving exactly as before.
+type Option func(*Service)
+
+// WithJiraHydrator wires the Jira parent/subtask hydration reconcile.go
+// uses to turn a Jira source into its own durable requirement sources.
+func WithJiraHydrator(h JiraHydrator) Option {
+	return func(s *Service) { s.hydrator = h }
 }
 
 // New wires a Service over the already-open delivery and plan stores.
-func New(deliveries *delivery.Store, plans *plan.Store) *Service {
-	return &Service{deliveries: deliveries, plans: plans}
+func New(deliveries *delivery.Store, plans *plan.Store, opts ...Option) *Service {
+	s := &Service{deliveries: deliveries, plans: plans}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // StartOrResolve resolves req.Source to one delivery lifetime and
@@ -54,12 +73,22 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 	if err != nil {
 		return StartResult{}, nil, err
 	}
+	// Reconciliation always runs after resolving identity, whether this
+	// call just created the lifetime/execution or reused an already-active
+	// one: a second start_delivery call against the same Jira issue with a
+	// newly discovered subtask or project must reconcile that new work onto
+	// the reused execution rather than short-circuiting because nothing was
+	// freshly created.
+	report, err := s.reconcile(ctx, req, resolved)
+	if err != nil {
+		return StartResult{}, nil, err
+	}
 	result := StartResult{
 		Lifetime:         *resolved.Lifetime,
 		Execution:        *resolved.Execution,
 		CreatedLifetime:  resolved.CreatedLifetime,
 		CreatedExecution: resolved.CreatedExecution,
-		Reconciliation:   ReconcileReport{},
+		Reconciliation:   report,
 	}
 	if strings.TrimSpace(req.Session.Participant) != "" {
 		session, err := s.deliveries.StartSession(ctx, req.IdempotencyKey+":session", resolved.Execution.ID, "", req.Session.Participant, req.Session.ResumedFromID, req.Session.WorktreePath, req.Session.Provider)

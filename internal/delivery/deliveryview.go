@@ -9,6 +9,7 @@ package delivery
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -514,9 +515,13 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	return view, nil
 }
 
-// LinkProjectPlan records the exact project plan a delivery is executing.
-// Project plans are owned by their projects; this aggregate keeps only the
-// immutable cross-project reference required to navigate from a delivery.
+// LinkProjectPlan records the exact project-scoped plan a delivery is
+// executing. Project plans are owned by their projects; this aggregate
+// keeps only the immutable cross-project reference required to navigate
+// from a delivery. The link is rejected unless planID@planRevision
+// already exists and names projectID among its own project_ids - a
+// project's detailed plan must actually claim that project, never a
+// bare cross-reference to someone else's plan.
 func (s *Store) LinkProjectPlan(ctx context.Context, idempotencyKey, orchestrationID, projectID, planID string, planRevision int) error {
 	if strings.TrimSpace(orchestrationID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(planID) == "" {
 		return fmt.Errorf("delivery: orchestration, project, and plan ids are required")
@@ -536,8 +541,15 @@ func (s *Store) LinkProjectPlan(ctx context.Context, idempotencyKey, orchestrati
 		if count == 0 {
 			return ErrNotFound
 		}
-		_, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO delivery_plan_links (orchestration_id, project_id, plan_id, plan_revision, created_at) VALUES (?, ?, ?, ?, ?)`,
-			orchestrationID, projectID, strings.TrimSpace(planID), planRevision, now.Format(timeLayout))
+		projectIDs, err := planProjectIDs(ctx, tx, planID, planRevision)
+		if err != nil {
+			return err
+		}
+		if indexOfString(projectIDs, projectID) < 0 {
+			return fmt.Errorf("delivery: plan %s@%d does not name project %s", planID, planRevision, projectID)
+		}
+		_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO delivery_plan_links (orchestration_id, project_id, project_scope_key, plan_id, plan_revision, scope, created_at) VALUES (?, ?, ?, ?, ?, 'project', ?)`,
+			orchestrationID, projectID, projectID, strings.TrimSpace(planID), planRevision, now.Format(timeLayout))
 		return err
 	})
 	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
@@ -546,9 +558,77 @@ func (s *Store) LinkProjectPlan(ctx context.Context, idempotencyKey, orchestrati
 	return nil
 }
 
+// LinkDeliveryPlan records the exact cross-project high-level plan a
+// delivery coordinates work with. Unlike LinkProjectPlan, planID@planRevision
+// must either name every one of orchestrationID's currently attached
+// projects or name none at all (an intentionally cross-project plan) -
+// a high-level plan that names only some attached projects would silently
+// leave the others uncoordinated.
+func (s *Store) LinkDeliveryPlan(ctx context.Context, idempotencyKey, orchestrationID, planID string, planRevision int) error {
+	if strings.TrimSpace(orchestrationID) == "" || strings.TrimSpace(planID) == "" {
+		return fmt.Errorf("delivery: orchestration and plan ids are required")
+	}
+	if planRevision < 1 {
+		return fmt.Errorf("delivery: delivery plan revision must be positive")
+	}
+	now := time.Now().UTC()
+	err := s.db.Write(ctx, idempotencyKey, "link delivery plan "+planID, func(tx *sql.Tx) error {
+		events, err := loadEventsTx(ctx, tx, orchestrationID)
+		if err != nil {
+			return err
+		}
+		orch, err := reduceOrchestration(orchestrationID, events)
+		if err != nil {
+			return err
+		}
+		projectIDs, err := planProjectIDs(ctx, tx, planID, planRevision)
+		if err != nil {
+			return err
+		}
+		if len(projectIDs) > 0 {
+			for _, attached := range orch.ProjectIds {
+				if indexOfString(projectIDs, attached) < 0 {
+					return fmt.Errorf("delivery: plan %s@%d does not name attached project %s", planID, planRevision, attached)
+				}
+			}
+		}
+		_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO delivery_plan_links (orchestration_id, project_id, project_scope_key, plan_id, plan_revision, scope, created_at) VALUES (?, NULL, '', ?, ?, 'delivery', ?)`,
+			orchestrationID, strings.TrimSpace(planID), planRevision, now.Format(timeLayout))
+		return err
+	})
+	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
+		return fmt.Errorf("delivery: link delivery plan: %w", err)
+	}
+	return nil
+}
+
+// planProjectIDs reads planID@planRevision's own project_ids straight out
+// of internal/plan's plan_revisions table by raw SQL rather than
+// importing internal/plan, which would create a cycle back into this
+// package (internal/deliveryservice already imports both). Both packages
+// share the one SQLite kernel, so this is exactly the FK this package
+// already checks other tables' rows against.
+func planProjectIDs(ctx context.Context, tx *sql.Tx, planID string, planRevision int) ([]string, error) {
+	var data string
+	err := tx.QueryRowContext(ctx, `SELECT data FROM plan_revisions WHERE plan_id = ? AND revision = ?`, planID, planRevision).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("delivery: plan %s@%d does not exist: %w", planID, planRevision, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("delivery: read plan %s@%d: %w", planID, planRevision, err)
+	}
+	var decoded struct {
+		ProjectIDs []string `json:"project_ids"`
+	}
+	if err := json.Unmarshal([]byte(data), &decoded); err != nil {
+		return nil, fmt.Errorf("delivery: decode plan %s@%d: %w", planID, planRevision, err)
+	}
+	return decoded.ProjectIDs, nil
+}
+
 func (s *Store) listProjectPlanLinks(ctx context.Context, orchestrationID string) ([]ProjectPlanLink, error) {
 	rows, err := s.db.Reader().QueryContext(ctx,
-		`SELECT project_id, plan_id, plan_revision, created_at FROM delivery_plan_links WHERE orchestration_id = ? ORDER BY created_at, project_id, plan_id, plan_revision`,
+		`SELECT project_id, plan_id, plan_revision, created_at FROM delivery_plan_links WHERE orchestration_id = ? AND scope = 'project' ORDER BY created_at, project_id, plan_id, plan_revision`,
 		orchestrationID,
 	)
 	if err != nil {
