@@ -183,6 +183,35 @@ describe("DeliveriesList", () => {
     await waitFor(() => expect(names()).toEqual(["Alpha", "Zulu"]));
   });
 
+  it("offers recent, title, and oldest sort options", async () => {
+    installBackend([orchestration("orc-1", "active", { title: "Migrate billing" })]);
+
+    render(DeliveriesList);
+    await screen.findByText("Migrate billing");
+
+    const sort = screen.getByLabelText("Sort by");
+    expect(Array.from(sort.querySelectorAll("option")).map((option) => option.textContent)).toEqual([
+      "Recent",
+      "Title",
+      "Oldest",
+    ]);
+  });
+
+  it("filters delivery cards by status and shows their semantic chip", async () => {
+    installBackend([
+      orchestration("orc-active", "active", { title: "Still running" }),
+      orchestration("orc-done", "completed", { title: "All finished" }),
+    ]);
+
+    const { container } = render(DeliveriesList);
+    await screen.findByText("Still running");
+
+    await fireEvent.change(screen.getByLabelText("Status"), { target: { value: "completed" } });
+    await waitFor(() => expect(screen.queryByText("Still running")).toBeNull());
+    expect(screen.getByText("All finished")).toBeTruthy();
+    expect(container.querySelector(".status-variant-success")?.textContent).toContain("Completed");
+  });
+
   it("offers Cancel only for a delivery still in flight", async () => {
     installBackend([
       orchestration("orc-active", "active", { title: "Still running" }),

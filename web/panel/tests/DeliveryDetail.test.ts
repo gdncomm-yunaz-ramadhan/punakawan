@@ -37,6 +37,7 @@ describe("DeliveryDetail", () => {
     expect(screen.getByRole("heading", { name: "High-level plan" })).toBeTruthy();
     expect(screen.getByText("delivery-plan r3")).toBeTruthy();
     expect(container.querySelectorAll(".bento-card")).toHaveLength(4);
+    expect(container.querySelectorAll(".bento-grid > .bento-card")).toHaveLength(4);
     expect(container.textContent).toContain("$12.50");
     expect(screen.queryByText("Pending approvals")).toBeNull();
     expect(screen.queryByText("Projects & lanes")).toBeNull();

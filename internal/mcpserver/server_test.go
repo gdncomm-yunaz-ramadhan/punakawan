@@ -120,6 +120,7 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 
 	names := listToolNames(t, cs)
 	want := map[string]bool{
+		"list_adapter_operations": true, "call_adapter_operation": true,
 		"upsert_project": true, "list_projects": true,
 		"save_workflow": true, "get_workflow": true, "list_workflows": true, "invoke_workflow": true,
 		"plan_save": true, "plan_get": true,
@@ -136,6 +137,14 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 	for name := range want {
 		if !names[name] {
 			t.Errorf("public tool %q missing from tools/list", name)
+		}
+	}
+}
+
+func TestServerInstructionsExplainGenericAdapterBridge(t *testing.T) {
+	for _, tool := range []string{"list_adapter_operations", "call_adapter_operation"} {
+		if !strings.Contains(serverInstructions, tool) {
+			t.Errorf("server instructions do not explain %q", tool)
 		}
 	}
 }

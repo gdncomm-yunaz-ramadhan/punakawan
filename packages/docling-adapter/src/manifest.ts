@@ -34,6 +34,20 @@ export const manifest: AdapterManifest = {
     secrets: [],
   },
   operations: {
-    'docling.convert': { side_effect: false },
+    'docling.convert': {
+      side_effect: false,
+      description: 'Convert a URL or local path into normalized document sections.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string' },
+          path: { type: 'string' },
+          toFormats: { type: 'array', items: { type: 'string' } },
+          doOcr: { type: 'boolean' },
+          forceOcr: { type: 'boolean' },
+        },
+        anyOf: [{ required: ['url'] }, { required: ['path'] }],
+      },
+    },
   },
 };

@@ -31,6 +31,10 @@ export interface AdapterManifest {
     [k: string]: {
       side_effect: boolean;
       approval?: "required";
+      description: string;
+      input_schema: {
+        [k: string]: unknown;
+      };
     };
   };
 }

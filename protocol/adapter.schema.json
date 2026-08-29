@@ -47,12 +47,14 @@
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
-        "required": ["side_effect"],
+        "required": ["side_effect", "description", "input_schema"],
         "additionalProperties": false,
-        "properties": {
-          "side_effect": { "type": "boolean" },
-          "approval": { "type": "string", "enum": ["required"] }
-        }
+          "properties": {
+            "side_effect": { "type": "boolean" },
+            "approval": { "type": "string", "enum": ["required"] },
+            "description": { "type": "string" },
+            "input_schema": { "type": "object" }
+          }
       }
     }
   }

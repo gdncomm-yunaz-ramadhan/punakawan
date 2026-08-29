@@ -6,9 +6,11 @@
 // the label still falls back to whatever a view can describe the delivery by,
 // and only uses a shortened id when there is nothing else at all.
 
-import type { DeliveryOrchestration, DeliveryView } from "../../lib/api/client";
+import type { DeliveryOrchestration, DeliveryOrchestrationStatus, DeliveryView } from "../../lib/api/client";
+import type { BadgeVariant } from "../../lib/components/StatusBadge.svelte";
 
-export type DeliverySortKey = "updated" | "created" | "title" | "status";
+export type DeliverySortKey = "recent" | "title" | "oldest";
+export type DeliveryStatusFilter = "all" | DeliveryOrchestrationStatus;
 
 export interface DeliverySortOption {
   key: DeliverySortKey;
@@ -16,11 +18,34 @@ export interface DeliverySortOption {
 }
 
 export const deliverySortOptions: DeliverySortOption[] = [
-  { key: "updated", label: "Recently updated" },
-  { key: "created", label: "Recently created" },
-  { key: "title", label: "Title (A–Z)" },
-  { key: "status", label: "Status" },
+  { key: "recent", label: "Recent" },
+  { key: "title", label: "Title" },
+  { key: "oldest", label: "Oldest" },
 ];
+
+export interface DeliveryStatusInfo {
+  status: DeliveryOrchestrationStatus;
+  label: string;
+  variant: BadgeVariant;
+}
+
+const deliveryStatuses: DeliveryStatusInfo[] = [
+  { status: "pending", label: "Pending", variant: "warning" },
+  { status: "active", label: "Active", variant: "info" },
+  { status: "completed", label: "Completed", variant: "success" },
+  { status: "cancelled", label: "Cancelled", variant: "neutral" },
+];
+
+const deliveryStatusByValue = new Map(deliveryStatuses.map((info) => [info.status, info]));
+
+export const deliveryStatusFilterOptions: { value: DeliveryStatusFilter; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  ...deliveryStatuses.map(({ status, label }) => ({ value: status, label })),
+];
+
+export function deliveryStatusInfo(status: DeliveryOrchestrationStatus): DeliveryStatusInfo {
+  return deliveryStatusByValue.get(status)!;
+}
 
 // Cancelling is only meaningful while a delivery can still hand out lanes;
 // completed and cancelled ones are already final.
@@ -86,13 +111,8 @@ export function filterDeliveries<T extends DeliveryListRow>(rows: T[], query: st
   });
 }
 
-// Sorting by status alphabetically would bury a pending delivery behind the
-// cancelled ones, so the order is what needs attention first.
-const statusOrder = ["active", "pending", "completed", "cancelled"];
-
-function statusRank(status: string): number {
-  const i = statusOrder.indexOf(status);
-  return i === -1 ? statusOrder.length : i;
+export function filterDeliveriesByStatus<T extends DeliveryListRow>(rows: T[], status: DeliveryStatusFilter): T[] {
+  return status === "all" ? rows : rows.filter((row) => row.orchestration.status === status);
 }
 
 export function sortDeliveries<T extends DeliveryListRow>(rows: T[], key: DeliverySortKey): T[] {
@@ -100,18 +120,22 @@ export function sortDeliveries<T extends DeliveryListRow>(rows: T[], key: Delive
   const byLabel = (a: T, b: T) => labelOf(a).localeCompare(labelOf(b), undefined, { sensitivity: "base" });
   // Invalid or missing timestamps sort last rather than throwing off the
   // whole ordering with NaN comparisons.
-  const time = (value: string | undefined) => {
+  const time = (value: string | undefined): number | null => {
     const ms = Date.parse(value ?? "");
-    return Number.isNaN(ms) ? -Infinity : ms;
+    return Number.isNaN(ms) ? null : ms;
   };
-  const newestFirst = (pick: (row: T) => string | undefined) => (a: T, b: T) =>
-    time(pick(b)) - time(pick(a)) || byLabel(a, b);
+  const byTime = (pick: (row: T) => string | undefined, direction: 1 | -1) => (a: T, b: T) => {
+    const aTime = time(pick(a));
+    const bTime = time(pick(b));
+    if (aTime === null) return bTime === null ? byLabel(a, b) : 1;
+    if (bTime === null) return -1;
+    return direction * (aTime - bTime) || byLabel(a, b);
+  };
 
   const comparators: Record<DeliverySortKey, (a: T, b: T) => number> = {
-    updated: newestFirst((row) => row.orchestration.updated_at),
-    created: newestFirst((row) => row.orchestration.created_at),
+    recent: byTime((row) => row.orchestration.updated_at, -1),
     title: byLabel,
-    status: (a, b) => statusRank(a.orchestration.status) - statusRank(b.orchestration.status) || byLabel(a, b),
+    oldest: byTime((row) => row.orchestration.updated_at, 1),
   };
 
   return [...rows].sort(comparators[key]);
