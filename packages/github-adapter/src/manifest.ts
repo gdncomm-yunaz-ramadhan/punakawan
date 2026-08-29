@@ -1,5 +1,25 @@
 import type { AdapterManifest } from '@punakawan/schema-types';
 
+type InputSchema = AdapterManifest['operations'][string]['input_schema'];
+type Operation = AdapterManifest['operations'][string];
+
+const string = { type: 'string' };
+const number = { type: 'number' };
+const boolean = { type: 'boolean' };
+const stringArray = { type: 'array', items: string };
+
+function inputSchema(required: string[], properties: Record<string, unknown>): InputSchema {
+  return { type: 'object', properties, ...(required.length > 0 ? { required } : {}) };
+}
+
+function read(description: string, required: string[], properties: Record<string, unknown>): Operation {
+  return { side_effect: false, description, input_schema: inputSchema(required, properties) };
+}
+
+function write(description: string, required: string[], properties: Record<string, unknown>): Operation {
+  return { side_effect: true, approval: 'required', description, input_schema: inputSchema(required, properties) };
+}
+
 /**
  * Manifest for the GitHub adapter. Declares identity, capabilities, and
  * permissions per punakawan-go-typescript-detailed-plan.md §5.4/§13.2/§16
@@ -25,17 +45,17 @@ export const manifest: AdapterManifest = {
     secrets: ['GITHUB_TOKEN'],
   },
   operations: {
-    'github.getRepository': { side_effect: false },
-    'github.getPullRequest': { side_effect: false },
-    'github.getPullRequestFiles': { side_effect: false },
-    'github.getPullRequestChecks': { side_effect: false },
-    'github.listPullRequestComments': { side_effect: false },
-    'github.listUnresolvedReviewThreads': { side_effect: false },
-    'github.createPullRequest': { side_effect: true, approval: 'required' },
-    'github.addLabels': { side_effect: true, approval: 'required' },
-    'github.requestReviewers': { side_effect: true, approval: 'required' },
-    'github.replyToReviewComment': { side_effect: true, approval: 'required' },
-    'github.createPullRequestReview': { side_effect: true, approval: 'required' },
-    'github.resolveReviewThread': { side_effect: true, approval: 'required' },
+    'github.getRepository': read('Get a GitHub repository.', ['repository'], { repository: string }),
+    'github.getPullRequest': read('Get a GitHub pull request.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
+    'github.getPullRequestFiles': read('List files changed by a pull request.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
+    'github.getPullRequestChecks': read('List checks for a Git ref.', ['repository', 'ref'], { repository: string, ref: string }),
+    'github.listPullRequestComments': read('List issue and review comments on a pull request.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
+    'github.listUnresolvedReviewThreads': read('List unresolved pull-request review threads.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
+    'github.createPullRequest': write('Create a pull request.', ['repository', 'baseBranch', 'headBranch', 'title'], { repository: string, baseBranch: string, headBranch: string, title: string, body: string, draft: boolean }),
+    'github.addLabels': write('Add labels to a pull request.', ['repository', 'pullRequestNumber', 'labels'], { repository: string, pullRequestNumber: number, labels: stringArray }),
+    'github.requestReviewers': write('Request pull-request reviewers.', ['repository', 'pullRequestNumber', 'reviewers'], { repository: string, pullRequestNumber: number, reviewers: stringArray }),
+    'github.replyToReviewComment': write('Reply to a pull-request review comment.', ['repository', 'pullRequestNumber', 'commentId', 'body'], { repository: string, pullRequestNumber: number, commentId: string, body: string }),
+    'github.createPullRequestReview': write('Submit a pull-request review.', ['repository', 'pullRequestNumber', 'body', 'event'], { repository: string, pullRequestNumber: number, body: string, event: { type: 'string', enum: ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'] }, commitId: string, comments: { type: 'array', items: { type: 'object', required: ['path', 'line', 'side', 'body'], properties: { path: string, line: number, side: { type: 'string', enum: ['LEFT', 'RIGHT'] }, body: string, startLine: number, startSide: { type: 'string', enum: ['LEFT', 'RIGHT'] } } } } }),
+    'github.resolveReviewThread': write('Resolve a pull-request review thread.', ['threadId'], { threadId: string }),
   },
 };

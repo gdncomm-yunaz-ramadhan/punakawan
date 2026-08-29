@@ -127,6 +127,12 @@ func (g *Gate) SetSyncQueue(provider func() (*syncqueue.Queue, error)) {
 	g.syncQueue = provider
 }
 
+// Manifest returns the authoritative manifest obtained from this adapter when
+// the Gate was initialized. Callers must treat the returned value as read-only.
+func (g *Gate) Manifest() protocol.AdapterManifest {
+	return g.manifest
+}
+
 // approvalID is scoped to a key, not the adapter or operation: one human
 // approval covers every approval-required adapter write sharing that key. A
 // different key still needs its own approval; the boundary is "whatever

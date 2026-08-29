@@ -40,6 +40,12 @@ type AdapterManifestOperations map[string]struct {
 	// Approval corresponds to the JSON schema field "approval".
 	Approval *AdapterManifestOperationsValueApproval `json:"approval,omitempty,omitzero" yaml:"approval,omitempty" mapstructure:"approval,omitempty"`
 
+	// Description corresponds to the JSON schema field "description".
+	Description string `json:"description" yaml:"description" mapstructure:"description"`
+
+	// InputSchema corresponds to the JSON schema field "input_schema".
+	InputSchema AdapterManifestOperationsValueInputSchema `json:"input_schema" yaml:"input_schema" mapstructure:"input_schema"`
+
 	// SideEffect corresponds to the JSON schema field "side_effect".
 	SideEffect bool `json:"side_effect" yaml:"side_effect" mapstructure:"side_effect"`
 }
@@ -71,6 +77,8 @@ func (j *AdapterManifestOperationsValueApproval) UnmarshalJSON(value []byte) err
 	*j = AdapterManifestOperationsValueApproval(v)
 	return nil
 }
+
+type AdapterManifestOperationsValueInputSchema map[string]interface{}
 
 type AdapterManifestPermissions struct {
 	// Filesystem corresponds to the JSON schema field "filesystem".

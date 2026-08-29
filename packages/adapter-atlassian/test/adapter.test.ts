@@ -86,7 +86,9 @@ describe('manifest', () => {
   });
 
   test('declares the write operation as side-effecting and requiring approval', () => {
-    assert.deepEqual(manifest.operations['atlassian.addJiraComment'], { side_effect: true, approval: 'required' });
+    const operation = manifest.operations['atlassian.addJiraComment'];
+    assert.equal(operation?.side_effect, true);
+    assert.equal(operation?.approval, 'required');
   });
 
   test('declares read operations as side-effect free', () => {
@@ -108,7 +110,8 @@ describe('manifest', () => {
       'atlassian.uploadJiraAttachment',
       'atlassian.deleteJiraAttachment',
     ]) {
-      assert.deepEqual(manifest.operations[op], { side_effect: true, approval: 'required' }, `${op} should require approval`);
+      assert.equal(manifest.operations[op]?.side_effect, true, `${op} should be side-effecting`);
+      assert.equal(manifest.operations[op]?.approval, 'required', `${op} should require approval`);
     }
   });
 
@@ -126,6 +129,15 @@ describe('manifest', () => {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
       assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
     }
+  });
+
+  test('describes every operation with an input schema agents can use', () => {
+    for (const [operation, definition] of Object.entries(manifest.operations)) {
+      assert.ok(definition.description, `${operation} should describe its purpose`);
+      assert.equal(definition.input_schema?.type, 'object', `${operation} should declare an object input schema`);
+    }
+    assert.deepEqual(manifest.operations['atlassian.searchJira']?.input_schema?.required, ['jql']);
+    assert.deepEqual(manifest.operations['atlassian.uploadJiraAttachment']?.input_schema?.required, ['issueIdOrKey', 'filePath']);
   });
 });
 

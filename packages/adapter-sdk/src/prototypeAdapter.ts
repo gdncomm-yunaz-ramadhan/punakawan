@@ -27,7 +27,11 @@ const manifest = {
     secrets: [],
   },
   operations: {
-    sleep: { side_effect: false },
+    sleep: {
+      side_effect: false,
+      description: 'Wait for an optional number of milliseconds.',
+      input_schema: { type: 'object', properties: { ms: { type: 'number' } } },
+    },
   },
 };
 
