@@ -1,0 +1,62 @@
+internal/deliveryservice/service.go
+  c81065fbff0350f9 1-97
+internal/mcpserver/tools_invokeworkflowdefinition_test.go
+  c81065fbff0350f9 109-150
+internal/mcpserver/server_test.go
+  c81065fbff0350f9 126,131
+internal/storage/migrations/0027_delivery_lifetimes.sql
+  c81065fbff0350f9 1-41
+internal/delivery/store.go
+  c81065fbff0350f9 45-67,223-226,428,432-444
+internal/storage/migrate.go
+  c81065fbff0350f9 134-150,166-185
+internal/mcpserver/tools_startdelivery.go
+  c81065fbff0350f9 20-21,24-45,49-56,133-146,151-152,163-164,169-170,226-272,530-552
+internal/deliveryservice/service_test.go
+  c81065fbff0350f9 1-113
+internal/deliveryservice/types.go
+  c81065fbff0350f9 1-177
+internal/delivery/lifecycle.go
+  c81065fbff0350f9 16-48,180,195-196,207,209,215-219,221,225-272,282-319,321-322,324-338,343-346,349-364,366-375,377-379,382,385-392,414-424,426,429,432,435-442,444,448,450-455,460,464,467-475,477-523,534-537,542,1094-1109,1115,1187-1189,1191,1194-1198
+internal/mcpserver/capability_registry_test.go
+  c81065fbff0350f9 12,16
+internal/storage/storage_test.go
+  c81065fbff0350f9 6,384-490
+internal/mcpserver/tools_public.go
+  c81065fbff0350f9 25,45
+internal/mcpserver/tools_invokeworkflowdefinition.go
+  c81065fbff0350f9 14,90-95,99-129,131,146-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "af49de49e5f87571335d5a64ac538553cb73fcb6",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1179,
+      "total_deletions": 161,
+      "accepted_lines": 1158,
+      "overriden_lines": 0
+    }
+  }
+}
