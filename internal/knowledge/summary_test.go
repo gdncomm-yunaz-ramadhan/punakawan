@@ -34,8 +34,8 @@ func TestBoundedSummaryPrefersSummaryThenContentThenTitle(t *testing.T) {
 func TestBoundedSummaryTypedPayload(t *testing.T) {
 	// No summary/content: typed payload provides the line, beating Title.
 	r := protocol.KnowledgeRecord{
-		Title:          "petruk plan title",
-		PetrukPlan:     &protocol.KnowledgeRecordPetrukPlan{RecommendedSolution: strptr("adopt approach X")},
+		Title:      "petruk plan title",
+		PetrukPlan: &protocol.KnowledgeRecordPetrukPlan{RecommendedSolution: strptr("adopt approach X")},
 	}
 	if got := BoundedSummary(r); got == nil || *got != "adopt approach X" {
 		t.Fatalf("want typed payload summary, got %v", got)

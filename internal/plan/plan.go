@@ -99,23 +99,23 @@ type Plan struct {
 	// that proved useful there and is kept here rather than dropped, now
 	// living on the one first-class Plan aggregate instead of a second
 	// parallel shape.
-	Requirements                 []string          `json:"requirements,omitempty"`
-	NonGoals                     []string          `json:"non_goals,omitempty"`
-	ArchitectureDecision         string            `json:"architecture_decision,omitempty"`
-	DataModelImpact              string            `json:"data_model_impact,omitempty"`
-	ApiImpact                    string            `json:"api_impact,omitempty"`
-	RepositoryImpactMap          map[string]string `json:"repository_impact_map,omitempty"`
-	ImplementationSequence       []string          `json:"implementation_sequence,omitempty"`
-	UnitTestPlan                 []string          `json:"unit_test_plan,omitempty"`
-	IntegrationTestPlan          []string          `json:"integration_test_plan,omitempty"`
-	E2EPlan                      []string          `json:"e2e_plan,omitempty"`
-	MigrationPlan                []string          `json:"migration_plan,omitempty"`
-	RollbackPlan                 []string          `json:"rollback_plan,omitempty"`
-	ObservabilityPlan            []string          `json:"observability_plan,omitempty"`
-	DocumentationPlan            []string          `json:"documentation_plan,omitempty"`
-	DeploymentChanges            []string          `json:"deployment_changes,omitempty"`
-	SecurityConsiderations       []string          `json:"security_considerations,omitempty"`
-	CompatibilityConsiderations  []string          `json:"compatibility_considerations,omitempty"`
-	VerificationCriteria         []string          `json:"verification_criteria,omitempty"`
-	RisksAndMitigations          []string          `json:"risks_and_mitigations,omitempty"`
+	Requirements                []string          `json:"requirements,omitempty"`
+	NonGoals                    []string          `json:"non_goals,omitempty"`
+	ArchitectureDecision        string            `json:"architecture_decision,omitempty"`
+	DataModelImpact             string            `json:"data_model_impact,omitempty"`
+	ApiImpact                   string            `json:"api_impact,omitempty"`
+	RepositoryImpactMap         map[string]string `json:"repository_impact_map,omitempty"`
+	ImplementationSequence      []string          `json:"implementation_sequence,omitempty"`
+	UnitTestPlan                []string          `json:"unit_test_plan,omitempty"`
+	IntegrationTestPlan         []string          `json:"integration_test_plan,omitempty"`
+	E2EPlan                     []string          `json:"e2e_plan,omitempty"`
+	MigrationPlan               []string          `json:"migration_plan,omitempty"`
+	RollbackPlan                []string          `json:"rollback_plan,omitempty"`
+	ObservabilityPlan           []string          `json:"observability_plan,omitempty"`
+	DocumentationPlan           []string          `json:"documentation_plan,omitempty"`
+	DeploymentChanges           []string          `json:"deployment_changes,omitempty"`
+	SecurityConsiderations      []string          `json:"security_considerations,omitempty"`
+	CompatibilityConsiderations []string          `json:"compatibility_considerations,omitempty"`
+	VerificationCriteria        []string          `json:"verification_criteria,omitempty"`
+	RisksAndMitigations         []string          `json:"risks_and_mitigations,omitempty"`
 }

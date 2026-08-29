@@ -27,8 +27,6 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/adapter-host: {}
-
   packages/adapter-sdk:
     dependencies:
       '@punakawan/schema-types':
@@ -44,8 +42,6 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
-
-  packages/atlassian-adapter: {}
 
   packages/clarification-comments:
     dependencies:
@@ -91,16 +87,6 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
-
-  packages/gitlab-adapter: {}
-
-  packages/openapi-adapter: {}
-
-  packages/playwright-adapter: {}
-
-  packages/playwright-generator: {}
-
-  packages/playwright-recorder: {}
 
   packages/schema-types:
     dependencies:

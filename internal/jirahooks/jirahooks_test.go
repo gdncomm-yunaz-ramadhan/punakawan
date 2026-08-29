@@ -376,4 +376,3 @@ func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 		t.Fatalf("sync status = %q, want synced", synced.SyncStatus)
 	}
 }
-

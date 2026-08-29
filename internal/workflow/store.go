@@ -7,6 +7,7 @@ package workflow
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -116,6 +117,7 @@ func (s *Store) refreshLocked() error {
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner.Split(scanCompleteLines)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		s.readOffset += int64(len(line)) + 1 // +1 for the newline json.Encoder wrote
@@ -133,6 +135,22 @@ func (s *Store) refreshLocked() error {
 		return fmt.Errorf("workflow: scan %s: %w", s.path, err)
 	}
 	return nil
+}
+
+// scanCompleteLines is a bufio.SplitFunc like bufio.ScanLines, except it
+// never returns a final, unterminated line at EOF: refreshLocked must not
+// advance readOffset past a JSON record until Append has finished writing
+// its trailing newline, or a concurrent partial write would be decoded (or
+// permanently skipped) as a corrupt record instead of being retried on the
+// next refresh.
+func scanCompleteLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		return i + 1, data[0:i], nil
+	}
+	return 0, nil, nil
 }
 
 // List returns the full append-only history of run states.

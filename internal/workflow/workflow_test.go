@@ -1,11 +1,33 @@
 package workflow
 
 import (
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	return store
+}
+
+func appendRaw(t *testing.T, path string, data string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(data); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
 
 func TestNewCreatesInitialCheckpoint(t *testing.T) {
 	now := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
@@ -127,6 +149,19 @@ func TestAdvanceAllowsBlockedEscapeHatchAndResume(t *testing.T) {
 	}
 	if _, err := Advance(run, protocol.WorkflowRunStateExecuting, "", now); err != nil {
 		t.Fatalf("expected resuming from blocked into executing to be allowed: %v", err)
+	}
+}
+
+func TestRefreshDoesNotCacheUnterminatedJSONLine(t *testing.T) {
+	store := newTestStore(t)
+	appendRaw(t, store.path, `{"id":"run-1"`)
+	if _, err := store.Current(); err != nil {
+		t.Fatalf("partial trailing record must be deferred, not decoded: %v", err)
+	}
+	appendRaw(t, store.path, `,"workspace":"ws","workflow_name":"feature-delivery","state":"created","created_at":"2026-08-29T00:00:00Z","updated_at":"2026-08-29T00:00:00Z"}`+"\n")
+	got, err := store.Current()
+	if err != nil || got["run-1"].Id != "run-1" {
+		t.Fatalf("completed record was not recovered: got=%v err=%v", got, err)
 	}
 }
 
