@@ -1,0 +1,104 @@
+internal/mcpserver/tools_public.go
+  c81065fbff0350f9 31
+internal/adapters/gate.go
+  c81065fbff0350f9 19-20,25-30,35-37,41-43
+internal/mcpserver/server_test.go
+  c81065fbff0350f9 143-157
+SECURITY.md
+  c81065fbff0350f9 16-21
+internal/storage/storage_test.go
+  c81065fbff0350f9 284-382
+protocol/adapter.schema.json
+  c81065fbff0350f9 53
+internal/workflow/store_test.go
+  c81065fbff0350f9 174-190
+protocol/projectdeliveryprofile.schema.json
+  c81065fbff0350f9 5
+internal/app/app.go
+  c81065fbff0350f9 2-4,194-197,387-390,410-412,421-426,446-448
+internal/workflow/store.go
+  c81065fbff0350f9 128,140-165
+internal/delivery/github_pr_review.go
+  c81065fbff0350f9 105
+internal/adapters/registry.go
+  c81065fbff0350f9 43-45,54,57-59,132
+packages/adapter-atlassian/src/manifest.ts
+  c81065fbff0350f9 5,7-10,34-36,38,40-43,45-46,48
+README.md
+  c81065fbff0350f9 17-19,22-28
+internal/storage/consolidation_test.go
+  c81065fbff0350f9 13-18
+internal/mcpserver/tools_github_review.go
+  c81065fbff0350f9 157
+packages/adapter-atlassian/test/adapter.test.ts
+  c81065fbff0350f9 88-90,96,100,112-113,129
+packages/github-adapter/test/adapter.test.ts
+  c81065fbff0350f9 19,23
+internal/workflow/workflow.go
+  c81065fbff0350f9 42-46,60
+packages/github-adapter/src/manifest.ts
+  c81065fbff0350f9 5-6,12-14,35-40
+protocol/evidence.schema.json
+  c81065fbff0350f9 18
+internal/policy/policy.go
+  c81065fbff0350f9 13-17,21-22,25-27,38-39,88,92-94,100,106,108,112
+test/fixtures/policy.yaml
+  c81065fbff0350f9 14,20,22,26
+internal/mcpserver/server.go
+  c81065fbff0350f9 41
+internal/jirahooks/lifecycle_test.go
+  c81065fbff0350f9 77
+internal/delivery/github_pr_review_test.go
+  c81065fbff0350f9 8
+protocol/roleconfig.schema.json
+  c81065fbff0350f9 5,38
+internal/jirahooks/jirahooks_test.go
+  c81065fbff0350f9 54-56,71-73,86
+internal/storage/migrations/0026_remove_execution_approvals.sql
+  c81065fbff0350f9 1-56
+internal/adapters/gate_test.go
+  c81065fbff0350f9 16,72-74
+internal/mcpserver/tools_github_review_test.go
+  c81065fbff0350f9 15-17,119
+internal/policy/policy_test.go
+  c81065fbff0350f9 6,21-22,35,37,40-42,44-46
+pkg/protocol/doc.go
+  c81065fbff0350f9 6
+internal/delivery/lifecycle.go
+  c81065fbff0350f9 638-639,666-667,1191
+protocol/needsuserinput.schema.json
+  c81065fbff0350f9 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "111fac96ed65281d3f9b52687665dfb7a75f119a",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 452,
+      "total_deletions": 1042,
+      "accepted_lines": 418,
+      "overriden_lines": 0
+    }
+  }
+}
