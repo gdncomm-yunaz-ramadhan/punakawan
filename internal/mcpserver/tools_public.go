@@ -35,8 +35,6 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "propose_github_pr_review", Description: "Persist agent review findings and an exact GitHub pull-request review proposal before submission."}, proposeGitHubPRReviewHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "get_github_pr_review", Description: "Read a persisted GitHub pull-request review proposal and its submission status."}, getGitHubPRReviewHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "submit_github_pr_review", Description: "Submit one persisted GitHub pull-request review through the configured adapter."}, submitGitHubPRReviewHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "execute_jira_writes", Description: "Execute one Jira intent by intent_id or all pending intents by execution_id."}, executeJiraWritesHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "queue_jira_write", Description: "Record an idempotent Jira write intent before external synchronization."}, queueJiraWriteHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "map_delivery_work_item", Description: "Bind a delivery work item to an exact captured Jira task before worklogging."}, mapDeliveryWorkItemHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "get_delivery", Description: "Read a delivery's complete current state and next action."}, getDeliveryHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "answer_delivery_question", Description: "Answer one pending delivery clarification."}, answerDeliveryQuestionHandler(a))

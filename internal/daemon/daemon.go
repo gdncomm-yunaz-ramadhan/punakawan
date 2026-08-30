@@ -5,11 +5,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/jirahooks"
+	"github.com/ygrip/punakawan/internal/outbox"
 	"github.com/ygrip/punakawan/internal/procreg"
+	"github.com/ygrip/punakawan/internal/providerwrite"
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/internal/workspace"
 )
+
+// outboxWorkers is the default bounded worker pool size the daemon runs
+// against the provider outbox.
+const outboxWorkers = 2
+
+// outboxIdle is how long an idle worker waits between empty claim attempts.
+const outboxIdle = 2 * time.Second
 
 // Paths bundles the on-disk locations Run needs, all colocated under
 // the same storage.DataDir - one clear ownership tree per install.
@@ -51,6 +64,8 @@ type Daemon struct {
 	transport  *Transport
 	processes  *procreg.Registry
 	reconciled procreg.Result
+	adapters   *adapters.Registry
+	pool       *providerwrite.Pool
 }
 
 // Run acquires the singleton lock, opens storage, binds the loopback
@@ -117,6 +132,30 @@ func Run(ctx context.Context, host, port string, paths Paths) (*Daemon, error) {
 		return nil, fmt.Errorf("daemon: publish bound address: %w", err)
 	}
 
+	// The daemon spans every project on this machine, so its adapter
+	// registry is built from host-level config only - there is no single
+	// workspace root to merge per-repo overrides against the way
+	// internal/app.Load does for a single-repo CLI invocation.
+	global, err := workspace.LoadGlobalConfig()
+	if err != nil {
+		transport.Shutdown(ctx)
+		db.Close()
+		lock.Release()
+		return nil, fmt.Errorf("daemon: load adapter config: %w", err)
+	}
+	specs := make(map[string]adapters.AdapterSpec, len(global.Adapters))
+	for id, cfg := range global.Adapters {
+		specs[id] = adapters.AdapterSpec{Command: cfg.Command, Args: cfg.Args, EnvPassthrough: cfg.EnvPassthrough}
+	}
+	registry := adapters.NewRegistry(specs)
+
+	outboxStore := outbox.New(db)
+	observer := jirahooks.NewWorklogSyncObserver(deliveryStore)
+	pool := providerwrite.NewPool(outboxStore, registry, outboxWorkers, outboxIdle, observer)
+	pool.Start(ctx)
+	d.adapters = registry
+	d.pool = pool
+
 	return d, nil
 }
 
@@ -149,12 +188,22 @@ func (d *Daemon) Serve() error {
 	return d.transport.Serve()
 }
 
-// Shutdown gracefully stops the transport, closes storage, removes the
-// published port file, and releases the singleton lock - in that order,
-// so no client can observe a lock held with storage already closed
-// underneath it.
+// Shutdown gracefully stops the transport, stops the outbox worker pool
+// (no further claims; any write already in flight observes ctx
+// cancellation and is classified ambiguous, never silently dropped; any
+// claim left unfinished simply expires its lease), closes the adapter
+// registry, closes storage, removes the published port file, and releases
+// the singleton lock - in that order, so no client can observe a lock held
+// with storage already closed underneath it, and no adapter subprocess is
+// killed while a worker might still be waiting on its response.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	err := d.transport.Shutdown(ctx)
+	if perr := d.pool.Stop(ctx); err == nil {
+		err = perr
+	}
+	if aerr := d.adapters.Close(ctx); err == nil {
+		err = aerr
+	}
 	if cerr := d.db.Close(); err == nil {
 		err = cerr
 	}

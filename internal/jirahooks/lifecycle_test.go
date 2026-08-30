@@ -8,39 +8,9 @@ import (
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/outbox"
 	"github.com/ygrip/punakawan/internal/storage"
 )
-
-func TestAdapterWriteAddComment(t *testing.T) {
-	op, params, err := adapterWrite(&delivery.JiraWriteIntent{
-		JiraIssueKey: "TRF-19272",
-		Action:       "add_comment",
-		Payload:      map[string]any{"comment_body": "Assessment complete"},
-	})
-	if err != nil {
-		t.Fatalf("adapterWrite(add_comment): %v", err)
-	}
-	if op != "atlassian.addJiraComment" {
-		t.Fatalf("operation = %q, want atlassian.addJiraComment", op)
-	}
-	if params["issueIdOrKey"] != "TRF-19272" || params["commentBody"] != "Assessment complete" {
-		t.Fatalf("params = %#v", params)
-	}
-}
-
-func TestAdapterWriteTransitionStatusDefersPerIssueIDResolution(t *testing.T) {
-	op, params, err := adapterWrite(&delivery.JiraWriteIntent{
-		JiraIssueKey: "TRF-19272",
-		Action:       "transition_status",
-		Payload:      map[string]any{"target_status": "In Review"},
-	})
-	if err != nil {
-		t.Fatalf("adapterWrite(transition_status): %v", err)
-	}
-	if op != "atlassian.transitionJiraIssue" || params["targetStatus"] != "In Review" {
-		t.Fatalf("transition mapping = op %q params %#v, want target-status resolution", op, params)
-	}
-}
 
 func TestFormatTransitionCatalogIncludesEveryAvailableID(t *testing.T) {
 	catalog := formatTransitionCatalog([]adapters.JiraTransition{
@@ -61,6 +31,7 @@ func TestRetryWorkLogSyncReplaysExistingLedgerEntry(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	store := delivery.NewStore(db)
+	ob := outbox.New(db)
 	resolved, err := store.ResolveJiraDelivery(ctx, "resolve", "TRF-19272", delivery.ResolveJiraDeliveryOptions{})
 	if err != nil {
 		t.Fatalf("ResolveJiraDelivery: %v", err)
@@ -75,7 +46,7 @@ func TestRetryWorkLogSyncReplaysExistingLedgerEntry(t *testing.T) {
 	}
 	caller := &fakeAdapterCaller{responses: map[string]string{"atlassian.addWorklog": `{"ok":true,"worklogId":"jira-worklog-1"}`}, failOps: map[string]bool{}}
 	gate := adapters.NewGate("atlassian", testManifest(), caller)
-	lifecycle := NewLifecycle(store, &fakeGateResolver{gate: gate})
+	lifecycle := NewLifecycle(store, &fakeGateResolver{gate: gate}, ob)
 
 	entry, err := lifecycle.RetryWorkLogSync(ctx, resolved.Execution.OrchestrationID, worklogID)
 	if err != nil {
@@ -100,26 +71,16 @@ func TestRetryWorkLogSyncReplaysExistingLedgerEntry(t *testing.T) {
 	if len(worklogs) != 1 {
 		t.Fatalf("worklogs = %+v, want exactly one retained ledger entry", worklogs)
 	}
-}
 
-func TestAdapterWriteAcceptsLegacyPayloadAliases(t *testing.T) {
-	tests := []struct {
-		name    string
-		action  string
-		payload map[string]any
-		wantOp  string
-		wantKey string
-		want    string
-	}{
-		{"comment", "add_comment", map[string]any{"comment": "legacy comment"}, "atlassian.addJiraComment", "commentBody", "legacy comment"},
-		{"description", "update_description", map[string]any{"description_body": "legacy description"}, "atlassian.editJiraIssue", "description", "legacy description"},
+	// A second retry of an already-synced entry must not call Jira again.
+	again, err := lifecycle.RetryWorkLogSync(ctx, resolved.Execution.OrchestrationID, worklogID)
+	if err != nil {
+		t.Fatalf("RetryWorkLogSync (already synced): %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			op, params, err := adapterWrite(&delivery.JiraWriteIntent{JiraIssueKey: "TRF-19272", Action: tt.action, Payload: tt.payload})
-			if err != nil || op != tt.wantOp || params[tt.wantKey] != tt.want {
-				t.Fatalf("adapterWrite = %q, %#v, %v", op, params, err)
-			}
-		})
+	if again.SyncStatus != "synced" {
+		t.Fatalf("entry = %+v, want still synced", again)
+	}
+	if len(caller.calls) != 1 {
+		t.Fatalf("calls after redundant retry = %+v, want still exactly one", caller.calls)
 	}
 }

@@ -77,7 +77,11 @@ func retryWorkLogSyncHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		if err != nil {
 			return nil, RetryWorkLogSyncOutput{}, err
 		}
-		worklog, err := jirahooks.NewLifecycle(store, a.AdapterRegistry).RetryWorkLogSync(ctx, in.OrchestrationID, in.WorkLogID)
+		outboxStore, err := a.OpenOutbox()
+		if err != nil {
+			return nil, RetryWorkLogSyncOutput{}, err
+		}
+		worklog, err := jirahooks.NewLifecycle(store, a.AdapterRegistry, outboxStore).RetryWorkLogSync(ctx, in.OrchestrationID, in.WorkLogID)
 		if err != nil {
 			return nil, RetryWorkLogSyncOutput{}, fmt.Errorf("mcpserver: retry worklog sync: %w", err)
 		}

@@ -464,72 +464,15 @@ func assessJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 	}
 }
 
-type QueueJiraWriteInput struct {
-	ExecutionID             string         `json:"execution_id"`
-	SessionID               string         `json:"session_id,omitempty"`
-	JiraIssueKey            string         `json:"jira_issue_key"`
-	Action                  string         `json:"action"`
-	RefreshStoryPointsField bool           `json:"refresh_story_points_field,omitempty"`
-	Payload                 map[string]any `json:"payload,omitempty"`
-	IdempotencyKey          string         `json:"idempotency_key,omitempty"`
-}
+// QueueJiraWriteOutput is cancelJiraWriteIntentHandler's result shape,
+// naming the pre-outbox jira_write_intents row it acted on (see
+// delivery.Store.CancelJiraWriteIntent); queuing and executing an intent
+// through that table no longer happens - every Jira write is now enqueued
+// directly into the durable provider outbox (internal/outbox) by the domain
+// code that decides to make it.
 type QueueJiraWriteOutput struct {
 	Intent delivery.JiraWriteIntent `json:"intent"`
 	View   delivery.DeliveryView    `json:"view"`
-}
-
-func queueJiraWriteHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, QueueJiraWriteInput) (*mcp.CallToolResult, QueueJiraWriteOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in QueueJiraWriteInput) (*mcp.CallToolResult, QueueJiraWriteOutput, error) {
-		store, err := OpenDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, QueueJiraWriteOutput{}, err
-		}
-		key := in.IdempotencyKey
-		if key == "" {
-			key = delivery.NewID()
-		}
-		if in.Action == "update_story_points" {
-			if in.RefreshStoryPointsField || !hasStoryPointsFieldMapping(in.Payload) {
-				mapping, err := jirahooks.NewLifecycle(store, a.AdapterRegistry).ResolveStoryPointsField(ctx, in.ExecutionID, key+":story-points-field", in.RefreshStoryPointsField)
-				if err != nil {
-					return nil, QueueJiraWriteOutput{}, fmt.Errorf("mcpserver: discover Jira story-points field: %w", err)
-				}
-				payload := make(map[string]any, len(in.Payload)+1)
-				for name, value := range in.Payload {
-					payload[name] = value
-				}
-				payload["field_metadata"] = map[string]any{"id": mapping.FieldID, "name": mapping.FieldName}
-				in.Payload = payload
-			}
-		}
-		intent, err := store.CreateJiraWriteIntent(ctx, key, in.ExecutionID, in.SessionID, in.JiraIssueKey, in.Action, in.Payload)
-		if err != nil {
-			return nil, QueueJiraWriteOutput{}, fmt.Errorf("mcpserver: queue Jira write: %w", err)
-		}
-		execution, err := store.GetExecutionByCase(ctx, intent.CaseID)
-		if err != nil {
-			return nil, QueueJiraWriteOutput{}, err
-		}
-		view, err := store.BuildDeliveryView(ctx, execution.OrchestrationID)
-		if err != nil {
-			return nil, QueueJiraWriteOutput{}, err
-		}
-		return nil, QueueJiraWriteOutput{Intent: *intent, View: *view}, nil
-	}
-}
-
-func hasStoryPointsFieldMapping(payload map[string]any) bool {
-	for _, key := range []string{"story_points_field_id", "storyPointsFieldId"} {
-		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
-			return true
-		}
-	}
-	metadata, ok := payload["field_metadata"].(map[string]any)
-	if !ok {
-		return false
-	}
-	value, ok := metadata["id"].(string)
-	return ok && strings.TrimSpace(value) != ""
 }
 
 type MapDeliveryWorkItemInput struct {
@@ -587,7 +530,11 @@ func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if key == "" {
 			key = delivery.NewID()
 		}
-		sources, err := jirahooks.NewLifecycle(store, a.AdapterRegistry).Hydrate(ctx, in.ExecutionID, in.SessionID, key)
+		outboxStore, err := a.OpenOutbox()
+		if err != nil {
+			return nil, HydrateJiraDeliveryOutput{}, err
+		}
+		sources, err := jirahooks.NewLifecycle(store, a.AdapterRegistry, outboxStore).Hydrate(ctx, in.ExecutionID, in.SessionID, key)
 		if err != nil {
 			return nil, HydrateJiraDeliveryOutput{}, fmt.Errorf("mcpserver: hydrate Jira delivery: %w", err)
 		}
@@ -601,16 +548,6 @@ func hydrateJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		}
 		return nil, HydrateJiraDeliveryOutput{Sources: sources, View: *view}, nil
 	}
-}
-
-type ExecuteJiraWritesInput struct {
-	IntentID       string `json:"intent_id,omitempty"`
-	ExecutionID    string `json:"execution_id,omitempty"`
-	IdempotencyKey string `json:"idempotency_key,omitempty"`
-}
-type ExecuteJiraWritesOutput struct {
-	Intents []delivery.JiraWriteIntent `json:"intents"`
-	View    delivery.DeliveryView      `json:"view"`
 }
 
 type CancelJiraWriteIntentInput struct {
@@ -641,49 +578,5 @@ func cancelJiraWriteIntentHandler(a *app.App) func(context.Context, *mcp.CallToo
 			return nil, QueueJiraWriteOutput{}, err
 		}
 		return nil, QueueJiraWriteOutput{Intent: *intent, View: *view}, nil
-	}
-}
-
-func executeJiraWritesHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ExecuteJiraWritesInput) (*mcp.CallToolResult, ExecuteJiraWritesOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in ExecuteJiraWritesInput) (*mcp.CallToolResult, ExecuteJiraWritesOutput, error) {
-		if (in.IntentID == "") == (in.ExecutionID == "") {
-			return nil, ExecuteJiraWritesOutput{}, fmt.Errorf("mcpserver: execute Jira writes requires exactly one of intent_id or execution_id")
-		}
-		store, err := OpenDeliveryStore(ctx, a)
-		if err != nil {
-			return nil, ExecuteJiraWritesOutput{}, err
-		}
-		key := in.IdempotencyKey
-		if key == "" {
-			key = delivery.NewID()
-		}
-		lifecycle := jirahooks.NewLifecycle(store, a.AdapterRegistry)
-		var intents []delivery.JiraWriteIntent
-		var execution *delivery.DeliveryExecution
-		if in.IntentID != "" {
-			intent, err := lifecycle.Execute(ctx, in.IntentID, key)
-			if err != nil {
-				return nil, ExecuteJiraWritesOutput{}, fmt.Errorf("mcpserver: execute Jira write intent: %w", err)
-			}
-			intents = []delivery.JiraWriteIntent{*intent}
-			execution, err = store.GetExecution(ctx, intent.ExecutionID)
-			if err != nil {
-				return nil, ExecuteJiraWritesOutput{}, err
-			}
-		} else {
-			intents, err = lifecycle.ExecutePending(ctx, in.ExecutionID, key)
-			if err != nil {
-				return nil, ExecuteJiraWritesOutput{}, fmt.Errorf("mcpserver: execute pending Jira writes: %w", err)
-			}
-			execution, err = store.GetExecution(ctx, in.ExecutionID)
-			if err != nil {
-				return nil, ExecuteJiraWritesOutput{}, err
-			}
-		}
-		view, err := store.BuildDeliveryView(ctx, execution.OrchestrationID)
-		if err != nil {
-			return nil, ExecuteJiraWritesOutput{}, err
-		}
-		return nil, ExecuteJiraWritesOutput{Intents: intents, View: *view}, nil
 	}
 }

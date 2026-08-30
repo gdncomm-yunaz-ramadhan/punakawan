@@ -7,7 +7,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -43,12 +42,6 @@ type Registry struct {
 	mu      sync.Mutex
 	clients map[string]*Client
 	gates   map[string]*Gate
-	// syncQueue lazily resolves the shared sync queue on first use, so a
-	// Registry built at app.Load never forces the SQLite kernel open until an
-	// adapter write actually fails and needs recording.
-	// nil (the default) leaves every Gate without a queue, unchanged from
-	// before SetSyncQueue is called.
-	syncQueue func() (*syncqueue.Queue, error)
 }
 
 // NewRegistry constructs a Registry for the given adapter specs.
@@ -57,20 +50,6 @@ func NewRegistry(specs map[string]AdapterSpec) *Registry {
 		specs:   specs,
 		clients: make(map[string]*Client),
 		gates:   make(map[string]*Gate),
-	}
-}
-
-// SetSyncQueue configures provider on every Gate this Registry creates from
-// this point on, and on every Gate already memoized (punokawan-nbz),
-// mirroring SetApprovalScope. provider is resolved lazily by each Gate only
-// when a write actually fails, so setting it here never opens the storage
-// kernel.
-func (r *Registry) SetSyncQueue(provider func() (*syncqueue.Queue, error)) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.syncQueue = provider
-	for _, g := range r.gates {
-		g.SetSyncQueue(provider)
 	}
 }
 
@@ -130,7 +109,6 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 	}
 
 	gate := NewGate(adapterID, manifest, client)
-	gate.SetSyncQueue(r.syncQueue)
 	r.clients[adapterID] = client
 	r.gates[adapterID] = gate
 	return gate, nil

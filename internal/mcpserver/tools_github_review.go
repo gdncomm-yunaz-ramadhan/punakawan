@@ -3,12 +3,15 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/outbox"
+	"github.com/ygrip/punakawan/internal/providerwrite"
 )
 
 type HydrateGitHubPullRequestInput struct {
@@ -138,6 +141,15 @@ type SubmitGitHubPRReviewOutput struct {
 	Review delivery.GitHubPRReview `json:"review"`
 }
 
+// submitGitHubPRReviewHandler routes the actual GitHub write through the
+// durable outbox (providerwrite.ExecuteNow), attempting it synchronously so
+// this tool call still returns a definitive result the way it always has.
+// Anything short of an immediate success (a retryable adapter rejection, an
+// ambiguous attempt) is treated as this one synchronous submission
+// attempt's own failure: the underlying outbox intent is cancelled rather
+// than left to retry silently in the background, and the review is marked
+// failed with the redacted diagnostic, so a caller sees one definitive
+// outcome per call instead of a write that might complete unobserved later.
 func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, SubmitGitHubPRReviewInput) (*mcp.CallToolResult, SubmitGitHubPRReviewOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in SubmitGitHubPRReviewInput) (*mcp.CallToolResult, SubmitGitHubPRReviewOutput, error) {
 		if strings.TrimSpace(in.ReviewID) == "" {
@@ -165,23 +177,43 @@ func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallTool
 		if err != nil {
 			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, fmt.Errorf("prepare GitHub PR review: %w", err))
 		}
-		gate, err := a.AdapterRegistry.Gate(ctx, "github")
+		outboxStore, err := a.OpenOutbox()
 		if err != nil {
-			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, fmt.Errorf("open GitHub adapter: %w", err))
+			return nil, SubmitGitHubPRReviewOutput{}, err
 		}
-		raw, err := gate.Call(ctx, "github-pr-review-"+review.ID, githubCreatePullRequestReviewOperation, params)
+		payload, err := json.Marshal(map[string]any{
+			"pull_request_number": params["pullRequestNumber"],
+			"head_sha":            params["commitId"],
+			"body":                params["body"],
+			"event":               params["event"],
+			"comments":            params["comments"],
+		})
 		if err != nil {
-			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, err)
+			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, fmt.Errorf("encode GitHub PR review payload: %w", err))
 		}
-		externalReviewID, err := githubPRReviewExternalID(raw)
+		resolved, err := providerwrite.ExecuteNow(ctx, outboxStore, a.AdapterRegistry, "github-pr-review-"+review.ID, outbox.Intent{
+			OrchestrationID: review.DeliveryExecutionID, AdapterID: "github", Operation: githubCreatePullRequestReviewOperation,
+			TargetKey: review.Repository, PayloadJSON: string(payload),
+			OperationFingerprint: providerwrite.GitHubReviewFingerprint(review.Repository, review.PullRequestNumber, review.HeadSHA, review.ID),
+		})
 		if err != nil {
-			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, err)
+			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, fmt.Errorf("enqueue GitHub PR review: %w", err))
 		}
-		resolved, err := store.ResolveGitHubPRReview(ctx, key, review.ID, externalReviewID, "")
+		if resolved.Status != outbox.StatusSucceeded {
+			diag := resolved.LastErrorRedacted
+			if diag == "" {
+				diag = "GitHub PR review submission did not complete"
+			}
+			if _, cancelErr := outboxStore.Cancel(ctx, resolved.ID, "submit_github_pr_review: giving up after one synchronous attempt"); cancelErr != nil {
+				return nil, SubmitGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: cancel unresolved GitHub PR review intent: %w", cancelErr)
+			}
+			return nil, SubmitGitHubPRReviewOutput{}, resolveGitHubPRReviewFailure(ctx, store, key, review.ID, errors.New(diag))
+		}
+		final, err := store.ResolveGitHubPRReview(ctx, key, review.ID, resolved.ExternalID, "")
 		if err != nil {
 			return nil, SubmitGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: persist submitted GitHub PR review: %w", err)
 		}
-		return nil, SubmitGitHubPRReviewOutput{Review: *resolved}, nil
+		return nil, SubmitGitHubPRReviewOutput{Review: *final}, nil
 	}
 }
 
@@ -310,19 +342,3 @@ func githubPRReviewFindingBody(finding map[string]any) string {
 	}
 }
 
-func githubPRReviewExternalID(raw json.RawMessage) (string, error) {
-	var result struct {
-		OK       bool   `json:"ok"`
-		ReviewID string `json:"reviewId"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", fmt.Errorf("decode GitHub PR review result: %w", err)
-	}
-	if !result.OK {
-		return "", fmt.Errorf("GitHub PR review adapter reported an unsuccessful result")
-	}
-	if reviewID := strings.TrimSpace(result.ReviewID); reviewID != "" {
-		return reviewID, nil
-	}
-	return "", fmt.Errorf("GitHub PR review adapter returned no reviewId")
-}

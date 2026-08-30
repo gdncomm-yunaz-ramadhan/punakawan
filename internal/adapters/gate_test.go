@@ -4,19 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/ygrip/punakawan/internal/storage"
-	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // fakeCaller records every "execute" call it receives instead of talking to
 // a real subprocess, so Gate's call behavior can be tested in isolation.
 // failOps, if set, makes Call return an error instead of a canned success
-// for any op named in it, so Gate's sync-queue-on-failure behavior
-// (punokawan-nbz) can be exercised without a real adapter failure.
+// for any op named in it.
 type fakeCaller struct {
 	calls   []map[string]any
 	failOps map[string]bool
@@ -69,48 +66,57 @@ func TestGateAllowsUnrestrictedOperation(t *testing.T) {
 	}
 }
 
-func TestGateAllowsSideEffectingOperationDirectly(t *testing.T) {
-	// side_effect no longer implies an approval gate: Call always proceeds
-	// straight to the adapter.
+// TestRawAdapterWriteIsRejected is the exact regression this Gate change
+// exists for: a raw call naming a side-effecting operation must fail before
+// the adapter process is ever invoked, so every write is forced through the
+// durable outbox instead.
+func TestRawAdapterWriteIsRejected(t *testing.T) {
 	g, fc := newTestGate(t)
 
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
-		t.Fatalf("Call: %v", err)
+	_, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"})
+	if err == nil {
+		t.Fatal("expected a side-effecting raw call to be rejected")
+	}
+	if got := err.Error(); !strings.Contains(got, "side-effecting operation") || !strings.Contains(got, "must be enqueued through a domain service") {
+		t.Fatalf("error = %q, want it to explain the operation must be enqueued", got)
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("expected the adapter process to never be invoked, got %d calls", len(fc.calls))
+	}
+}
+
+func TestCallRejectsUndeclaredOperation(t *testing.T) {
+	g, fc := newTestGate(t)
+	if _, err := g.Call(context.Background(), "run-1", "atlassian.doesNotExist", nil); err == nil {
+		t.Fatal("expected an undeclared operation to be rejected")
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("expected the adapter process to never be invoked, got %d calls", len(fc.calls))
+	}
+}
+
+func TestExecuteWriteInvokesASideEffectingOperationDirectly(t *testing.T) {
+	// ExecuteWrite is the one seam internal/providerwrite's worker uses to
+	// perform a write it already claimed from the durable outbox - this is
+	// the only place a side-effecting operation may still reach the adapter
+	// process directly.
+	g, fc := newTestGate(t)
+	if _, err := g.ExecuteWrite(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
+		t.Fatalf("ExecuteWrite: %v", err)
 	}
 	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addJiraComment" {
 		t.Fatalf("calls = %+v", fc.calls)
 	}
 }
 
-func TestCallEnqueuesFailureWhenSyncQueueIsSet(t *testing.T) {
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	fc := &fakeCaller{failOps: map[string]bool{"atlassian.getJiraIssue": true}}
-	g := NewGate("atlassian", testManifest(), fc)
-
-	queue := syncqueue.New(db, "test-project")
-	g.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
-
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
-		t.Fatal("expected the simulated adapter failure to surface")
-	}
-
-	pending, err := queue.Pending()
-	if err != nil {
-		t.Fatalf("Pending: %v", err)
-	}
-	if len(pending) != 1 {
-		t.Fatalf("Pending = %+v, want exactly one queued failure", pending)
-	}
-	if pending[0].Adapter != "atlassian" || pending[0].Op != "atlassian.getJiraIssue" || pending[0].IssueIdOrKey != "PAY-1" {
-		t.Fatalf("queued entry = %+v, want adapter/op/issue_id_or_key set from the failed call", pending[0])
+func TestExecuteWriteRejectsANonSideEffectingOperation(t *testing.T) {
+	g, _ := newTestGate(t)
+	if _, err := g.ExecuteWrite(context.Background(), "run-1", "atlassian.getJiraIssue", nil); err == nil {
+		t.Fatal("expected ExecuteWrite to reject a read-only operation")
 	}
 }
 
-func TestCallWithoutSyncQueueJustReturnsTheError(t *testing.T) {
+func TestCallReturnsTheAdapterErrorOnFailure(t *testing.T) {
 	g, fc := newTestGate(t)
 	fc.failOps = map[string]bool{"atlassian.getJiraIssue": true}
 

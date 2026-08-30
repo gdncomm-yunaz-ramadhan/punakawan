@@ -19,6 +19,7 @@ import (
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/learning"
+	"github.com/ygrip/punakawan/internal/outbox"
 	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/planexec"
 	"github.com/ygrip/punakawan/internal/policy"
@@ -26,7 +27,6 @@ import (
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/storage"
-	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/internal/workflowdef"
@@ -68,8 +68,8 @@ type App struct {
 	learningMu    sync.Mutex
 	learningStore *learning.Store
 
-	syncQueueMu sync.Mutex
-	syncQueue   *syncqueue.Queue
+	outboxMu sync.Mutex
+	outbox   *outbox.Store
 
 	searchIndexMu sync.Mutex
 	searchIndex   *search.Index
@@ -191,13 +191,7 @@ func load(ws *workspace.Workspace) (*App, error) {
 		a.ephemeralRoot = ws.Root
 	}
 
-	// The sync queue now lives in the shared SQLite kernel, opened lazily so
-	// a command that never records a failed adapter write never pays to open
-	// the kernel. The registry therefore takes a provider (a.OpenSyncQueue)
-	// rather than an already-opened queue, deferring the open to the first
-	// operation that actually needs it.
 	registry := adapters.NewRegistry(specs)
-	registry.SetSyncQueue(a.OpenSyncQueue)
 	a.AdapterRegistry = registry
 	a.Worktrees = gitops.NewWorktreeManager(sup, pol)
 
@@ -417,22 +411,21 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 	return a.learningStore, nil
 }
 
-// OpenSyncQueue lazily opens the outbound-adapter-write sync queue, memoizing
-// the result, scoped to this workspace's id within the shared storage
-// kernel. It is a thin scope over the one shared *storage.DB rather than a
-// per-project server, so it starts nothing: the deferral simply avoids
-// opening the kernel for commands that never record or inspect a failed
-// adapter write. The adapter registry holds this method as a provider, so
-// the kernel opens on the first adapter write that fails, not at Load.
-func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
+// OpenOutbox lazily opens the durable provider-write outbox, memoizing the
+// result. Unlike per-workspace stores, the outbox is not scoped to this
+// workspace's id: every enqueued intent already names its own
+// orchestration/execution/session, and the outbox's exactly-once claim
+// semantics require every worker (regardless of which workspace enqueued a
+// given intent) to see the same rows through the one shared kernel.
+func (a *App) OpenOutbox() (*outbox.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	a.syncQueueMu.Lock()
-	defer a.syncQueueMu.Unlock()
+	a.outboxMu.Lock()
+	defer a.outboxMu.Unlock()
 
-	if a.syncQueue != nil {
-		return a.syncQueue, nil
+	if a.outbox != nil {
+		return a.outbox, nil
 	}
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -441,16 +434,8 @@ func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
 	if err != nil {
 		return nil, err
 	}
-	queue := syncqueue.New(db, a.Workspace.ID)
-	// One-time import of any pre-kernel JSONL sync-queue file this workspace
-	// still has on disk. A failure is non-fatal: the queue must still open,
-	// so the warning is logged rather than returned (losing old data beats a
-	// queue that will not open). Runs once - OpenSyncQueue memoizes the queue.
-	if warn := queue.ImportLegacy(a.Workspace.Root); warn != nil {
-		slog.Warn("syncqueue: legacy import failed; opening without imported data", "error", warn)
-	}
-	a.syncQueue = queue
-	return a.syncQueue, nil
+	a.outbox = outbox.New(db)
+	return a.outbox, nil
 }
 
 // JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
@@ -557,9 +542,9 @@ func (a *App) Close() error {
 	a.learningStore = nil
 	a.learningMu.Unlock()
 
-	a.syncQueueMu.Lock()
-	a.syncQueue = nil
-	a.syncQueueMu.Unlock()
+	a.outboxMu.Lock()
+	a.outbox = nil
+	a.outboxMu.Unlock()
 
 	if a.ephemeralRoot != "" {
 		os.RemoveAll(a.ephemeralRoot)

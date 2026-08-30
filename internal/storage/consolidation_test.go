@@ -10,12 +10,12 @@ import (
 
 // migratedPackages are the file-based mutable stores moved onto this
 // package's shared SQLite kernel with no remaining file-based facet at all:
-// internal/learning, internal/syncqueue, internal/panel/registry.
-// internal/approvals was one such package too, until the execution-approval
-// contract it backed was removed outright (not merely migrated) and the
-// whole package was deleted. A regression back to raw file I/O in any
-// package still listed here is exactly the "duplicate mutable state path"
-// this migration was meant to delete, not reintroduce.
+// internal/learning, internal/panel/registry. internal/approvals was one
+// such package too, and internal/syncqueue after it, until the mechanisms
+// they backed were removed outright (not merely migrated) and the whole
+// packages were deleted. A regression back to raw file I/O in any package
+// still listed here is exactly the "duplicate mutable state path" this
+// migration was meant to delete, not reintroduce.
 //
 // internal/knowledge and internal/search are deliberately NOT listed here
 // even though their core stores also moved to SQLite: both retain
@@ -38,7 +38,6 @@ import (
 // broader sweep.
 var migratedPackages = []string{
 	"../learning",
-	"../syncqueue",
 	"../panel/registry",
 }
 

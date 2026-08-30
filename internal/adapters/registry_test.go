@@ -3,12 +3,8 @@ package adapters
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/ygrip/punakawan/internal/storage"
-	"github.com/ygrip/punakawan/internal/syncqueue"
 )
 
 const prototypeAdapterPath = "../../packages/adapter-sdk/dist/prototypeAdapter.js"
@@ -127,40 +123,6 @@ func waitUntilDead(t *testing.T, c *Client) {
 			t.Fatal("client not marked Dead within 2s of Kill")
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func TestRegistrySetSyncQueuePropagatesToGates(t *testing.T) {
-	r := newTestRegistry(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	defer r.Close(ctx)
-
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	queue := syncqueue.New(db, "test-project")
-
-	// Set before the Gate exists: newly created Gates must pick it up. The
-	// provider is a func, so identity is checked by resolving it and
-	// comparing the returned queue.
-	r.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
-	g, err := r.Gate(ctx, "prototype")
-	if err != nil {
-		t.Fatalf("Gate: %v", err)
-	}
-	if got, err := g.syncQueue(); err != nil || got != queue {
-		t.Fatalf("syncQueue provider on a Gate created after SetSyncQueue = %v (err %v), want the queue set", got, err)
-	}
-
-	// Set after the Gate already exists: the memoized instance must also
-	// pick it up, not just future Gate(...) callers.
-	other := syncqueue.New(db, "other-project")
-	r.SetSyncQueue(func() (*syncqueue.Queue, error) { return other, nil })
-	if got, err := g.syncQueue(); err != nil || got != other {
-		t.Fatalf("syncQueue provider on an already-memoized Gate = %v (err %v), want updated", got, err)
 	}
 }
 
