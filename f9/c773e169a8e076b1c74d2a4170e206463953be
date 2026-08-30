@@ -1,0 +1,68 @@
+cmd/punakawan/main_test.go
+  c81065fbff0350f9 80-88,90-91,94-96,98-101
+scripts/install.sh
+  c81065fbff0350f9 4,47-55,58-60,83-103,109,123-163,169-171,175-176,261-267,277-280
+internal/workspace/workspace_test.go
+  c81065fbff0350f9 193-253
+cmd/punakawan/setup_hooks.go
+  c81065fbff0350f9 136-151
+cmd/punakawan/doctor_cmd_test.go
+  c81065fbff0350f9 1-257
+cmd/punakawan/setup.go
+  c81065fbff0350f9 4-5,7,9,13-15,19,22-29,31-33,35,38,42-44,46,48,50,52-58,60,63-65,67-77,80-88,96-97,99,101-109,121-194,196-208,211-226,229,232-275,277-289,291-302,304-325,327-331,333-334
+cmd/punakawan/setup_test.go
+  c81065fbff0350f9 1-167
+README.md
+  c81065fbff0350f9 30-56,109-119,165-201
+scripts/install_windows_test.ps1
+  c81065fbff0350f9 1-79
+scripts/install_test.sh
+  c81065fbff0350f9 5,18-116,192-197,201,203-206,208,215-217
+cmd/punakawan/doctor_cmd.go
+  c81065fbff0350f9 4-6,8-13,16-25,28-40,43-73,75-76,78-85,87-89,91,93,95,97-98,103-444,446-723
+internal/workspace/workspace.go
+  c81065fbff0350f9 12-13,258-271,301-308,310,312,314-325,327,329
+internal/app/app.go
+  c81065fbff0350f9 146-150
+cmd/punakawan/setup_hooks_test.go
+  c81065fbff0350f9 251-318
+docs/development.md
+  c81065fbff0350f9 9
+scripts/install.ps1
+  c81065fbff0350f9 25-35,40,186-232,250-257,337-349,408-415,436-437,441-442,445-449
+scripts/configure-agent.sh
+  c81065fbff0350f9 166-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "f9c773e169a8e076b1c74d2a4170e206463953be",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 2177,
+      "total_deletions": 270,
+      "accepted_lines": 2119,
+      "overriden_lines": 0
+    }
+  }
+}
