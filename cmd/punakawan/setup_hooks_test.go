@@ -133,6 +133,121 @@ func TestEnsureUsageTrackingHookAgainstCurrentRepoSettingsReportsUnchanged(t *te
 	}
 }
 
+func TestEnsureClaudeCodeHooksInstallsEveryEventUsingTheInstalledBinary(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "installed", "punakawan")
+
+	changed, err := ensureClaudeCodeHooks(dir, binaryPath)
+	if err != nil {
+		t.Fatalf("ensureClaudeCodeHooks: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true when creating a new settings.json")
+	}
+
+	settings := readSettings(t, filepath.Join(dir, ".claude", "settings.json"))
+	hooks, _ := settings["hooks"].(map[string]any)
+	for _, spec := range claudeCodeHookEvents {
+		groups, _ := hooks[spec.EventName].([]any)
+		if len(groups) != 1 {
+			t.Fatalf("event %s groups = %v, want exactly one", spec.EventName, groups)
+		}
+		group, _ := groups[0].(map[string]any)
+		entries, _ := group["hooks"].([]any)
+		if len(entries) != 1 {
+			t.Fatalf("event %s hooks = %v, want exactly one", spec.EventName, entries)
+		}
+		entry, _ := entries[0].(map[string]any)
+		if command, _ := entry["command"].(string); command != binaryPath {
+			t.Fatalf("event %s command = %q, want the absolute installed binary %q (never go run)", spec.EventName, command, binaryPath)
+		}
+		if !ingestArgsMatch(entry["args"], "claude-code", spec.EventName) {
+			t.Fatalf("event %s args = %v, want hooks ingest --client claude-code --event %s", spec.EventName, entry["args"], spec.EventName)
+		}
+		if spec.Async && entry["async"] != true {
+			t.Fatalf("event %s expected async=true", spec.EventName)
+		}
+	}
+}
+
+func TestEnsureClaudeCodeHooksIsIdempotentAndPreservesUnrelatedHooks(t *testing.T) {
+	dir := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	seed := `{"otherTopLevelKey":"keep-me","hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"echo pretooluse"}]}]}}`
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(seed), 0o644); err != nil {
+		t.Fatalf("seed settings.json: %v", err)
+	}
+
+	binaryPath := filepath.Join(dir, "installed", "punakawan")
+	if _, err := ensureClaudeCodeHooks(dir, binaryPath); err != nil {
+		t.Fatalf("first ensureClaudeCodeHooks: %v", err)
+	}
+	changed, err := ensureClaudeCodeHooks(dir, binaryPath)
+	if err != nil {
+		t.Fatalf("second ensureClaudeCodeHooks: %v", err)
+	}
+	if changed {
+		t.Fatal("expected changed=false on a repeat run")
+	}
+
+	settings := readSettings(t, filepath.Join(claudeDir, "settings.json"))
+	if settings["otherTopLevelKey"] != "keep-me" {
+		t.Fatalf("otherTopLevelKey = %v, want preserved", settings["otherTopLevelKey"])
+	}
+	hooks, _ := settings["hooks"].(map[string]any)
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+	if len(preToolUse) != 1 {
+		t.Fatalf("PreToolUse groups = %v, want the original untouched entry preserved", preToolUse)
+	}
+	sessionStart, _ := hooks["SessionStart"].([]any)
+	if len(sessionStart) != 1 {
+		t.Fatalf("SessionStart groups = %v, want exactly one after two runs (no duplication)", sessionStart)
+	}
+}
+
+func TestEnsureCodexHooksInstallsEveryEventUsingTheInstalledBinary(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binaryPath := filepath.Join(home, "installed", "punakawan")
+
+	changed, err := ensureCodexHooks(binaryPath)
+	if err != nil {
+		t.Fatalf("ensureCodexHooks: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true when creating a new hooks.json")
+	}
+
+	settings := readSettings(t, filepath.Join(home, ".codex", "hooks.json"))
+	hooks, _ := settings["hooks"].(map[string]any)
+	for _, spec := range codexHookEvents {
+		groups, _ := hooks[spec.EventName].([]any)
+		if len(groups) != 1 {
+			t.Fatalf("event %s groups = %v, want exactly one", spec.EventName, groups)
+		}
+		group, _ := groups[0].(map[string]any)
+		entries, _ := group["hooks"].([]any)
+		entry, _ := entries[0].(map[string]any)
+		if command, _ := entry["command"].(string); command != binaryPath {
+			t.Fatalf("event %s command = %q, want the absolute installed binary", spec.EventName, command)
+		}
+		if !ingestArgsMatch(entry["args"], "codex", spec.EventName) {
+			t.Fatalf("event %s args = %v, want hooks ingest --client codex --event %s", spec.EventName, entry["args"], spec.EventName)
+		}
+	}
+
+	changed, err = ensureCodexHooks(binaryPath)
+	if err != nil {
+		t.Fatalf("second ensureCodexHooks: %v", err)
+	}
+	if changed {
+		t.Fatal("expected changed=false on a repeat run")
+	}
+}
+
 func TestEnsureUsageTrackingHookPreservesUnrelatedConfig(t *testing.T) {
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")

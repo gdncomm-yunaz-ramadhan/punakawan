@@ -1,0 +1,9 @@
+{
+  "session_id": "claude-sess-1",
+  "transcript_path": "{{AGENT_TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "SubagentStop",
+  "agent_type": "Explore",
+  "agent_id": "agent-1",
+  "last_assistant_message": "Found the relevant files."
+}

@@ -266,6 +266,17 @@ function Configure-McpClients {
         -RemoveArguments @('mcp', 'remove', 'punakawan') `
         -AddArguments (@('mcp', 'add', 'punakawan', '--', $mcpCommand) + $mcpArguments) `
         -McpCommand $mcpCommand -McpArguments $mcpArguments
+    if ($codex) {
+        Write-Step 'Configuring Codex lifecycle telemetry hooks'
+        if ($DryRun) {
+            Write-Host "    $PunakawanPath hooks install-global"
+        } else {
+            & $PunakawanPath hooks install-global
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning 'Could not configure Codex lifecycle hooks; delivery usage tracking for Codex sessions will be incomplete until this is retried.'
+            }
+        }
+    }
     Register-McpClient -Label 'Claude Code' -ClientPath $claude `
         -RemoveArguments @('mcp', 'remove', 'punakawan', '--scope', 'user') `
         -AddArguments (@('mcp', 'add', 'punakawan', '--scope', 'user', '--', $mcpCommand) + $mcpArguments) `

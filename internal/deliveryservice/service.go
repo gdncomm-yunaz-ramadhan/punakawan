@@ -3,10 +3,12 @@ package deliveryservice
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/plan"
+	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -21,6 +23,12 @@ type Service struct {
 	// source's parent/subtasks into requirement sources - a caller with no
 	// hydrator configured is expected to supply RequirementDrafts itself.
 	hydrator JiraHydrator
+	// telemetry is nil unless WithTelemetryStore is passed to New, in
+	// which case StartOrResolve never opens a durable agent_sessions row
+	// for the delivery session it starts - a caller with no telemetry
+	// store configured keeps behaving exactly as it did before telemetry
+	// existed.
+	telemetry *telemetry.Store
 }
 
 // Option configures optional Service dependencies. Every existing New
@@ -31,6 +39,13 @@ type Option func(*Service)
 // uses to turn a Jira source into its own durable requirement sources.
 func WithJiraHydrator(h JiraHydrator) Option {
 	return func(s *Service) { s.hydrator = h }
+}
+
+// WithTelemetryStore wires the additive, cumulative session-usage store
+// StartOrResolve begins a durable agent session against whenever it opens
+// a delivery session.
+func WithTelemetryStore(store *telemetry.Store) Option {
+	return func(s *Service) { s.telemetry = store }
 }
 
 // New wires a Service over the already-open delivery and plan stores.
@@ -96,8 +111,44 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 			return StartResult{}, nil, err
 		}
 		result.Session = session
+		if s.telemetry != nil {
+			result.TelemetrySession = s.beginTelemetrySession(ctx, resolved, req.Session, session)
+		}
 	}
 	return result, nil, nil
+}
+
+// beginTelemetrySession opens (or resumes) a durable agent_sessions row
+// for the delivery session StartOrResolve just opened. It never fails
+// StartOrResolve's own result over a telemetry hiccup - tracking is
+// additive and secondary to actually starting the delivery - it only logs
+// and returns nil.
+func (s *Service) beginTelemetrySession(ctx context.Context, resolved *delivery.ResolvedExecution, sessionStart SessionStart, opened *delivery.DeliverySession) *telemetry.AgentSession {
+	clientKind := strings.TrimSpace(sessionStart.Provider)
+	if clientKind == "" {
+		clientKind = "unspecified"
+	}
+	externalID := strings.TrimSpace(sessionStart.ExternalSessionID)
+	if externalID == "" {
+		// No client-native session id was supplied; the delivery session's
+		// own id is already unique, so it stands in as the external
+		// identity rather than leaving telemetry unbegun entirely. A later
+		// lifecycle hook call that does know the real external session id
+		// begins a second, additive agent_sessions row instead of
+		// resuming this one - see TotalsByDelivery's additive-across-
+		// sessions semantics.
+		externalID = opened.ID
+	}
+	session, err := s.telemetry.Begin(ctx, telemetry.BeginRequest{
+		DeliveryID: resolved.Execution.OrchestrationID, ExecutionID: resolved.Execution.ID,
+		ClientKind: clientKind, ExternalSessionID: externalID,
+		Participant: sessionStart.Participant, Provider: sessionStart.Provider, WorktreePath: sessionStart.WorktreePath,
+	})
+	if err != nil {
+		slog.Warn("deliveryservice: begin telemetry session", "orchestration_id", resolved.Execution.OrchestrationID, "error", err)
+		return nil
+	}
+	return &session
 }
 
 // Complete atomically completes orchestrationID's execution and returns
@@ -113,7 +164,32 @@ func (s *Service) Complete(ctx context.Context, idempotencyKey, orchestrationID 
 	if _, err := s.deliveries.CompleteOrchestration(ctx, idempotencyKey, orchestrationID, expectedRevision); err != nil {
 		return nil, err
 	}
+	s.finalizeStrayTelemetrySessions(ctx, idempotencyKey, orchestrationID, "delivery_completed")
 	return s.deliveries.BuildDeliveryView(ctx, orchestrationID)
+}
+
+// finalizeStrayTelemetrySessions best-effort closes any agent_sessions
+// row a client's own SessionEnd hook never finalized before this delivery
+// itself completed - otherwise such a session stays "active" forever,
+// even though the delivery it was tracking is done. It never fails the
+// caller (Complete has already durably completed the delivery by the time
+// this runs) - only logs.
+func (s *Service) finalizeStrayTelemetrySessions(ctx context.Context, idempotencyKey, orchestrationID, stopReason string) {
+	if s.telemetry == nil {
+		return
+	}
+	active, err := s.telemetry.ListActiveByOrchestration(ctx, orchestrationID)
+	if err != nil {
+		slog.Warn("deliveryservice: list active telemetry sessions", "orchestration_id", orchestrationID, "error", err)
+		return
+	}
+	for _, session := range active {
+		if _, _, err := s.telemetry.Finalize(ctx, telemetry.FinalizeRequest{
+			SessionID: session.ID, StopID: idempotencyKey + ":" + session.ID, StopReason: stopReason,
+		}); err != nil {
+			slog.Warn("deliveryservice: finalize stray telemetry session", "session_id", session.ID, "error", err)
+		}
+	}
 }
 
 // Cancel cancels orchestrationID and returns its refreshed view. See
@@ -122,5 +198,6 @@ func (s *Service) Cancel(ctx context.Context, idempotencyKey, orchestrationID st
 	if _, err := s.deliveries.CancelOrchestration(ctx, idempotencyKey, orchestrationID, expectedRevision); err != nil {
 		return nil, err
 	}
+	s.finalizeStrayTelemetrySessions(ctx, idempotencyKey, orchestrationID, "delivery_cancelled")
 	return s.deliveries.BuildDeliveryView(ctx, orchestrationID)
 }

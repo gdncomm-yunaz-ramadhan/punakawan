@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -189,6 +190,13 @@ type DeliveryView struct {
 	// orchestrations remain readable with this absent.
 	Lifecycle *DeliveryLifecycle `json:"lifecycle,omitempty"`
 
+	// Telemetry is this delivery's cumulative, additive-across-sessions
+	// agent usage (tokens, tool calls, elapsed time, estimated cost) from
+	// internal/telemetry. Always populated (zero-valued when no session
+	// has ever begun for this orchestration), independent of whether the
+	// legacy WorkLogs/WorkLogSeconds fields above have any data.
+	Telemetry telemetry.UsageProjection `json:"telemetry"`
+
 	// LatestSeq is the highest event sequence number reflected in this
 	// view - pass it back as a later call's SinceSeq to learn what
 	// changed since. Always populated, regardless of whether SinceSeq
@@ -298,6 +306,9 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	view.WorkLogs = workLogs
 	for _, workLog := range workLogs {
 		view.WorkLogSeconds += workLog.DurationSeconds
+	}
+	if telemetryTotals, err := telemetry.NewStore(s.db).TotalsByDelivery(ctx, orchestrationID); err == nil {
+		view.Telemetry = telemetryTotals
 	}
 	lifecycle, err := s.GetDeliveryLifecycle(ctx, orchestrationID)
 	if err != nil && !errors.Is(err, ErrNotFound) {

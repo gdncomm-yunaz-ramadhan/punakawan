@@ -1,0 +1,8 @@
+{
+  "session_id": "claude-sess-1",
+  "transcript_path": "{{TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "SessionStart",
+  "session_start_reason": "startup",
+  "model": "claude-sonnet-4-5"
+}

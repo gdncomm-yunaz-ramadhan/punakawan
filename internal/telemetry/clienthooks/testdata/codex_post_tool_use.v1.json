@@ -1,0 +1,10 @@
+{
+  "session_id": "codex-thr-1",
+  "transcript_path": "{{TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-5-codex",
+  "turn_id": "turn-2",
+  "tool_name": "apply_patch",
+  "tool_use_id": "call_main_2"
+}

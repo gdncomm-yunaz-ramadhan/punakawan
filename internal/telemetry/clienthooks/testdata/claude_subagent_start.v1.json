@@ -1,0 +1,8 @@
+{
+  "session_id": "claude-sess-1",
+  "transcript_path": "{{TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "SubagentStart",
+  "agent_type": "Explore",
+  "agent_id": "agent-1"
+}

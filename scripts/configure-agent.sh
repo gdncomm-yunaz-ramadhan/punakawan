@@ -151,6 +151,12 @@ claude_bin="$(find_claude || true)"
 
 if [[ -n "$codex_bin" ]]; then
   register_codex "$codex_bin"
+  log "Configuring Codex lifecycle telemetry hooks"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    print_command "$LAUNCHER" hooks install-global
+  else
+    "$LAUNCHER" hooks install-global || warn "Could not configure Codex lifecycle hooks; delivery usage tracking for Codex sessions will be incomplete until this is retried."
+  fi
 else
   warn "Codex not detected; skipping automatic registration."
   manual_codex

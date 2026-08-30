@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -654,5 +655,50 @@ func TestDeliveryViewDerivesTitleWithoutAnyTitleEvent(t *testing.T) {
 	}
 	if bareView.Title == "" {
 		t.Fatal("Title is empty for an orchestration with no requirements; want a non-empty last-resort label")
+	}
+}
+
+// TestDeliveryViewSurfacesCumulativeTelemetry asserts BuildDeliveryView
+// reports the same cumulative usage internal/telemetry itself computes,
+// and that it is additive across two sessions on the same orchestration.
+func TestDeliveryViewSurfacesCumulativeTelemetry(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id := NewID()
+
+	if _, err := s.CreateOrchestration(ctx, "create-"+id, id, []protocol.DeliveryOrchestrationUnresolvedInputsElem{{Reference: "note"}}); err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+
+	view, err := s.BuildDeliveryView(ctx, id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if view.Telemetry.Counters.InputTokens != 0 {
+		t.Fatalf("Telemetry.Counters.InputTokens = %d, want 0 before any session begins", view.Telemetry.Counters.InputTokens)
+	}
+
+	tstore := telemetry.NewStore(s.db)
+	sessA, err := tstore.Begin(ctx, telemetry.BeginRequest{DeliveryID: id, ClientKind: "claude-code", ExternalSessionID: "sess-a"})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	sessB, err := tstore.Begin(ctx, telemetry.BeginRequest{DeliveryID: id, ClientKind: "codex", ExternalSessionID: "sess-b"})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if _, err := tstore.IngestSnapshot(ctx, telemetry.SnapshotRequest{SessionID: sessA.ID, SourceID: "main", Sequence: 1, InputTokens: 10}); err != nil {
+		t.Fatalf("IngestSnapshot: %v", err)
+	}
+	if _, err := tstore.IngestSnapshot(ctx, telemetry.SnapshotRequest{SessionID: sessB.ID, SourceID: "main", Sequence: 1, InputTokens: 30}); err != nil {
+		t.Fatalf("IngestSnapshot: %v", err)
+	}
+
+	view, err = s.BuildDeliveryView(ctx, id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if view.Telemetry.Counters.InputTokens != 40 {
+		t.Fatalf("Telemetry.Counters.InputTokens = %d, want 40 (additive across both sessions)", view.Telemetry.Counters.InputTokens)
 	}
 }

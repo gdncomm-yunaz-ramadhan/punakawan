@@ -13,6 +13,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/jirahooks"
+	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -142,6 +143,13 @@ type SessionStart struct {
 	ResumedFromID string
 	WorktreePath  string
 	Provider      string
+	// ExternalSessionID names the coding-agent client's own session/thread
+	// id, when the caller already knows it, for telemetry.Store.Begin's
+	// (client_kind, external_session_id) identity. Left empty, StartOrResolve
+	// falls back to the newly (or already) opened delivery session's own id
+	// - still unique, just not the client-native identity a later lifecycle
+	// hook for the same external session would resume under.
+	ExternalSessionID string
 }
 
 // StartRequest is StartOrResolve's input.
@@ -180,9 +188,14 @@ type ReconcileReport struct {
 // learn the session id the Delivery contract diagram's "begin durable
 // agent session" step just opened.
 type StartResult struct {
-	Lifetime         delivery.DeliveryLifetime
-	Execution        delivery.DeliveryExecution
-	Session          *delivery.DeliverySession
+	Lifetime  delivery.DeliveryLifetime
+	Execution delivery.DeliveryExecution
+	Session   *delivery.DeliverySession
+	// TelemetrySession is populated alongside Session whenever a Service
+	// configured with WithTelemetryStore opens one (see StartOrResolve);
+	// nil when no telemetry store is configured, matching every existing
+	// caller's unchanged behavior.
+	TelemetrySession *telemetry.AgentSession
 	CreatedLifetime  bool
 	CreatedExecution bool
 	Reconciliation   ReconcileReport

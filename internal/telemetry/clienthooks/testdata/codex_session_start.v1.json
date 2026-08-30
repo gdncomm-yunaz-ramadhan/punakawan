@@ -1,0 +1,8 @@
+{
+  "session_id": "codex-thr-1",
+  "transcript_path": "{{TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "SessionStart",
+  "model": "gpt-5-codex",
+  "permission_mode": "default"
+}
