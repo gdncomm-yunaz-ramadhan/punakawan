@@ -287,4 +287,3 @@ func githubPRReviewFindingBody(finding map[string]any) string {
 		return title
 	}
 }
-

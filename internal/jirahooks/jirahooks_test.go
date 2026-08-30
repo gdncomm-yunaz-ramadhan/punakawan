@@ -59,10 +59,10 @@ func testManifest() protocol.AdapterManifest {
 		},
 		Operations: protocol.AdapterManifestOperations{
 			"atlassian.getJiraIssue":               {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
-			"atlassian.getTransitionsForJiraIssue":  {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
-			"atlassian.addJiraComment":              {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
-			"atlassian.addWorklog":                  {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
-			"atlassian.transitionJiraIssue":         {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.getTransitionsForJiraIssue": {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addJiraComment":             {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addWorklog":                 {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.transitionJiraIssue":        {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
 		},
 	}
 }
