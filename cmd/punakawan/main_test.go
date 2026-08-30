@@ -12,6 +12,11 @@ import (
 func newSmokeWorkspace(t *testing.T) string {
 	t.Helper()
 	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
+	// A command run through runCLI may reach code that writes to the
+	// user-level Claude Code/Codex config under the home directory (see
+	// reportHookSetup); pointing HOME at a throwaway directory keeps every
+	// such test from touching this machine's real hook configuration.
+	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo-a")
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
