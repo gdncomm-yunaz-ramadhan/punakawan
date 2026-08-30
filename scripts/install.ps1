@@ -365,6 +365,25 @@ function Configure-McpClients {
     Write-Step "Wrote generic MCP config: $genericConfig"
 }
 
+# Stop-StaleDaemon stops any already-running punakawand. Without this, an
+# already running daemon keeps serving the previous checkout's wire format
+# indefinitely - go install replaces the file on disk, but a running
+# process keeps executing the old image, and there is no version
+# handshake between the two, so a client built from this install would
+# otherwise silently talk to a stale daemon until someone happened to
+# restart it by hand. It deliberately does not also start a new one here:
+# every command that needs the daemon (panel, mcp serve, doctor, ...)
+# already starts it on demand.
+function Stop-StaleDaemon {
+    param([string]$PunakawanPath)
+
+    if ($DryRun) {
+        Write-Host "    $PunakawanPath daemon stop"
+        return
+    }
+    & $PunakawanPath daemon stop | Out-Null
+}
+
 $prerequisiteFailure = $false
 if (-not (Install-WithWinget -CommandName 'go' -PackageId 'GoLang.Go' -ManualCommand 'winget install --exact --id GoLang.Go' -DocsUrl 'https://go.dev/doc/install')) {
     $prerequisiteFailure = $true
@@ -432,6 +451,9 @@ try {
 } finally {
     Pop-Location
 }
+
+Write-Step 'Stopping any already-running Punakawan daemon so it is not left serving a stale build'
+Stop-StaleDaemon -PunakawanPath (Join-Path $InstallDir 'punakawan.exe')
 
 $atlassianAdapter = Join-Path $AdaptersDir 'atlassian\dist\run.js'
 $githubAdapter = Join-Path $AdaptersDir 'github\dist\run.js'

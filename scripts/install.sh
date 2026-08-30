@@ -205,6 +205,29 @@ configure_global_environment() {
   fi
 }
 
+# stop_stale_daemon stops any already-running punakawand. Without this, an
+# already running daemon keeps serving the previous checkout's wire format
+# indefinitely - go install replaces the file on disk, but a running
+# process keeps executing the old inode, and there is no version
+# handshake between the two, so a client built from this install would
+# otherwise silently talk to a stale daemon until someone happened to
+# restart it by hand. It deliberately does not also start a new one here:
+# every command that needs the daemon (panel, mcp serve, doctor, ...)
+# already calls daemon.EnsureRunning itself on demand, and starting one
+# eagerly here would fight over its one fixed loopback port with a daemon
+# this same install.sh run may be relocating away from (see
+# scripts/install_test.sh's relocation test, which installs into an
+# isolated, throwaway prefix on a machine that may already be running a
+# real one).
+stop_stale_daemon() {
+  log "Stopping any already-running Punakawan daemon so it is not left serving a stale build"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    print_command "$INSTALL_DIR/punakawan" daemon stop
+    return
+  fi
+  "$INSTALL_DIR/punakawan" daemon stop >/dev/null
+}
+
 manual_install() {
   local name="$1"
   local command="$2"
@@ -271,6 +294,7 @@ log "Installing punakawan and punakawand"
 run mkdir -p "$INSTALL_DIR"
 run env "GOBIN=$INSTALL_DIR" go install ./cmd/punakawan ./cmd/punakawand
 
+stop_stale_daemon
 configure_global_adapters
 configure_global_environment
 
