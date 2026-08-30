@@ -134,6 +134,25 @@ func TestListAndDetailShareProjectionRevision(t *testing.T) {
 	}
 }
 
+// TestProjectlessDeliveryReportsEmptyProjectsNotNull proves a delivery
+// with no linked project (an ad-hoc delivery, or one not yet reconciled
+// to a project) serializes Projects as [], never JSON null - the panel
+// reads it as an already-present, iterable array with no null guard.
+func TestProjectlessDeliveryReportsEmptyProjectsNotNull(t *testing.T) {
+	p := seededProjector(t)
+	list := mustList(t, p)
+	if len(list) != 1 {
+		t.Fatalf("list = %+v, want exactly the one seeded delivery", list)
+	}
+	if list[0].Projects == nil {
+		t.Fatal("list[0].Projects is nil, want an empty (non-nil) slice")
+	}
+	detail := mustDetail(t, p, list[0].ID)
+	if detail.Projects == nil {
+		t.Fatal("detail.Projects is nil, want an empty (non-nil) slice")
+	}
+}
+
 // TestListUsesBoundedQueries proves ListSummaries' cost does not grow
 // with the number of deliveries: it must always issue the same small,
 // fixed number of batch queries, never one (or more) per delivery.

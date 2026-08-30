@@ -121,6 +121,7 @@ func (p *Projector) ListSummaries(ctx context.Context, _ ListFilter) ([]Delivery
 			UpdatedAt:   orch.UpdatedAt,
 			Cancellable: isCancellable(orch.Status),
 			Usage:       usageOrEmpty(usage[id]),
+			Projects:    []ProjectRef{},
 		}
 		for _, projectID := range orch.ProjectIds {
 			summary.Projects = append(summary.Projects, ProjectRef{ID: projectID, Slug: slugs[projectID]})
@@ -177,6 +178,7 @@ func (p *Projector) GetDetail(ctx context.Context, orchestrationID string) (*Del
 			Cancellable:        isCancellable(view.Orchestration.Status),
 			Usage:              usageFromProjection(view.Telemetry),
 			ProjectionRevision: revision,
+			Projects:           []ProjectRef{},
 		},
 		Description:           view.Description,
 		OrchestrationRevision: view.Orchestration.Revision,
