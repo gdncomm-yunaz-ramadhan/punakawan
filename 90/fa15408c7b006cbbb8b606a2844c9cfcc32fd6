@@ -1,0 +1,66 @@
+docs/development.md
+  c81065fbff0350f9 11-13
+internal/providerwrite/worker.go
+  c81065fbff0350f9 286-287
+test/e2e/fakeatlassian_test.go
+  c81065fbff0350f9 1-230
+test/e2e/delivery_jira_test.go
+  c81065fbff0350f9 1-197
+test/e2e/provider_recovery_test.go
+  c81065fbff0350f9 1-130
+test/e2e/fakeregistry_test.go
+  c81065fbff0350f9 1-186
+test/e2e/panel_projection_test.go
+  c81065fbff0350f9 1-199
+test/e2e/fakegithub_test.go
+  c81065fbff0350f9 1-149
+internal/delivery/jira_source.go
+  c81065fbff0350f9 186-194
+internal/deliveryservice/reconcile.go
+  c81065fbff0350f9 34-40
+test/e2e/harness_test.go
+  c81065fbff0350f9 1-158
+test/e2e/delivery_adhoc_test.go
+  c81065fbff0350f9 1-113
+internal/deliveryprojection/projector.go
+  c81065fbff0350f9 371-372,375-376
+internal/providerwrite/reconcile.go
+  c81065fbff0350f9 213-214
+internal/providerwrite/reconcile_github_test.go
+  c81065fbff0350f9 63,81
+Makefile
+  c81065fbff0350f9 1,42-44,48-52,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "90fa15408c7b006cbbb8b606a2844c9cfcc32fd6",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1452,
+      "total_deletions": 61,
+      "accepted_lines": 1403,
+      "overriden_lines": 0
+    }
+  }
+}
