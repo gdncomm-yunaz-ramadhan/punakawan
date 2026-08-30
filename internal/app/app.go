@@ -143,7 +143,11 @@ func load(ws *workspace.Workspace) (*App, error) {
 	roots = append(roots, worktreesDir)
 	sup := tools.New(roots...)
 
-	wf, err := workflow.Open(ws.Root)
+	workflowRoot, err := ws.WorkflowRoot()
+	if err != nil {
+		return nil, err
+	}
+	wf, err := workflow.Open(workflowRoot)
 	if err != nil {
 		return nil, err
 	}

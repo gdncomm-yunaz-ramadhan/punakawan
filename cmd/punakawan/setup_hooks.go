@@ -133,6 +133,22 @@ func ensureCodexHooks(binaryPath string) (bool, error) {
 	return ensureIngestHooks(filepath.Join(home, ".codex", "hooks.json"), binaryPath, "codex", codexHookEvents)
 }
 
+// ensureUserLevelClaudeCodeHooks installs punakawan's full Claude Code
+// lifecycle hook set into ~/.claude/settings.json - Claude Code's
+// user-level settings location, which applies across every project on
+// this machine rather than requiring ensureClaudeCodeHooks to be run
+// again inside each one. It is additive to, not a replacement for,
+// ensureClaudeCodeHooks: a project that already declares its own
+// .claude/settings.json entry keeps it, and this only ensures the
+// machine-wide entry also exists.
+func ensureUserLevelClaudeCodeHooks(binaryPath string) (bool, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false, fmt.Errorf("setup: resolve home directory: %w", err)
+	}
+	return ensureIngestHooks(filepath.Join(home, ".claude", "settings.json"), binaryPath, "claude-code", claudeCodeHookEvents)
+}
+
 // ensureIngestHooks is ensureClaudeCodeHooks/ensureCodexHooks' shared
 // merge logic: both clients document the identical
 // {"hooks": {"EventName": [{"hooks": [...]}]}} JSON config shape.

@@ -77,29 +77,27 @@ func TestWorkspaceShow(t *testing.T) {
 	}
 }
 
-func TestSetupPrintsSourceableScripts(t *testing.T) {
+// TestSetupWithNoCredentialsAvailableFailsActionablyWithoutHanging
+// confirms `setup` never opens a subshell or blocks waiting on
+// interactive input it cannot get in a non-interactive context (a script,
+// CI, an agent's own shell-out): with no credential in the environment,
+// the durable global credential file, or a real terminal on stdin, it
+// must return promptly with an error naming exactly which values are
+// still missing and where to put them, rather than pretending an
+// ephemeral exported value would have been durable.
+func TestSetupWithNoCredentialsAvailableFailsActionablyWithoutHanging(t *testing.T) {
 	dir := newSmokeWorkspace(t)
-
-	sh, err := runCLI(t, dir, "setup", "--shell", "sh", "--print")
-	if err != nil {
-		t.Fatalf("setup sh: %v\n%s", err, sh)
+	for _, name := range []string{"ATLASSIAN_HOST", "ATLASSIAN_API_TOKEN", "ATLASSIAN_EMAIL", "ATLASSIAN_API_TOKEN_SCOPED", "GITHUB_TOKEN", "GH_TOKEN"} {
+		t.Setenv(name, "")
 	}
-	for _, want := range []string{"ATLASSIAN_HOST", "ATLASSIAN_API_TOKEN", "ATLASSIAN_EMAIL", "GITHUB_TOKEN", "GH_TOKEN", "stty -echo"} {
-		if !strings.Contains(sh, want) {
-			t.Errorf("setup sh missing %q:\n%s", want, sh)
+
+	out, err := runCLI(t, dir, "setup")
+	if err == nil {
+		t.Fatalf("expected setup to fail with no credentials available, got output:\n%s", out)
+	}
+	for _, want := range []string{"atlassian", "github"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("setup error missing %q: %v", want, err)
 		}
-	}
-
-	powershell, err := runCLI(t, dir, "setup", "--shell", "powershell", "--print")
-	if err != nil {
-		t.Fatalf("setup powershell: %v\n%s", err, powershell)
-	}
-	if !strings.Contains(powershell, "SecureStringToBSTR") {
-		t.Fatalf("setup powershell does not hide token input:\n%s", powershell)
-	}
-
-	_, err = runCLI(t, dir, "setup", "--shell", "fish", "--print")
-	if err == nil || !strings.Contains(err.Error(), "unsupported setup shell") {
-		t.Fatalf("setup fish error = %v, want unsupported shell", err)
 	}
 }

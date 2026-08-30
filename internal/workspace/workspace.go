@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ygrip/punakawan/internal/storage"
 )
 
 const (
@@ -253,6 +255,20 @@ func (w *Workspace) RepositoryPath(id string) (string, error) {
 	return "", fmt.Errorf("workspace: unknown repository %q", id)
 }
 
+// WorkflowRoot returns the directory workflow definitions and run state
+// should be persisted under. For a real project it is the workspace root,
+// same as before. For an ephemeral workspace (DiscoverOrEphemeral found no
+// real project, so Root is a throwaway directory App.Close removes), it is
+// instead the machine-wide data directory: a workflow saved with no
+// project in scope must survive that ephemeral root being deleted, rather
+// than being silently wiped the moment the caller closes.
+func (w *Workspace) WorkflowRoot() (string, error) {
+	if !w.Ephemeral {
+		return w.Root, nil
+	}
+	return storage.DataDir()
+}
+
 // PolicyPath returns the absolute path to the workspace's policy file,
 // defaulting to .punakawan/policy.yaml if not explicitly configured.
 func (w *Workspace) PolicyPath() string {
@@ -282,15 +298,35 @@ type GlobalConfig struct {
 }
 
 // GlobalConfigPath returns the path LoadGlobalConfig reads from:
-// <user config dir>/punakawan/config.yaml (e.g. ~/.config/punakawan on
-// Linux, ~/Library/Application Support/punakawan on macOS, following
-// os.UserConfigDir's platform conventions).
+// <data dir>/config.yaml, where <data dir> is storage.DataDir - the same
+// platform-standard, ${PUNAKAWAN_DATA_DIR}-overridable directory every
+// other installed, machine-wide state (the storage kernel, the adapter
+// trust file, the telemetry spool) already lives under. Sharing DataDir
+// here is what lets an install into a relocated/overridden prefix end up
+// with its global adapter config, credentials, and storage kernel all
+// under the same directory instead of two independently-resolved ones
+// that could silently diverge.
 func GlobalConfigPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := storage.DataDir()
 	if err != nil {
-		return "", fmt.Errorf("workspace: resolve user config dir: %w", err)
+		return "", err
 	}
-	return filepath.Join(dir, "punakawan", "config.yaml"), nil
+	return filepath.Join(dir, "config.yaml"), nil
+}
+
+// GlobalEnvPath returns the path to the host-owned credential file
+// installers and `setup` persist provider credential references into:
+// <data dir>/.env, alongside GlobalConfigPath's config.yaml. It never
+// holds anything but this host's own resolved secret values (never
+// checked into a project's workspace.yaml), and every adapter launcher
+// this package's callers write sources it before starting an adapter
+// process.
+func GlobalEnvPath() (string, error) {
+	dir, err := storage.DataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, ".env"), nil
 }
 
 // LoadGlobalConfig reads the user-level config. A missing file is not an

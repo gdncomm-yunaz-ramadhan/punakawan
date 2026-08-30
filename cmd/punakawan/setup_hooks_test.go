@@ -248,6 +248,74 @@ func TestEnsureCodexHooksInstallsEveryEventUsingTheInstalledBinary(t *testing.T)
 	}
 }
 
+func TestEnsureUserLevelClaudeCodeHooksInstallsEveryEventUsingTheInstalledBinary(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binaryPath := filepath.Join(home, "installed", "punakawan")
+
+	changed, err := ensureUserLevelClaudeCodeHooks(binaryPath)
+	if err != nil {
+		t.Fatalf("ensureUserLevelClaudeCodeHooks: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true when creating a new user-level settings.json")
+	}
+
+	settings := readSettings(t, filepath.Join(home, ".claude", "settings.json"))
+	hooks, _ := settings["hooks"].(map[string]any)
+	for _, spec := range claudeCodeHookEvents {
+		groups, _ := hooks[spec.EventName].([]any)
+		if len(groups) != 1 {
+			t.Fatalf("event %s groups = %v, want exactly one", spec.EventName, groups)
+		}
+		group, _ := groups[0].(map[string]any)
+		entries, _ := group["hooks"].([]any)
+		entry, _ := entries[0].(map[string]any)
+		if command, _ := entry["command"].(string); command != binaryPath {
+			t.Fatalf("event %s command = %q, want the absolute installed binary", spec.EventName, command)
+		}
+		if !ingestArgsMatch(entry["args"], "claude-code", spec.EventName) {
+			t.Fatalf("event %s args = %v, want hooks ingest --client claude-code --event %s", spec.EventName, entry["args"], spec.EventName)
+		}
+	}
+
+	changed, err = ensureUserLevelClaudeCodeHooks(binaryPath)
+	if err != nil {
+		t.Fatalf("second ensureUserLevelClaudeCodeHooks: %v", err)
+	}
+	if changed {
+		t.Fatal("expected changed=false on a repeat run")
+	}
+}
+
+func TestEnsureUserLevelClaudeCodeHooksPreservesUnrelatedUserSettings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	seed := `{"otherTopLevelKey":"keep-me","hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"echo pretooluse"}]}]}}`
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(seed), 0o644); err != nil {
+		t.Fatalf("seed settings.json: %v", err)
+	}
+
+	binaryPath := filepath.Join(home, "installed", "punakawan")
+	if _, err := ensureUserLevelClaudeCodeHooks(binaryPath); err != nil {
+		t.Fatalf("ensureUserLevelClaudeCodeHooks: %v", err)
+	}
+
+	settings := readSettings(t, filepath.Join(claudeDir, "settings.json"))
+	if settings["otherTopLevelKey"] != "keep-me" {
+		t.Fatalf("otherTopLevelKey = %v, want preserved", settings["otherTopLevelKey"])
+	}
+	hooks, _ := settings["hooks"].(map[string]any)
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+	if len(preToolUse) != 1 {
+		t.Fatalf("PreToolUse groups = %v, want the original untouched entry preserved", preToolUse)
+	}
+}
+
 func TestEnsureUsageTrackingHookPreservesUnrelatedConfig(t *testing.T) {
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")
