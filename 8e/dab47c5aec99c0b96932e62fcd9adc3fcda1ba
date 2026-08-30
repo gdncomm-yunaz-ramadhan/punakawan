@@ -1,0 +1,44 @@
+internal/adapters/trust.go
+  c81065fbff0350f9 1-191
+internal/app/app.go
+  c81065fbff0350f9 10,158-166,170-176
+internal/adapters/trust_test.go
+  c81065fbff0350f9 1-120
+internal/storage/path.go
+  c81065fbff0350f9 11-15,50-61
+internal/app/trust_test.go
+  c81065fbff0350f9 1-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8edab47c5aec99c0b96932e62fcd9adc3fcda1ba",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 483,
+      "total_deletions": 10,
+      "accepted_lines": 473,
+      "overriden_lines": 0
+    }
+  }
+}
