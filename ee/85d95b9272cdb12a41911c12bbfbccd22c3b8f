@@ -1,0 +1,90 @@
+internal/jirahooks/lifecycle_test.go
+  c81065fbff0350f9 11,34,49,75-81,83-84
+internal/jirahooks/jirahooks_test.go
+  c81065fbff0350f9 16-17,55-59,72-76,78-101,113-116,132,151,171,186-190,193,210,244,263,265,299,316-323,325,335-336,342-347,350-351,353-357,359-360,366-367,393-394,401,403,405-407,413
+internal/providerwrite/reconcile_test.go
+  c81065fbff0350f9 1-132
+internal/mcpserver/capability_registry_test.go
+  c81065fbff0350f9 15
+internal/app/app.go
+  c81065fbff0350f9 22,71-72,414-420,424-425,427-428,437-438,545-547
+internal/outbox/store.go
+  c81065fbff0350f9 1-487
+internal/daemon/daemon.go
+  c81065fbff0350f9 8,10,12-13,15,17,20-25,67-68,135-158,191-198,201-206
+internal/storage/consolidation_test.go
+  c81065fbff0350f9 13-18
+internal/providerwrite/fingerprint.go
+  c81065fbff0350f9 1-133
+internal/providerwrite/worker_test.go
+  c81065fbff0350f9 1-250
+internal/mcpserver/server_test.go
+  c81065fbff0350f9 129-130
+internal/mcpserver/delivery_store.go
+  c81065fbff0350f9 57-60,62
+internal/adapters/gate_test.go
+  c81065fbff0350f9 7,16,69-73,76-78,80-81,83-84,88-91,93-94,96,98-105,107-108,110-115,119
+internal/providerwrite/fingerprint_test.go
+  c81065fbff0350f9 1-36
+internal/outbox/types.go
+  c81065fbff0350f9 1-93
+internal/adapters/gate.go
+  c81065fbff0350f9 17-24,37-52,55-77,83
+internal/mcpserver/tools_lifecycle.go
+  c81065fbff0350f9 467-472,533-537
+internal/mcpserver/tools_worklog.go
+  c81065fbff0350f9 80-84
+internal/jirahooks/jirahooks.go
+  c81065fbff0350f9 3-4,19-27,42-43,53,56-57,70-72,77,85-89,121-124,127,129-134,140-156,158,164,166,168,188,195-215,223,226-228,230-233,235
+internal/jirahooks/observer.go
+  c81065fbff0350f9 1-42
+internal/providerwrite/reconcile.go
+  c81065fbff0350f9 1-182
+internal/storage/migrations/0030_provider_outbox.sql
+  c81065fbff0350f9 1-190
+internal/providerwrite/synchronous.go
+  c81065fbff0350f9 1-48
+internal/jirahooks/lifecycle.go
+  c81065fbff0350f9 13-14,17-20,24,27-30,172-178,187-191,193,195-198,203-206
+internal/delivery/githubprprovider.go
+  c81065fbff0350f9 1-9,17-19,23-24,26-27,30-36,38,46,49-72,74-77,79
+internal/outbox/store_test.go
+  c81065fbff0350f9 1-267
+internal/providerwrite/worker.go
+  c81065fbff0350f9 1-637
+internal/mcpserver/tools_github_review.go
+  c81065fbff0350f9 6,13-14,144-152,180,182,184-190,192,194-198,200-210,212,216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "ee85d95b9272cdb12a41911c12bbfbccd22c3b8f",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 3079,
+      "total_deletions": 938,
+      "accepted_lines": 3015,
+      "overriden_lines": 9
+    }
+  }
+}
