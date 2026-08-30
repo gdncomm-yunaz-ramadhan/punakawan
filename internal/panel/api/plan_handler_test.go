@@ -86,14 +86,23 @@ func TestListPlansHandlerReturnsSummariesWithLinkedDeliveries(t *testing.T) {
 	}
 }
 
-func TestListPlansHandlerUnknownProject404(t *testing.T) {
+func TestListPlansHandlerUnknownProjectServesEmptyList(t *testing.T) {
 	deliveries, plans, _ := planTestStores(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/nope/plans", nil)
 	req.SetPathValue("projectId", "nope")
 	rec := httptest.NewRecorder()
 	ListPlansHandler(deliveries, plans)(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Items []PlanSummary `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 0 {
+		t.Fatalf("items = %+v, want none for a project with no matching delivery project", body.Items)
 	}
 }
 

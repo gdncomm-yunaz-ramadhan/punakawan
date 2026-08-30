@@ -55,13 +55,23 @@ type planDetailResponse struct {
 }
 
 // resolveProject maps the panel's project path segment onto its delivery
-// project: project plans are scoped by the delivery project a plan
-// names in its own project_ids and links against, not by the panel's
-// separate per-workspace registry, so the bridge between the two is one
-// exact identity every delivery project already carries - its slug.
+// project: project plans are scoped by the delivery project a plan names
+// in its own project_ids and links against, not by the panel's separate
+// per-workspace registry, so the only identity that reliably bridges the
+// two is a delivery project registered under the same slug. Most panel
+// workspaces never go through the delivery domain under that exact slug
+// (they may not be Jira/delivery-tracked at all, or be tracked under an
+// unrelated slug), which is not a failure - it just means this project
+// currently has no delivery-linked plans, so the empty string is
+// returned rather than delivery.ErrNotFound. Callers compare it against
+// plan.ProjectIDs, which never contains an empty string, so it correctly
+// matches nothing but a cross-project plan naming no project at all.
 func resolveProject(deliveries *delivery.Store, r *http.Request) (string, error) {
 	slug := r.PathValue("projectId")
 	project, err := deliveries.GetProjectBySlug(r.Context(), slug)
+	if errors.Is(err, delivery.ErrNotFound) {
+		return "", nil
+	}
 	if err != nil {
 		return "", err
 	}
@@ -81,15 +91,12 @@ func linkedDeliveryRefs(refs []plan.DeliveryPlanRef, planID string) []LinkedDeli
 
 // ListPlansHandler serves GET /api/v1/projects/{projectId}/plans: every
 // plan lineage's current head that names this project, each carrying
-// every delivery that links one of its revisions. An unresolvable
-// project slug 404s, consistent with ProjectHandler.
+// every delivery that links one of its revisions. A project with no
+// matching delivery-domain project yet simply has no plans - it never
+// 404s on that account alone.
 func ListPlansHandler(deliveries *delivery.Store, plans *plan.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectID, err := resolveProject(deliveries, r)
-		if errors.Is(err, delivery.ErrNotFound) {
-			writeError(w, http.StatusNotFound, err)
-			return
-		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -122,14 +129,13 @@ func ListPlansHandler(deliveries *delivery.Store, plans *plan.Store) http.Handle
 // naming one serves exactly that revision - a delivery detail page links
 // here with the exact revision it itself links, so the same plan never
 // silently renders a later revision than the one the delivery actually
-// used. An unresolvable project slug or unknown plan id/revision 404s.
+// used. An unknown plan id/revision 404s; a project with no matching
+// delivery-domain project still serves any cross-project plan (one
+// naming no project at all) but 404s on a project-scoped one, same as
+// any other project this plan does not belong to.
 func PlanHandler(deliveries *delivery.Store, plans *plan.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectID, err := resolveProject(deliveries, r)
-		if errors.Is(err, delivery.ErrNotFound) {
-			writeError(w, http.StatusNotFound, err)
-			return
-		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
