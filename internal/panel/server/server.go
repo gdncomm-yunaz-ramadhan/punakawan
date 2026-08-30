@@ -279,12 +279,12 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Shutdown gracefully stops the server, per §21's "graceful shutdown", in the
-// order: stop accepting HTTP, drain active HTTP requests, stop the runtime
-// pool's idle timer, then close its non-primary runtimes. (The primary
-// App/storage this server was loaded for is owned and closed by the caller,
-// after Shutdown returns.) Stopping never modifies canonical workspace state
-// (§30) - this server only reads from the stores behind its readers.
+// Shutdown gracefully stops the server in this order: stop accepting HTTP,
+// drain active HTTP requests, stop the runtime pool's idle timer, then close
+// its non-primary runtimes. (The primary App/storage this server was loaded
+// for is owned and closed by the caller, after Shutdown returns.) Stopping
+// never modifies canonical workspace state - this server only reads from the
+// stores behind its readers.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.sessions.InvalidateAll()
 

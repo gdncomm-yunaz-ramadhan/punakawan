@@ -44,11 +44,9 @@ type Definition struct {
 	Selectors           []Selector `yaml:"selectors,omitempty" json:"selectors,omitempty"`
 	Steps               []Step     `yaml:"steps" json:"steps"`
 	AllowedCapabilities []string   `yaml:"allowed_capabilities,omitempty" json:"allowed_capabilities,omitempty"`
-	// Roles carries this workflow's optional per-role restrictions (plan §15,
-	// ROLE-010), keyed by role name (semar|gareng|petruk|bagong). A workflow may
-	// only *reduce* a role's project authority; internal/roleconfig.Effective
-	// enforces the reduce-never-increase rule when this is applied. A missing
-	// key means the workflow imposes no restriction on that role.
+	// Roles carries this workflow's optional per-role restrictions, keyed by
+	// role name (semar|gareng|petruk|bagong). A missing key means the
+	// workflow imposes no restriction on that role.
 	//
 	// This field also selects the execution engine: a non-empty map makes the
 	// definition delivery-shaped, so invoking it starts a delivery orchestration
