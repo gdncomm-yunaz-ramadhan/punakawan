@@ -62,9 +62,9 @@ type ListFilter struct{}
 func (p *Projector) ListSummaries(ctx context.Context, _ ListFilter) ([]DeliverySummary, error) {
 	// 1: every orchestration's event log, reduced to its current record
 	// and derived title.
-	grouped, ids, err := delivery.LoadAllEvents(ctx, p.read)
+	states, ids, err := loadOrchestrationStates(ctx, p.read)
 	if err != nil {
-		return nil, fmt.Errorf("deliveryprojection: list summaries: %w", err)
+		return nil, err
 	}
 
 	// 2: lifetimes/executions/projection versions, joined in one query.
@@ -111,15 +111,8 @@ func (p *Projector) ListSummaries(ctx context.Context, _ ListFilter) ([]Delivery
 
 	out := make([]DeliverySummary, 0, len(ids))
 	for _, id := range ids {
-		orch, err := delivery.ReduceOrchestration(id, grouped[id])
-		if err != nil {
-			return nil, fmt.Errorf("deliveryprojection: reduce orchestration %s: %w", id, err)
-		}
-		sourceMap, err := delivery.AllRequirementSources(id, grouped[id])
-		if err != nil {
-			return nil, fmt.Errorf("deliveryprojection: requirement sources %s: %w", id, err)
-		}
-		title := delivery.OrchestrationTitle(orch, delivery.SortedRequirementSources(sourceMap))
+		orch := states[id].orchestration
+		title := states[id].title
 
 		summary := DeliverySummary{
 			ID:          id,
