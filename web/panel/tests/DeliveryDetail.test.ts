@@ -130,8 +130,11 @@ describe("DeliveryDetail", () => {
 
     await fireEvent.click(screen.getByRole("tab", { name: "Projects" }));
     const panel = screen.getByRole("tabpanel", { name: "Projects" });
-    expect(within(panel).getByRole("link", { name: "billing" }).getAttribute("href")).toBe("/projects/billing");
-    expect(within(panel).getByText("Ship billing v2")).toBeTruthy();
+    expect(within(panel).getByText("billing")).toBeTruthy();
+    expect(within(panel).getByText("Ship billing v2", { exact: false })).toBeTruthy();
+
+    await fireEvent.click(within(panel).getByRole("button", { name: "Open" }));
+    expect(window.location.pathname).toBe("/projects/billing");
   });
 
   it("shows a Jira tab with touched items and transitions", async () => {

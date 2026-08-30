@@ -79,6 +79,51 @@ function statusRank(status: string): number {
   return i === -1 ? statusOrder.length : i;
 }
 
+export interface DeliveriesOverview {
+  totalCosts: Record<string, number>;
+  pricingComplete: boolean;
+  totalTokens: number;
+  totalToolCalls: number;
+  totalElapsedMs: number;
+  projectCount: number;
+  planCount: number;
+  sessionCount: number;
+}
+
+// summarizeDeliveries aggregates every delivery's usage, project, plan,
+// and session data into the deliveries overview's metric row. Project
+// and plan counts are the distinct ones each delivery currently links,
+// not a historical total; the session count is how many deliveries
+// currently have a session (DeliverySummary.session is only the latest
+// one, not a full history) - both stay a pure computation over the one
+// list call this page already polls every 10s, rather than an N+1 fetch
+// per delivery or per project.
+export function summarizeDeliveries(summaries: DeliverySummary[]): DeliveriesOverview {
+  const totalCosts: Record<string, number> = {};
+  let pricingComplete = true;
+  let totalTokens = 0;
+  let totalToolCalls = 0;
+  let totalElapsedMs = 0;
+  const projectIds = new Set<string>();
+  const planIds = new Set<string>();
+  let sessionCount = 0;
+
+  for (const s of summaries) {
+    for (const [currency, amount] of Object.entries(s.usage.estimated_costs ?? {})) {
+      totalCosts[currency] = (totalCosts[currency] ?? 0) + amount;
+    }
+    if (!s.usage.pricing_complete) pricingComplete = false;
+    totalTokens += s.usage.input_tokens + s.usage.output_tokens;
+    totalToolCalls += s.usage.tool_calls;
+    totalElapsedMs += s.usage.elapsed_ms;
+    for (const p of s.projects) projectIds.add(p.id);
+    if (s.plan) planIds.add(s.plan.id);
+    if (s.session) sessionCount += 1;
+  }
+
+  return { totalCosts, pricingComplete, totalTokens, totalToolCalls, totalElapsedMs, projectCount: projectIds.size, planCount: planIds.size, sessionCount };
+}
+
 export function sortDeliveries<T extends DeliveryListRow>(rows: T[], key: DeliverySortKey): T[] {
   const titleOf = (row: T) => row.summary.title;
   const byTitle = (a: T, b: T) => titleOf(a).localeCompare(titleOf(b), undefined, { sensitivity: "base" });

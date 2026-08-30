@@ -5,6 +5,8 @@
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
+  import TableCard from "../../lib/components/cards/TableCard.svelte";
+  import DataTable from "../../lib/components/data/DataTable.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import Button from "../../lib/components/Button.svelte";
   import type { IconName } from "../../lib/components/Icon.svelte";
@@ -247,28 +249,28 @@
   {:else if activeId === "projects"}
     <div id="tabpanel-projects" role="tabpanel" aria-labelledby="tab-projects">
       <h2>Projects</h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Project</th><th>Plan</th></tr></thead>
-          <tbody>
-            {#each d.projects as project (project.id)}
-              {@const plan = projectPlan(d, project.id)}
-              <tr>
-                <td>
-                  <a
-                    href={`/projects/${encodeURIComponent(project.slug || project.id)}`}
-                    onclick={(event) => {
-                      event.preventDefault();
-                      navigate(`/projects/${encodeURIComponent(project.slug || project.id)}`);
-                    }}>{project.slug || project.id}</a
-                  >
-                </td>
-                <td>{#if plan}{plan.plan.objective} <code>r{plan.plan.revision}</code>{#if plan.plan.revision !== plan.head_revision} (head is r{plan.head_revision}){/if}{:else}<span class="muted">No project plan linked</span>{/if}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <BentoGrid>
+        <TableCard title="Projects" size="full">
+          <DataTable
+            columns={[
+              { key: "project", label: "Project", sortable: true },
+              { key: "plan", label: "Plan", render: (row) => row.plan },
+            ]}
+            rows={d.projects.map((project) => {
+              const linked = projectPlan(d, project.id);
+              return {
+                id: project.id,
+                project: project.slug || project.id,
+                plan: linked
+                  ? `${linked.plan.objective} r${linked.plan.revision}${linked.plan.revision !== linked.head_revision ? ` (head is r${linked.head_revision})` : ""}`
+                  : "No project plan linked",
+              };
+            })}
+            rowAction={{ label: "Open", onSelect: (row) => navigate(`/projects/${encodeURIComponent(row.project)}`) }}
+            emptyMessage="No projects linked to this delivery."
+          />
+        </TableCard>
+      </BentoGrid>
     </div>
   {:else if activeId === "jira" && d.jira}
     <div id="tabpanel-jira" role="tabpanel" aria-labelledby="tab-jira">
@@ -277,45 +279,64 @@
         Writes: {d.jira.write_health.succeeded} succeeded, {d.jira.write_health.pending + d.jira.write_health.retrying} pending,
         {d.jira.write_health.failed} failed
       </p>
-      {#if d.jira.touched_items.length}
-        <h3>Touched subtasks</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Task</th><th>Jira key</th><th>Touches</th></tr></thead>
-            <tbody>
-              {#each d.jira.touched_items as item (item.parent_task_id)}
-                <tr><td>{item.parent_task_id}</td><td>{item.jira_issue_key}</td><td>{item.touch_count}</td></tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-      {#if d.jira.transitions.length}
-        <h3>Status transitions</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>From</th><th>To</th><th>Write status</th><th>Occurred</th></tr></thead>
-            <tbody>
-              {#each d.jira.transitions as t (t.occurred_at + t.to_status)}
-                <tr><td>{t.from_status || "—"}</td><td>{t.to_status}</td><td>{t.status}</td><td>{formatDate(t.occurred_at)}</td></tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-      {#if d.jira.worklogs.length}
-        <h3>Worklogs</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Summary</th><th>Duration</th><th>Sync</th></tr></thead>
-            <tbody>
-              {#each d.jira.worklogs as w (w.id)}
-                <tr><td>{w.summary}</td><td>{formatDuration(w.duration_seconds * 1000)}</td><td>{w.sync_status}</td></tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
+      <BentoGrid>
+        {#if d.jira.touched_items.length}
+          <TableCard title="Touched subtasks" size="full">
+            <DataTable
+              columns={[
+                { key: "task", label: "Task" },
+                { key: "jiraKey", label: "Jira key" },
+                { key: "touches", label: "Touches", sortable: true, align: "right" },
+              ]}
+              rows={d.jira.touched_items.map((item) => ({
+                id: item.parent_task_id,
+                task: item.parent_task_id,
+                jiraKey: item.jira_issue_key,
+                touches: item.touch_count,
+              }))}
+              emptyMessage="No subtasks touched yet."
+            />
+          </TableCard>
+        {/if}
+        {#if d.jira.transitions.length}
+          <TableCard title="Status transitions" size="full">
+            <DataTable
+              columns={[
+                { key: "from", label: "From" },
+                { key: "to", label: "To" },
+                { key: "writeStatus", label: "Write status" },
+                { key: "occurred", label: "Occurred", sortable: true },
+              ]}
+              rows={d.jira.transitions.map((t) => ({
+                id: `${t.occurred_at}-${t.to_status}`,
+                from: t.from_status || "—",
+                to: t.to_status,
+                writeStatus: t.status,
+                occurred: formatDate(t.occurred_at),
+              }))}
+              emptyMessage="No status transitions recorded."
+            />
+          </TableCard>
+        {/if}
+        {#if d.jira.worklogs.length}
+          <TableCard title="Worklogs" size="full">
+            <DataTable
+              columns={[
+                { key: "summary", label: "Summary" },
+                { key: "duration", label: "Duration" },
+                { key: "sync", label: "Sync" },
+              ]}
+              rows={d.jira.worklogs.map((w) => ({
+                id: w.id,
+                summary: w.summary,
+                duration: formatDuration(w.duration_seconds * 1000),
+                sync: w.sync_status,
+              }))}
+              emptyMessage="No worklogs recorded."
+            />
+          </TableCard>
+        {/if}
+      </BentoGrid>
     </div>
   {:else if activeId === "github" && d.github}
     <div id="tabpanel-github" role="tabpanel" aria-labelledby="tab-github">
@@ -343,33 +364,55 @@
   {:else if activeId === "sessions"}
     <div id="tabpanel-sessions" role="tabpanel" aria-labelledby="tab-sessions">
       <h2>Sessions</h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Participant</th><th>Provider</th><th>Status</th><th>Started</th><th>Duration</th><th>Checkpoints</th></tr></thead>
-          <tbody>
-            {#each d.sessions ?? [] as session (session.id)}
-              <tr>
-                <td>{session.participant}</td>
-                <td>{session.provider || "Not recorded"}</td>
-                <td>{session.status}</td>
-                <td>{formatDate(session.started_at)}</td>
-                <td>{sessionDuration(session.started_at, session.ended_at)}</td>
-                <td>{session.checkpoints.length}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <BentoGrid>
+        <TableCard title="Sessions" size="full">
+          <DataTable
+            columns={[
+              { key: "participant", label: "Participant" },
+              { key: "provider", label: "Provider" },
+              { key: "status", label: "Status", sortable: true },
+              { key: "started", label: "Started", sortable: true },
+              { key: "duration", label: "Duration" },
+              { key: "checkpoints", label: "Checkpoints", align: "right" },
+            ]}
+            rows={(d.sessions ?? []).map((session) => ({
+              id: session.id,
+              participant: session.participant,
+              provider: session.provider || "Not recorded",
+              status: session.status,
+              started: formatDate(session.started_at),
+              duration: sessionDuration(session.started_at, session.ended_at),
+              checkpoints: session.checkpoints.length,
+            }))}
+            emptyMessage="No sessions recorded."
+          />
+        </TableCard>
+      </BentoGrid>
       <p class="muted">Aggregate tokens, tool calls, and estimated cost across every session are shown in the Overview tab.</p>
     </div>
   {:else if activeId === "activity"}
     <div id="tabpanel-activity" role="tabpanel" aria-labelledby="tab-activity">
       <h2>Activity</h2>
-      <ol class="activity">
-        {#each d.activity as entry, i (entry.occurred_at + entry.kind + i)}
-          <li><span class="kind">{entry.kind}</span> {entry.summary} <span class="muted">{formatDate(entry.occurred_at)}</span></li>
-        {/each}
-      </ol>
+      <BentoGrid>
+        <TableCard title="Activity" size="full">
+          <DataTable
+            columns={[
+              { key: "index", label: "#", align: "right" },
+              { key: "kind", label: "Kind", sortable: true },
+              { key: "summary", label: "Summary" },
+              { key: "occurred", label: "Occurred", sortable: true },
+            ]}
+            rows={d.activity.map((entry, i) => ({
+              id: i,
+              index: i + 1,
+              kind: entry.kind,
+              summary: entry.summary,
+              occurred: formatDate(entry.occurred_at),
+            }))}
+            emptyMessage="No activity recorded."
+          />
+        </TableCard>
+      </BentoGrid>
     </div>
   {/if}
 {/if}
@@ -447,14 +490,6 @@
     text-transform: uppercase;
     white-space: nowrap;
   }
-  a {
-    color: var(--color-accent);
-    font-weight: 600;
-    text-decoration: none;
-  }
-  a:hover {
-    text-decoration: underline;
-  }
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     word-break: break-word;
@@ -463,15 +498,5 @@
     display: grid;
     gap: 0.75rem;
     padding-left: 1.25rem;
-  }
-  .activity {
-    display: grid;
-    gap: 0.4rem;
-    padding-left: 1.25rem;
-  }
-  .activity .kind {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
   }
 </style>

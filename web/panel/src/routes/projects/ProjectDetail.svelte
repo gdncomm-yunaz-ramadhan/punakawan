@@ -30,6 +30,7 @@
     "workflows",
     "knowledge",
     "plans",
+    "metadata",
     "settings",
   ]);
   const tabs = [
@@ -37,6 +38,7 @@
     { id: "plans", label: "Plans", icon: "file" as IconName },
     { id: "workflows", label: "Workflows", icon: "git-branch" as IconName },
     { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
+    { id: "metadata", label: "Metadata", icon: "database" as IconName },
     { id: "settings", label: "Settings", icon: "settings" as IconName },
   ];
 
@@ -144,10 +146,12 @@
     <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">
       <ProjectPlans {projectId} />
     </div>
+  {:else if activeId === "metadata"}
+    <div id="tabpanel-metadata" role="tabpanel" aria-labelledby="tab-metadata">
+      <ProjectMetadata {projectId} />
+    </div>
   {:else if activeId === "settings"}
     <div id="tabpanel-settings" role="tabpanel" aria-labelledby="tab-settings" class="settings-sections">
-      <h2>Project metadata</h2>
-      <ProjectMetadata {projectId} />
       <h2>Role prompt preferences</h2>
       <ProjectRoles {projectId} />
       <h2>Diagnostics</h2>

@@ -7,6 +7,7 @@ import {
   isCancellableDelivery,
   shortDeliveryId,
   sortDeliveries,
+  summarizeDeliveries,
   totalEstimatedCost,
   type DeliveryListRow,
 } from "../src/routes/deliveries/deliveryList";
@@ -114,6 +115,77 @@ describe("filterDeliveries", () => {
   it("is case-insensitive and returns nothing when unmatched", () => {
     expect(filterDeliveries(rows, "migrate")).toHaveLength(1);
     expect(filterDeliveries(rows, "nope")).toEqual([]);
+  });
+});
+
+describe("summarizeDeliveries", () => {
+  it("sums estimated cost per currency across deliveries", () => {
+    const overview = summarizeDeliveries([
+      summary({ usage: { ...summary().usage, estimated_costs: { USD: 1, EUR: 2 } } }),
+      summary({ usage: { ...summary().usage, estimated_costs: { USD: 3, GBP: 5 } } }),
+    ]);
+    expect(overview.totalCosts).toEqual({ USD: 4, EUR: 2, GBP: 5 });
+  });
+
+  it("marks pricingComplete false when any one delivery has incomplete pricing", () => {
+    const overview = summarizeDeliveries([
+      summary({ usage: { ...summary().usage, pricing_complete: true } }),
+      summary({ usage: { ...summary().usage, pricing_complete: false } }),
+    ]);
+    expect(overview.pricingComplete).toBe(false);
+  });
+
+  it("keeps pricingComplete true when every delivery's pricing is complete", () => {
+    const overview = summarizeDeliveries([
+      summary({ usage: { ...summary().usage, pricing_complete: true } }),
+      summary({ usage: { ...summary().usage, pricing_complete: true } }),
+    ]);
+    expect(overview.pricingComplete).toBe(true);
+  });
+
+  it("sums tokens, tool calls, and elapsed time across deliveries", () => {
+    const overview = summarizeDeliveries([
+      summary({
+        usage: { ...summary().usage, input_tokens: 100, output_tokens: 20, tool_calls: 3, elapsed_ms: 1_000 },
+      }),
+      summary({
+        usage: { ...summary().usage, input_tokens: 50, output_tokens: 10, tool_calls: 2, elapsed_ms: 2_000 },
+      }),
+    ]);
+    expect(overview.totalTokens).toBe(180);
+    expect(overview.totalToolCalls).toBe(5);
+    expect(overview.totalElapsedMs).toBe(3_000);
+  });
+
+  it("dedups project ids shared across deliveries", () => {
+    const overview = summarizeDeliveries([
+      summary({ projects: [{ id: "proj-a", slug: "proj-a" }] }),
+      summary({
+        projects: [
+          { id: "proj-a", slug: "proj-a" },
+          { id: "proj-b", slug: "proj-b" },
+        ],
+      }),
+    ]);
+    expect(overview.projectCount).toBe(2);
+  });
+
+  it("dedups plan ids shared across deliveries", () => {
+    const overview = summarizeDeliveries([
+      summary({ plan: { id: "plan-1", revision: 1, objective: "A" } }),
+      summary({ plan: { id: "plan-1", revision: 2, objective: "A" } }),
+      summary({ plan: { id: "plan-2", revision: 1, objective: "B" } }),
+    ]);
+    expect(overview.planCount).toBe(2);
+  });
+
+  it("counts only deliveries that currently have a session", () => {
+    const overview = summarizeDeliveries([
+      summary({ session: { status: "active", started_at: "2026-08-09T00:00:00Z" } }),
+      summary({}),
+      summary({ session: { status: "stopped", started_at: "2026-08-08T00:00:00Z" } }),
+    ]);
+    expect(overview.sessionCount).toBe(2);
   });
 });
 

@@ -79,14 +79,79 @@ describe("DeliveriesList", () => {
     expect(screen.getByText("active", { exact: false })).toBeTruthy();
     expect(screen.getByText("PAY-1842")).toBeTruthy();
     expect(screen.getByText("proj-a")).toBeTruthy();
-    expect(container.textContent).toContain("Ship the v2 billing rollout");
-    expect(container.textContent).toContain("r3");
-    expect(container.textContent).toContain("Half the projects migrated");
     expect(container.textContent).toContain("1,500");
     expect(container.textContent).toContain("7");
     expect(container.textContent).toContain("1m");
     expect(container.textContent).toContain("$1.23");
     expect(container.textContent).toContain("Updated");
+  });
+
+  it("renders an overview metric-card row aggregating cost, plans, projects, and sessions", async () => {
+    installBackend([
+      summary("orc-1", {
+        projects: [{ id: "proj-a", slug: "proj-a" }],
+        plan: { id: "plan-1", revision: 1, objective: "Ship A" },
+        session: { status: "active", started_at: "2026-08-09T00:00:00Z" },
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_tokens: 0,
+          tool_calls: 5,
+          elapsed_ms: 60_000,
+          estimated_costs: { USD: 1 },
+          pricing_complete: true,
+        },
+      }),
+      summary("orc-2", {
+        // Shares proj-a and plan-1 with orc-1 - dedup should count each once.
+        projects: [
+          { id: "proj-a", slug: "proj-a" },
+          { id: "proj-b", slug: "proj-b" },
+        ],
+        plan: { id: "plan-1", revision: 1, objective: "Ship A" },
+        usage: {
+          input_tokens: 500,
+          output_tokens: 300,
+          cache_tokens: 0,
+          tool_calls: 3,
+          elapsed_ms: 30_000,
+          estimated_costs: { USD: 2, EUR: 4 },
+          pricing_complete: false,
+        },
+      }),
+    ]);
+
+    const { container } = render(DeliveriesList);
+    await waitFor(() => expect(screen.getByText("orc-1")).toBeTruthy());
+
+    expect(screen.getByText("Total cost")).toBeTruthy();
+    expect(screen.getByText("Plans")).toBeTruthy();
+    expect(screen.getByText("Projects")).toBeTruthy();
+    expect(screen.getByText("Sessions")).toBeTruthy();
+
+    // Two distinct plan ids collapse to one, and proj-a/proj-b collapse to
+    // two; only orc-1 carries a session.
+    expect(container.textContent).toContain("$3.00");
+    expect(container.textContent).toContain("€4.00");
+
+    const metricValue = (label: string) => {
+      for (const metric of container.querySelectorAll(".metric")) {
+        if (metric.querySelector(".label")?.textContent === label) {
+          return metric.querySelector(".value")?.textContent;
+        }
+      }
+      return undefined;
+    };
+    expect(metricValue("Plans")).toBe("1");
+    expect(metricValue("Projects")).toBe("2");
+    expect(metricValue("Sessions")).toBe("1");
+
+    await fireEvent.click(screen.getByLabelText("Cost breakdown"));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("Total cost");
+    expect(dialog.textContent).toContain("Elapsed time");
+    expect(dialog.textContent).toContain("Tokens spent");
+    expect(dialog.textContent).toContain("Tool calls");
   });
 
   it("labels an ad-hoc delivery as Ad-hoc", async () => {

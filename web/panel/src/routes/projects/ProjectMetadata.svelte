@@ -459,7 +459,7 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
   }
   th,
   td {
@@ -469,10 +469,21 @@
     vertical-align: top;
   }
   th {
+    position: sticky;
+    top: 0;
+    background: var(--color-surface);
+    font-weight: 500;
+    z-index: 1;
     color: var(--color-text-muted);
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+  tbody tr:hover {
+    background: var(--color-surface-subtle);
+  }
+  tbody tr:focus-within {
+    background: var(--color-accent-soft);
   }
   td.key {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -8,15 +8,20 @@
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import Icon from "../../lib/components/Icon.svelte";
   import Button from "../../lib/components/Button.svelte";
+  import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
+  import MetricCard from "../../lib/components/cards/MetricCard.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
   import {
     filterDeliveries,
     sortDeliveries,
+    summarizeDeliveries,
     deliverySortOptions,
     isCancellableDelivery,
     backoffDelay,
     type DeliverySortKey,
     type DeliveryListRow,
+    type DeliveriesOverview,
   } from "./deliveryList";
 
   const POLL_INTERVAL_MS = 10_000;
@@ -33,6 +38,8 @@
   let sortKey: DeliverySortKey = $state("updated");
 
   const visible = $derived(sortDeliveries(filterDeliveries(rows, search), sortKey));
+  const overview = $derived(summarizeDeliveries(rows.map((r) => r.summary)));
+  let costBreakdownOpen = $state(false);
 
   let pendingCancelId: string | null = $state(null);
   const pendingCancel = $derived.by(() => rows.find((r) => r.summary.id === pendingCancelId) ?? null);
@@ -159,6 +166,15 @@
     return summary.usage.pricing_complete ? formatted : `${formatted} (partial)`;
   }
 
+  function formatCosts(costs: Record<string, number>, pricingComplete: boolean): string {
+    const entries = Object.entries(costs ?? {});
+    if (entries.length === 0) return "No estimate";
+    const formatted = entries
+      .map(([currency, amount]) => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount))
+      .join(" · ");
+    return pricingComplete ? formatted : `${formatted} (partial - some usage has unknown pricing)`;
+  }
+
   function sourceLabel(summary: DeliverySummary): string {
     if (!summary.source || summary.source.kind === "adhoc") return "Ad-hoc";
     return summary.source.key ?? "Jira";
@@ -177,6 +193,28 @@
 {:else if rows.length === 0}
   <EmptyStateCard title="No deliveries yet" message="Start a delivery to see it here." />
 {:else}
+  <BentoGrid>
+    <MetricCard size="small" columns={3} label="Total cost" value={formatCosts(overview.totalCosts, overview.pricingComplete)}>
+      {#snippet cornerAction()}
+        <button type="button" aria-label="Cost breakdown" onclick={() => (costBreakdownOpen = true)}>
+          <Icon name="info" size={16} />
+        </button>
+      {/snippet}
+    </MetricCard>
+    <MetricCard size="small" columns={3} label="Plans" value={overview.planCount} />
+    <MetricCard size="small" columns={3} label="Projects" value={overview.projectCount} />
+    <MetricCard size="small" columns={3} label="Sessions" value={overview.sessionCount} />
+  </BentoGrid>
+
+  <Dialog open={costBreakdownOpen} title="Cost breakdown" onclose={() => (costBreakdownOpen = false)}>
+    <dl class="breakdown">
+      <dt>Total cost</dt><dd>{formatCosts(overview.totalCosts, overview.pricingComplete)}</dd>
+      <dt>Elapsed time</dt><dd>{formatDuration(overview.totalElapsedMs)}</dd>
+      <dt>Tokens spent</dt><dd>{overview.totalTokens.toLocaleString()}</dd>
+      <dt>Tool calls</dt><dd>{overview.totalToolCalls.toLocaleString()}</dd>
+    </dl>
+  </Dialog>
+
   <div class="toolbar">
     <div class="field">
       <label for="delivery-search">Search deliveries</label>
@@ -228,16 +266,6 @@
 
               {#if s.projects.length}
                 <span class="projects">{s.projects.map((p) => p.slug).join(", ")}</span>
-              {/if}
-
-              {#if s.plan}
-                <span class="plan">{s.plan.objective} <code>r{s.plan.revision}</code></span>
-              {/if}
-
-              {#if s.progress}
-                <span class="progress">{s.progress.summary}</span>
-              {:else if s.session}
-                <span class="progress">Session {s.session.status} ({s.session.participant || "unknown participant"})</span>
               {/if}
 
               <span class="stats" aria-label="Delivery usage">
@@ -304,6 +332,7 @@
     position: relative;
     overflow: hidden;
     width: 100%;
+    height: 100%;
     min-width: 0;
     border: 1px solid var(--surface-card-border, var(--color-border));
     border-radius: var(--radius-card);
@@ -422,17 +451,11 @@
     color: var(--color-text-muted);
     overflow-wrap: anywhere;
   }
-  .projects,
-  .plan,
-  .progress {
+  .projects {
     display: block;
     color: var(--color-text);
     font-size: 0.85rem;
     overflow-wrap: anywhere;
-  }
-  .plan code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--color-text-muted);
   }
   .stats {
     display: flex;
@@ -470,5 +493,21 @@
   .open-hint:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+  }
+  .breakdown {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.35rem 0.85rem;
+    align-items: baseline;
+    font-size: 0.9rem;
+  }
+  .breakdown dt {
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+  .breakdown dd {
+    margin: 0;
+    color: var(--color-text);
+    font-weight: 600;
   }
 </style>
