@@ -29,7 +29,7 @@ type Client struct {
 	addr  string
 	token string
 	http  *http.Client
-	// watchHTTP backs WatchDeliveryView's long-poll requests, which can
+	// watchHTTP backs WatchDeliveryDetail's long-poll requests, which can
 	// legitimately take up to maxDeliveryWaitSeconds - http's own fixed
 	// Timeout would cut those off, so long-poll calls use this client
 	// (unbounded Timeout; bounded instead via the request's own context

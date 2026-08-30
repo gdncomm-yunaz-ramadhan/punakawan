@@ -2,82 +2,258 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/sve
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import DeliveryDetail from "../src/routes/deliveries/DeliveryDetail.svelte";
 import { setCsrfToken } from "../src/lib/session";
+import type { DeliveryDetail as DeliveryDetailModel } from "../src/lib/api/client";
 
-function response(body: unknown) { return { ok: true, status: 200, json: async () => body } as Response; }
-
-function view(overrides: Record<string, unknown> = {}) {
-  return {
-    orchestration: { id: "orc-1", revision: 1, status: "active", unresolved_inputs: [], created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-10T00:00:00Z" },
-    title: "Migrate billing to v2", description: "Move every billing caller onto the v2 pricing endpoint.", plan_id: "delivery-plan", plan_revision: 3,
-    projects: [{ project_id: "billing", attached: true, lane_ids: [], counts_by_status: {} }],
-    project_plans: [{ project_id: "billing", plan_id: "plan-billing", plan_revision: 2, created_at: "2026-08-10T00:00:00Z" }],
-    lanes: [], blockers: [], pending_questions: [], next_action: "", latest_seq: 1, newly_runnable_lane_ids: [],
-    jira_activity: [{ issue_key: "BILL-42", event_type: "implementation.completed", entity_id: "task-9", fired_at: "2026-08-10T02:00:00Z" }],
-    lifecycle: { sessions: [{ id: "session-1", case_id: "case-1", execution_id: "exec-1", orchestration_id: "orc-1", participant: "codex", worktree_path: "/repo/billing", provider: "openai", status: "closed", started_at: "2026-08-10T00:00:00Z", ended_at: "2026-08-10T01:30:00Z" }], usage: [{ id: "usage-1", case_id: "case-1", execution_id: "exec-1", session_id: "session-1", kind: "estimate", category: "model", quantity: 1, unit: "request", cost_amount: 12.5, cost_currency: "USD", recorded_at: "2026-08-10T02:00:00Z" }] },
-    ...overrides,
-  };
+function jsonResponse(body: unknown, ok = true, status = 200) {
+  return { ok, status, json: async () => body } as Response;
 }
 
-beforeEach(() => { vi.stubGlobal("fetch", vi.fn()); setCsrfToken("csrf-test-token"); });
-afterEach(() => vi.unstubAllGlobals());
+function detail(over: Partial<DeliveryDetailModel> = {}): DeliveryDetailModel {
+  return {
+    id: "orc-1",
+    title: "Migrate billing to v2",
+    status: "active",
+    projects: [],
+    usage: {
+      input_tokens: 800,
+      output_tokens: 200,
+      cache_tokens: 0,
+      tool_calls: 5,
+      elapsed_ms: 90_000,
+      estimated_costs: { USD: 12.5 },
+      pricing_complete: true,
+    },
+    updated_at: "2026-08-10T00:00:00Z",
+    cancellable: true,
+    projection_revision: 1,
+    orchestration_revision: 1,
+    description: "Move every billing caller onto the v2 pricing endpoint.",
+    activity: [],
+    ...over,
+  } as DeliveryDetailModel;
+}
 
-function renderView(data = view()) {
-  (fetch as unknown as Mock).mockImplementation(async (url: string) => {
-    if (url === "/api/v1/deliveries/orc-1") return response(data);
+type FetchMock = ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn());
+  setCsrfToken("csrf-test-token");
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function installBackend(d: DeliveryDetailModel, opts: { onPost?: (url: string) => Response } = {}) {
+  (fetch as unknown as FetchMock).mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "POST") {
+      if (opts.onPost) return opts.onPost(url);
+      return jsonResponse(d);
+    }
+    if (url.startsWith("/api/v1/deliveries/orc-1")) return jsonResponse(d);
     throw new Error(`unexpected url ${url}`);
   });
-  return render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
 }
 
 describe("DeliveryDetail", () => {
-  it("renders a responsive bento summary with title, description, plan, and estimates", async () => {
-    const { container } = renderView();
+  it("renders the title, description, and overview metrics; skips tabs with no data", async () => {
+    installBackend(detail());
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
     await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
     expect(screen.getByText("Move every billing caller onto the v2 pricing endpoint.")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "High-level plan" })).toBeTruthy();
-    expect(screen.getByText("delivery-plan r3")).toBeTruthy();
-    expect(container.querySelectorAll(".bento-card")).toHaveLength(4);
-    expect(container.textContent).toContain("$12.50");
-    expect(screen.queryByText("Pending approvals")).toBeNull();
-    expect(screen.queryByText("Projects & lanes")).toBeNull();
+    expect(screen.getByText("$12.50")).toBeTruthy();
+    expect(screen.getByText("5")).toBeTruthy();
+
+    // Only the always-present Overview tab shows up when nothing else has data.
+    expect(screen.getByRole("tab", { name: "Overview" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Plan" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Projects" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Jira" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "GitHub" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Sessions" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Activity" })).toBeNull();
   });
 
-  it("renders each delivery record in its matching tab", async () => {
-    renderView();
+  it("never renders lane/blocked/pending-question language anywhere on the page", async () => {
+    installBackend(detail());
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
+
+    const text = container.textContent?.toLowerCase() ?? "";
+    expect(text).not.toContain("lane");
+    expect(text).not.toContain("blocked");
+    expect(text).not.toContain("pending question");
+  });
+
+  it("shows a Plan tab only when plan_detail is present", async () => {
+    installBackend(
+      detail({
+        plan_detail: {
+          id: "plan-1",
+          objective: "Ship the v2 billing rollout",
+          revision: 3,
+          steps: [{ objective: "Cut over reads", expected_outcome: "Reads use v2" }],
+        },
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("tab", { name: "Plan" });
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Plan" }));
+    const panel = screen.getByRole("tabpanel", { name: "Plan" });
+    expect(within(panel).getByText("r3", { exact: false })).toBeTruthy();
+    expect(within(panel).getByText("Cut over reads")).toBeTruthy();
+  });
+
+  it("shows a Projects tab with each project's linked plan", async () => {
+    installBackend(
+      detail({
+        projects: [{ id: "billing", slug: "billing" }],
+        project_plans: [
+          {
+            project_id: "billing",
+            project_slug: "billing",
+            plan: { id: "plan-billing", objective: "Ship billing v2", revision: 2 },
+            head_revision: 2,
+          },
+        ],
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
     await screen.findByRole("tab", { name: "Projects" });
 
     await fireEvent.click(screen.getByRole("tab", { name: "Projects" }));
-    const projects = screen.getByRole("tabpanel", { name: "Projects" });
-    expect(within(projects).getByRole("link", { name: "billing" }).getAttribute("href")).toBe("/projects/billing");
-
-    await fireEvent.click(screen.getByRole("tab", { name: "Plans" }));
-    const plans = screen.getByRole("tabpanel", { name: "Plans" });
-    expect(within(plans).getByRole("link", { name: "plan-billing r2" }).getAttribute("href")).toBe("/projects/billing?tab=plans&plan=plan-billing&revision=2");
-
-    await fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
-    const sessions = screen.getByRole("tabpanel", { name: "Sessions" });
-    expect(within(sessions).getByText("codex")).toBeTruthy();
-    expect(within(sessions).getByText("/repo/billing")).toBeTruthy();
-    expect(within(sessions).getByText("openai")).toBeTruthy();
-
-    await fireEvent.click(screen.getByRole("tab", { name: "Activities" }));
-    const activities = screen.getByRole("tabpanel", { name: "Activities" });
-    expect(within(activities).getByRole("table", { name: "Jira activity" })).toBeTruthy();
-    expect(within(activities).getByText("BILL-42")).toBeTruthy();
+    const panel = screen.getByRole("tabpanel", { name: "Projects" });
+    expect(within(panel).getByRole("link", { name: "billing" }).getAttribute("href")).toBe("/projects/billing");
+    expect(within(panel).getByText("Ship billing v2")).toBeTruthy();
   });
 
-  it("opens cost details with observed time, tokens, and unknown cost", async () => {
-    renderView(view({ lifecycle: { sessions: [], usage: [
-      { id: "time", case_id: "case-1", execution_id: "exec-1", session_id: "session-1", kind: "actual", category: "wall_clock_time", quantity: 120, unit: "seconds", recorded_at: "2026-08-10T02:00:00Z" },
-      { id: "tokens", case_id: "case-1", execution_id: "exec-1", session_id: "session-1", kind: "actual", category: "tokens_input", quantity: 42, unit: "tokens", recorded_at: "2026-08-10T02:00:00Z" },
-    ] } }));
-    await screen.findByRole("tab", { name: "Summary" });
-    await fireEvent.click(screen.getByRole("tab", { name: "Summary" }));
-    await screen.findByRole("button", { name: "Cost details" });
-    await fireEvent.click(screen.getByRole("button", { name: "Cost details" }));
-    const dialog = screen.getByRole("dialog", { name: "Cost details" });
-    expect(within(dialog).getByText("2m")).toBeTruthy();
-    expect(within(dialog).getByText("42 tokens")).toBeTruthy();
-    expect(within(dialog).getByText("Unknown — price rate missing")).toBeTruthy();
+  it("shows a Jira tab with touched items and transitions", async () => {
+    installBackend(
+      detail({
+        jira: {
+          issue_key: "BILL-42",
+          touched_items: [{ parent_task_id: "PUN-12", jira_issue_key: "BILL-42", touch_count: 3 }],
+          transitions: [{ to_status: "In Progress", status: "succeeded", occurred_at: "2026-08-10T02:00:00Z" }],
+          worklogs: [],
+          write_health: { pending: 0, retrying: 0, reconciling: 0, failed: 0, succeeded: 1, cancelled: 0 },
+        },
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("tab", { name: "Jira" });
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Jira" }));
+    const panel = screen.getByRole("tabpanel", { name: "Jira" });
+    expect(within(panel).getAllByText("BILL-42", { exact: false }).length).toBeGreaterThan(0);
+    expect(within(panel).getByText("PUN-12")).toBeTruthy();
+    expect(within(panel).getByText("In Progress")).toBeTruthy();
+  });
+
+  it("shows a Sessions tab with each session's participant and duration", async () => {
+    installBackend(
+      detail({
+        sessions: [
+          {
+            id: "session-1",
+            case_id: "case-1",
+            execution_id: "exec-1",
+            orchestration_id: "orc-1",
+            participant: "codex",
+            status: "closed",
+            started_at: "2026-08-10T00:00:00Z",
+            ended_at: "2026-08-10T01:30:00Z",
+            worktree_path: "/repo/billing",
+            provider: "openai",
+            checkpoints: [],
+          },
+        ],
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("tab", { name: "Sessions" });
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
+    const panel = screen.getByRole("tabpanel", { name: "Sessions" });
+    expect(within(panel).getByText("codex")).toBeTruthy();
+    expect(within(panel).getByText("openai")).toBeTruthy();
+  });
+
+  it("shows an Activity tab with the merged timeline", async () => {
+    installBackend(
+      detail({
+        activity: [{ kind: "jira", summary: "Transitioned to In Progress", occurred_at: "2026-08-10T02:00:00Z" }],
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("tab", { name: "Activity" });
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
+    const panel = screen.getByRole("tabpanel", { name: "Activity" });
+    expect(within(panel).getByText("Transitioned to In Progress")).toBeTruthy();
+  });
+
+  it("confirms a cancel, saying what it does and does not undo, using a freshly fetched revision", async () => {
+    const posted: { url: string; body: unknown }[] = [];
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string, init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST") {
+        posted.push({ url, body: init?.body ? JSON.parse(init.body as string) : undefined });
+        return jsonResponse(detail({ status: "cancelled", cancellable: false }));
+      }
+      return jsonResponse(detail({ orchestration_revision: 4 }));
+    });
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel delivery" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("does not undo work already done");
+
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Cancel delivery" }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].url).toBe("/api/v1/deliveries/orc-1/cancel");
+    expect(posted[0].body).toEqual({ expected_revision: 4 });
+  });
+
+  it("surfaces a failed cancel in the dialog instead of closing it", async () => {
+    installBackend(detail(), { onPost: () => jsonResponse({ error: "revision conflict" }, false, 409) });
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel delivery" }));
+    const dialog = screen.getByRole("dialog");
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Cancel delivery" }));
+
+    await waitFor(() => expect(screen.getByTestId("cancel-error").textContent).toContain("revision conflict"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("does not offer Cancel once the delivery is no longer cancellable", async () => {
+    installBackend(detail({ cancellable: false, status: "completed" }));
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Cancel delivery" })).toBeNull();
+  });
+
+  it("shows an error state when the initial load fails", async () => {
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ error: "not found" }, false, 404));
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+
+    await waitFor(() => expect(screen.getByText("not found", { exact: false })).toBeTruthy());
   });
 });

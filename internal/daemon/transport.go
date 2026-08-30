@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/deliveryprojection"
 	"github.com/ygrip/punakawan/internal/loopback"
 )
 
@@ -27,11 +28,12 @@ const shutdownGrace = 5 * time.Second
 // LoadOrCreateToken - an unauthenticated request never reaches
 // application logic.
 type Transport struct {
-	listener net.Listener
-	http     *http.Server
-	token    string
-	ready    func() error
-	delivery *delivery.Store
+	listener  net.Listener
+	http      *http.Server
+	token     string
+	ready     func() error
+	delivery  *delivery.Store
+	projector *deliveryprojection.Projector
 }
 
 // NewTransport binds a loopback listener at host:port and wires the
@@ -47,15 +49,18 @@ func NewTransport(host, port, token string, ready func() error, deliveryStore *d
 	if ready == nil {
 		ready = func() error { return nil }
 	}
-	t := &Transport{listener: listener, token: token, ready: ready, delivery: deliveryStore}
+	t := &Transport{
+		listener: listener, token: token, ready: ready,
+		delivery: deliveryStore, projector: deliveryprojection.NewProjector(deliveryStore),
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", t.handleHealth)
 	mux.Handle("/readyz", t.authenticate(http.HandlerFunc(t.handleReady)))
 	mux.Handle("GET /api/v1/deliveries", t.authenticate(http.HandlerFunc(t.handleListDeliveries)))
-	mux.Handle("GET /api/v1/deliveries/{orchestrationId}", t.authenticate(http.HandlerFunc(t.handleDeliveryView)))
+	mux.Handle("GET /api/v1/deliveries/{orchestrationId}", t.authenticate(http.HandlerFunc(t.handleDeliveryDetail)))
+	mux.Handle("GET /api/v1/deliveries/{orchestrationId}/watch", t.authenticate(http.HandlerFunc(t.handleDeliveryWatch)))
 	mux.Handle("GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}", t.authenticate(http.HandlerFunc(t.handleDeliveryEvidence)))
-	mux.Handle("POST /api/v1/deliveries/{orchestrationId}/answer-question", t.authenticate(http.HandlerFunc(t.handleAnswerDeliveryQuestion)))
 	mux.Handle("POST /api/v1/deliveries/{orchestrationId}/cancel", t.authenticate(http.HandlerFunc(t.handleCancelDelivery)))
 	t.http = &http.Server{Handler: t.securityHeaders(mux)}
 	return t, nil

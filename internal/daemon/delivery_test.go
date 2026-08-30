@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/deliveryprojection"
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -55,6 +57,23 @@ func newDeliveryTestServer(t *testing.T) *deliveryTestServer {
 		tr.Shutdown(ctx)
 	})
 	return &deliveryTestServer{tr: tr, store: store, token: token}
+}
+
+// bumpProjection advances id's delivery_projection_versions revision by
+// ingesting one telemetry usage snapshot against it - the same real
+// mutation path a running agent session uses, exercised here only for
+// its side effect on the projection revision.
+func (s *deliveryTestServer) bumpProjection(t *testing.T, id string) {
+	t.Helper()
+	ctx := context.Background()
+	tstore := telemetry.NewStore(s.store.DB())
+	session, err := tstore.Begin(ctx, telemetry.BeginRequest{DeliveryID: id, ClientKind: "claude-code", ExternalSessionID: id + "-session"})
+	if err != nil {
+		t.Fatalf("telemetry.Begin: %v", err)
+	}
+	if _, err := tstore.IngestSnapshot(ctx, telemetry.SnapshotRequest{SessionID: session.ID, SourceID: "main", Sequence: 1, InputTokens: 1}); err != nil {
+		t.Fatalf("telemetry.IngestSnapshot: %v", err)
+	}
 }
 
 // request issues one authenticated HTTP request against the test
@@ -104,16 +123,16 @@ func TestHandleListDeliveriesReturnsEveryOrchestration(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	var list []*protocol.DeliveryOrchestration
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+	var result ListDeliveriesResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(list) != 2 || list[0].Id != first.Id || list[1].Id != second.Id {
-		t.Fatalf("unexpected list: %+v", list)
+	if len(result.Items) != 2 || result.Items[0].ID != first.Id || result.Items[1].ID != second.Id {
+		t.Fatalf("unexpected list: %+v", result.Items)
 	}
 }
 
-func TestHandleDeliveryViewNotFound(t *testing.T) {
+func TestHandleDeliveryDetailNotFound(t *testing.T) {
 	s := newDeliveryTestServer(t)
 	resp := s.do(t, http.MethodGet, "/api/v1/deliveries/unknown", nil)
 	defer resp.Body.Close()
@@ -122,7 +141,7 @@ func TestHandleDeliveryViewNotFound(t *testing.T) {
 	}
 }
 
-func TestHandleDeliveryViewReturnsCurrentState(t *testing.T) {
+func TestHandleDeliveryDetailReturnsCurrentState(t *testing.T) {
 	s := newDeliveryTestServer(t)
 	ctx := context.Background()
 	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
@@ -135,16 +154,16 @@ func TestHandleDeliveryViewReturnsCurrentState(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	var view delivery.DeliveryView
-	if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
+	var detail deliveryprojection.DeliveryDetail
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if view.Orchestration.Id != orch.Id {
-		t.Fatalf("unexpected orchestration in view: %+v", view.Orchestration)
+	if detail.ID != orch.Id {
+		t.Fatalf("unexpected detail: %+v", detail)
 	}
 }
 
-func TestHandleDeliveryViewWaitSecondsBlocksUntilTimeout(t *testing.T) {
+func TestHandleDeliveryWatchBlocksUntilTimeout(t *testing.T) {
 	s := newDeliveryTestServer(t)
 	ctx := context.Background()
 	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
@@ -153,7 +172,7 @@ func TestHandleDeliveryViewWaitSecondsBlocksUntilTimeout(t *testing.T) {
 	}
 
 	start := time.Now()
-	resp := s.do(t, http.MethodGet, fmt.Sprintf("/api/v1/deliveries/%s?since_seq=0&wait_seconds=1", orch.Id), nil)
+	resp := s.do(t, http.MethodGet, fmt.Sprintf("/api/v1/deliveries/%s/watch?since_revision=0&wait_seconds=1", orch.Id), nil)
 	elapsed := time.Since(start)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -170,7 +189,7 @@ type watchResult struct {
 	err     error
 }
 
-func TestHandleDeliveryViewWaitSecondsReturnsEarlyOnChange(t *testing.T) {
+func TestHandleDeliveryWatchReturnsEarlyOnChange(t *testing.T) {
 	s := newDeliveryTestServer(t)
 	ctx := context.Background()
 	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
@@ -181,7 +200,7 @@ func TestHandleDeliveryViewWaitSecondsReturnsEarlyOnChange(t *testing.T) {
 	results := make(chan watchResult, 1)
 	go func() {
 		start := time.Now()
-		resp, err := s.request(http.MethodGet, fmt.Sprintf("/api/v1/deliveries/%s?since_seq=0&wait_seconds=5", orch.Id), nil)
+		resp, err := s.request(http.MethodGet, fmt.Sprintf("/api/v1/deliveries/%s/watch?since_revision=0&wait_seconds=5", orch.Id), nil)
 		if err != nil {
 			results <- watchResult{err: err}
 			return
@@ -191,9 +210,7 @@ func TestHandleDeliveryViewWaitSecondsReturnsEarlyOnChange(t *testing.T) {
 	}()
 
 	time.Sleep(300 * time.Millisecond)
-	if _, err := s.store.RegisterInput(ctx, "reg", orch.Id, orch.Revision, protocol.DeliveryOrchestrationUnresolvedInputsElem{Reference: "R"}); err != nil {
-		t.Fatalf("RegisterInput: %v", err)
-	}
+	s.bumpProjection(t, orch.Id)
 
 	select {
 	case res := <-results:
@@ -211,49 +228,6 @@ func TestHandleDeliveryViewWaitSecondsReturnsEarlyOnChange(t *testing.T) {
 	}
 }
 
-func TestHandleAnswerDeliveryQuestionResolvedRequirement(t *testing.T) {
-	s := newDeliveryTestServer(t)
-	ctx := context.Background()
-	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), []protocol.DeliveryOrchestrationUnresolvedInputsElem{{Reference: "REQ-1"}})
-	if err != nil {
-		t.Fatalf("CreateOrchestration: %v", err)
-	}
-
-	body := answerDeliveryQuestionRequest{
-		Reference: "REQ-1", ExpectedRevision: orch.Revision,
-		Provider: "freetext", Title: "T", Summary: "S",
-	}
-	resp := s.do(t, http.MethodPost, "/api/v1/deliveries/"+orch.Id+"/answer-question", body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	var view delivery.DeliveryView
-	if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	for _, q := range view.PendingQuestions {
-		if q == "REQ-1" {
-			t.Fatalf("expected REQ-1 to be resolved, still pending: %+v", view.PendingQuestions)
-		}
-	}
-}
-
-func TestHandleAnswerDeliveryQuestionRequiresProviderOrRouting(t *testing.T) {
-	s := newDeliveryTestServer(t)
-	ctx := context.Background()
-	orch, err := s.store.CreateOrchestration(ctx, "orch", delivery.NewID(), nil)
-	if err != nil {
-		t.Fatalf("CreateOrchestration: %v", err)
-	}
-
-	resp := s.do(t, http.MethodPost, "/api/v1/deliveries/"+orch.Id+"/answer-question", answerDeliveryQuestionRequest{Reference: "x"})
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", resp.StatusCode)
-	}
-}
-
 func TestHandleCancelDelivery(t *testing.T) {
 	s := newDeliveryTestServer(t)
 	ctx := context.Background()
@@ -268,12 +242,15 @@ func TestHandleCancelDelivery(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	var view delivery.DeliveryView
-	if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
+	var detail deliveryprojection.DeliveryDetail
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if view.Orchestration.Status != protocol.DeliveryOrchestrationStatusCancelled {
-		t.Fatalf("expected cancelled status, got %s", view.Orchestration.Status)
+	if detail.Status != deliveryprojection.StatusCancelled {
+		t.Fatalf("expected cancelled status, got %s", detail.Status)
+	}
+	if detail.ProjectionRevision == 0 {
+		t.Fatalf("expected cancel to advance the projection revision, got 0")
 	}
 }
 
@@ -426,39 +403,28 @@ func TestClientDeliveryRoundTrip(t *testing.T) {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 
-	list, err := client.ListDeliveries(ctx)
+	result, err := client.ListDeliveries(ctx)
 	if err != nil {
 		t.Fatalf("ListDeliveries: %v", err)
 	}
-	if len(list) != 1 || list[0].Id != orch.Id {
-		t.Fatalf("unexpected list: %+v", list)
+	if len(result.Items) != 1 || result.Items[0].ID != orch.Id {
+		t.Fatalf("unexpected list: %+v", result.Items)
 	}
 
-	view, err := client.GetDeliveryView(ctx, orch.Id, 0)
+	detail, err := client.GetDeliveryDetail(ctx, orch.Id)
 	if err != nil {
-		t.Fatalf("GetDeliveryView: %v", err)
+		t.Fatalf("GetDeliveryDetail: %v", err)
 	}
-	if view.Orchestration.Id != orch.Id {
-		t.Fatalf("unexpected view: %+v", view.Orchestration)
-	}
-
-	view, err = client.AnswerDeliveryQuestion(ctx, orch.Id, AnswerDeliveryQuestionRequest{
-		Reference: "REQ-1", ExpectedRevision: orch.Revision,
-		Provider: "freetext", Title: "T", Summary: "S",
-	})
-	if err != nil {
-		t.Fatalf("AnswerDeliveryQuestion: %v", err)
-	}
-	if len(view.PendingQuestions) != 0 {
-		t.Fatalf("expected question resolved, got %+v", view.PendingQuestions)
+	if detail.ID != orch.Id {
+		t.Fatalf("unexpected detail: %+v", detail)
 	}
 
-	view, err = client.CancelDelivery(ctx, orch.Id, CancelDeliveryRequest{ExpectedRevision: view.Orchestration.Revision})
+	detail, err = client.CancelDelivery(ctx, orch.Id, CancelDeliveryRequest{ExpectedRevision: orch.Revision})
 	if err != nil {
 		t.Fatalf("CancelDelivery: %v", err)
 	}
-	if view.Orchestration.Status != protocol.DeliveryOrchestrationStatusCancelled {
-		t.Fatalf("expected cancelled, got %s", view.Orchestration.Status)
+	if detail.Status != deliveryprojection.StatusCancelled {
+		t.Fatalf("expected cancelled, got %s", detail.Status)
 	}
 }
 
@@ -543,7 +509,7 @@ func TestClientMethodErrorIsStatusError(t *testing.T) {
 		t.Fatalf("Discover: %v", err)
 	}
 
-	_, err = client.GetDeliveryView(context.Background(), "no-such-orchestration", 0)
+	_, err = client.GetDeliveryDetail(context.Background(), "no-such-orchestration")
 	if err == nil {
 		t.Fatal("expected an error for an unknown orchestration id")
 	}
@@ -559,7 +525,7 @@ func TestClientMethodErrorIsStatusError(t *testing.T) {
 	}
 }
 
-func TestClientSubscribeDeliveryViewObservesUpdate(t *testing.T) {
+func TestClientSubscribeDeliveryDetailObservesUpdate(t *testing.T) {
 	paths := testPaths(t)
 	d, err := Run(context.Background(), "127.0.0.1", "0", paths)
 	if err != nil {
@@ -585,22 +551,27 @@ func TestClientSubscribeDeliveryViewObservesUpdate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	updates := make(chan int, 1)
-	go client.SubscribeDeliveryView(ctx, orch.Id, 0, func(v *delivery.DeliveryView) bool {
-		updates <- v.LatestSeq
+	go client.SubscribeDeliveryDetail(ctx, orch.Id, 0, func(d *deliveryprojection.DeliveryDetail) bool {
+		updates <- d.ProjectionRevision
 		return false
 	})
 
 	time.Sleep(300 * time.Millisecond)
-	if _, err := store.RegisterInput(context.Background(), "reg", orch.Id, orch.Revision, protocol.DeliveryOrchestrationUnresolvedInputsElem{Reference: "R"}); err != nil {
-		t.Fatalf("RegisterInput: %v", err)
+	tstore := telemetry.NewStore(store.DB())
+	session, err := tstore.Begin(context.Background(), telemetry.BeginRequest{DeliveryID: orch.Id, ClientKind: "claude-code", ExternalSessionID: "sub-session"})
+	if err != nil {
+		t.Fatalf("telemetry.Begin: %v", err)
+	}
+	if _, err := tstore.IngestSnapshot(context.Background(), telemetry.SnapshotRequest{SessionID: session.ID, SourceID: "main", Sequence: 1, InputTokens: 1}); err != nil {
+		t.Fatalf("telemetry.IngestSnapshot: %v", err)
 	}
 
 	select {
-	case seq := <-updates:
-		if seq <= 0 {
-			t.Fatalf("expected latest_seq > 0 after the update, got %d", seq)
+	case revision := <-updates:
+		if revision <= 0 {
+			t.Fatalf("expected projection_revision > 0 after the update, got %d", revision)
 		}
 	case <-time.After(4 * time.Second):
-		t.Fatal("SubscribeDeliveryView did not observe the update in time")
+		t.Fatal("SubscribeDeliveryDetail did not observe the update in time")
 	}
 }

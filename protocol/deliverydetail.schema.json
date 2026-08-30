@@ -1,0 +1,388 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/deliverydetail.schema.json",
+  "title": "DeliveryDetail",
+  "description": "One delivery's full panel-detail read model: every DeliverySummary field, plus the full plan, per-project plans, requirement sources, provider-specific detail, sessions, provider writes, and one merged activity timeline. Carries no scheduler-internal concepts (lanes, blocked counts, pending questions, a lane-derived next action, the deprecated plan_record_id).",
+  "type": "object",
+  "required": ["id", "title", "status", "projects", "usage", "updated_at", "cancellable", "projection_revision", "orchestration_revision", "activity"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "status": { "type": "string", "enum": ["pending", "active", "completed", "cancelled"] },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "enum": ["jira", "adhoc"] },
+        "key": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "slug"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "slug": { "type": "string" }
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "required": ["id", "revision", "objective"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "revision": { "type": "integer" },
+        "objective": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "required": ["summary", "reported_at"],
+      "additionalProperties": false,
+      "properties": {
+        "percent": { "type": "number" },
+        "summary": { "type": "string" },
+        "reported_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": ["status", "started_at"],
+      "additionalProperties": false,
+      "properties": {
+        "participant": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "status": { "type": "string" },
+        "started_at": { "type": "string", "format": "date-time" },
+        "stopped_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "required": ["input_tokens", "output_tokens", "cache_tokens", "tool_calls", "elapsed_ms", "estimated_costs", "pricing_complete"],
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": { "type": "integer" },
+        "output_tokens": { "type": "integer" },
+        "cache_tokens": { "type": "integer" },
+        "tool_calls": { "type": "integer" },
+        "elapsed_ms": { "type": "integer" },
+        "estimated_costs": { "type": "object", "additionalProperties": { "type": "number" } },
+        "pricing_complete": { "type": "boolean" }
+      }
+    },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "cancellable": { "type": "boolean" },
+    "projection_revision": { "type": "integer" },
+    "description": { "type": "string" },
+    "orchestration_revision": {
+      "type": "integer",
+      "description": "The underlying orchestration's own event-log revision - the value cancel/complete's optimistic concurrency check compares an expected_revision against. A different counter than projection_revision, which this projection uses for list/detail consistency and watch polling instead."
+    },
+    "plan_detail": {
+      "description": "The delivery's full high-level plan content, exactly the revision named by plan.revision above.",
+      "$ref": "#/$defs/plan"
+    },
+    "project_plans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["project_id", "project_slug", "plan", "head_revision"],
+        "additionalProperties": false,
+        "properties": {
+          "project_id": { "type": "string" },
+          "project_slug": { "type": "string" },
+          "plan": { "$ref": "#/$defs/plan" },
+          "head_revision": { "type": "integer" }
+        }
+      }
+    },
+    "requirement_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "orchestration_id", "provider", "canonical_key", "content_hash", "title", "captured_at", "revision"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "orchestration_id": { "type": "string" },
+          "provider": { "type": "string", "enum": ["jira", "confluence", "github", "url", "freetext"] },
+          "external_id": { "type": "string" },
+          "canonical_key": { "type": "string" },
+          "content_hash": { "type": "string" },
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "parent_source_id": { "type": "string" },
+          "captured_at": { "type": "string", "format": "date-time" },
+          "revision": { "type": "integer" }
+        }
+      }
+    },
+    "jira": {
+      "type": "object",
+      "description": "Present only for a Jira-sourced delivery.",
+      "required": ["issue_key", "touched_items", "transitions", "worklogs", "write_health"],
+      "additionalProperties": false,
+      "properties": {
+        "issue_key": { "type": "string" },
+        "parent_status": { "type": "string" },
+        "touched_items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["parent_task_id", "jira_issue_key", "touch_count"],
+            "additionalProperties": false,
+            "properties": {
+              "parent_task_id": { "type": "string" },
+              "jira_issue_key": { "type": "string" },
+              "touch_count": { "type": "integer" },
+              "first_touched_at": { "type": "string", "format": "date-time" },
+              "last_touched_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["to_status", "status", "occurred_at"],
+            "additionalProperties": false,
+            "properties": {
+              "from_status": { "type": "string" },
+              "to_status": { "type": "string" },
+              "status": { "type": "string", "description": "The write's own outbox status, not the Jira issue's status." },
+              "occurred_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "worklogs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "orchestration_id", "lane_id", "jira_issue_key", "started_at", "duration_seconds", "summary", "sync_status", "created_at"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "orchestration_id": { "type": "string" },
+              "case_id": { "type": "string" },
+              "execution_id": { "type": "string" },
+              "lane_id": { "type": "string" },
+              "parent_task_id": { "type": "string" },
+              "session_id": { "type": "string" },
+              "jira_issue_key": { "type": "string" },
+              "started_at": { "type": "string", "format": "date-time" },
+              "duration_seconds": { "type": "integer" },
+              "summary": { "type": "string" },
+              "sync_status": { "type": "string", "enum": ["pending", "synced", "failed"] },
+              "jira_worklog_id": { "type": "string" },
+              "synced_at": { "type": "string", "format": "date-time" },
+              "created_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "write_health": { "$ref": "#/$defs/writeHealth" }
+      }
+    },
+    "github": {
+      "type": "object",
+      "description": "Present only when the delivery has proposed at least one GitHub PR review.",
+      "required": ["reviews", "write_health"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string" },
+        "pull_request_number": { "type": "integer" },
+        "head_sha": { "type": "string" },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "repository", "pull_request_number", "head_sha", "findings", "body", "verdict", "status", "created_at", "updated_at"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "repository": { "type": "string" },
+              "pull_request_number": { "type": "integer" },
+              "head_sha": { "type": "string" },
+              "findings": { "type": "array", "items": { "type": "object" } },
+              "body": { "type": "string" },
+              "verdict": { "type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"] },
+              "status": { "type": "string", "enum": ["proposed", "approved", "submitted", "failed"] },
+              "delivery_execution_id": { "type": "string" },
+              "external_review_id": { "type": "string" },
+              "failure": { "type": "string" },
+              "created_at": { "type": "string", "format": "date-time" },
+              "updated_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "write_health": { "$ref": "#/$defs/writeHealth" }
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "case_id", "execution_id", "orchestration_id", "participant", "status", "started_at", "checkpoints"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "case_id": { "type": "string" },
+          "execution_id": { "type": "string" },
+          "orchestration_id": { "type": "string" },
+          "resumed_from_id": { "type": "string" },
+          "participant": { "type": "string" },
+          "status": { "type": "string" },
+          "started_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": "string", "format": "date-time" },
+          "worktree_path": { "type": "string" },
+          "provider": { "type": "string" },
+          "checkpoints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "case_id", "execution_id", "session_id", "sequence", "summary", "created_at"],
+              "additionalProperties": false,
+              "properties": {
+                "id": { "type": "string" },
+                "case_id": { "type": "string" },
+                "execution_id": { "type": "string" },
+                "session_id": { "type": "string" },
+                "sequence": { "type": "integer" },
+                "summary": { "type": "string" },
+                "progress_percent": { "type": "number" },
+                "handoff_to": { "type": "string" },
+                "created_at": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "provider_writes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "adapter", "operation", "target_key", "status", "attempt_count", "created_at", "updated_at"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "adapter": { "type": "string" },
+          "operation": { "type": "string" },
+          "target_key": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "claimed", "retrying", "succeeded", "failed", "cancelled", "reconciling"] },
+          "attempt_count": { "type": "integer" },
+          "last_error": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "activity": {
+      "type": "array",
+      "description": "One merged domain/provider/session timeline, oldest first.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "summary", "occurred_at"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "type": "string" },
+          "summary": { "type": "string" },
+          "occurred_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "plan": {
+      "type": "object",
+      "required": ["id", "objective"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "project_ids": { "type": "array", "items": { "type": "string" } },
+        "revision": { "type": "integer" },
+        "objective": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["objective", "expected_outcome"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "objective": { "type": "string" },
+              "target_project_id": { "type": "string" },
+              "target_repo_id": { "type": "string" },
+              "expected_outcome": { "type": "string" },
+              "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+              "verification_method": { "type": "string" },
+              "depends_on": { "type": "array", "items": { "type": "string" } },
+              "unresolved_blocking_question": { "type": "string" }
+            }
+          }
+        },
+        "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+        "verification": { "type": "string" },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "unresolved_questions": { "type": "array", "items": { "type": "string" } },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" },
+        "previous_revision": { "type": "integer" },
+        "reason_for_change": { "type": "string" },
+        "legacy_markdown": { "type": "string" },
+        "requirements": { "type": "array", "items": { "type": "string" } },
+        "non_goals": { "type": "array", "items": { "type": "string" } },
+        "architecture_decision": { "type": "string" },
+        "data_model_impact": { "type": "string" },
+        "api_impact": { "type": "string" },
+        "repository_impact_map": { "type": "object", "additionalProperties": { "type": "string" } },
+        "implementation_sequence": { "type": "array", "items": { "type": "string" } },
+        "unit_test_plan": { "type": "array", "items": { "type": "string" } },
+        "integration_test_plan": { "type": "array", "items": { "type": "string" } },
+        "e2e_plan": { "type": "array", "items": { "type": "string" } },
+        "migration_plan": { "type": "array", "items": { "type": "string" } },
+        "rollback_plan": { "type": "array", "items": { "type": "string" } },
+        "observability_plan": { "type": "array", "items": { "type": "string" } },
+        "documentation_plan": { "type": "array", "items": { "type": "string" } },
+        "deployment_changes": { "type": "array", "items": { "type": "string" } },
+        "security_considerations": { "type": "array", "items": { "type": "string" } },
+        "compatibility_considerations": { "type": "array", "items": { "type": "string" } },
+        "verification_criteria": { "type": "array", "items": { "type": "string" } },
+        "risks_and_mitigations": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "writeHealth": {
+      "type": "object",
+      "required": ["pending", "retrying", "reconciling", "failed", "succeeded", "cancelled"],
+      "additionalProperties": false,
+      "properties": {
+        "pending": { "type": "integer" },
+        "retrying": { "type": "integer" },
+        "reconciling": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "cancelled": { "type": "integer" }
+      }
+    }
+  }
+}

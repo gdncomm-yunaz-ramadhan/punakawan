@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/daemon"
-	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/deliveryprojection"
 	"github.com/ygrip/punakawan/internal/dossier"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/knowledge"
@@ -343,28 +343,28 @@ type DossierReader interface {
 	ExportDossierJSON(ctx context.Context, projectID, id string) ([]byte, error)
 }
 
-// DeliveryReader reads and mutates delivery orchestrations by proxying to
-// the daemon's own delivery.Store (internal/daemon/delivery.go) over its
-// authenticated loopback transport - the daemon, not this panel instance,
-// is the only process allowed to open delivery.Store's storage directly
-// (see internal/daemon.Daemon's own doc comment). The three mutators and
-// GetDeliveryView/WatchDeliveryView mirror daemon.Client's own methods
-// exactly; this interface exists only so HTTP handlers and the events
-// watcher depend on a narrow contract instead of the concrete *daemon.Client,
-// matching every other reader in this package.
+// DeliveryReader reads and mutates deliveries by proxying to the daemon's
+// own delivery.Store and internal/deliveryprojection.Projector
+// (internal/daemon/delivery.go) over its authenticated loopback transport -
+// the daemon, not this panel instance, is the only process allowed to open
+// delivery.Store's storage directly (see internal/daemon.Daemon's own doc
+// comment). ListDeliveries/GetDeliveryDetail/WatchDeliveryDetail/
+// CancelDelivery mirror daemon.Client's own methods exactly; this
+// interface exists only so HTTP handlers and the events watcher depend on
+// a narrow contract instead of the concrete *daemon.Client, matching every
+// other reader in this package.
 type DeliveryReader interface {
-	ListDeliveries(ctx context.Context) ([]*protocol.DeliveryOrchestration, error)
-	// GetDeliveryView returns orchestrationID's current view immediately.
-	// sinceSeq mirrors delivery.BuildDeliveryViewSince: pass a prior
-	// response's LatestSeq to populate NewlyRunnableLaneIDs.
-	GetDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int) (*delivery.DeliveryView, error)
-	// WatchDeliveryView is GetDeliveryView, except the daemon blocks
-	// server-side for up to waitSeconds waiting for LatestSeq to advance
-	// past sinceSeq - the events package's DeliveryWatcher is this
-	// method's only caller, long-polling it in a loop per orchestration.
-	WatchDeliveryView(ctx context.Context, orchestrationID string, sinceSeq, waitSeconds int) (*delivery.DeliveryView, error)
-	AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in daemon.AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error)
-	CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error)
+	ListDeliveries(ctx context.Context) (daemon.ListDeliveriesResult, error)
+	// GetDeliveryDetail returns orchestrationID's current DeliveryDetail
+	// immediately.
+	GetDeliveryDetail(ctx context.Context, orchestrationID string) (*deliveryprojection.DeliveryDetail, error)
+	// WatchDeliveryDetail is GetDeliveryDetail, except the daemon blocks
+	// server-side for up to waitSeconds waiting for ProjectionRevision to
+	// advance past sinceRevision - the events package's DeliveryWatcher is
+	// this method's only caller, long-polling it in a loop per
+	// orchestration.
+	WatchDeliveryDetail(ctx context.Context, orchestrationID string, sinceRevision, waitSeconds int) (*deliveryprojection.DeliveryDetail, error)
+	CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*deliveryprojection.DeliveryDetail, error)
 	// GetDeliveryEvidence fetches one lane-scoped evidence artifact's raw
 	// bytes and media type by id, scoped to orchestrationID.
 	GetDeliveryEvidence(ctx context.Context, orchestrationID, evidenceID string) ([]byte, string, error)

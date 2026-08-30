@@ -702,3 +702,54 @@ func TestDeliveryViewSurfacesCumulativeTelemetry(t *testing.T) {
 		t.Fatalf("Telemetry.Counters.InputTokens = %d, want 40 (additive across both sessions)", view.Telemetry.Counters.InputTokens)
 	}
 }
+
+// TestAllOrchestrationStatesMatchesPerOrchestrationLookup covers the
+// batch path a list projection uses instead of calling GetOrchestration
+// once per id: for a handful of orchestrations with distinct titles and
+// statuses, the batched result must report the exact same orchestration
+// record and derived title GetOrchestration/BuildDeliveryView would each
+// report individually.
+func TestAllOrchestrationStatesMatchesPerOrchestrationLookup(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	first := createTestOrchestration(t, s)
+	second, err := s.CreateOrchestrationWithOptions(ctx, "create-second", NewID(), nil, OrchestrationOptions{Title: "Second delivery"})
+	if err != nil {
+		t.Fatalf("CreateOrchestrationWithOptions: %v", err)
+	}
+	if _, err := s.CancelOrchestration(ctx, "cancel-second", second.Id, second.Revision); err != nil {
+		t.Fatalf("CancelOrchestration: %v", err)
+	}
+
+	states, ids, err := s.AllOrchestrationStates(ctx)
+	if err != nil {
+		t.Fatalf("AllOrchestrationStates: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("ids = %+v, want exactly the 2 seeded orchestrations", ids)
+	}
+
+	firstView, err := s.BuildDeliveryView(ctx, first.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView(first): %v", err)
+	}
+	firstState, ok := states[first.Id]
+	if !ok {
+		t.Fatalf("states missing %s", first.Id)
+	}
+	if firstState.Title != firstView.Title || firstState.Orchestration.Status != firstView.Orchestration.Status {
+		t.Fatalf("first state = %+v, want title %q status %s", firstState, firstView.Title, firstView.Orchestration.Status)
+	}
+
+	secondState, ok := states[second.Id]
+	if !ok {
+		t.Fatalf("states missing %s", second.Id)
+	}
+	if secondState.Title != "Second delivery" {
+		t.Fatalf("second title = %q, want %q", secondState.Title, "Second delivery")
+	}
+	if secondState.Orchestration.Status != protocol.DeliveryOrchestrationStatusCancelled {
+		t.Fatalf("second status = %s, want cancelled", secondState.Orchestration.Status)
+	}
+}

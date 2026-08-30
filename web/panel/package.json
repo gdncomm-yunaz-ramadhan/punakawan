@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@punakawan/schema-types": "workspace:*",
     "chart.js": "^4.5.1",
     "cytoscape": "^3.34.0",
     "svelte": "^5.15.0"

@@ -425,11 +425,15 @@ func (s *Store) CancelOrchestration(ctx context.Context, idempotencyKey, id stri
 		if isTerminal(current.Status) {
 			return ErrInvalidState
 		}
+		now := time.Now().UTC()
 		if err := insertEvent(ctx, tx, eventRow{
 			ID: newID(), OrchestrationID: id, IdempotencyKey: idempotencyKey,
 			Type: string(protocol.DeliveryEventTypeOrchestrationCancelled), Payload: "{}",
-			Sequence: len(events), OccurredAt: time.Now().UTC(),
+			Sequence: len(events), OccurredAt: now,
 		}); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_projection_versions (orchestration_id, revision, updated_at) VALUES (?, 1, ?) ON CONFLICT(orchestration_id) DO UPDATE SET revision = delivery_projection_versions.revision + 1, updated_at = excluded.updated_at`, id, now.Format(timeLayout)); err != nil {
 			return err
 		}
 		var caseID string
@@ -440,7 +444,7 @@ func (s *Store) CancelOrchestration(ctx context.Context, idempotencyKey, id stri
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE delivery_cases SET status = 'cancelled', updated_at = ? WHERE id = ?`, time.Now().UTC().Format(timeLayout), caseID)
+		_, err = tx.ExecContext(ctx, `UPDATE delivery_cases SET status = 'cancelled', updated_at = ? WHERE id = ?`, now.Format(timeLayout), caseID)
 		return err
 	})
 	if !errors.Is(err, storage.ErrDuplicateWrite) && err != nil {

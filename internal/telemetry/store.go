@@ -346,6 +346,9 @@ func (s *Store) IngestSnapshot(ctx context.Context, req SnapshotRequest) (UsageP
 				return err
 			}
 		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_projection_versions (orchestration_id, revision, updated_at) VALUES (?, 1, ?) ON CONFLICT(orchestration_id) DO UPDATE SET revision = delivery_projection_versions.revision + 1, updated_at = excluded.updated_at`, orchestrationID, observedAt.Format(timeLayout)); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {

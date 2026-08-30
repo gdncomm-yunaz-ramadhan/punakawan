@@ -40,18 +40,18 @@ func newTestSource(t *testing.T) *Source {
 
 func TestSourceListDeliveriesEmptyByDefault(t *testing.T) {
 	src := newTestSource(t)
-	list, err := src.ListDeliveries(context.Background())
+	result, err := src.ListDeliveries(context.Background())
 	if err != nil {
 		t.Fatalf("ListDeliveries: %v", err)
 	}
-	if len(list) != 0 {
-		t.Fatalf("list = %+v, want empty", list)
+	if len(result.Items) != 0 {
+		t.Fatalf("items = %+v, want empty", result.Items)
 	}
 }
 
-func TestSourceGetDeliveryViewUnknownIDIs404(t *testing.T) {
+func TestSourceGetDeliveryDetailUnknownIDIs404(t *testing.T) {
 	src := newTestSource(t)
-	_, err := src.GetDeliveryView(context.Background(), "no-such-orchestration", 0)
+	_, err := src.GetDeliveryDetail(context.Background(), "no-such-orchestration")
 	if err == nil {
 		t.Fatal("expected an error for an unknown orchestration id")
 	}
@@ -64,17 +64,17 @@ func TestSourceGetDeliveryViewUnknownIDIs404(t *testing.T) {
 	}
 }
 
-func TestSourceAnswerDeliveryQuestionRequiresProviderOrRouting(t *testing.T) {
+func TestSourceCancelDeliveryUnknownIDIs404(t *testing.T) {
 	src := newTestSource(t)
-	_, err := src.AnswerDeliveryQuestion(context.Background(), "no-such-orchestration", daemon.AnswerDeliveryQuestionRequest{Reference: "ref-1"})
+	_, err := src.CancelDelivery(context.Background(), "no-such-orchestration", daemon.CancelDeliveryRequest{ExpectedRevision: 0})
 	if err == nil {
-		t.Fatal("expected an error: neither provider nor parent_task_id/project_id set")
+		t.Fatal("expected an error for an unknown orchestration id")
 	}
 	var statusErr *daemon.StatusError
 	if !errors.As(err, &statusErr) {
 		t.Fatalf("error = %v, want a *daemon.StatusError", err)
 	}
-	if statusErr.Status != http.StatusBadRequest {
-		t.Fatalf("Status = %d, want 400", statusErr.Status)
+	if statusErr.Status != http.StatusNotFound {
+		t.Fatalf("Status = %d, want 404", statusErr.Status)
 	}
 }

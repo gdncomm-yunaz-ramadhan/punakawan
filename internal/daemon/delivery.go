@@ -1,9 +1,11 @@
 // delivery.go serves the delivery-domain HTTP routes over the daemon's
-// own delivery.Store (see daemon.go's Run) - the daemon-native path to
-// the same DeliveryView read model and mutations
-// internal/mcpserver/tools_startdelivery.go's MCP tools already expose.
-// The two surfaces call the same internal/delivery.Store methods; only
-// the transport (HTTP JSON vs MCP tool call) and request shape differ.
+// own delivery.Store and internal/deliveryprojection.Projector (see
+// daemon.go's Run) - the daemon-native path to the one panel-facing
+// delivery projection every consumer (panel, CLI) reaches through
+// Client below. List and detail always report the same
+// delivery_projection_versions revision, and neither route ever exposes
+// scheduler-internal concepts (lanes, blocked counts, pending questions,
+// a lane-derived next action).
 package daemon
 
 import (
@@ -19,52 +21,68 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/delivery"
-	"github.com/ygrip/punakawan/pkg/protocol"
+	"github.com/ygrip/punakawan/internal/deliveryprojection"
 )
 
-// maxDeliveryWaitSeconds bounds how long a single GET
-// /api/v1/deliveries/{id} request will long-poll for a change before
-// returning whatever the store currently has - long enough to avoid
-// most callers busy-polling, short enough that a request never outlives
-// a normal HTTP client timeout by much.
+// maxDeliveryWaitSeconds bounds how long a single watch request will
+// long-poll for a change before returning whatever the projector
+// currently has - long enough to avoid most callers busy-polling, short
+// enough that a request never outlives a normal HTTP client timeout by
+// much.
 const maxDeliveryWaitSeconds = 30
 
-// deliveryPollInterval is how often handleDeliveryView re-checks the
-// store while a wait_seconds request is blocked waiting for LatestSeq
-// to advance.
+// deliveryPollInterval is how often handleDeliveryWatch re-checks the
+// projector while a wait_seconds request is blocked waiting for
+// ProjectionRevision to advance.
 const deliveryPollInterval = 250 * time.Millisecond
 
-// handleListDeliveries serves GET /api/v1/deliveries: every orchestration
-// the daemon's delivery.Store knows about, oldest first.
+// handleListDeliveries serves GET /api/v1/deliveries: every delivery's
+// compact summary, plus the highest projection revision among them so a
+// caller has something to compare a later list response against.
 func (t *Transport) handleListDeliveries(w http.ResponseWriter, r *http.Request) {
-	list, err := t.delivery.ListOrchestrations(r.Context())
+	items, err := t.projector.ListSummaries(r.Context(), deliveryprojection.ListFilter{})
 	if err != nil {
 		writeDeliveryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	snapshotRevision := 0
+	for _, item := range items {
+		if item.ProjectionRevision > snapshotRevision {
+			snapshotRevision = item.ProjectionRevision
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "snapshot_revision": snapshotRevision})
 }
 
-// handleDeliveryView serves GET /api/v1/deliveries/{orchestrationId}. Two
-// optional query params: since_seq (mirrors get_delivery's SinceSeq -
-// pass a prior response's latest_seq to see newly_runnable_lane_ids) and
-// wait_seconds (0 by default, meaning return immediately). A non-zero
-// wait_seconds long-polls: it blocks, re-checking the store every
-// deliveryPollInterval, until either LatestSeq has advanced past
-// since_seq or wait_seconds elapses, then returns the view either way -
-// this is the daemon's push-style update mechanism, reusing
-// BuildDeliveryViewSince's own diffing rather than a separate streaming
-// subsystem. Callers that want ongoing updates call this in a loop with
-// since_seq set to the previous response's latest_seq (see Client's
-// WatchDeliveryView/SubscribeDeliveryView).
-func (t *Transport) handleDeliveryView(w http.ResponseWriter, r *http.Request) {
+// handleDeliveryDetail serves GET /api/v1/deliveries/{orchestrationId}:
+// orchestrationId's current DeliveryDetail, returned immediately.
+func (t *Transport) handleDeliveryDetail(w http.ResponseWriter, r *http.Request) {
+	detail, err := t.projector.GetDetail(r.Context(), r.PathValue("orchestrationId"))
+	if err != nil {
+		writeDeliveryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+// handleDeliveryWatch serves
+// GET /api/v1/deliveries/{orchestrationId}/watch?since_revision=N&wait_seconds=25:
+// it long-polls, re-checking the projector every deliveryPollInterval,
+// until either ProjectionRevision has advanced past since_revision or
+// wait_seconds elapses, then returns the current DeliveryDetail either
+// way - the daemon's push-style update mechanism, reusing GetDetail's own
+// projection_revision rather than a separate streaming subsystem.
+// Callers that want ongoing updates call this in a loop with
+// since_revision set to the previous response's projection_revision (see
+// Client's WatchDeliveryDetail/SubscribeDeliveryDetail).
+func (t *Transport) handleDeliveryWatch(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("orchestrationId")
-	sinceSeq, err := queryInt(r, "since_seq", 0)
+	sinceRevision, err := queryInt(r, "since_revision", 0)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	waitSeconds, err := queryInt(r, "wait_seconds", 0)
+	waitSeconds, err := queryInt(r, "wait_seconds", deliveryWatchWaitSeconds)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -75,13 +93,13 @@ func (t *Transport) handleDeliveryView(w http.ResponseWriter, r *http.Request) {
 
 	deadline := time.Now().Add(time.Duration(waitSeconds) * time.Second)
 	for {
-		view, err := t.delivery.BuildDeliveryViewSince(r.Context(), id, sinceSeq)
+		detail, err := t.projector.GetDetail(r.Context(), id)
 		if err != nil {
 			writeDeliveryError(w, err)
 			return
 		}
-		if waitSeconds == 0 || view.LatestSeq != sinceSeq || !time.Now().Before(deadline) {
-			writeJSON(w, http.StatusOK, view)
+		if waitSeconds == 0 || detail.ProjectionRevision != sinceRevision || !time.Now().Before(deadline) {
+			writeJSON(w, http.StatusOK, detail)
 			return
 		}
 		select {
@@ -96,9 +114,10 @@ func (t *Transport) handleDeliveryView(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}: the raw
 // bytes of one lane-scoped evidence artifact recorded via
 // delivery.Store.RecordArtifact, at whatever media type it was stored
-// with. There is no JSON metadata shape here - DeliveryView.Lanes[].
-// Evidence already carries that; this route exists only to serve the
-// bytes a link built from that metadata points at.
+// with. There is no JSON metadata shape here - DeliveryDetail's Activity
+// timeline and Sessions already describe the delivery's own history; this
+// route exists only to serve the bytes a link built from that metadata
+// points at.
 func (t *Transport) handleDeliveryEvidence(w http.ResponseWriter, r *http.Request) {
 	orchestrationID := r.PathValue("orchestrationId")
 	rec, err := t.delivery.GetArtifactRecord(r.Context(), r.PathValue("evidenceId"))
@@ -121,66 +140,12 @@ func (t *Transport) handleDeliveryEvidence(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write(data)
 }
 
-// answerDeliveryQuestionRequest is POST
-// /api/v1/deliveries/{orchestrationId}/answer-question's body. It mirrors
-// mcpserver.AnswerDeliveryQuestionInput's own two cases - set provider
-// (resolved-requirement case) or both parent_task_id and project_id
-// (ambiguous-routing case) - without importing that package: the HTTP and
-// MCP surfaces stay independent even though both drive the same
-// delivery.Store methods. orchestration_id is not a field here since it
-// comes from the URL path.
-type answerDeliveryQuestionRequest struct {
-	Reference        string `json:"reference"`
-	ExpectedRevision int    `json:"expected_revision,omitempty"`
-
-	Provider   string `json:"provider,omitempty"`
-	ExternalId string `json:"external_id,omitempty"`
-	Url        string `json:"url,omitempty"`
-	Title      string `json:"title,omitempty"`
-	Summary    string `json:"summary,omitempty"`
-
-	ParentTaskId string `json:"parent_task_id,omitempty"`
-	ProjectId    string `json:"project_id,omitempty"`
-}
-
-func (t *Transport) handleAnswerDeliveryQuestion(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("orchestrationId")
-	var body answerDeliveryQuestionRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
-	switch {
-	case body.ParentTaskId != "" && body.ProjectId != "":
-		if _, err := t.delivery.RouteParentTask(r.Context(), delivery.NewID(), id, body.ParentTaskId, body.ProjectId); err != nil {
-			writeDeliveryError(w, err)
-			return
-		}
-	case body.Provider != "":
-		src := delivery.SourceInput{
-			Provider: body.Provider, ExternalID: body.ExternalId, URL: body.Url,
-			Title: body.Title, Summary: body.Summary,
-		}
-		if _, err := t.delivery.CaptureRequirement(r.Context(), delivery.NewID(), id, src); err != nil {
-			writeDeliveryError(w, err)
-			return
-		}
-		if _, err := t.delivery.ResolveInput(r.Context(), delivery.NewID(), id, body.ExpectedRevision, body.Reference); err != nil {
-			writeDeliveryError(w, err)
-			return
-		}
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "answer-question requires either provider (resolved-requirement case) or both parent_task_id and project_id (routing case)"})
-		return
-	}
-
-	t.writeCurrentDeliveryView(w, r, id)
-}
-
 // cancelDeliveryRequest is POST /api/v1/deliveries/{orchestrationId}/cancel's
 // body, mirroring mcpserver.CancelDeliveryInput minus orchestration_id
-// (from the URL path).
+// (from the URL path). expected_revision is the orchestration's own
+// event-log revision (DeliveryDetail.orchestration_revision), the same
+// optimistic-concurrency counter cancel/complete have always checked -
+// not projection_revision, which is a different, projection-only counter.
 type cancelDeliveryRequest struct {
 	ExpectedRevision int    `json:"expected_revision"`
 	Reason           string `json:"reason,omitempty"`
@@ -199,19 +164,12 @@ func (t *Transport) handleCancelDelivery(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	t.writeCurrentDeliveryView(w, r, id)
-}
-
-// writeCurrentDeliveryView is the shared "mutate, then respond with the
-// refreshed view" tail every mutating delivery route ends with, exactly
-// like each MCP tool handler in tools_startdelivery.go does.
-func (t *Transport) writeCurrentDeliveryView(w http.ResponseWriter, r *http.Request, orchestrationID string) {
-	view, err := t.delivery.BuildDeliveryView(r.Context(), orchestrationID)
+	detail, err := t.projector.GetDetail(r.Context(), id)
 	if err != nil {
 		writeDeliveryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, detail)
 }
 
 // writeDeliveryError maps an internal/delivery sentinel error to the HTTP
@@ -250,10 +208,10 @@ func queryInt(r *http.Request, name string, def int) (int, error) {
 // routes: Panel and any other daemon caller should reach delivery data
 // through these instead of hand-building requests to the paths above.
 
-// deliveryWatchWaitSeconds is how long WatchDeliveryView asks the daemon
-// to hold a request open per call; SubscribeDeliveryView loops this to
-// give callers an ongoing stream of updates without either side needing
-// a persistent streaming connection.
+// deliveryWatchWaitSeconds is how long WatchDeliveryDetail asks the
+// daemon to hold a request open per call; SubscribeDeliveryDetail loops
+// this to give callers an ongoing stream of updates without either side
+// needing a persistent streaming connection.
 const deliveryWatchWaitSeconds = 25
 
 // deliveryWatchTimeoutSlack bounds watchHTTP's request timeout beyond
@@ -262,52 +220,72 @@ const deliveryWatchWaitSeconds = 25
 // mistaken for a hang.
 const deliveryWatchTimeoutSlack = 10 * time.Second
 
-// GetDeliveryView fetches orchestrationID's current DeliveryView.
-// sinceSeq mirrors delivery.BuildDeliveryViewSince: pass a prior
-// response's LatestSeq to populate NewlyRunnableLaneIDs; 0 reports every
-// currently runnable lane instead, since there is no prior baseline.
-func (c *Client) GetDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int) (*delivery.DeliveryView, error) {
-	var view delivery.DeliveryView
-	if err := c.doJSON(ctx, c.http, http.MethodGet, deliveryViewPath(orchestrationID, sinceSeq, 0), nil, &view); err != nil {
-		return nil, err
-	}
-	return &view, nil
+// ListDeliveriesResult is ListDeliveries' result: every delivery's
+// compact summary, plus the highest projection revision among them.
+type ListDeliveriesResult struct {
+	Items            []deliveryprojection.DeliverySummary `json:"items"`
+	SnapshotRevision int                                  `json:"snapshot_revision"`
 }
 
-// WatchDeliveryView is GetDeliveryView, except the daemon blocks
-// server-side for up to waitSeconds waiting for LatestSeq to advance
-// past sinceSeq before responding - the daemon clamps waitSeconds to its
-// own maxDeliveryWaitSeconds. It returns whatever the daemon has once its
-// wait window elapses, whether or not anything actually changed; callers
-// compare the returned LatestSeq to sinceSeq themselves before calling
-// again, or use SubscribeDeliveryView to do that in a loop.
-func (c *Client) WatchDeliveryView(ctx context.Context, orchestrationID string, sinceSeq, waitSeconds int) (*delivery.DeliveryView, error) {
+// ListDeliveries returns every delivery's compact summary.
+func (c *Client) ListDeliveries(ctx context.Context) (ListDeliveriesResult, error) {
+	var out ListDeliveriesResult
+	if err := c.doJSON(ctx, c.http, http.MethodGet, "/api/v1/deliveries", nil, &out); err != nil {
+		return ListDeliveriesResult{}, err
+	}
+	return out, nil
+}
+
+// GetDeliveryDetail fetches orchestrationID's current DeliveryDetail
+// immediately.
+func (c *Client) GetDeliveryDetail(ctx context.Context, orchestrationID string) (*deliveryprojection.DeliveryDetail, error) {
+	var detail deliveryprojection.DeliveryDetail
+	if err := c.doJSON(ctx, c.http, http.MethodGet, "/api/v1/deliveries/"+url.PathEscape(orchestrationID), nil, &detail); err != nil {
+		return nil, err
+	}
+	return &detail, nil
+}
+
+// WatchDeliveryDetail is GetDeliveryDetail, except the daemon blocks
+// server-side for up to waitSeconds waiting for ProjectionRevision to
+// advance past sinceRevision before responding - the daemon clamps
+// waitSeconds to its own maxDeliveryWaitSeconds. It returns whatever the
+// daemon has once its wait window elapses, whether or not anything
+// actually changed; callers compare the returned ProjectionRevision to
+// sinceRevision themselves before calling again, or use
+// SubscribeDeliveryDetail to do that in a loop.
+func (c *Client) WatchDeliveryDetail(ctx context.Context, orchestrationID string, sinceRevision, waitSeconds int) (*deliveryprojection.DeliveryDetail, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(waitSeconds)*time.Second+deliveryWatchTimeoutSlack)
 	defer cancel()
-	var view delivery.DeliveryView
-	if err := c.doJSON(ctx, c.watchHTTP, http.MethodGet, deliveryViewPath(orchestrationID, sinceSeq, waitSeconds), nil, &view); err != nil {
+	q := url.Values{}
+	q.Set("since_revision", strconv.Itoa(sinceRevision))
+	q.Set("wait_seconds", strconv.Itoa(waitSeconds))
+	path := "/api/v1/deliveries/" + url.PathEscape(orchestrationID) + "/watch?" + q.Encode()
+	var detail deliveryprojection.DeliveryDetail
+	if err := c.doJSON(ctx, c.watchHTTP, http.MethodGet, path, nil, &detail); err != nil {
 		return nil, err
 	}
-	return &view, nil
+	return &detail, nil
 }
 
-// SubscribeDeliveryView is the daemon's push-style update mechanism from
-// a caller's perspective: it long-polls via WatchDeliveryView in a loop,
-// calling onUpdate every time LatestSeq advances past sinceSeq, until ctx
-// is cancelled or onUpdate returns false. It never returns an error for a
-// cancelled ctx - that is the normal way a caller stops watching.
-func (c *Client) SubscribeDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int, onUpdate func(*delivery.DeliveryView) bool) error {
+// SubscribeDeliveryDetail is the daemon's push-style update mechanism
+// from a caller's perspective: it long-polls via WatchDeliveryDetail in a
+// loop, calling onUpdate every time ProjectionRevision advances past
+// sinceRevision, until ctx is cancelled or onUpdate returns false. It
+// never returns an error for a cancelled ctx - that is the normal way a
+// caller stops watching.
+func (c *Client) SubscribeDeliveryDetail(ctx context.Context, orchestrationID string, sinceRevision int, onUpdate func(*deliveryprojection.DeliveryDetail) bool) error {
 	for {
-		view, err := c.WatchDeliveryView(ctx, orchestrationID, sinceSeq, deliveryWatchWaitSeconds)
+		detail, err := c.WatchDeliveryDetail(ctx, orchestrationID, sinceRevision, deliveryWatchWaitSeconds)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
 			return err
 		}
-		if view.LatestSeq != sinceSeq {
-			sinceSeq = view.LatestSeq
-			if !onUpdate(view) {
+		if detail.ProjectionRevision != sinceRevision {
+			sinceRevision = detail.ProjectionRevision
+			if !onUpdate(detail) {
 				return nil
 			}
 		}
@@ -315,51 +293,6 @@ func (c *Client) SubscribeDeliveryView(ctx context.Context, orchestrationID stri
 			return nil
 		}
 	}
-}
-
-// ListDeliveries returns every orchestration the daemon's delivery.Store
-// knows about, oldest first.
-func (c *Client) ListDeliveries(ctx context.Context) ([]*protocol.DeliveryOrchestration, error) {
-	var list []*protocol.DeliveryOrchestration
-	if err := c.doJSON(ctx, c.http, http.MethodGet, "/api/v1/deliveries", nil, &list); err != nil {
-		return nil, err
-	}
-	return list, nil
-}
-
-// AnswerDeliveryQuestionRequest is AnswerDeliveryQuestion's input,
-// mirroring mcpserver.AnswerDeliveryQuestionInput's two cases -
-// resolved-requirement (set Provider) or ambiguous-routing (set
-// ParentTaskId and ProjectId) - minus OrchestrationId, passed as its own
-// parameter instead since the HTTP route carries it in the path.
-type AnswerDeliveryQuestionRequest struct {
-	Reference        string
-	ExpectedRevision int
-
-	Provider   string
-	ExternalId string
-	Url        string
-	Title      string
-	Summary    string
-
-	ParentTaskId string
-	ProjectId    string
-}
-
-// AnswerDeliveryQuestion resolves one pending question on orchestrationID
-// and returns the refreshed DeliveryView.
-func (c *Client) AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error) {
-	body := answerDeliveryQuestionRequest{
-		Reference: in.Reference, ExpectedRevision: in.ExpectedRevision,
-		Provider: in.Provider, ExternalId: in.ExternalId, Url: in.Url, Title: in.Title, Summary: in.Summary,
-		ParentTaskId: in.ParentTaskId, ProjectId: in.ProjectId,
-	}
-	var view delivery.DeliveryView
-	path := "/api/v1/deliveries/" + url.PathEscape(orchestrationID) + "/answer-question"
-	if err := c.doJSON(ctx, c.http, http.MethodPost, path, body, &view); err != nil {
-		return nil, err
-	}
-	return &view, nil
 }
 
 // CancelDeliveryRequest is CancelDelivery's input, mirroring
@@ -370,33 +303,15 @@ type CancelDeliveryRequest struct {
 }
 
 // CancelDelivery cancels orchestrationID and returns the refreshed
-// DeliveryView.
-func (c *Client) CancelDelivery(ctx context.Context, orchestrationID string, in CancelDeliveryRequest) (*delivery.DeliveryView, error) {
+// DeliveryDetail.
+func (c *Client) CancelDelivery(ctx context.Context, orchestrationID string, in CancelDeliveryRequest) (*deliveryprojection.DeliveryDetail, error) {
 	body := cancelDeliveryRequest{ExpectedRevision: in.ExpectedRevision, Reason: in.Reason}
-	var view delivery.DeliveryView
+	var detail deliveryprojection.DeliveryDetail
 	path := "/api/v1/deliveries/" + url.PathEscape(orchestrationID) + "/cancel"
-	if err := c.doJSON(ctx, c.http, http.MethodPost, path, body, &view); err != nil {
+	if err := c.doJSON(ctx, c.http, http.MethodPost, path, body, &detail); err != nil {
 		return nil, err
 	}
-	return &view, nil
-}
-
-// deliveryViewPath builds GET /api/v1/deliveries/{orchestrationId}'s
-// path plus query string, omitting since_seq/wait_seconds when zero so a
-// plain GetDeliveryView call looks like the simplest possible request.
-func deliveryViewPath(orchestrationID string, sinceSeq, waitSeconds int) string {
-	q := url.Values{}
-	if sinceSeq != 0 {
-		q.Set("since_seq", strconv.Itoa(sinceSeq))
-	}
-	if waitSeconds != 0 {
-		q.Set("wait_seconds", strconv.Itoa(waitSeconds))
-	}
-	p := "/api/v1/deliveries/" + url.PathEscape(orchestrationID)
-	if len(q) > 0 {
-		p += "?" + q.Encode()
-	}
-	return p
+	return &detail, nil
 }
 
 // doRequest issues one authenticated request against the daemon: body

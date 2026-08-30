@@ -164,15 +164,16 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
 	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
 
-	// Delivery orchestrations: served straight from the daemon's own
-	// delivery.Store over its authenticated loopback transport
-	// (internal/daemon/delivery.go), not through storage.Open/*app.App -
-	// s.readers.Delivery is nil when no daemon connection was available at
-	// startup, and every handler here degrades to 503 rather than panicking.
+	// Deliveries: served straight from the daemon's own delivery.Store and
+	// internal/deliveryprojection.Projector over its authenticated loopback
+	// transport (internal/daemon/delivery.go), not through
+	// storage.Open/*app.App - s.readers.Delivery is nil when no daemon
+	// connection was available at startup, and every handler here degrades
+	// to 503 rather than panicking.
 	mux.HandleFunc("GET /api/v1/deliveries", api.ListDeliveriesHandler(s.readers.Delivery))
-	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}", api.DeliveryViewHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}", api.DeliveryDetailHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}/watch", api.DeliveryWatchHandler(s.readers.Delivery))
 	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}", api.DeliveryEvidenceHandler(s.readers.Delivery))
-	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/answer-question", session.RequireSession(s.sessions, api.AnswerDeliveryQuestionHandler(s.readers.Delivery)))
 	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/cancel", session.RequireSession(s.sessions, api.CancelDeliveryHandler(s.readers.Delivery)))
 
 	mux.HandleFunc("GET /api/v1/projects", api.ProjectsHandler(s.readers.Project))

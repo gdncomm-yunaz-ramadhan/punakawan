@@ -2,6 +2,9 @@
 // response shapes.
 
 import { fetchWithCsrf } from "../session";
+import type { DeliveryDetail, DeliverySummary } from "@punakawan/schema-types";
+
+export type { DeliveryDetail, DeliverySummary };
 
 export interface SystemInfo {
   panel_version: string;
@@ -50,9 +53,10 @@ export class ApiError extends Error {
   }
 }
 
-async function getJSON<T>(path: string): Promise<T> {
+async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`/api/v1${path}`, {
     headers: { Accept: "application/json" },
+    signal,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -703,234 +707,50 @@ export function getProjectKnowledgeHistory(id: string, knowledgeId: string): Pro
 
 // --- Deliveries (multi-project orchestration) ----------------------------
 //
-// A DeliveryOrchestration coordinates one lane per parent task across
-// however many projects it touches. DeliveryView (internal/delivery
-// /deliveryview.go) is the single read model every delivery endpoint
-// returns; its Projects/Lanes/Blockers are reduced summaries derived from
-// protocol.DeliveryLane, not that full struct.
+// A delivery's list and detail rows are DeliverySummary/DeliveryDetail
+// (generated from protocol/deliverysummary.schema.json and
+// protocol/deliverydetail.schema.json into @punakawan/schema-types) -
+// the one live projection every delivery route returns. Neither type
+// carries scheduler-internal concepts (lanes, blocked counts, pending
+// questions, a lane-derived next action); this module only wraps the
+// HTTP calls, it declares no parallel type of its own.
 
-export type DeliveryOrchestrationStatus = "pending" | "active" | "cancelled" | "completed";
-
-export interface DeliveryOrchestration {
-  id: string;
-  // Optional because orchestrations stored before titles existed carry none.
-  // A delivery's id is an opaque hash, so the UI must always be able to
-  // derive a readable label instead of depending on this being set.
-  title?: string;
-  revision: number;
-  status: DeliveryOrchestrationStatus;
-  unresolved_inputs: unknown[];
-  created_at: string;
-  updated_at: string;
-  workflow_definition_id?: string;
+export interface ListDeliveriesResult {
+  items: DeliverySummary[];
+  snapshot_revision: number;
 }
 
-export type DeliveryLaneStatus = "accepted" | "blocked" | "failed" | "leased" | "review" | "runnable" | "running" | "waiting";
-
-export interface DeliveryProjectSummary {
-  project_id: string;
-  project_slug: string;
-  // Distinguishes the two ways a project shows up here. True means the
-  // delivery explicitly attached it, so it is listed even with no lanes at
-  // all. False means it only appears because some lane names it - including a
-  // project detached after its lanes finished, whose completed work the
-  // delivery still reports. Always sent, so the UI never has to guess.
-  attached: boolean;
-  // Always sent, empty rather than absent, for a project with no lanes.
-  lane_ids: string[];
-  counts_by_status: Partial<Record<DeliveryLaneStatus, number>>;
+export function listDeliveries(): Promise<ListDeliveriesResult> {
+  return getJSON<ListDeliveriesResult>("/deliveries");
 }
 
-export interface DeliveryEvidenceRef {
-  id: string;
-  kind: string;
-  media_type: string;
-  byte_size: number;
-  content_hash: string;
+export function getDeliveryDetail(orchestrationId: string, signal?: AbortSignal): Promise<DeliveryDetail> {
+  return getJSON<DeliveryDetail>(`/deliveries/${encodeURIComponent(orchestrationId)}`, signal);
 }
 
-export interface DeliveryLaneSummary {
-  lane_id: string;
-  project_id: string;
-  parent_task_id?: string;
-  status: DeliveryLaneStatus;
-  blocked_by?: string[];
-  pr_url?: string;
-  pr_number?: number;
-  pr_provider?: string;
-  repository?: string;
-  branch?: string;
-  commits?: string[];
-  worker?: string;
-  worktree_path?: string;
-  base_sha?: string;
-  base_remote?: string;
-  semar_record_id?: string;
-  gareng_record_id?: string;
-  petruk_record_id?: string;
-  bagong_record_id?: string;
-  attempt?: number;
-  repair_cycle_count?: number;
-  escalated_at?: string;
-  // The session that opened this lane. Deliberately a different question from
-  // `worker`, which is whoever holds the lane's lease right now - the two are
-  // never interchangeable and must not be shown as one thing.
-  session_id?: string;
-  evidence?: DeliveryEvidenceRef[];
-  verification?: DeliveryVerificationMatrix;
-  bagong_review?: DeliveryReviewConclusion;
-}
-
-export interface DeliveryVerificationMatrix {
-  computed_at: string;
-  dimensions: Array<{
-    name: "logic" | "unit" | "integration" | "quality" | "e2e" | "ci";
-    status: "pending" | "passed" | "failed";
-    evidence_id?: string;
-    summary?: string;
-    checked_at?: string;
-  }>;
-}
-
-export interface DeliveryReviewConclusion {
-  outcome: "approved" | "blocked" | "changes_requested";
-  independence_level: "different_session" | "different_worker" | "same_session";
-  reviewer_worker_id: string;
-  reviewer_session_id: string;
-  reviewer_model?: string;
-  reviewer_provider?: string;
-  blocking_finding_ids: string[];
-  evidence_ids: string[];
-  recorded_at: string;
-}
-
-export interface DeliveryAuditEvent {
-  sequence: number;
-  type: string;
-  entity_id?: string;
-  occurred_at: string;
-}
-
-export interface DeliveryJiraActivity {
-  event_type: string;
-  entity_id?: string;
-  issue_key: string;
-  fired_at: string;
-}
-
-export interface DeliveryBlockerSummary {
-  lane_id: string;
-  parent_task_id?: string;
-  blocked_by: string[];
-}
-
-export interface DeliveryWorkLog {
-  id: string;
-  orchestration_id: string;
-  lane_id: string;
-  parent_task_id?: string;
-  session_id?: string;
-  jira_issue_key: string;
-  started_at: string;
-  duration_seconds: number;
-  summary: string;
-  sync_status: "pending" | "synced" | "failed";
-  jira_worklog_id?: string;
-  synced_at?: string;
-  created_at: string;
-}
-
-export interface DeliveryLifecycle {
-  case: { id: string; jira_source_key: string; jira_issue_key: string; status: string; created_at: string; updated_at: string };
-  execution: { id: string; case_id: string; orchestration_id: string; ordinal: number; status: string; session_id?: string; started_at: string; ended_at?: string };
-  sessions: { id: string; case_id: string; execution_id: string; orchestration_id: string; resumed_from_id?: string; participant: string; worktree_path?: string; provider?: string; status: string; started_at: string; ended_at?: string }[];
-  checkpoints: { id: string; case_id: string; execution_id: string; session_id: string; sequence: number; summary: string; progress_percent?: number; handoff_to?: string; created_at: string }[];
-  usage: { id: string; case_id: string; execution_id: string; session_id: string; kind: string; category: string; model?: string; quantity: number; unit: string; unit_price?: number; cost_amount?: number; cost_currency?: string; price_source?: string; recorded_at: string }[];
-  budgets: { id: string; case_id: string; execution_id: string; session_id?: string; category?: string; amount: number; currency: string; created_at: string }[];
-  jira_snapshots: { id: string; case_id: string; execution_id: string; session_id?: string; jira_issue_key: string; version: number; title: string; body: string; content_hash: string; captured_at: string }[];
-  jira_assessments: { id: string; case_id: string; execution_id: string; session_id?: string; snapshot_id?: string; clarity: string; approval: string; rationale: string; assessed_at: string }[];
-  jira_work_items: { id: string; case_id: string; execution_id: string; session_id?: string; orchestration_id: string; parent_task_id: string; requirement_source_id: string; jira_issue_key: string; created_at: string }[];
-  jira_write_intents: { id: string; case_id: string; execution_id: string; session_id?: string; jira_issue_key: string; action: string; payload: Record<string, unknown>; idempotency_key: string; status: string; attempt_count: number; retry_at?: string; last_error?: string; external_id?: string; created_at: string; updated_at: string }[];
-  progress_reports: { id: string; case_id: string; execution_id: string; session_id: string; summary: string; progress_percent?: number; reported_at: string }[];
-  known_cost_by_currency: Record<string, number>;
-  unknown_priced_usage: boolean;
-}
-
-export interface DeliveryProjectPlanLink {
-  project_id: string;
-  plan_id: string;
-  plan_revision: number;
-  created_at: string;
-}
-
-export interface DeliveryView {
-  orchestration: DeliveryOrchestration;
-  // Never empty: whatever title the delivery was started with, or one derived
-  // from its own requirement references when it was started without one. The
-  // UI can show it directly instead of choosing a fallback of its own.
-  title: string;
-  // None of these three is ever derived, so an absent one honestly means
-  // nobody recorded it: no prose was written, no final plan was submitted, no
-  // session drove the delivery.
-  description?: string;
-  plan_record_id?: string;
-  plan_id?: string;
-  plan_revision?: number;
-  session_id?: string;
-  projects: DeliveryProjectSummary[];
-  project_plans: DeliveryProjectPlanLink[];
-  lanes: DeliveryLaneSummary[];
-  blockers: DeliveryBlockerSummary[];
-  pending_questions: string[];
-  next_action: string;
-  timeline?: DeliveryAuditEvent[];
-  jira_activity?: DeliveryJiraActivity[];
-  worklogs: DeliveryWorkLog[];
-  worklog_seconds: number;
-  lifecycle?: DeliveryLifecycle;
-  latest_seq: number;
-  newly_runnable_lane_ids: string[];
-}
-
-export function listDeliveries(): Promise<{ items: DeliveryOrchestration[] }> {
-  return getJSON<{ items: DeliveryOrchestration[] }>("/deliveries");
-}
-
-export function getDeliveryView(orchestrationId: string, sinceSeq?: number): Promise<DeliveryView> {
-  const qs = sinceSeq ? `?since_seq=${encodeURIComponent(String(sinceSeq))}` : "";
-  return getJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}${qs}`);
+// watchDeliveryDetail long-polls the daemon (via the panel) for up to
+// waitSeconds for orchestrationId's projection_revision to advance past
+// sinceRevision, returning the current DeliveryDetail either way. signal
+// aborts the in-flight request - the live-refresh loop's cancellation
+// point on unmount or a changed orchestrationId.
+export function watchDeliveryDetail(
+  orchestrationId: string,
+  sinceRevision: number,
+  waitSeconds: number,
+  signal?: AbortSignal,
+): Promise<DeliveryDetail> {
+  const qs = new URLSearchParams({
+    since_revision: String(sinceRevision),
+    wait_seconds: String(waitSeconds),
+  });
+  return getJSON<DeliveryDetail>(`/deliveries/${encodeURIComponent(orchestrationId)}/watch?${qs}`, signal);
 }
 
 // deliveryEvidenceUrl builds a lane evidence artifact's raw-bytes URL
-// directly (mirroring evidencePreviewUrl above), so callers can hand it
-// straight to a plain <a href> link without round-tripping the bytes
-// through JS.
+// directly, so callers can hand it straight to a plain <a href> link
+// without round-tripping the bytes through JS.
 export function deliveryEvidenceUrl(orchestrationId: string, evidenceId: string): string {
   return `/api/v1/deliveries/${encodeURIComponent(orchestrationId)}/evidence/${encodeURIComponent(evidenceId)}`;
-}
-
-// answerDeliveryQuestion resolves one entry from DeliveryView.pending_questions
-// - reference is that entry's exact string. Set provider (+ external_id/url/
-// title/summary) to resolve it as a requirement source, or parent_task_id +
-// project_id to route it directly to a task instead (deliveries_handler.go's
-// answerDeliveryQuestionBody documents both shapes).
-export interface AnswerDeliveryQuestionRequest {
-  reference: string;
-  expected_revision?: number;
-  provider?: string;
-  external_id?: string;
-  url?: string;
-  title?: string;
-  summary?: string;
-  parent_task_id?: string;
-  project_id?: string;
-}
-
-export function answerDeliveryQuestion(orchestrationId: string, body: AnswerDeliveryQuestionRequest): Promise<DeliveryView> {
-  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/answer-question`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
 }
 
 export interface CancelDeliveryRequest {
@@ -938,8 +758,8 @@ export interface CancelDeliveryRequest {
   reason?: string;
 }
 
-export function cancelDelivery(orchestrationId: string, body: CancelDeliveryRequest): Promise<DeliveryView> {
-  return mutateJSON<DeliveryView>(`/deliveries/${encodeURIComponent(orchestrationId)}/cancel`, {
+export function cancelDelivery(orchestrationId: string, body: CancelDeliveryRequest): Promise<DeliveryDetail> {
+  return mutateJSON<DeliveryDetail>(`/deliveries/${encodeURIComponent(orchestrationId)}/cancel`, {
     method: "POST",
     body: JSON.stringify(body),
   });
