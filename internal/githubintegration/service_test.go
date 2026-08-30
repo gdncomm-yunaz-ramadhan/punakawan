@@ -142,9 +142,9 @@ func TestSubmitReview_SucceedsWhenHeadMatches(t *testing.T) {
 	}
 }
 
-// TestSubmitReview_StaleProposalBlocksSubmission guards the exact scenario
-// Step 7 requires: the pull request's head has moved since the review was
-// proposed, so no review POST should ever be sent.
+// TestSubmitReview_StaleProposalBlocksSubmission guards the scenario where
+// the pull request's head has moved since the review was proposed, so no
+// review POST should ever be sent.
 func TestSubmitReview_StaleProposalBlocksSubmission(t *testing.T) {
 	fc := &fakeGitHubCaller{responses: map[string]string{
 		"github.getPullRequest":          `{"normalized":{"number":42,"headSha":"def456"}}`,
