@@ -5,9 +5,8 @@
     updateRole,
     resetRole,
     ApiError,
-    type RoleConfig,
+    type RolePreference,
     type RolesConfiguration,
-    type RoleCapabilityInfo,
   } from "../../lib/api/client";
   import { roleAvatars } from "../../lib/assets/roles";
   import Card from "../../lib/components/cards/Card.svelte";
@@ -21,6 +20,8 @@
   // The four roles, in fixed presentation order.
   type RoleName = "semar" | "gareng" | "petruk" | "bagong";
   const ROLE_ORDER: RoleName[] = ["semar", "gareng", "petruk", "bagong"];
+
+  const MAX_INSTRUCTIONS_LENGTH = 2000;
 
   // Display name, one-line responsibility, a collapsed communication summary,
   // and the role's short principle (plan §8-11; wayang-nuance refinement).
@@ -62,19 +63,13 @@
     { id: "balanced", label: "Balanced" },
     { id: "creative", label: "Creative" },
   ];
-  const MODES = [
-    { id: "assist", label: "Assist" },
-    { id: "propose", label: "Propose" },
-    { id: "execute", label: "Execute" },
-  ];
 
   // Human messages for the backend's 4xx error codes.
   const codeMessages: Record<string, string> = {
     revision_conflict: "This project's roles changed since you loaded them — reloaded to the latest. Review and try again.",
     unknown_role: "This role is not recognized.",
     invalid_style: "That style is not valid.",
-    invalid_mode: "That mode is not valid.",
-    unowned_capability: "That capability cannot be set for this role.",
+    instructions_too_long: `Instructions must be ${MAX_INSTRUCTIONS_LENGTH} characters or fewer.`,
   };
 
   // Server-persisted state (the baseline the draft diffs against).
@@ -82,12 +77,10 @@
   // Optimistic-locking token shared by every role; mutations send it as
   // base_revision and the server bumps it on success (409s if it moved).
   let revision = $state(0);
-  // owned[role] -> the capability keys that role may render.
-  let ownedByRole: Record<string, string[]> = $state({});
 
   // Per-role editable draft. Cloned from `roles` on load and after each
   // successful save/reset so "dirty" is a structural diff against the server.
-  let drafts: Record<string, RoleConfig> = $state({});
+  let drafts: Record<string, RolePreference> = $state({});
 
   let loading = $state(true);
   let error: string | null = $state(null);
@@ -96,12 +89,12 @@
   let busyRole: string | null = $state(null);
   let roleError: Record<string, string> = $state({});
 
-  function cloneConfig(c: RoleConfig): RoleConfig {
-    return { enabled: c.enabled, style: c.style, mode: c.mode, capabilities: { ...c.capabilities } };
+  function cloneConfig(c: RolePreference): RolePreference {
+    return { style: c.style, instructions: c.instructions };
   }
 
   function resetDraftsFrom(cfg: RolesConfiguration) {
-    const next: Record<string, RoleConfig> = {};
+    const next: Record<string, RolePreference> = {};
     for (const r of ROLE_ORDER) next[r] = cloneConfig(cfg[r]);
     drafts = next;
   }
@@ -110,9 +103,6 @@
     const res = await getRoles(projectId);
     roles = res.roles;
     revision = res.revision;
-    const owned: Record<string, string[]> = {};
-    for (const o of res.owned) owned[o.role] = o.capabilities;
-    ownedByRole = owned;
     resetDraftsFrom(res.roles);
   }
 
@@ -136,64 +126,16 @@
     const base = roles[role];
     const draft = drafts[role];
     if (!draft) return false;
-    if (draft.enabled !== base.enabled || draft.style !== base.style || draft.mode !== base.mode) return true;
-    for (const key of ownedByRole[role] ?? []) {
-      if ((draft.capabilities[key] ?? false) !== (base.capabilities[key] ?? false)) return true;
-    }
-    return false;
-  }
-
-  // Turn a capability key into a human-readable label:
-  // `cross_repository_impact` -> "Cross repository impact".
-  function humanize(key: string): string {
-    const spaced = key.replace(/_/g, " ");
-    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-  }
-
-  // Effective-behavior preview (plan §14), derived entirely client-side from
-  // mode + capability toggles. `mode` sets the ceiling on how far the role
-  // may act on its own; enabled capabilities become "can" lines, the role's
-  // owned-but-disabled capabilities become "cannot" lines.
-  function modeSummary(mode: string): string {
-    switch (mode) {
-      case "assist":
-        return "advises only — proposes nothing on its own and makes no changes.";
-      case "propose":
-        return "proposes changes for approval but does not apply them.";
-      case "execute":
-        return "applies accepted changes directly.";
-      default:
-        return "";
-    }
-  }
-
-  function effectivePreview(role: RoleName): { can: string[]; cannot: string[]; mode: string } {
-    const draft = drafts[role];
-    const owned = ownedByRole[role] ?? [];
-    const can: string[] = [];
-    const cannot: string[] = [];
-    for (const key of owned) {
-      if (draft?.capabilities[key]) can.push(humanize(key).toLowerCase());
-      else cannot.push(humanize(key).toLowerCase());
-    }
-    return { can, cannot, mode: draft?.mode ?? "assist" };
+    return draft.style !== base.style || draft.instructions !== base.instructions;
   }
 
   function setStyle(role: RoleName, style: string) {
     clearRoleTransient();
     drafts[role].style = style;
   }
-  function setMode(role: RoleName, mode: string) {
+  function setInstructions(role: RoleName, instructions: string) {
     clearRoleTransient();
-    drafts[role].mode = mode;
-  }
-  function toggleEnabled(role: RoleName, value: boolean) {
-    clearRoleTransient();
-    drafts[role].enabled = value;
-  }
-  function toggleCapability(role: RoleName, key: string, value: boolean) {
-    clearRoleTransient();
-    drafts[role].capabilities[key] = value;
+    drafts[role].instructions = instructions;
   }
 
   function clearRoleTransient() {
@@ -206,16 +148,8 @@
     conflictNotice = null;
     roleError = { ...roleError, [role]: "" };
     const draft = drafts[role];
-    // Only send the capability keys this role owns.
-    const capabilities: Record<string, boolean> = {};
-    for (const key of ownedByRole[role] ?? []) capabilities[key] = draft.capabilities[key] ?? false;
     try {
-      const res = await updateRole(
-        projectId,
-        role,
-        { enabled: draft.enabled, style: draft.style, mode: draft.mode, capabilities },
-        revision,
-      );
+      const res = await updateRole(projectId, role, { style: draft.style, instructions: draft.instructions }, revision);
       roles = res.roles;
       revision = res.revision;
       resetDraftsFrom(res.roles);
@@ -272,8 +206,6 @@
       {#each ROLE_ORDER as role (role)}
         {@const meta = ROLE_META[role]}
         {@const draft = drafts[role]}
-        {@const owned = ownedByRole[role] ?? []}
-        {@const preview = effectivePreview(role)}
         {@const dirty = isDirty(role)}
         <article class="role-cell" aria-label={`${meta.label} role`}>
         <Card>
@@ -290,15 +222,6 @@
               />
               <h3>{meta.label}</h3>
             </div>
-            <label class="switch">
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onchange={(e) => toggleEnabled(role, e.currentTarget.checked)}
-                aria-label={`Enable ${meta.label}`}
-              />
-              <span>Enabled</span>
-            </label>
           {/snippet}
 
           <p class="responsibility">{meta.responsibility}</p>
@@ -330,54 +253,16 @@
           </div>
 
           <div class="field">
-            <span class="field-label" id={`mode-label-${role}`}>Mode</span>
-            <div class="segmented" role="radiogroup" aria-labelledby={`mode-label-${role}`}>
-              {#each MODES as m (m.id)}
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={draft.mode === m.id}
-                  class="segment"
-                  class:active={draft.mode === m.id}
-                  onclick={() => setMode(role, m.id)}
-                >
-                  {m.label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          {#if owned.length > 0}
-            <div class="field">
-              <span class="field-label">Capabilities</span>
-              <ul class="capabilities">
-                {#each owned as key (key)}
-                  <li>
-                    <label class="switch">
-                      <input
-                        type="checkbox"
-                        checked={draft.capabilities[key] ?? false}
-                        onchange={(e) => toggleCapability(role, key, e.currentTarget.checked)}
-                        aria-label={humanize(key)}
-                      />
-                      <span>{humanize(key)}</span>
-                    </label>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
-
-          <div class="preview" aria-label={`${meta.label} effective behavior`}>
-            <p class="preview-head">
-              Effective behavior — <strong>{meta.label}</strong> {modeSummary(preview.mode)}
-            </p>
-            {#if preview.can.length > 0}
-              <p class="can"><span class="tag can">can</span> {preview.can.join(", ")}</p>
-            {/if}
-            {#if preview.cannot.length > 0}
-              <p class="cannot"><span class="tag cannot">cannot</span> {preview.cannot.join(", ")}</p>
-            {/if}
+            <label class="field-label" for={`instructions-${role}`}>Instructions</label>
+            <textarea
+              id={`instructions-${role}`}
+              class="instructions"
+              rows="3"
+              maxlength={MAX_INSTRUCTIONS_LENGTH}
+              placeholder="Optional free-text guidance appended to this role's prompt."
+              value={draft.instructions}
+              oninput={(e) => setInstructions(role, e.currentTarget.value)}
+            ></textarea>
           </div>
 
           {#if roleError[role]}
@@ -513,8 +398,7 @@
     color: var(--color-text-muted);
     font-weight: 600;
   }
-  /* Full-width segmented control with equal-width segments, so Style and
-     Mode line up proportionally (each option the same width across both). */
+  /* Full-width segmented control with equal-width segments. */
   .segmented {
     display: flex;
     width: 100%;
@@ -546,59 +430,20 @@
     outline: 2px solid var(--color-accent);
     outline-offset: -2px;
   }
-  .capabilities {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.35rem;
-  }
-  .switch {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
+  .instructions {
+    font: inherit;
     font-size: 0.85rem;
-    color: var(--color-text);
-    cursor: pointer;
-  }
-  .switch input {
-    accent-color: var(--color-accent);
-    width: 16px;
-    height: 16px;
-  }
-  .preview {
-    background: var(--color-surface-subtle);
-    border: 1px solid var(--color-border);
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--color-border-strong);
     border-radius: var(--radius-sm);
-    padding: 0.6rem 0.7rem;
-    display: grid;
-    gap: 0.3rem;
-  }
-  .preview p {
-    margin: 0;
-    font-size: 0.82rem;
-  }
-  .preview-head {
-    color: var(--color-text-muted);
-  }
-  .tag {
-    display: inline-block;
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    border-radius: 999px;
-    padding: 0.05rem 0.45rem;
-    margin-right: 0.35rem;
-  }
-  .tag.can {
-    color: var(--color-success);
-    background: color-mix(in srgb, var(--color-success) 16%, transparent);
-  }
-  .tag.cannot {
-    color: var(--color-text-muted);
     background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    resize: vertical;
+    min-height: 4.5rem;
+  }
+  .instructions:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
   }
   /* Proportional action row: Reset and Save share the width equally. */
   .card-actions {

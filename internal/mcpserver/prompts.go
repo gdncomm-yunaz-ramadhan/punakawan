@@ -38,13 +38,13 @@ const sharedPromptPath = "shared/communication.md"
 // registerPrompts adds the four role prompts (§28.4). Each served prompt is the
 // shared communication guidance and that role's own template - both static,
 // composed once here so the shared half is not duplicated in source - followed
-// by a per-request role-configuration block (roleconfig.PromptBlock) rendered
-// fresh on every GetPrompt call from a's live role config and accepted
-// learning proposals. That block is what actually varies per invocation: it is
-// how an accepted learning proposal reaches a live Petruk/Bagong/Gareng/
-// Semar role, since this GetPrompt handler - not
-// roleconfig.PromptBlock's own (previously callerless) unit test - is the real
-// prompt a connected MCP client fetches before reasoning as a role.
+// by a per-request role prompt-preferences block (roleconfig.PromptBlock)
+// rendered fresh on every GetPrompt call from a's live project preferences and
+// accepted learning proposals. That block is what actually varies per
+// invocation: it is how a project's style/instructions choice and an accepted
+// learning proposal reach a live Petruk/Bagong/Gareng/Semar role, since this
+// GetPrompt handler - not roleconfig.PromptBlock's own unit tests - is the
+// real prompt a connected MCP client fetches before reasoning as a role.
 func registerPrompts(server *mcp.Server, a *app.App) error {
 	sharedBytes, err := prompts.FS.ReadFile(sharedPromptPath)
 	if err != nil {
@@ -79,18 +79,17 @@ func registerPrompts(server *mcp.Server, a *app.App) error {
 	return nil
 }
 
-// roleConfigPromptBlock renders role's live configuration and currently
+// roleConfigPromptBlock renders role's live prompt preferences and currently
 // accepted learning proposals via roleconfig.PromptBlock, for appending to a
 // served role prompt. It fails soft (returns "") rather than blocking a role
 // invocation: a nil resolver (no roles.yaml wiring, e.g. minimal test apps), a
-// role-config read failure, or a learning-store read failure all just mean the
-// dynamic block is omitted, mirroring authorizeRoleSubmit's existing
-// resilience posture toward these same two lookups.
+// preferences read failure, or a learning-store read failure all just mean the
+// dynamic block is omitted.
 func roleConfigPromptBlock(a *app.App, role roleconfig.Role) string {
 	if a == nil || a.RoleConfig == nil {
 		return ""
 	}
-	eff, err := a.RoleConfig.Effective("", "", role)
+	pref, err := a.RoleConfig.Get("", role)
 	if err != nil {
 		return ""
 	}
@@ -98,5 +97,5 @@ func roleConfigPromptBlock(a *app.App, role roleconfig.Role) string {
 	if store, err := a.OpenLearning(); err == nil {
 		proposals, _ = store.List()
 	}
-	return roleconfig.PromptBlock(role, eff, proposals)
+	return roleconfig.PromptBlock(role, pref, proposals)
 }

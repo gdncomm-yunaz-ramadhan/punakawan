@@ -259,37 +259,25 @@ type ProjectReader interface {
 	DeleteMetadata(ctx context.Context, projectID, key string, baseRevision int) (*project.Project, error)
 }
 
-// RoleCapabilityInfo is one role's owned-capability catalog: the fixed set of
-// capability keys that role may carry (internal/roleconfig.OwnedCapabilities),
-// in Panel/prompt order. GetRoles returns one per role so the Panel knows which
-// toggles to render for each role without hard-coding the catalog client-side.
-type RoleCapabilityInfo struct {
-	Role         string   `json:"role"`
-	Capabilities []string `json:"capabilities"`
-}
-
-// RolesReader reads and mutates a project's four-role configuration, per the
-// role-config distinguished-improvements plan Part I. It mirrors the metadata
-// mutations on ProjectReader: reads (GetRoles) never mutate; UpdateRole/ResetRole
-// each load the config fresh, apply an optimistically-locked change through
-// internal/roleconfig, and persist a new immutable revision, returning the
-// updated configuration so the handler can render the changed roles and new
-// revision.
+// RolesReader reads and mutates a project's four-role prompt preferences. It
+// mirrors the metadata mutations on ProjectReader: reads (GetRoles) never
+// mutate; UpdateRole/ResetRole each load the preferences fresh, apply an
+// optimistically-locked change through internal/roleconfig, and persist a new
+// immutable revision, returning the updated preferences so the handler can
+// render the changed roles and new revision.
 //
 // The contract depends on internal/roleconfig directly (no import cycle:
 // roleconfig imports only pkg/protocol, not this package), so the patch shape
 // is roleconfig.Patch verbatim rather than a translated local copy. Errors
 // returned wrap roleconfig's exported error vars (ErrRevisionConflict,
-// ErrUnknownRole, ErrInvalidStyle, ErrInvalidMode, ErrUnownedCapability) and
+// ErrUnknownRole, ErrInvalidStyle, ErrInstructionsTooLong) and
 // ErrWorkspaceUnavailable for an unknown project id, all matchable with
 // errors.Is.
 type RolesReader interface {
-	// GetRoles returns the current configuration, the owned-capability catalog
-	// for all four roles, and an error. The catalog is static per role but is
-	// returned alongside the config so the Panel renders in one round-trip.
-	GetRoles(ctx context.Context, projectID string) (*protocol.RoleConfiguration, []RoleCapabilityInfo, error)
-	UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RoleConfiguration, error)
-	ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RoleConfiguration, error)
+	// GetRoles returns the current prompt preferences and an error.
+	GetRoles(ctx context.Context, projectID string) (*protocol.RolePreferences, error)
+	UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RolePreferences, error)
+	ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RolePreferences, error)
 }
 
 // ContradictionReader reads and mutates a project's Contradiction Ledger, per

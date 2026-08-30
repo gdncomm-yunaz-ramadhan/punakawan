@@ -69,32 +69,6 @@ export function getSystem(): Promise<SystemInfo> {
   return getJSON<SystemInfo>("/system");
 }
 
-// --- Panel Settings (runtime pool) ---------------------------------------
-//
-// Panel-wide runtime settings. Each active project workspace runs its own
-// `dolt sql-server`; `max_active_runtimes` caps how many are live at once
-// (LRU eviction of idle non-primary projects) and
-// `runtime_idle_timeout_seconds` is how long an idle non-primary project
-// lingers before it is shut down. The PATCH is a session-gated mutation
-// (goes through mutateJSON so it carries the CSRF header); the server
-// rejects values < 1 with a 400 whose message surfaces as an ApiError.
-
-export interface PanelSettings {
-  max_active_runtimes: number;
-  runtime_idle_timeout_seconds: number;
-}
-
-export function getPanelSettings(): Promise<PanelSettings> {
-  return getJSON<PanelSettings>("/system/settings");
-}
-
-export function updatePanelSettings(patch: Partial<PanelSettings>): Promise<PanelSettings> {
-  return mutateJSON<PanelSettings>("/system/settings", {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
-}
-
 export interface KnowledgeRelation {
   target: string;
   type: string;
@@ -422,42 +396,31 @@ export async function deleteProject(id: string): Promise<void> {
   }
 }
 
-// --- Project Roles (role configuration) ----------------------------------
+// --- Project Roles (role prompt preferences) -----------------------------
 //
-// A project's four Punakawan roles (Semar/Gareng/Petruk/Bagong) each carry
-// an enabled flag, a `style` (strict|balanced|creative), a `mode`
-// (assist|propose|execute) and a set of capability toggles. Writes are
-// optimistically locked with the same monotonically increasing `revision`
-// pattern as project metadata: send the last-loaded revision as
-// base_revision on every mutation; a stale one 409s (code
-// "revision_conflict"). `owned` declares which capability keys each role is
-// allowed to render — a role never shows another role's toggles.
+// A project's four Punakawan roles (Semar/Gareng/Petruk/Bagong) each carry a
+// `style` (strict|balanced|creative) and free-text `instructions`. That is
+// the entire effect a project has on a role's prompt - it never authorizes a
+// tool or changes what a workflow requires. Writes are optimistically locked
+// with the same monotonically increasing `revision` pattern as project
+// metadata: send the last-loaded revision as base_revision on every
+// mutation; a stale one 409s (code "revision_conflict").
 
-export interface RoleConfig {
-  enabled: boolean;
+export interface RolePreference {
   style: string;
-  mode: string;
-  capabilities: Record<string, boolean>;
+  instructions: string;
 }
 
 export interface RolesConfiguration {
-  semar: RoleConfig;
-  gareng: RoleConfig;
-  petruk: RoleConfig;
-  bagong: RoleConfig;
-}
-
-// The capability toggle keys a given role owns (and may render). Only these
-// keys are shown for that role.
-export interface RoleCapabilityInfo {
-  role: string;
-  capabilities: string[];
+  semar: RolePreference;
+  gareng: RolePreference;
+  petruk: RolePreference;
+  bagong: RolePreference;
 }
 
 export interface RolesResponse {
   roles: RolesConfiguration;
   revision: number;
-  owned: RoleCapabilityInfo[];
 }
 
 // The write endpoints echo the full role map plus the new revision the
@@ -469,22 +432,15 @@ export interface RolesMutationResult {
 
 // The 4xx error codes the role write endpoints can return. Kept as a union
 // so the UI's message map stays exhaustive.
-export type RoleErrorCode =
-  | "revision_conflict"
-  | "unknown_role"
-  | "invalid_style"
-  | "invalid_mode"
-  | "unowned_capability";
+export type RoleErrorCode = "revision_conflict" | "unknown_role" | "invalid_style" | "instructions_too_long";
 
 export function getRoles(projectId: string): Promise<RolesResponse> {
   return getJSON<RolesResponse>(`/projects/${encodeURIComponent(projectId)}/roles`);
 }
 
 export interface UpdateRolePatch {
-  enabled?: boolean;
   style?: string;
-  mode?: string;
-  capabilities?: Record<string, boolean>;
+  instructions?: string;
 }
 
 export function updateRole(

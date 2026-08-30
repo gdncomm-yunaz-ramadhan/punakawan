@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// TestSetMaxActiveShrinksImmediately verifies the System-panel path: lowering
-// the cap at runtime evicts the LRU idle non-primary runtimes right away
-// (closing their Apps → stopping their dolt servers), rather than waiting for
-// the next admission.
+// TestSetMaxActiveShrinksImmediately verifies that lowering the cap at
+// runtime evicts the LRU idle non-primary runtimes right away (closing their
+// Apps → releasing their cached project context: SQLite handles, search
+// index, adapters), rather than waiting for the next admission.
 func TestSetMaxActiveShrinksImmediately(t *testing.T) {
 	f := newFakeEnv()
 	m := f.manager(WithMaxActive(4)) // primary + up to 3 non-primary

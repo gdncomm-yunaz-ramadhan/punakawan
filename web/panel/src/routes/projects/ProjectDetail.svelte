@@ -148,7 +148,7 @@
     <div id="tabpanel-settings" role="tabpanel" aria-labelledby="tab-settings" class="settings-sections">
       <h2>Project metadata</h2>
       <ProjectMetadata {projectId} />
-      <h2>Agent policy</h2>
+      <h2>Role prompt preferences</h2>
       <ProjectRoles {projectId} />
       <h2>Diagnostics</h2>
       <ProjectHealth {projectId} />

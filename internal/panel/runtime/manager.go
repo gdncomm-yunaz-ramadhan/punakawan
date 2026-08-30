@@ -86,6 +86,15 @@ type Manager interface {
 	Invalidate(projectID string) error
 	CloseIdle(ctx context.Context) error
 	Close(ctx context.Context) error
+	ActiveCount() int
+	StopIdleTimer()
+}
+
+// scheduledTimer is the subset of *time.Timer the manager needs, so a test can
+// inject a fake one and drive idle-expiry firing deterministically instead of
+// waiting on real wall-clock time.
+type scheduledTimer interface {
+	Stop() bool
 }
 
 // ProjectRuntimeManager is a concurrency-safe, bounded pool of ProjectRuntime.
@@ -107,6 +116,16 @@ type ProjectRuntimeManager struct {
 	// now supplies the current time for LRU/idle bookkeeping. Defaults to
 	// time.Now; injectable for deterministic tests.
 	now func() time.Time
+	// newTimer schedules fireIdleTimer after a duration. Defaults to
+	// time.AfterFunc; injectable for tests so idle-expiry firing can be driven
+	// without a real wait.
+	newTimer func(d time.Duration, f func()) scheduledTimer
+
+	// idleTimer is the single outstanding timer for the pool's nearest idle
+	// expiry, replacing a fixed periodic sweep: it is (re)scheduled on every
+	// Acquire/Release/SetIdleTimeout to the next non-primary, unused
+	// runtime's deadline. Guarded by mu.
+	idleTimer scheduledTimer
 }
 
 var _ Manager = (*ProjectRuntimeManager)(nil)
@@ -162,6 +181,17 @@ func WithClock(fn func() time.Time) Option {
 	}
 }
 
+// withTimerFactory overrides how the idle-expiry timer is scheduled (default
+// time.AfterFunc). Unexported: only this package's own tests need to fire
+// idle expiry deterministically instead of waiting on real wall-clock time.
+func withTimerFactory(fn func(d time.Duration, f func()) scheduledTimer) Option {
+	return func(m *ProjectRuntimeManager) {
+		if fn != nil {
+			m.newTimer = fn
+		}
+	}
+}
+
 // NewManager builds a manager seeded with the primary App. primaryApp may be
 // nil (e.g. in a test that only exercises pool mechanics), in which case no
 // primary is seeded. The primary is registered under primaryID and is never
@@ -175,6 +205,9 @@ func NewManager(primaryID string, primaryApp *app.App, opts ...Option) *ProjectR
 		loader:      func(path string) (*app.App, error) { return app.Load(path) },
 		closer:      func(a *app.App) error { return a.Close() },
 		now:         time.Now,
+		newTimer: func(d time.Duration, f func()) scheduledTimer {
+			return time.AfterFunc(d, f)
+		},
 	}
 	for _, o := range opts {
 		o(m)
@@ -204,6 +237,7 @@ func (m *ProjectRuntimeManager) Acquire(ctx context.Context, projectID, path str
 	if rt, ok := m.pool[projectID]; ok {
 		rt.inUse++
 		rt.lastUsedAt = m.now()
+		m.scheduleIdleTimerLocked()
 		m.mu.Unlock()
 		return rt, m.releaseFunc(projectID), nil
 	}
@@ -222,6 +256,7 @@ func (m *ProjectRuntimeManager) Acquire(ctx context.Context, projectID, path str
 	if rt, ok := m.pool[projectID]; ok {
 		rt.inUse++
 		rt.lastUsedAt = m.now()
+		m.scheduleIdleTimerLocked()
 		m.mu.Unlock()
 		_ = m.closer(a)
 		return rt, m.releaseFunc(projectID), nil
@@ -236,6 +271,7 @@ func (m *ProjectRuntimeManager) Acquire(ctx context.Context, projectID, path str
 	}
 	m.pool[projectID] = rt
 	evicted := m.selectEvictionsLocked()
+	m.scheduleIdleTimerLocked()
 	m.mu.Unlock()
 
 	for _, e := range evicted {
@@ -281,6 +317,7 @@ func (m *ProjectRuntimeManager) SetMaxActive(n int) {
 	m.mu.Lock()
 	m.maxActive = n
 	evicted := m.selectEvictionsLocked()
+	m.scheduleIdleTimerLocked()
 	m.mu.Unlock()
 	for _, e := range evicted {
 		_ = m.closer(e.App)
@@ -302,7 +339,16 @@ func (m *ProjectRuntimeManager) SetIdleTimeout(d time.Duration) {
 	}
 	m.mu.Lock()
 	m.idleTimeout = d
+	m.scheduleIdleTimerLocked()
 	m.mu.Unlock()
+}
+
+// ActiveCount returns the number of runtimes currently pooled, including the
+// primary.
+func (m *ProjectRuntimeManager) ActiveCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.pool)
 }
 
 // releaseFunc returns an idempotent release closure bound to projectID.
@@ -313,9 +359,12 @@ func (m *ProjectRuntimeManager) releaseFunc(projectID string) func() {
 	}
 }
 
-// Release decrements the in-use count for projectID. If that drops it to
-// zero and the runtime was marked close-on-release (via Invalidate while in
-// use), the runtime is dropped from the pool and its App closed. Callers
+// Release decrements the in-use count for projectID. Once that drops to
+// zero, a runtime marked close-on-release (via Invalidate while in use) is
+// dropped from the pool immediately; either way, selectEvictionsLocked then
+// runs so a pool sitting over cap only because this runtime was busy is
+// brought back within maxActive at once rather than waiting for the next
+// Acquire. Every closed App is closed after the lock is released. Callers
 // normally use the release func returned by Acquire rather than calling this
 // directly.
 func (m *ProjectRuntimeManager) Release(projectID string) {
@@ -329,13 +378,21 @@ func (m *ProjectRuntimeManager) Release(projectID string) {
 		rt.inUse--
 	}
 	rt.lastUsedAt = m.now()
-	if rt.inUse == 0 && rt.closeOnRelease && !rt.primary {
-		delete(m.pool, projectID)
-		m.mu.Unlock()
-		_ = m.closer(rt.App)
-		return
+
+	var evicted []*ProjectRuntime
+	if rt.inUse == 0 {
+		if rt.closeOnRelease && !rt.primary {
+			delete(m.pool, projectID)
+			evicted = append(evicted, rt)
+		}
+		evicted = append(evicted, m.selectEvictionsLocked()...)
 	}
+	m.scheduleIdleTimerLocked()
 	m.mu.Unlock()
+
+	for _, e := range evicted {
+		_ = m.closer(e.App)
+	}
 }
 
 // Invalidate drops and closes the pooled runtime for projectID (e.g. after
@@ -356,6 +413,7 @@ func (m *ProjectRuntimeManager) Invalidate(projectID string) error {
 		return nil
 	}
 	delete(m.pool, projectID)
+	m.scheduleIdleTimerLocked()
 	m.mu.Unlock()
 	return m.closer(rt.App)
 }
@@ -376,6 +434,7 @@ func (m *ProjectRuntimeManager) CloseIdle(ctx context.Context) error {
 			delete(m.pool, id)
 		}
 	}
+	m.scheduleIdleTimerLocked()
 	m.mu.Unlock()
 
 	var errs []error
@@ -390,7 +449,8 @@ func (m *ProjectRuntimeManager) CloseIdle(ctx context.Context) error {
 // Close closes all non-primary runtimes, for panel shutdown. The primary is
 // left untouched: it is owned by the panel command, which closes it
 // separately. In-use runtimes are closed too, since Close runs only at
-// shutdown when no further reads are expected.
+// shutdown when no further reads are expected. It does not stop the idle
+// timer itself - call StopIdleTimer first, per the documented shutdown order.
 func (m *ProjectRuntimeManager) Close(ctx context.Context) error {
 	m.mu.Lock()
 	var toClose []*ProjectRuntime
@@ -410,6 +470,59 @@ func (m *ProjectRuntimeManager) Close(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// StopIdleTimer cancels any outstanding idle-expiry timer without touching
+// the pool itself. Part of the documented shutdown order (stop the idle timer
+// before closing non-primary runtimes), so a timer cannot fire mid-shutdown
+// and race the explicit Close.
+func (m *ProjectRuntimeManager) StopIdleTimer() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.idleTimer != nil {
+		m.idleTimer.Stop()
+		m.idleTimer = nil
+	}
+}
+
+// scheduleIdleTimerLocked (re)schedules the single outstanding idle-expiry
+// timer for the nearest non-primary, unused runtime's deadline, replacing a
+// fixed periodic sweep: at most one timer is ever pending, and it always
+// targets the runtime that will next become eligible for CloseIdle. Must be
+// called with m.mu held.
+func (m *ProjectRuntimeManager) scheduleIdleTimerLocked() {
+	if m.idleTimer != nil {
+		m.idleTimer.Stop()
+		m.idleTimer = nil
+	}
+	var nearest time.Time
+	found := false
+	for _, rt := range m.pool {
+		if rt.primary || rt.inUse > 0 {
+			continue
+		}
+		deadline := rt.lastUsedAt.Add(m.idleTimeout)
+		if !found || deadline.Before(nearest) {
+			nearest = deadline
+			found = true
+		}
+	}
+	if !found {
+		return
+	}
+	d := nearest.Sub(m.now())
+	if d < 0 {
+		d = 0
+	}
+	m.idleTimer = m.newTimer(d, m.fireIdleTimer)
+}
+
+// fireIdleTimer runs when the scheduled idle deadline arrives: CloseIdle
+// closes whatever is now actually expired (re-checking idleTimeout against
+// the live clock, not just the fired timer) and reschedules for whatever
+// remains.
+func (m *ProjectRuntimeManager) fireIdleTimer() {
+	_ = m.CloseIdle(context.Background())
 }
 
 // selectEvictionsLocked removes LRU idle non-primary runtimes from the pool

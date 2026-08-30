@@ -30,7 +30,6 @@ import (
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
-	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/internal/workspace"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -46,12 +45,10 @@ type App struct {
 	AdapterRegistry *adapters.Registry
 	PrReviews       *prreview.Store
 	ContextRequests *contextrequest.Store
-	// RoleConfig is the shared §47 role-configuration resolver: it maps a
-	// project id + optional workflow to a role's effective configuration
-	// (project settings intersected with any workflow restriction). It is the
-	// single foundation the ROLE-* wiring (prompt injection, workflow
-	// restriction, run snapshot, Authorize gating) builds on. May be nil if
-	// construction failed; every call site must guard nil.
+	// RoleConfig resolves a project's persisted role prompt preferences
+	// (style + free-text instructions) for prompt rendering. It shapes prompt
+	// wording only - it never authorizes a tool or gates a workflow stage.
+	// May be nil if construction failed; every call site must guard nil.
 	RoleConfig *roleconfig.Resolver
 
 	knowledgeMu    sync.Mutex
@@ -215,10 +212,10 @@ func load(ws *workspace.Workspace) (*App, error) {
 	return a, nil
 }
 
-// newRoleResolver builds the shared §47 role-configuration resolver for a
-// workspace. Both lookups are resilient: a read failure surfaces as an error
-// to the caller of Effective/Authorize (which guard it) but never panics, and
-// a nil resolver is tolerated everywhere it is used.
+// newRoleResolver builds the shared role prompt-preference resolver for a
+// workspace. A read failure surfaces as an error to the caller (which guards
+// it) but never panics, and a nil resolver is tolerated everywhere it is
+// used.
 //
 // Limitation: the App currently holds no registry of non-primary project
 // roots, so Load resolves every project id to the primary workspace root. An
@@ -233,37 +230,8 @@ func newRoleResolver(ws *workspace.Workspace) *roleconfig.Resolver {
 		return ws.Root
 	}
 	return &roleconfig.Resolver{
-		Load: func(projectID string) (*protocol.RoleConfiguration, error) {
+		Load: func(projectID string) (*protocol.RolePreferences, error) {
 			return roleconfig.Load(rootFor(projectID))
-		},
-		Restrictions: func(projectID, workflowID string, role roleconfig.Role) (*roleconfig.Restriction, error) {
-			if workflowID == "" {
-				return nil, nil
-			}
-			store, err := workflowdef.Open(rootFor(projectID))
-			if err != nil {
-				return nil, err
-			}
-			def, err := store.Get(workflowID)
-			if errors.Is(err, workflowdef.ErrNotFound) {
-				return nil, nil // no definition: no restriction
-			}
-			if err != nil {
-				return nil, err
-			}
-			rr, ok := def.Roles[string(role)]
-			if !ok {
-				return nil, nil // role not restricted by this workflow
-			}
-			var mode *protocol.RoleConfigMode
-			if rr.Mode != nil {
-				m := protocol.RoleConfigMode(*rr.Mode)
-				mode = &m
-			}
-			return &roleconfig.Restriction{
-				Mode:         mode,
-				Capabilities: rr.Capabilities,
-			}, nil
 		},
 	}
 }

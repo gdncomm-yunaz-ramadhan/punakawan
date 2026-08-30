@@ -7,25 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 	"gopkg.in/yaml.v3"
 )
-
-// expectedStyleMode mirrors the plan §7 recommended posture per role. It is
-// duplicated here (not read from the source table) so the test independently
-// pins the documented defaults.
-var expectedStyleMode = map[Role]struct {
-	style protocol.RoleConfigStyle
-	mode  protocol.RoleConfigMode
-}{
-	Semar:  {protocol.RoleConfigStyleBalanced, protocol.RoleConfigModeExecute},
-	Gareng: {protocol.RoleConfigStyleStrict, protocol.RoleConfigModePropose},
-	Petruk: {protocol.RoleConfigStyleCreative, protocol.RoleConfigModeExecute},
-	Bagong: {protocol.RoleConfigStyleStrict, protocol.RoleConfigModePropose},
-}
 
 func TestLoadAbsentReturnsDefaults(t *testing.T) {
 	root := t.TempDir()
@@ -35,40 +23,22 @@ func TestLoadAbsentReturnsDefaults(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.Version != SupportedVersion {
-		t.Errorf("Version = %q, want %q", cfg.Version, SupportedVersion)
+		t.Errorf("Version = %d, want %d", cfg.Version, SupportedVersion)
 	}
 	if cfg.Revision != 0 {
 		t.Errorf("Revision = %d, want 0", cfg.Revision)
 	}
 
 	for _, role := range AllRoles {
-		rc, err := RoleOf(cfg, role)
+		rp, err := RoleOf(cfg, role)
 		if err != nil {
 			t.Fatalf("RoleOf(%s): %v", role, err)
 		}
-		if !rc.Enabled {
-			t.Errorf("%s.Enabled = false, want true", role)
+		if rp.Style != defaultStyle {
+			t.Errorf("%s.Style = %q, want %q", role, rp.Style, defaultStyle)
 		}
-		want := expectedStyleMode[role]
-		if rc.Style != want.style {
-			t.Errorf("%s.Style = %q, want %q", role, rc.Style, want.style)
-		}
-		if rc.Mode != want.mode {
-			t.Errorf("%s.Mode = %q, want %q", role, rc.Mode, want.mode)
-		}
-		owned := OwnedCapabilities(role)
-		if len(rc.Capabilities) != len(owned) {
-			t.Errorf("%s has %d capabilities, want %d (%v)", role, len(rc.Capabilities), len(owned), owned)
-		}
-		for _, key := range owned {
-			on, ok := rc.Capabilities[key]
-			if !ok {
-				t.Errorf("%s missing owned capability %q", role, key)
-				continue
-			}
-			if !on {
-				t.Errorf("%s.Capabilities[%q] = false, want true (all owned default on)", role, key)
-			}
+		if rp.Instructions != "" {
+			t.Errorf("%s.Instructions = %q, want empty", role, rp.Instructions)
 		}
 	}
 }
@@ -78,13 +48,13 @@ func TestSaveLoadRoundTripSetsVersion(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 
 	cfg := Defaults()
-	cfg.Version = "" // Save must (re)set it to SupportedVersion.
+	cfg.Version = 0 // Save must (re)set it to SupportedVersion.
 
-	// Mutate: flip a Petruk capability off and change its style.
-	newStyle := protocol.RoleConfigStyleStrict
+	newStyle := protocol.RolePreferenceStyleStrict
+	newInstructions := "Prefer reversible migrations."
 	if err := Update(&cfg, Petruk, Patch{
 		Style:        &newStyle,
-		Capabilities: map[string]bool{"modify_files": false},
+		Instructions: &newInstructions,
 	}, 0); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -93,7 +63,7 @@ func TestSaveLoadRoundTripSetsVersion(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	if cfg.Version != SupportedVersion {
-		t.Errorf("after Save, Version = %q, want %q", cfg.Version, SupportedVersion)
+		t.Errorf("after Save, Version = %d, want %d", cfg.Version, SupportedVersion)
 	}
 
 	got, err := Load(root)
@@ -101,20 +71,20 @@ func TestSaveLoadRoundTripSetsVersion(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if got.Version != SupportedVersion {
-		t.Errorf("loaded Version = %q, want %q", got.Version, SupportedVersion)
+		t.Errorf("loaded Version = %d, want %d", got.Version, SupportedVersion)
 	}
 	if got.Revision != 1 {
 		t.Errorf("loaded Revision = %d, want 1", got.Revision)
 	}
-	if got.Roles.Petruk.Style != protocol.RoleConfigStyleStrict {
+	if got.Roles.Petruk.Style != protocol.RolePreferenceStyleStrict {
 		t.Errorf("loaded Petruk.Style = %q, want strict", got.Roles.Petruk.Style)
 	}
-	if got.Roles.Petruk.Capabilities["modify_files"] {
-		t.Errorf("loaded Petruk.modify_files = true, want false")
+	if got.Roles.Petruk.Instructions != newInstructions {
+		t.Errorf("loaded Petruk.Instructions = %q, want %q", got.Roles.Petruk.Instructions, newInstructions)
 	}
-	// A non-touched capability of the same role stays on.
-	if !got.Roles.Petruk.Capabilities["plans"] {
-		t.Errorf("loaded Petruk.plans = false, want true (untouched)")
+	// A non-touched role's preference stays at the default.
+	if got.Roles.Semar.Style != defaultStyle {
+		t.Errorf("loaded Semar.Style = %q, want unchanged default %q", got.Roles.Semar.Style, defaultStyle)
 	}
 }
 
@@ -123,9 +93,9 @@ func TestOptimisticLockingUpdate(t *testing.T) {
 	cfg.Revision = 3
 
 	before := cfg.Roles.Semar
-	enabled := false
+	style := protocol.RolePreferenceStyleStrict
 	// Stale base -> conflict, no mutation.
-	err := Update(&cfg, Semar, Patch{Enabled: &enabled}, 2)
+	err := Update(&cfg, Semar, Patch{Style: &style}, 2)
 	if !errors.Is(err, ErrRevisionConflict) {
 		t.Fatalf("stale Update err = %v, want ErrRevisionConflict", err)
 	}
@@ -137,14 +107,14 @@ func TestOptimisticLockingUpdate(t *testing.T) {
 	}
 
 	// Correct base -> bumps revision by exactly 1.
-	if err := Update(&cfg, Semar, Patch{Enabled: &enabled}, 3); err != nil {
+	if err := Update(&cfg, Semar, Patch{Style: &style}, 3); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	if cfg.Revision != 4 {
 		t.Errorf("Revision = %d, want 4", cfg.Revision)
 	}
-	if cfg.Roles.Semar.Enabled {
-		t.Errorf("Semar.Enabled = true, want false")
+	if cfg.Roles.Semar.Style != protocol.RolePreferenceStyleStrict {
+		t.Errorf("Semar.Style = %q, want strict", cfg.Roles.Semar.Style)
 	}
 }
 
@@ -174,7 +144,7 @@ func TestOptimisticLockingReset(t *testing.T) {
 func TestUpdateStyleValidation(t *testing.T) {
 	cfg := Defaults()
 
-	bad := protocol.RoleConfigStyle("chaotic")
+	bad := protocol.RolePreferenceStyle("chaotic")
 	err := Update(&cfg, Semar, Patch{Style: &bad}, 0)
 	if !errors.Is(err, ErrInvalidStyle) {
 		t.Fatalf("invalid style err = %v, want ErrInvalidStyle", err)
@@ -183,10 +153,10 @@ func TestUpdateStyleValidation(t *testing.T) {
 		t.Errorf("Revision bumped on invalid style: %d", cfg.Revision)
 	}
 
-	for _, s := range []protocol.RoleConfigStyle{
-		protocol.RoleConfigStyleStrict,
-		protocol.RoleConfigStyleBalanced,
-		protocol.RoleConfigStyleCreative,
+	for _, s := range []protocol.RolePreferenceStyle{
+		protocol.RolePreferenceStyleStrict,
+		protocol.RolePreferenceStyleBalanced,
+		protocol.RolePreferenceStyleCreative,
 	} {
 		c := Defaults()
 		if err := Update(&c, Semar, Patch{Style: &s}, 0); err != nil {
@@ -195,58 +165,21 @@ func TestUpdateStyleValidation(t *testing.T) {
 	}
 }
 
-func TestUpdateModeValidation(t *testing.T) {
+func TestUpdateInstructionsBound(t *testing.T) {
 	cfg := Defaults()
 
-	bad := protocol.RoleConfigMode("god")
-	err := Update(&cfg, Semar, Patch{Mode: &bad}, 0)
-	if !errors.Is(err, ErrInvalidMode) {
-		t.Fatalf("invalid mode err = %v, want ErrInvalidMode", err)
+	tooLong := strings.Repeat("a", maxInstructionsLen+1)
+	err := Update(&cfg, Semar, Patch{Instructions: &tooLong}, 0)
+	if !errors.Is(err, ErrInstructionsTooLong) {
+		t.Fatalf("over-bound instructions err = %v, want ErrInstructionsTooLong", err)
 	}
 	if cfg.Revision != 0 {
-		t.Errorf("Revision bumped on invalid mode: %d", cfg.Revision)
+		t.Errorf("Revision bumped on over-bound instructions: %d", cfg.Revision)
 	}
 
-	for _, m := range []protocol.RoleConfigMode{
-		protocol.RoleConfigModeAssist,
-		protocol.RoleConfigModePropose,
-		protocol.RoleConfigModeExecute,
-	} {
-		c := Defaults()
-		if err := Update(&c, Semar, Patch{Mode: &m}, 0); err != nil {
-			t.Errorf("valid mode %q rejected: %v", m, err)
-		}
-	}
-}
-
-func TestUpdateCapabilityOwnership(t *testing.T) {
-	cfg := Defaults()
-	before := cfg.Roles.Gareng
-
-	// modify_files is Petruk's capability, not Gareng's.
-	err := Update(&cfg, Gareng, Patch{Capabilities: map[string]bool{"modify_files": true}}, 0)
-	if !errors.Is(err, ErrUnownedCapability) {
-		t.Fatalf("unowned capability err = %v, want ErrUnownedCapability", err)
-	}
-	if cfg.Revision != 0 {
-		t.Errorf("Revision bumped on unowned capability: %d", cfg.Revision)
-	}
-	if !reflect.DeepEqual(cfg.Roles.Gareng, before) {
-		t.Errorf("Gareng mutated on unowned capability")
-	}
-
-	// A genuinely owned capability merges; siblings untouched.
-	if err := Update(&cfg, Gareng, Patch{Capabilities: map[string]bool{"contradictions": false}}, 0); err != nil {
-		t.Fatalf("Update owned capability: %v", err)
-	}
-	if cfg.Roles.Gareng.Capabilities["contradictions"] {
-		t.Errorf("contradictions = true, want false")
-	}
-	if !cfg.Roles.Gareng.Capabilities["security_checks"] {
-		t.Errorf("security_checks = false, want true (untouched merge)")
-	}
-	if cfg.Revision != 1 {
-		t.Errorf("Revision = %d, want 1", cfg.Revision)
+	exact := strings.Repeat("a", maxInstructionsLen)
+	if err := Update(&cfg, Semar, Patch{Instructions: &exact}, 0); err != nil {
+		t.Errorf("exactly-bound instructions rejected: %v", err)
 	}
 }
 
@@ -256,8 +189,8 @@ func TestUnknownRole(t *testing.T) {
 	if _, err := RoleOf(&cfg, Role("togog")); !errors.Is(err, ErrUnknownRole) {
 		t.Errorf("RoleOf unknown err = %v, want ErrUnknownRole", err)
 	}
-	enabled := false
-	if err := Update(&cfg, Role("togog"), Patch{Enabled: &enabled}, 0); !errors.Is(err, ErrUnknownRole) {
+	style := protocol.RolePreferenceStyleStrict
+	if err := Update(&cfg, Role("togog"), Patch{Style: &style}, 0); !errors.Is(err, ErrUnknownRole) {
 		t.Errorf("Update unknown err = %v, want ErrUnknownRole", err)
 	}
 	if err := Reset(&cfg, Role("togog"), 0); !errors.Is(err, ErrUnknownRole) {
@@ -269,12 +202,11 @@ func TestResetRestoresDefaults(t *testing.T) {
 	cfg := Defaults()
 
 	// Change Petruk away from its defaults.
-	newStyle := protocol.RoleConfigStyleStrict
-	newMode := protocol.RoleConfigModeAssist
+	newStyle := protocol.RolePreferenceStyleStrict
+	newInstructions := "Always add a migration rollback."
 	if err := Update(&cfg, Petruk, Patch{
 		Style:        &newStyle,
-		Mode:         &newMode,
-		Capabilities: map[string]bool{"modify_files": false, "plans": false},
+		Instructions: &newInstructions,
 	}, 0); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -308,8 +240,8 @@ func TestSnapshotImmutabilityAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	enabled := false
-	if err := Update(cfg2, Semar, Patch{Enabled: &enabled}, 0); err != nil {
+	style := protocol.RolePreferenceStyleStrict
+	if err := Update(cfg2, Semar, Patch{Style: &style}, 0); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	if err := Save(root, cfg2, SaveOptions{Now: now, Actor: "a2", Action: "update", Role: string(Semar)}); err != nil {
@@ -327,8 +259,8 @@ func TestSnapshotImmutabilityAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	style := protocol.RoleConfigStyleCreative
-	if err := Update(cfg3, Semar, Patch{Style: &style}, 1); err != nil {
+	creative := protocol.RolePreferenceStyleCreative
+	if err := Update(cfg3, Semar, Patch{Style: &creative}, 1); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	if err := Save(root, cfg3, SaveOptions{Now: now, Actor: "a3", Action: "update", Role: string(Semar)}); err != nil {
@@ -383,7 +315,7 @@ func TestBackfillMissingRoles(t *testing.T) {
 	// Build a valid-version file whose Bagong sub-object is zero-valued, as an
 	// older or hand-edited file would leave it.
 	cfg := Defaults()
-	cfg.Roles.Bagong = protocol.RoleConfig{}
+	cfg.Roles.Bagong = protocol.RolePreference{}
 	data, err := yaml.Marshal(&cfg)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -408,24 +340,77 @@ func TestBackfillMissingRoles(t *testing.T) {
 	}
 }
 
-func TestEnabledToggleRoundTrips(t *testing.T) {
+// TestLegacyVersionMigrationPreservesStyleOnly proves that reading a
+// pre-version-2 roles.yaml (the previous punakawan.roles/v1 shape, complete
+// with enabled/mode/capabilities that never enforced any real behavior)
+// preserves each role's style and discards everything else, and that the
+// next Save persists the migrated file at SupportedVersion.
+func TestLegacyVersionMigrationPreservesStyleOnly(t *testing.T) {
 	root := t.TempDir()
-
-	cfg := Defaults()
-	off := false
-	if err := Update(&cfg, Bagong, Patch{Enabled: &off}, 0); err != nil {
-		t.Fatalf("Update: %v", err)
+	legacy := `version: punakawan.roles/v1
+revision: 4
+roles:
+  semar:
+    enabled: true
+    style: strict
+    mode: execute
+    capabilities:
+      workflows: true
+  gareng:
+    enabled: false
+    style: creative
+    mode: assist
+    capabilities: {}
+  petruk:
+    enabled: true
+    style: balanced
+    mode: execute
+    capabilities: {}
+  bagong:
+    enabled: true
+    style: strict
+    mode: propose
+    capabilities: {}
+`
+	if err := os.MkdirAll(filepath.Join(root, dirName), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if err := Save(root, &cfg, SaveOptions{Now: time.Now().UTC(), Action: "update", Role: string(Bagong)}); err != nil {
-		t.Fatalf("Save: %v", err)
+	if err := os.WriteFile(configPath(root), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
 	got, err := Load(root)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("Load legacy: %v", err)
 	}
-	if got.Roles.Bagong.Enabled {
-		t.Errorf("Bagong.Enabled = true after round trip, want false")
+	if got.Roles.Semar.Style != protocol.RolePreferenceStyleStrict {
+		t.Errorf("Semar.Style = %q, want strict (preserved from legacy)", got.Roles.Semar.Style)
+	}
+	if got.Roles.Gareng.Style != protocol.RolePreferenceStyleCreative {
+		t.Errorf("Gareng.Style = %q, want creative (preserved from legacy)", got.Roles.Gareng.Style)
+	}
+	if got.Roles.Semar.Instructions != "" {
+		t.Errorf("Semar.Instructions = %q, want empty (never persisted pre-migration)", got.Roles.Semar.Instructions)
+	}
+
+	// The next Save persists the migrated file at SupportedVersion, and it no
+	// longer carries enabled/mode/capabilities at all.
+	if err := Save(root, got, SaveOptions{Now: time.Now().UTC(), Action: "migrate"}); err != nil {
+		t.Fatalf("Save after migration: %v", err)
+	}
+	raw, err := os.ReadFile(configPath(root))
+	if err != nil {
+		t.Fatalf("read migrated file: %v", err)
+	}
+	if strings.Contains(string(raw), "capabilities") || strings.Contains(string(raw), "mode:") || strings.Contains(string(raw), "enabled:") {
+		t.Errorf("migrated file still carries a never-enforced field:\n%s", raw)
+	}
+	reloaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("reload after migration: %v", err)
+	}
+	if reloaded.Version != SupportedVersion {
+		t.Errorf("reloaded Version = %d, want %d", reloaded.Version, SupportedVersion)
 	}
 }
 
@@ -437,6 +422,38 @@ func TestIsRole(t *testing.T) {
 	}
 	if IsRole("togog") {
 		t.Errorf("IsRole(togog) = true, want false")
+	}
+}
+
+// mustResolve resolves cfg's role preference by name and renders it through
+// PromptGuidance, failing the test on an unknown role.
+func mustResolve(t *testing.T, cfg Preferences, role string) string {
+	t.Helper()
+	rp, err := roleIn(&cfg, Role(role))
+	if err != nil {
+		t.Fatalf("mustResolve(%s): %v", role, err)
+	}
+	return PromptGuidance(Role(role), *rp)
+}
+
+// TestRolePreferenceProducesConcretePromptGuidance proves a role's resolved
+// prompt carries the fixed style guidance plus the free-text instruction, and
+// never mentions permission or approval - prompt preferences shape wording
+// only, they do not gate or authorize anything.
+func TestRolePreferenceProducesConcretePromptGuidance(t *testing.T) {
+	cfg := Preferences{Semar: RolePreference{Style: "strict", Instructions: "Prefer reversible migrations."}}
+	prompt := mustResolve(t, cfg, "semar")
+	if !strings.Contains(prompt, "Verify every required input") {
+		t.Errorf("prompt missing strict style guidance:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Prefer reversible migrations.") {
+		t.Errorf("prompt missing free-text instructions:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "permission") {
+		t.Errorf("prompt must never mention permission:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "approval") {
+		t.Errorf("prompt must never mention approval:\n%s", prompt)
 	}
 }
 
