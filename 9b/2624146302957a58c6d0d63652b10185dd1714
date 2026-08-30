@@ -1,0 +1,84 @@
+internal/roleconfig/mutate.go
+  c81065fbff0350f9 6,11-14,18-21,24-25,27-28,32,34,40-46,56-58,61,63,65-66,72,74-75,82
+internal/roleconfig/resolver.go
+  c81065fbff0350f9 12-20,23-29,31-34,36-37,39-45,47,49,53-62,93-107,109
+internal/mcpserver/prompts_test.go
+  c81065fbff0350f9 1-107
+internal/panel/api/roles_handler_test.go
+  c81065fbff0350f9 17,21,27,31,34,37,40,53,83,90-91,99-100,106,112-113,121-122,124-125,131,147-157,161-162,164,171-172,178,192,194,203-204,212-213
+protocol/roleconfig.schema.json
+  c81065fbff0350f9 4-5,10,17-20,25,27,32,35,37-38
+internal/roleconfig/roleconfig_test.go
+  c81065fbff0350f9 10,26,33,37-38,40-41,51,53-54,57,66,74,79,82-83,85-87,96,98,110,116-117,147,156-159,168,171-174,177,180-182,192-193,205-206,209,243-244,262-263,318,343-348,350-376,378-379,384-406,408-410,412-413,428-456
+internal/mcpserver/prompts.go
+  c81065fbff0350f9 41-47,82,86-87,92,100
+internal/panel/runtime/manager.go
+  c81065fbff0350f9 89-90,93-97,119-128,184-194,208-210,240,259,274,320,342,346-351,362-367,381-388,390,392-395,416,437,452-453,475-525
+internal/panel/runtime/setmaxactive_test.go
+  c81065fbff0350f9 8-11
+internal/panel/server/server_test.go
+  c81065fbff0350f9 4,10,308-370
+web/panel/src/lib/api/client.ts
+  c81065fbff0350f9 399,401-409,411,415-418,435,443
+web/panel/src/routes/projects/ProjectDetail.svelte
+  c81065fbff0350f9 151
+web/panel/src/routes/system/SystemPage.svelte
+  c81065fbff0350f9 3
+web/panel/tests/ProjectRoles.test.ts
+  c81065fbff0350f9 13-14,16,19-22,35,44,94,100-111,114,126-128,139-140
+internal/roleconfig/roleconfig.go
+  c81065fbff0350f9 2-8,28-30,72,76-108,112-121,132-135,138-167,172-173,175,177-178,213,326-330,333-337,340,342,344,346
+web/panel/src/routes/projects/ProjectRoles.svelte
+  c81065fbff0350f9 8,24-25,72,83,92-93,97,129,136,138,152,256-265,433-434,436-437,440-446
+internal/roleconfig/defaults.go
+  c81065fbff0350f9 5-8,10-13,17-20,23
+internal/panel/deps.go
+  c81065fbff0350f9 12,39-42,55-57,131-143,311-315,318,320,326-327,334-335,343-348,356-360
+internal/panel/runtime/manager_test.go
+  c81065fbff0350f9 28-47,114-152,154,250,429,489-643
+internal/panel/server/server.go
+  c81065fbff0350f9 282-287,290-298,300,302,307-308
+internal/roleconfig/resolver_test.go
+  c81065fbff0350f9 17-26,28-29,31,35-39,43-51,93,99,101,120,176,183,185,204,214-217,220,226,228,230-231,234-235
+web/panel/tests/SystemPage.test.ts
+  c81065fbff0350f9 40-50
+internal/panel/api/roles_handler.go
+  c81065fbff0350f9 14-18,23,31-32,41,45,50,55-56,62-64,70,72,75
+internal/app/app.go
+  c81065fbff0350f9 48-51,215-218,233
+internal/panel/contract/readers.go
+  c81065fbff0350f9 262-267,273,277-280
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "9b2624146302957a58c6d0d63652b10185dd1714",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1199,
+      "total_deletions": 1496,
+      "accepted_lines": 1184,
+      "overriden_lines": 0
+    }
+  }
+}
