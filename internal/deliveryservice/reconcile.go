@@ -31,7 +31,13 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 	report := ReconcileReport{Projects: []string{}, Requirements: []string{}, Plans: []string{}, RunnableWork: []string{}}
 
 	if req.Source != nil && req.Source.Kind == SourceJira && s.hydrator != nil {
-		sources, err := s.hydrator.Hydrate(ctx, resolved.Execution.ID, req.Session.Participant, req.IdempotencyKey+":hydrate")
+		// Hydrate runs before StartOrResolve opens req.Session below, so no
+		// delivery session exists yet for this call to scope the hydration
+		// snapshot to - req.Session.Participant is a free-text participant
+		// label, never a delivery_sessions.id, and passing it as sessionID
+		// here made every Jira hydration with a participant set fail
+		// CaptureJiraSnapshot's session-scope check with ErrScopeMismatch.
+		sources, err := s.hydrator.Hydrate(ctx, resolved.Execution.ID, "", req.IdempotencyKey+":hydrate")
 		if err != nil {
 			return report, fmt.Errorf("deliveryservice: hydrate jira source: %w", err)
 		}

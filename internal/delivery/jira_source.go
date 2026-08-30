@@ -183,7 +183,15 @@ func (s *Store) MapWorkItemToJiraTask(ctx context.Context, idempotencyKey, execu
 		if err != nil {
 			return err
 		}
-		if source.Provider != "jira" || source.CanonicalKey != "jira:"+issueKey {
+		var tenant string
+		if err := tx.QueryRowContext(ctx, `SELECT source_tenant FROM delivery_cases WHERE id = ?`, exec.CaseID).Scan(&tenant); err != nil {
+			return err
+		}
+		expectedKey, err := CanonicalKey(SourceInput{Provider: "jira", ExternalID: issueKey, Tenant: tenant})
+		if err != nil {
+			return err
+		}
+		if source.Provider != "jira" || source.CanonicalKey != expectedKey {
 			return ErrScopeMismatch
 		}
 		out = JiraWorkItemMapping{ID: newID(), CaseID: exec.CaseID, ExecutionID: exec.ID, SessionID: sessionID, OrchestrationID: exec.OrchestrationID, ParentTaskID: parentTaskID, RequirementSourceID: requirementSourceID, JiraIssueKey: issueKey, CreatedAt: now}

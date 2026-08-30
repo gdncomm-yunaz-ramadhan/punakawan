@@ -368,8 +368,12 @@ LEFT JOIN delivery_projection_versions pv ON pv.orchestration_id = e.orchestrati
 	for rows.Next() {
 		var orchestrationID string
 		var row lifetimeRow
-		if err := rows.Scan(&orchestrationID, &row.ExecutionID, &row.SourceKind, &row.JiraIssueKey, &row.ProjectionRevision); err != nil {
+		var jiraIssueKey sql.NullString
+		if err := rows.Scan(&orchestrationID, &row.ExecutionID, &row.SourceKind, &jiraIssueKey, &row.ProjectionRevision); err != nil {
 			return nil, fmt.Errorf("deliveryprojection: scan lifetime: %w", err)
+		}
+		if jiraIssueKey.Valid {
+			row.JiraIssueKey = jiraIssueKey.String
 		}
 		out[orchestrationID] = row
 	}

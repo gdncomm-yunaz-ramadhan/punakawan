@@ -210,8 +210,8 @@ func ReconcileGitHubCreatePR(ctx context.Context, gate *adapters.Gate, intent ou
 	if err != nil {
 		return ReconcileResult{}, err
 	}
-	headBranch, _ := payload["head_branch"].(string)
-	baseBranch, _ := payload["base_branch"].(string)
+	headBranch, _ := payload["headBranch"].(string)
+	baseBranch, _ := payload["baseBranch"].(string)
 	raw, err := gate.Call(ctx, intent.ID, "github.findPullRequest", map[string]any{
 		"repository": intent.TargetKey, "headBranch": headBranch, "baseBranch": baseBranch,
 	})

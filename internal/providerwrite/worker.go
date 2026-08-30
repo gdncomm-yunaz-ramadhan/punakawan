@@ -283,8 +283,8 @@ func executeGitHubCreatePR(ctx context.Context, gate *adapters.Gate, intent outb
 	}
 	raw, err := gate.ExecuteWrite(ctx, intent.ID, intent.Operation, map[string]any{
 		"repository": intent.TargetKey,
-		"baseBranch": payload["base_branch"],
-		"headBranch": payload["head_branch"],
+		"baseBranch": payload["baseBranch"],
+		"headBranch": payload["headBranch"],
 		"title":      payload["title"],
 		"body":       payload["body"],
 	})

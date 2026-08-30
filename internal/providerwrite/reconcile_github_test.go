@@ -60,7 +60,7 @@ func mustMarshal(t *testing.T, v any) json.RawMessage {
 func TestReconcileGitHubCreatePR_AppliedOnExactHeadBaseMatch(t *testing.T) {
 	result := mustMarshal(t, map[string]any{"normalized": map[string]any{"number": 42, "url": "https://github.com/acme/widgets/pull/42"}})
 	gate := adapters.NewGate("github", githubManifest(), fakeGitHubReadProvider{op: "github.findPullRequest", result: result})
-	payload, _ := json.Marshal(map[string]any{"head_branch": "feature-x", "base_branch": "main"})
+	payload, _ := json.Marshal(map[string]any{"headBranch": "feature-x", "baseBranch": "main"})
 	intent := outbox.Intent{ID: "intent-1", TargetKey: "acme/widgets", PayloadJSON: string(payload)}
 
 	got, err := ReconcileGitHubCreatePR(context.Background(), gate, intent)
@@ -78,7 +78,7 @@ func TestReconcileGitHubCreatePR_AppliedOnExactHeadBaseMatch(t *testing.T) {
 func TestReconcileGitHubCreatePR_NotAppliedWhenNoMatch(t *testing.T) {
 	result := mustMarshal(t, map[string]any{"normalized": nil})
 	gate := adapters.NewGate("github", githubManifest(), fakeGitHubReadProvider{op: "github.findPullRequest", result: result})
-	payload, _ := json.Marshal(map[string]any{"head_branch": "feature-x", "base_branch": "main"})
+	payload, _ := json.Marshal(map[string]any{"headBranch": "feature-x", "baseBranch": "main"})
 	intent := outbox.Intent{ID: "intent-1", TargetKey: "acme/widgets", PayloadJSON: string(payload)}
 
 	got, err := ReconcileGitHubCreatePR(context.Background(), gate, intent)
