@@ -27,7 +27,11 @@ const manifest = {
     secrets: [],
   },
   operations: {
-    sleep: { side_effect: false },
+    sleep: {
+      side_effect: false,
+      description: 'Sleep for the requested duration in milliseconds; used only to exercise cancellation.',
+      input_schema: { type: 'object', properties: { ms: { type: 'number' } } },
+    },
   },
 };
 

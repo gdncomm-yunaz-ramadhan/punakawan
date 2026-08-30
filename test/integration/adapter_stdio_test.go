@@ -52,7 +52,14 @@ func TestInitializeHandshake(t *testing.T) {
 			"secrets":    []string{},
 		},
 		"operations": map[string]any{
-			"noop": map[string]any{"side_effect": false},
+			"noop": map[string]any{
+				"side_effect": false,
+				"description": "Return the supplied value without side effects.",
+				"input_schema": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"value": map[string]any{}},
+				},
+			},
 		},
 	}
 

@@ -42,6 +42,12 @@ func (f *fakeAdapterCaller) Call(ctx context.Context, method string, params any)
 	return json.RawMessage(`{"ok":true}`), nil
 }
 
+// permissiveInputSchema is just enough of an input_schema to satisfy Gate's
+// per-call payload validation without constraining which params a test may
+// pass - these tests exercise JiraHook/Lifecycle behavior, not adapter
+// schema strictness.
+var permissiveInputSchema = protocol.AdapterManifestOperationsValueInputSchema{"type": "object"}
+
 func testManifest() protocol.AdapterManifest {
 	return protocol.AdapterManifest{
 		Id: "atlassian", Name: "atlassian", Version: "0.1.0", Protocol: "punakawan.adapter/v1",
@@ -52,11 +58,11 @@ func testManifest() protocol.AdapterManifest {
 			Secrets:    []string{},
 		},
 		Operations: protocol.AdapterManifestOperations{
-			"atlassian.getJiraIssue":               {SideEffect: false},
-			"atlassian.getTransitionsForJiraIssue":  {SideEffect: false},
-			"atlassian.addJiraComment":              {SideEffect: true},
-			"atlassian.addWorklog":                  {SideEffect: true},
-			"atlassian.transitionJiraIssue":         {SideEffect: true},
+			"atlassian.getJiraIssue":               {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.getTransitionsForJiraIssue":  {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addJiraComment":              {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addWorklog":                  {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.transitionJiraIssue":         {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
 		},
 	}
 }
@@ -167,19 +173,30 @@ func TestHandle_NoLinkedIssueSkipsSilently(t *testing.T) {
 }
 
 func TestHandle_PostsCommentForConfiguredEventAndDedupesOnRetry(t *testing.T) {
+	// EventDeliveryStarted is now handled entirely by jiraintegration.Service
+	// (see jirahooks.go's Handle), which builds its own comment from the
+	// orchestration's actually-persisted title/projects rather than trusting
+	// whatever an event happens to carry - so this test attaches a real
+	// title and project instead of only setting them on a synthetic event,
+	// matching how internal/delivery's own CreateOrchestration dispatch
+	// always populates Title/Projects from the just-persisted record.
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
 	hook, store, ob, fc := newTestHook(t, cfg)
 	ctx := context.Background()
-	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
+	orch, err := store.CreateOrchestrationWithOptions(ctx, "create-1", delivery.NewID(), nil, delivery.OrchestrationOptions{Title: "Refund delivery"})
 	if err != nil {
-		t.Fatalf("CreateOrchestration: %v", err)
+		t.Fatalf("CreateOrchestrationWithOptions: %v", err)
+	}
+	project, err := store.RegisterProject(ctx, "register-proj-a", delivery.NewID(), "proj-a", "https://example.test/proj-a.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	if _, err := store.AttachProject(ctx, "attach-proj-a", orch.Id, orch.Revision, project.Id); err != nil {
+		t.Fatalf("AttachProject: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
 
-	event := deliveryhooks.Event{
-		Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1,
-		Title: "Refund delivery", Projects: []string{"proj-a"},
-	}
+	event := deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}
 	if err := hook.Handle(ctx, event); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
@@ -198,7 +215,7 @@ func TestHandle_PostsCommentForConfiguredEventAndDedupesOnRetry(t *testing.T) {
 		t.Fatalf("issueIdOrKey = %v, want PAY-1", fc.calls[0]["issueIdOrKey"])
 	}
 	body, _ := fc.calls[0]["commentBody"].(string)
-	for _, want := range []string{"delivery started", "Refund delivery", "proj-a", orch.Id} {
+	for _, want := range []string{"delivery started", "Refund delivery", project.Id, orch.Id} {
 		if !strings.Contains(body, want) {
 			t.Errorf("commentBody = %q, want it to contain %q", body, want)
 		}

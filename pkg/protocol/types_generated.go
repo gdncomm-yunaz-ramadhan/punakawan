@@ -37,9 +37,18 @@ type AdapterManifest struct {
 }
 
 type AdapterManifestOperations map[string]struct {
+	// Description corresponds to the JSON schema field "description".
+	Description string `json:"description" yaml:"description" mapstructure:"description"`
+
+	// A JSON Schema of type "object" describing this operation's call parameters.
+	InputSchema AdapterManifestOperationsValueInputSchema `json:"input_schema" yaml:"input_schema" mapstructure:"input_schema"`
+
 	// SideEffect corresponds to the JSON schema field "side_effect".
 	SideEffect bool `json:"side_effect" yaml:"side_effect" mapstructure:"side_effect"`
 }
+
+// A JSON Schema of type "object" describing this operation's call parameters.
+type AdapterManifestOperationsValueInputSchema map[string]interface{}
 
 type AdapterManifestPermissions struct {
 	// Filesystem corresponds to the JSON schema field "filesystem".

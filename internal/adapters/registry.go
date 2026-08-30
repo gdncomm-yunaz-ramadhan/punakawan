@@ -5,10 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// punakawanAdapterProtocol is the only protocol version this process knows
+// how to speak. protocol.AdapterManifest's own JSON decoding already rejects
+// any other value; validateManifest re-checks it so a manifest built without
+// going through that decode path (or a future decode-side relaxation) still
+// cannot slip past initialization.
+const punakawanAdapterProtocol = "punakawan.adapter/v1"
 
 // defaultEnvAllowlist mirrors tools.DefaultEnvAllowlist: every spawned
 // adapter process needs at least these to run node at all.
@@ -103,6 +112,11 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 		return nil, fmt.Errorf("adapters: fetch capabilities for %q: %w", adapterID, err)
 	}
 
+	if err := validateManifest(adapterID, manifest, spec); err != nil {
+		_ = client.Kill()
+		return nil, fmt.Errorf("adapters: invalid manifest from %q: %w", adapterID, err)
+	}
+
 	if _, err := client.Call(ctx, "initialize", manifest); err != nil {
 		_ = client.Kill()
 		return nil, fmt.Errorf("adapters: initialize %q: %w", adapterID, err)
@@ -129,6 +143,65 @@ func fetchManifest(ctx context.Context, client *Client) (protocol.AdapterManifes
 		return protocol.AdapterManifest{}, fmt.Errorf("decode manifest: %w", err)
 	}
 	return manifest, nil
+}
+
+// validateManifest checks the contract a manifest must satisfy before this
+// process will initialize an adapter with it: it must actually be the
+// adapter this Registry asked for, every operation must document itself
+// well enough for a caller to build a valid payload, and every secret it
+// asks for must be one this host has explicitly agreed to hand it - never
+// discovered only once a write is already in flight.
+func validateManifest(adapterID string, manifest protocol.AdapterManifest, spec AdapterSpec) error {
+	if manifest.Protocol != punakawanAdapterProtocol {
+		return fmt.Errorf("protocol %q does not match %q", manifest.Protocol, punakawanAdapterProtocol)
+	}
+	if manifest.Id != adapterID {
+		return fmt.Errorf("manifest id %q does not match configured adapter id %q", manifest.Id, adapterID)
+	}
+	if len(manifest.Operations) == 0 {
+		return fmt.Errorf("manifest declares no operations")
+	}
+	for op, metadata := range manifest.Operations {
+		if strings.TrimSpace(metadata.Description) == "" {
+			return fmt.Errorf("operation %q has no description", op)
+		}
+		if _, err := resolveInputSchema(metadata.InputSchema); err != nil {
+			return fmt.Errorf("operation %q has an invalid input_schema: %w", op, err)
+		}
+	}
+
+	allowedSecrets := make(map[string]bool, len(spec.EnvPassthrough))
+	for _, name := range spec.EnvPassthrough {
+		allowedSecrets[name] = true
+	}
+	for _, secret := range manifest.Permissions.Secrets {
+		if !allowedSecrets[secret] {
+			return fmt.Errorf("declares secret %q that this host has not authorized for it", secret)
+		}
+	}
+	return nil
+}
+
+// resolveInputSchema decodes and resolves an operation's declared
+// input_schema, requiring it to describe a JSON object: every operation's
+// call parameters are always a JSON object, never a scalar or array.
+func resolveInputSchema(raw protocol.AdapterManifestOperationsValueInputSchema) (*jsonschema.Resolved, error) {
+	encoded, err := json.Marshal(map[string]any(raw))
+	if err != nil {
+		return nil, fmt.Errorf("encode input_schema: %w", err)
+	}
+	var sch jsonschema.Schema
+	if err := json.Unmarshal(encoded, &sch); err != nil {
+		return nil, fmt.Errorf("decode input_schema: %w", err)
+	}
+	if sch.Type != "object" {
+		return nil, fmt.Errorf(`input_schema must declare "type": "object", got %q`, sch.Type)
+	}
+	resolved, err := sch.Resolve(nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolve input_schema: %w", err)
+	}
+	return resolved, nil
 }
 
 // buildEnv resolves defaultEnvAllowlist plus extra against this process's

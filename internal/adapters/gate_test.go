@@ -42,9 +42,33 @@ func testManifest() protocol.AdapterManifest {
 			Secrets:    []string{},
 		},
 		Operations: protocol.AdapterManifestOperations{
-			"atlassian.getJiraIssue":   {SideEffect: false},
-			"atlassian.addJiraComment": {SideEffect: true},
-			"atlassian.addWorklog":     {SideEffect: true},
+			"atlassian.getJiraIssue": {
+				SideEffect:  false,
+				Description: "Fetch a Jira issue by key.",
+				InputSchema: protocol.AdapterManifestOperationsValueInputSchema{
+					"type":       "object",
+					"required":   []any{"issueIdOrKey"},
+					"properties": map[string]any{"issueIdOrKey": map[string]any{"type": "string"}},
+				},
+			},
+			"atlassian.addJiraComment": {
+				SideEffect:  true,
+				Description: "Add a comment to a Jira issue.",
+				InputSchema: protocol.AdapterManifestOperationsValueInputSchema{
+					"type":       "object",
+					"required":   []any{"commentBody"},
+					"properties": map[string]any{"commentBody": map[string]any{"type": "string"}},
+				},
+			},
+			"atlassian.addWorklog": {
+				SideEffect:  true,
+				Description: "Add a worklog entry to a Jira issue.",
+				InputSchema: protocol.AdapterManifestOperationsValueInputSchema{
+					"type":       "object",
+					"required":   []any{"issueIdOrKey"},
+					"properties": map[string]any{"issueIdOrKey": map[string]any{"type": "string"}},
+				},
+			},
 		},
 	}
 }

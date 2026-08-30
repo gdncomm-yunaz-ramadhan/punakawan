@@ -25,6 +25,12 @@ func newOutboxStore(t *testing.T) *outbox.Store {
 	return outbox.New(db)
 }
 
+// permissiveInputSchema is just enough of an input_schema to satisfy Gate's
+// per-call payload validation without constraining which params a test may
+// pass - these tests exercise outbox/worker/reconciler behavior, not
+// adapter schema strictness.
+var permissiveInputSchema = protocol.AdapterManifestOperationsValueInputSchema{"type": "object"}
+
 func atlassianManifest() protocol.AdapterManifest {
 	return protocol.AdapterManifest{
 		Id: "atlassian", Name: "atlassian", Version: "0.1.0", Protocol: "punakawan.adapter/v1",
@@ -35,14 +41,15 @@ func atlassianManifest() protocol.AdapterManifest {
 			Secrets:    []string{},
 		},
 		Operations: protocol.AdapterManifestOperations{
-			"atlassian.getJiraIssue":        {SideEffect: false},
-			"atlassian.getJiraComments":     {SideEffect: false},
-			"atlassian.addJiraComment":      {SideEffect: true},
-			"atlassian.getTransitionsForJiraIssue": {SideEffect: false},
-			"atlassian.transitionJiraIssue": {SideEffect: true},
-			"atlassian.addWorklog":          {SideEffect: true},
-			"atlassian.createJiraSubtask":   {SideEffect: true},
-			"atlassian.editJiraIssue":       {SideEffect: true},
+			"atlassian.getJiraIssue":               {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.getJiraComments":            {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addJiraComment":             {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.getTransitionsForJiraIssue": {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.transitionJiraIssue":        {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addWorklog":                 {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.listJiraWorklogs":           {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.createJiraSubtask":          {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.editJiraIssue":              {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
 		},
 	}
 }

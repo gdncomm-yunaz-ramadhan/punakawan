@@ -3,8 +3,11 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -26,6 +29,16 @@ type Gate struct {
 	adapterID string
 	manifest  protocol.AdapterManifest
 	client    caller
+
+	// schemaMu/schemas cache each operation's resolved input_schema the
+	// first time it's needed, since resolving a JSON Schema is real work
+	// that has no reason to repeat on every call to the same operation. Its
+	// manifest was already validated at Registry.Gate time (every
+	// input_schema resolves cleanly), so resolution here cannot fail in
+	// practice - the error return only guards against a Gate constructed
+	// directly (as tests do) with a manifest that skipped that validation.
+	schemaMu sync.Mutex
+	schemas  map[string]*jsonschema.Resolved
 }
 
 // NewGate constructs a Gate for an already-started adapter client and its
@@ -49,6 +62,9 @@ func (g *Gate) Call(ctx context.Context, runID, op string, params map[string]any
 	if metadata.SideEffect {
 		return nil, fmt.Errorf("adapters: side-effecting operation %q must be enqueued through a domain service", op)
 	}
+	if err := g.validatePayload(op, params); err != nil {
+		return nil, err
+	}
 	return g.rawCall(ctx, op, params)
 }
 
@@ -68,7 +84,50 @@ func (g *Gate) ExecuteWrite(ctx context.Context, runID, op string, params map[st
 	if !metadata.SideEffect {
 		return nil, fmt.Errorf("adapters: operation %q is not side-effecting; call it through Call instead", op)
 	}
+	if err := g.validatePayload(op, params); err != nil {
+		return nil, err
+	}
 	return g.rawCall(ctx, op, params)
+}
+
+// validatePayload rejects a call whose params do not match op's declared
+// input_schema before the adapter process ever sees it - a malformed
+// side-effecting call must fail closed here, not reach the provider and
+// fail (or worse, partially succeed) in some adapter-specific way. op is
+// assumed already looked up by the caller (Call/ExecuteWrite), so a missing
+// entry here can only mean this exact function has a bug.
+func (g *Gate) validatePayload(op string, params map[string]any) error {
+	metadata, ok := g.manifest.Operations[op]
+	if !ok {
+		return fmt.Errorf("adapters: operation %q is not declared", op)
+	}
+	resolved, err := g.resolvedInputSchema(op, metadata.InputSchema)
+	if err != nil {
+		return fmt.Errorf("adapters: operation %q has an invalid input_schema: %w", op, err)
+	}
+	if err := resolved.Validate(params); err != nil {
+		return fmt.Errorf("adapters: operation %q payload does not match its input_schema: %w", op, err)
+	}
+	return nil
+}
+
+// resolvedInputSchema returns op's cached resolved input_schema, resolving
+// and caching it on first use.
+func (g *Gate) resolvedInputSchema(op string, raw protocol.AdapterManifestOperationsValueInputSchema) (*jsonschema.Resolved, error) {
+	g.schemaMu.Lock()
+	defer g.schemaMu.Unlock()
+	if resolved, ok := g.schemas[op]; ok {
+		return resolved, nil
+	}
+	resolved, err := resolveInputSchema(raw)
+	if err != nil {
+		return nil, err
+	}
+	if g.schemas == nil {
+		g.schemas = make(map[string]*jsonschema.Resolved)
+	}
+	g.schemas[op] = resolved
+	return resolved, nil
 }
 
 // rawCall merges {"op": op} into params (matching the prototype adapter's
@@ -80,5 +139,18 @@ func (g *Gate) rawCall(ctx context.Context, op string, params map[string]any) (j
 		merged[k] = v
 	}
 	merged["op"] = op
-	return g.client.Call(ctx, "execute", merged)
+	raw, err := g.client.Call(ctx, "execute", merged)
+	if err != nil {
+		var tooLarge *ErrResponseTooLarge
+		if errors.As(err, &tooLarge) {
+			// Client has no notion of adapter id; attribute the bounded
+			// diagnostic to this Gate's adapter and the exact operation that
+			// overflowed, rather than the raw JSON-RPC method name "execute".
+			attributed := *tooLarge
+			attributed.AdapterID = g.adapterID
+			attributed.Operation = op
+			return nil, &attributed
+		}
+	}
+	return raw, err
 }

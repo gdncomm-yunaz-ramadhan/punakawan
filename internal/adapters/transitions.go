@@ -57,3 +57,21 @@ func MatchJiraTransition(transitions []JiraTransition, targetStatusName string) 
 	}
 	return JiraTransition{}, available, false
 }
+
+// MatchAllJiraTransitions returns every transition among transitions whose
+// target status name or own name matches targetStatusName
+// case-insensitively (the same matching rule MatchJiraTransition applies),
+// in transitions' order. A caller resolving a configured target status at
+// enqueue time uses this instead of MatchJiraTransition, so it can tell
+// "exactly one reachable transition" apart from "more than one reachable
+// transition names or targets this same status" - the latter needs a
+// human decision, not an arbitrary pick.
+func MatchAllJiraTransitions(transitions []JiraTransition, targetStatusName string) []JiraTransition {
+	var matches []JiraTransition
+	for _, t := range transitions {
+		if strings.EqualFold(t.ToStatusName, targetStatusName) || strings.EqualFold(t.Name, targetStatusName) {
+			matches = append(matches, t)
+		}
+	}
+	return matches
+}

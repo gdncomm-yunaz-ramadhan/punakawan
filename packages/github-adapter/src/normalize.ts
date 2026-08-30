@@ -29,6 +29,26 @@ export interface NormalizedPullRequest {
   url: string | undefined;
   createdAt: string | undefined;
   updatedAt: string | undefined;
+  /** Current label names - read back before/after a github.addLabels write to confirm it applied. */
+  labels: string[];
+  /** Currently requested individual reviewer logins - read back before/after a github.requestReviewers write to confirm it applied. Team requests are not included; GitHub reports those separately. */
+  requestedReviewers: string[];
+}
+
+function compactLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const name = typeof entry === 'string' ? entry : asString(asRecord(entry).name);
+    return name ? [name] : [];
+  });
+}
+
+function compactRequestedReviewers(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const login = asString(asRecord(entry).login);
+    return login ? [login] : [];
+  });
 }
 
 export function normalizePullRequest(payload: Record<string, unknown>): NormalizedPullRequest {
@@ -50,6 +70,8 @@ export function normalizePullRequest(payload: Record<string, unknown>): Normaliz
     url: asString(payload.html_url),
     createdAt: asString(payload.created_at),
     updatedAt: asString(payload.updated_at),
+    labels: compactLabels(payload.labels),
+    requestedReviewers: compactRequestedReviewers(payload.requested_reviewers),
   };
 }
 
@@ -86,6 +108,41 @@ export function normalizeCheckRun(payload: Record<string, unknown>): NormalizedC
     status: asString(payload.status) ?? 'unknown',
     conclusion: asString(payload.conclusion),
     url: asString(payload.html_url),
+  };
+}
+
+export interface NormalizedCommitStatus {
+  context: string;
+  state: string;
+  description: string | undefined;
+  targetUrl: string | undefined;
+}
+
+export interface NormalizedCombinedStatus {
+  state: string;
+  statuses: NormalizedCommitStatus[];
+}
+
+/**
+ * Normalizes a commit's combined legacy Status API result
+ * (docs.github.com/en/rest/commits/statuses) - distinct from, and not
+ * covered by, the newer Check Runs API normalizeCheckRun already handles.
+ * A pull request's true CI state can depend on either or both depending on
+ * which integration posted it.
+ */
+export function normalizeCombinedStatus(payload: Record<string, unknown>): NormalizedCombinedStatus {
+  const statuses = Array.isArray(payload.statuses) ? payload.statuses : [];
+  return {
+    state: asString(payload.state) ?? 'unknown',
+    statuses: statuses.map((entry) => {
+      const status = asRecord(entry);
+      return {
+        context: asString(status.context) ?? '',
+        state: asString(status.state) ?? 'unknown',
+        description: asString(status.description),
+        targetUrl: asString(status.target_url),
+      };
+    }),
   };
 }
 
@@ -178,6 +235,33 @@ export const INACCESSIBLE_REPOSITORY: NormalizedRepositoryAccess = {
   permissions: null,
   defaultBranch: null,
 };
+
+export interface NormalizedReview {
+  id: string;
+  author: string | undefined;
+  state: string;
+  body: string;
+  /** The commit SHA this review was submitted against - github.review reconciliation matches an intent's target head SHA against this. */
+  commitId: string | undefined;
+  submittedAt: string | undefined;
+}
+
+export function normalizeReview(payload: Record<string, unknown>): NormalizedReview {
+  const user = asRecord(payload.user);
+  return {
+    id: String(payload.id ?? ''),
+    author: asString(user.login),
+    state: asString(payload.state) ?? 'unknown',
+    body: asString(payload.body) ?? '',
+    commitId: asString(payload.commit_id),
+    submittedAt: asString(payload.submitted_at),
+  };
+}
+
+export interface NormalizedReviewThreadState {
+  id: string;
+  isResolved: boolean;
+}
 
 export function normalizeIssueComment(payload: Record<string, unknown>): NormalizedComment {
   const user = asRecord(payload.user);

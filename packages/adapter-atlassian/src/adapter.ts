@@ -23,6 +23,7 @@ import {
   listJiraAttachments,
   listJiraBoards,
   listJiraSprints,
+  listJiraWorklogs,
   searchConfluence,
   searchJira,
   transitionJiraIssue,
@@ -65,93 +66,98 @@ export function createHandlers(options?: {
       return AdapterManifestSchema.parse(manifest);
     },
 
-    async execute(params) {
+    async execute(params, signal) {
       const { op, ...rest } = params as { op: string } & Record<string, unknown>;
 
       switch (op) {
         case 'atlassian.getJiraIssue': {
           const { issueIdOrKey, fields, includeRaw } = rest as { issueIdOrKey: string; fields?: string[]; includeRaw?: boolean };
           if (!issueIdOrKey) throw new Error('atlassian.getJiraIssue requires "issueIdOrKey"');
-          return getJiraIssue(getClient(), { issueIdOrKey, fields, includeRaw });
+          return getJiraIssue(getClient(), { issueIdOrKey, fields, includeRaw }, signal);
         }
         case 'atlassian.getJiraComments': {
-          const { issueIdOrKey, startAt, maxResults } = rest as { issueIdOrKey: string; startAt?: number; maxResults?: number };
+          const { issueIdOrKey, maxResults } = rest as { issueIdOrKey: string; maxResults?: number };
           if (!issueIdOrKey) throw new Error('atlassian.getJiraComments requires "issueIdOrKey"');
-          return getJiraComments(getClient(), { issueIdOrKey, startAt, maxResults });
+          return getJiraComments(getClient(), { issueIdOrKey, maxResults }, signal);
         }
         case 'atlassian.getJiraRemoteLinks': {
           const { issueIdOrKey, maxResults } = rest as { issueIdOrKey: string; maxResults?: number };
           if (!issueIdOrKey) throw new Error('atlassian.getJiraRemoteLinks requires "issueIdOrKey"');
-          return getJiraRemoteLinks(getClient(), { issueIdOrKey, maxResults });
+          return getJiraRemoteLinks(getClient(), { issueIdOrKey, maxResults }, signal);
         }
         case 'atlassian.getJiraEpic': {
           const { epicIdOrKey, maxChildren } = rest as { epicIdOrKey: string; maxChildren?: number };
           if (!epicIdOrKey) throw new Error('atlassian.getJiraEpic requires "epicIdOrKey"');
-          return getJiraEpic(getClient(), { epicIdOrKey, maxChildren });
+          return getJiraEpic(getClient(), { epicIdOrKey, maxChildren }, signal);
         }
         case 'atlassian.listJiraAttachments': {
           const { issueIdOrKey, maxResults } = rest as { issueIdOrKey: string; maxResults?: number };
           if (!issueIdOrKey) throw new Error('atlassian.listJiraAttachments requires "issueIdOrKey"');
-          return listJiraAttachments(getClient(), { issueIdOrKey, maxResults });
+          return listJiraAttachments(getClient(), { issueIdOrKey, maxResults }, signal);
+        }
+        case 'atlassian.listJiraWorklogs': {
+          const { issueIdOrKey, maxResults } = rest as { issueIdOrKey: string; maxResults?: number };
+          if (!issueIdOrKey) throw new Error('atlassian.listJiraWorklogs requires "issueIdOrKey"');
+          return listJiraWorklogs(getClient(), { issueIdOrKey, maxResults }, signal);
         }
         case 'atlassian.downloadJiraAttachment': {
           const { attachmentId, outputPath } = rest as { attachmentId: string; outputPath: string };
           if (!attachmentId || !outputPath) throw new Error('atlassian.downloadJiraAttachment requires "attachmentId" and "outputPath"');
-          return downloadJiraAttachment(getClient(), { attachmentId, outputPath }, env.PUNAKAWAN_WORKSPACE_ROOT ?? '');
+          return downloadJiraAttachment(getClient(), { attachmentId, outputPath }, env.PUNAKAWAN_WORKSPACE_ROOT ?? '', signal);
         }
         case 'atlassian.uploadJiraAttachment': {
           const { issueIdOrKey, filePath } = rest as { issueIdOrKey: string; filePath: string };
           if (!issueIdOrKey || !filePath) throw new Error('atlassian.uploadJiraAttachment requires "issueIdOrKey" and "filePath"');
-          return uploadJiraAttachment(getClient(), { issueIdOrKey, filePath }, env.PUNAKAWAN_WORKSPACE_ROOT ?? '');
+          return uploadJiraAttachment(getClient(), { issueIdOrKey, filePath }, env.PUNAKAWAN_WORKSPACE_ROOT ?? '', signal);
         }
         case 'atlassian.deleteJiraAttachment': {
           const { attachmentId } = rest as { attachmentId: string };
           if (!attachmentId) throw new Error('atlassian.deleteJiraAttachment requires "attachmentId"');
-          return deleteJiraAttachment(getClient(), { attachmentId });
+          return deleteJiraAttachment(getClient(), { attachmentId }, signal);
         }
         case 'atlassian.getConfluencePage': {
           const { pageId, contentFormat, includeRaw } = rest as { pageId: string; contentFormat?: string; includeRaw?: boolean };
           if (!pageId) throw new Error('atlassian.getConfluencePage requires "pageId"');
-          return getConfluencePage(getClient(), { pageId, contentFormat, includeRaw });
+          return getConfluencePage(getClient(), { pageId, contentFormat, includeRaw }, signal);
         }
         case 'atlassian.searchJira': {
           const { jql, fields, maxResults, includeRaw } = rest as { jql: string; fields?: string[]; maxResults?: number; includeRaw?: boolean };
           if (!jql) throw new Error('atlassian.searchJira requires "jql"');
-          return searchJira(getClient(), { jql, fields, maxResults, includeRaw });
+          return searchJira(getClient(), { jql, fields, maxResults, includeRaw }, signal);
         }
         case 'atlassian.searchConfluence': {
           const { cql, includeRaw } = rest as { cql: string; includeRaw?: boolean };
           if (!cql) throw new Error('atlassian.searchConfluence requires "cql"');
-          return searchConfluence(getClient(), { cql, includeRaw });
+          return searchConfluence(getClient(), { cql, includeRaw }, signal);
         }
         case 'atlassian.addJiraComment': {
           const { issueIdOrKey, commentBody } = rest as { issueIdOrKey: string; commentBody: string };
           if (!issueIdOrKey || !commentBody) {
             throw new Error('atlassian.addJiraComment requires "issueIdOrKey" and "commentBody"');
           }
-          return addJiraComment(getClient(), { issueIdOrKey, commentBody });
+          return addJiraComment(getClient(), { issueIdOrKey, commentBody }, signal);
         }
         case 'atlassian.getTransitionsForJiraIssue': {
           const { issueIdOrKey } = rest as { issueIdOrKey: string };
           if (!issueIdOrKey) throw new Error('atlassian.getTransitionsForJiraIssue requires "issueIdOrKey"');
-          return getTransitionsForJiraIssue(getClient(), { issueIdOrKey });
+          return getTransitionsForJiraIssue(getClient(), { issueIdOrKey }, signal);
         }
         case 'atlassian.transitionJiraIssue': {
           const { issueIdOrKey, transitionId } = rest as { issueIdOrKey: string; transitionId: string };
           if (!issueIdOrKey || !transitionId) {
             throw new Error('atlassian.transitionJiraIssue requires "issueIdOrKey" and "transitionId"');
           }
-          return transitionJiraIssue(getClient(), { issueIdOrKey, transitionId });
+          return transitionJiraIssue(getClient(), { issueIdOrKey, transitionId }, signal);
         }
         case 'atlassian.editJiraIssue': {
           const edit = rest as unknown as Parameters<typeof editJiraIssue>[1];
           if (!edit.issueIdOrKey) throw new Error('atlassian.editJiraIssue requires "issueIdOrKey"');
-          return editJiraIssue(getClient(), edit);
+          return editJiraIssue(getClient(), edit, signal);
         }
         case 'atlassian.editJiraIssueFields': {
           const { issueIdOrKey, fields } = rest as { issueIdOrKey: string; fields: Record<string, unknown> };
           if (!issueIdOrKey || !fields) throw new Error('atlassian.editJiraIssueFields requires "issueIdOrKey" and "fields"');
-          return editJiraIssueFields(getClient(), { issueIdOrKey, fields });
+          return editJiraIssueFields(getClient(), { issueIdOrKey, fields }, signal);
         }
         case 'atlassian.addWorklog': {
           const { issueIdOrKey, timeSpentSeconds, comment } = rest as {
@@ -162,14 +168,14 @@ export function createHandlers(options?: {
           if (!issueIdOrKey || timeSpentSeconds === undefined) {
             throw new Error('atlassian.addWorklog requires "issueIdOrKey" and "timeSpentSeconds"');
           }
-          return addWorklog(getClient(), { issueIdOrKey, timeSpentSeconds, comment });
+          return addWorklog(getClient(), { issueIdOrKey, timeSpentSeconds, comment }, signal);
         }
         case 'atlassian.getIssueTypeFieldMeta': {
           const { projectIdOrKey, issueTypeId } = rest as { projectIdOrKey: string; issueTypeId: string };
           if (!projectIdOrKey || !issueTypeId) {
             throw new Error('atlassian.getIssueTypeFieldMeta requires "projectIdOrKey" and "issueTypeId"');
           }
-          return getIssueTypeFieldMeta(getClient(), { projectIdOrKey, issueTypeId });
+          return getIssueTypeFieldMeta(getClient(), { projectIdOrKey, issueTypeId }, signal);
         }
         case 'atlassian.createJiraIssue': {
           const { projectKey, issueTypeName, summary, description, parent, additionalFields } = rest as {
@@ -183,26 +189,26 @@ export function createHandlers(options?: {
           if (!projectKey || !issueTypeName || !summary) {
             throw new Error('atlassian.createJiraIssue requires "projectKey", "issueTypeName", and "summary"');
           }
-          return createJiraIssue(getClient(), { projectKey, issueTypeName, summary, description, parent, additionalFields });
+          return createJiraIssue(getClient(), { projectKey, issueTypeName, summary, description, parent, additionalFields }, signal);
         }
         case 'atlassian.createJiraSubtask': {
           const { parentKey, projectKey, issueTypeName, candidates } = rest as {
             parentKey: string;
             projectKey: string;
             issueTypeName: string;
-            candidates: { summary: string; description?: string; additionalFields?: Record<string, unknown> }[];
+            candidates: { summary: string; description?: string; additionalFields?: Record<string, unknown>; intentMarker?: string }[];
           };
           if (!parentKey || !projectKey || !issueTypeName || !candidates) {
             throw new Error(
               'atlassian.createJiraSubtask requires "parentKey", "projectKey", "issueTypeName", and "candidates"',
             );
           }
-          return createJiraSubtask(getClient(), { parentKey, projectKey, issueTypeName, candidates });
+          return createJiraSubtask(getClient(), { parentKey, projectKey, issueTypeName, candidates }, signal);
         }
         case 'atlassian.searchJiraUsers': {
           const { query, maxResults } = rest as { query: string; maxResults?: number };
           if (!query) throw new Error('atlassian.searchJiraUsers requires "query"');
-          return searchJiraUsers(getClient(), { query, maxResults });
+          return searchJiraUsers(getClient(), { query, maxResults }, signal);
         }
         case 'atlassian.createIssueLink': {
           const { linkType, inwardIssueKey, outwardIssueKey } = rest as {
@@ -213,7 +219,7 @@ export function createHandlers(options?: {
           if (!linkType || !inwardIssueKey || !outwardIssueKey) {
             throw new Error('atlassian.createIssueLink requires "linkType", "inwardIssueKey", and "outwardIssueKey"');
           }
-          return createIssueLink(getClient(), { linkType, inwardIssueKey, outwardIssueKey });
+          return createIssueLink(getClient(), { linkType, inwardIssueKey, outwardIssueKey }, signal);
         }
         case 'atlassian.listJiraBoards': {
           const { projectKeyOrId, type, maxResults } = rest as {
@@ -221,12 +227,12 @@ export function createHandlers(options?: {
             type?: string;
             maxResults?: number;
           };
-          return listJiraBoards(getClient(), { projectKeyOrId, type, maxResults });
+          return listJiraBoards(getClient(), { projectKeyOrId, type, maxResults }, signal);
         }
         case 'atlassian.listJiraSprints': {
           const { boardId, state, maxResults } = rest as { boardId: number; state?: string; maxResults?: number };
           if (boardId === undefined || boardId === null) throw new Error('atlassian.listJiraSprints requires "boardId"');
-          return listJiraSprints(getClient(), { boardId, state, maxResults });
+          return listJiraSprints(getClient(), { boardId, state, maxResults }, signal);
         }
         default:
           throw new Error(`Unsupported op: ${op}`);

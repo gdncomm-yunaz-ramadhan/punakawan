@@ -143,6 +143,17 @@ func (s *Store) GetWorkLog(ctx context.Context, orchestrationID, id string) (*Wo
 	return scanWorkLog(row)
 }
 
+// GetWorkLogByID looks up a worklog ledger entry by its id alone (the
+// table's primary key), for a caller that only has the entry id and not
+// the orchestration it belongs to.
+func (s *Store) GetWorkLogByID(ctx context.Context, id string) (*WorkLogEntry, error) {
+	row := s.db.Reader().QueryRowContext(ctx, `
+        SELECT id, orchestration_id, case_id, execution_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds,
+               summary, sync_status, jira_worklog_id, synced_at, created_at
+        FROM delivery_worklogs WHERE id = ?`, id)
+	return scanWorkLog(row)
+}
+
 // RetryWorkLogSync replays sync projection for an already-recorded ledger row.
 func (s *Store) RetryWorkLogSync(ctx context.Context, orchestrationID, id string) (*WorkLogEntry, error) {
 	entry, err := s.GetWorkLog(ctx, orchestrationID, id)

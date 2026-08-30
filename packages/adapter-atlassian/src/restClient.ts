@@ -12,6 +12,8 @@ export interface RestRequestOptions {
   body?: unknown;
   multipart?: FormData;
   headers?: Record<string, string>;
+  /** Propagated straight into fetch's own options so an in-flight request aborts when the caller's operation is cancelled. */
+  signal?: AbortSignal;
 }
 
 export interface RestResponse<T = unknown> {
@@ -102,6 +104,20 @@ export async function resolveCloudId(host: string, fetchImpl: typeof fetch = fet
   return body.cloudId;
 }
 
+/**
+ * An AbortError must reach the JSON-RPC layer (packages/adapter-sdk/src/stdio.ts)
+ * with its own name intact so it can be reported as `data: {code:
+ * "cancelled"}` instead of an ordinary rejection - wrapping it in a plain
+ * Error the way every other network failure below is wrapped (for a
+ * helpful "which request failed and why" message) would erase that
+ * distinction. Only a non-abort failure gets the wrapped, contextual
+ * message; an abort is rethrown exactly as fetch raised it.
+ */
+function rethrowUnlessAborted(error: unknown, context: string): Error {
+  if (error instanceof Error && error.name === 'AbortError') return error;
+  return new Error(`${context}: ${(error as Error).message}`);
+}
+
 function errorDetail(data: unknown): string {
   if (typeof data === 'string') return data;
   try {
@@ -135,7 +151,7 @@ export class AtlassianRestClient {
   }
 
   /** Downloads binary Jira content without converting it to model-facing text. */
-  async jiraBytes(path: string): Promise<BinaryRestResponse> {
+  async jiraBytes(path: string, signal?: AbortSignal): Promise<BinaryRestResponse> {
     const url = await this.buildURL('jira', path);
     let response: Response;
     try {
@@ -144,9 +160,10 @@ export class AtlassianRestClient {
           Accept: '*/*',
           Authorization: buildAuthorizationHeader(this.config),
         },
+        signal,
       });
     } catch (error) {
-      throw new Error(`Direct Atlassian REST request failed for ${url}: ${(error as Error).message}`);
+      throw rethrowUnlessAborted(error, `Direct Atlassian REST request failed for ${url}`);
     }
     if (!response.ok) {
       const detail = await response.text();
@@ -193,9 +210,9 @@ export class AtlassianRestClient {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(url, { method: options.method ?? 'GET', headers, body });
+      response = await this.fetchImpl(url, { method: options.method ?? 'GET', headers, body, signal: options.signal });
     } catch (error) {
-      throw new Error(`Direct Atlassian REST request failed for ${url}: ${(error as Error).message}`);
+      throw rethrowUnlessAborted(error, `Direct Atlassian REST request failed for ${url}`);
     }
 
     const text = response.status === 204 ? '' : await response.text();

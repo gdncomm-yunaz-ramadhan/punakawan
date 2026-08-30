@@ -92,8 +92,35 @@ func decodePayload(intent outbox.Intent) (map[string]any, error) {
 // reconcileJiraComment can recognize a comment this exact intent already
 // created after an ambiguous attempt, without depending on comparing free
 // text bodies that a retried enqueue might phrase slightly differently.
+// Deliberately not an HTML comment (`<!-- ... -->`): the Atlassian
+// adapter's Markdown-to-ADF conversion (marklassian) treats a raw HTML
+// comment as an HTML block and drops it entirely, so a marker embedded
+// that way would never actually reach Jira - it must be plain text.
 func jiraCommentMarker(intentID string) string {
 	return "punakawan:intent:" + intentID
+}
+
+// jiraWorklogMarker is embedded in every worklog comment this package
+// posts, so reconcileJiraWorklog can recognize a worklog this exact intent
+// already created after an ambiguous attempt.
+func jiraWorklogMarker(intentID string) string {
+	return "punakawan:intent:" + intentID
+}
+
+// githubReviewMarker is embedded (as an HTML comment, invisible when
+// rendered) in every pull request review body this package submits, so
+// ReconcileGitHubReview can recognize a review this exact intent already
+// submitted after an ambiguous attempt. Unlike Jira's markdown-to-ADF
+// pipeline, GitHub's own Markdown rendering does not strip HTML comments.
+func githubReviewMarker(intentID string) string {
+	return "<!-- punakawan:intent:" + intentID + " -->"
+}
+
+// githubReplyMarker is embedded the same way in every review comment reply
+// this package posts, so ReconcileGitHubReply can recognize a reply this
+// exact intent already posted.
+func githubReplyMarker(intentID string) string {
+	return "<!-- punakawan:intent:" + intentID + " -->"
 }
 
 func executeJiraComment(ctx context.Context, gate *adapters.Gate, intent outbox.Intent) (string, []outbox.Effect, error) {
@@ -105,7 +132,7 @@ func executeJiraComment(ctx context.Context, gate *adapters.Gate, intent outbox.
 	if strings.TrimSpace(body) == "" {
 		return "", nil, fmt.Errorf("providerwrite: jira comment intent %s has no comment_body", intent.ID)
 	}
-	full := body + "\n\n<!-- " + jiraCommentMarker(intent.ID) + " -->"
+	full := body + "\n\n[" + jiraCommentMarker(intent.ID) + "]"
 	raw, err := gate.ExecuteWrite(ctx, intent.ID, intent.Operation, map[string]any{
 		"issueIdOrKey": intent.TargetKey, "commentBody": full,
 	})
@@ -159,10 +186,13 @@ func executeJiraWorklog(ctx context.Context, gate *adapters.Gate, intent outbox.
 	if !ok || seconds <= 0 {
 		return "", nil, fmt.Errorf("providerwrite: jira worklog intent %s requires positive time_spent_seconds", intent.ID)
 	}
-	params := map[string]any{"issueIdOrKey": intent.TargetKey, "timeSpentSeconds": int(seconds)}
-	if comment, ok := payload["comment"].(string); ok && comment != "" {
-		params["comment"] = comment
-	}
+	comment, _ := payload["comment"].(string)
+	// jiraWorklogMarker below is what reconcileJiraWorklog searches for
+	// after an ambiguous attempt; it must be embedded even when the caller
+	// supplied no comment, since a worklog with only a marker is still
+	// positively identifiable, while one with no comment at all is not.
+	comment = strings.TrimSpace(comment + "\n\n[" + jiraWorklogMarker(intent.ID) + "]")
+	params := map[string]any{"issueIdOrKey": intent.TargetKey, "timeSpentSeconds": int(seconds), "comment": comment}
 	raw, err := gate.ExecuteWrite(ctx, intent.ID, intent.Operation, params)
 	if err != nil {
 		return "", nil, err
@@ -289,10 +319,12 @@ func executeGitHubReview(ctx context.Context, gate *adapters.Gate, intent outbox
 	if err != nil {
 		return "", nil, err
 	}
+	body, _ := payload["body"].(string)
+	body = strings.TrimSpace(body + "\n\n" + githubReviewMarker(intent.ID))
 	params := map[string]any{
 		"repository":        intent.TargetKey,
 		"pullRequestNumber": payload["pull_request_number"],
-		"body":              payload["body"],
+		"body":              body,
 		"event":             payload["event"],
 		"commitId":          payload["head_sha"],
 	}
@@ -347,12 +379,24 @@ func executeGitHubReply(ctx context.Context, gate *adapters.Gate, intent outbox.
 	if err != nil {
 		return "", nil, err
 	}
-	if _, err := gate.ExecuteWrite(ctx, intent.ID, intent.Operation, map[string]any{
-		"repository": intent.TargetKey, "commentId": payload["comment_id"], "body": payload["body"],
-	}); err != nil {
+	body, _ := payload["body"].(string)
+	body = strings.TrimSpace(body + "\n\n" + githubReplyMarker(intent.ID))
+	raw, err := gate.ExecuteWrite(ctx, intent.ID, intent.Operation, map[string]any{
+		"repository": intent.TargetKey, "pullRequestNumber": payload["pull_request_number"],
+		"commentId": payload["comment_id"], "body": body,
+	})
+	if err != nil {
 		return "", nil, err
 	}
-	return "", nil, nil
+	var result struct {
+		Normalized struct {
+			ID string `json:"id"`
+		} `json:"normalized"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", nil, fmt.Errorf("providerwrite: decode github reply result: %w", err)
+	}
+	return result.Normalized.ID, nil, nil
 }
 
 func executeGitHubResolveThread(ctx context.Context, gate *adapters.Gate, intent outbox.Intent) (string, []outbox.Effect, error) {
@@ -412,7 +456,20 @@ func classify(ctx context.Context, err error) (ambiguous bool) {
 	if ctx.Err() != nil {
 		return true
 	}
-	return errors.Is(err, ErrResponseLost)
+	if errors.Is(err, ErrResponseLost) {
+		return true
+	}
+	// An adapter-reported cancellation (packages/adapter-sdk/src/stdio.ts's
+	// serveStdio attaches data.code:"cancelled" when a handler's own
+	// AbortSignal fired) means the adapter's own fetch may have already
+	// reached the provider before the abort landed - the same "may have
+	// applied" uncertainty as a local ctx cancellation, just observed on the
+	// adapter side instead.
+	var rpcErr *adapters.RPCError
+	if errors.As(err, &rpcErr) && rpcErr.Cancelled() {
+		return true
+	}
+	return false
 }
 
 // Worker claims and executes provider write intents one at a time. Pool

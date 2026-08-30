@@ -38,24 +38,12 @@ import (
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryhooks"
+	"github.com/ygrip/punakawan/internal/jiraintegration"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/outbox"
 	"github.com/ygrip/punakawan/internal/providerwrite"
 	"github.com/ygrip/punakawan/internal/storage"
 )
-
-// defaultTransitionTargetStatus is the Jira workflow status JiraHook.Handle
-// tries to transition a linked issue to when TransitionOnComplete is
-// enabled and a delivery completes. The configuration shape
-// (auto_log/comment_events/transition_on_complete/log_work) has no
-// separate field naming which status to transition to, so this is a fixed,
-// common-convention choice rather than something read from config.
-// enqueueTransition resolves it tolerantly (case-insensitive, matched
-// against either a transition's own name or its target status name), and a
-// workspace whose workflow has no "Done" status reachable from wherever
-// the issue currently sits simply enqueues nothing - exactly as if none had
-// been requested, not an error.
-const defaultTransitionTargetStatus = "Done"
 
 // gateResolver is the subset of *adapters.Registry's behavior JiraHook
 // depends on - resolving the running atlassian adapter's Gate on demand -
@@ -89,10 +77,31 @@ func NewJiraHook(db *storage.DB, store *delivery.Store, registry *adapters.Regis
 	return &JiraHook{db: db, store: store, registry: registry, outbox: outboxStore, cfg: cfg}
 }
 
-// Handle implements deliveryhooks.Hook.
+// Handle implements deliveryhooks.Hook. delivery.started and
+// delivery.completed are handled entirely by jiraintegration.Service
+// (comment and transition together, including transition status
+// resolution against the workspace's project-scoped TransitionPolicy);
+// every other event type - including worklog.recorded's own optional
+// comment_events entry - keeps this package's original generic,
+// dispatch-idempotent comment path. service is built fresh per call
+// (a cheap composition of already-held fields) rather than stored, so it
+// always reflects h.registry/h.cfg exactly as they stand at call time -
+// this is also what lets a test swap h.registry after construction, as
+// newTestHook does, without needing a corresponding Service rebuild.
 func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error {
 	if h.cfg == nil || !h.cfg.AutoLog {
 		return nil
+	}
+
+	switch event.Type {
+	case deliveryhooks.EventDeliveryStarted:
+		return h.service().OnDeliveryStarted(ctx, event.DeliveryID)
+	case deliveryhooks.EventDeliveryCompleted:
+		return h.service().OnDeliveryCompleted(ctx, event.DeliveryID)
+	case deliveryhooks.EventWorkLogged:
+		if err := h.service().OnWorkRecorded(ctx, event.EntityID); err != nil {
+			return err
+		}
 	}
 
 	issueKey := event.JiraIssueKey
@@ -106,6 +115,9 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 	if issueKey == "" {
 		return nil
 	}
+	if !h.cfg.ShouldComment(string(event.Type)) {
+		return nil
+	}
 
 	fired, err := h.alreadyFired(ctx, event)
 	if err != nil {
@@ -115,63 +127,34 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 		return nil
 	}
 
-	acted := false
-
-	if event.Type == deliveryhooks.EventWorkLogged && h.cfg.LogWork {
-		payload, err := json.Marshal(map[string]any{
-			"time_spent_seconds": event.DurationSeconds,
-			"comment":            event.Summary,
-			"worklog_entry_id":   event.EntityID,
-		})
-		if err != nil {
-			return fmt.Errorf("jirahooks: encode worklog payload: %w", err)
-		}
-		if _, err := h.outbox.Enqueue(ctx, outbox.Intent{
-			OrchestrationID: event.DeliveryID, AdapterID: "atlassian", Operation: "atlassian.addWorklog",
-			TargetKey: issueKey, PayloadJSON: string(payload),
-			OperationFingerprint: providerwrite.JiraWorklogFingerprint(event.EntityID),
-		}); err != nil {
-			return fmt.Errorf("jirahooks: enqueue worklog sync for %s: %w", issueKey, err)
-		}
-		acted = true
+	payload, err := json.Marshal(map[string]any{"comment_body": buildComment(event)})
+	if err != nil {
+		return fmt.Errorf("jirahooks: encode comment payload: %w", err)
 	}
-
-	if h.cfg.ShouldComment(string(event.Type)) {
-		payload, err := json.Marshal(map[string]any{"comment_body": buildComment(event)})
-		if err != nil {
-			return fmt.Errorf("jirahooks: encode comment payload: %w", err)
-		}
-		// eventKey folds EntityID (e.g. a lane id) into the fingerprint's
-		// event slot when present, so two different lanes' otherwise
-		// identically named events on the same delivery/issue (e.g.
-		// implementation.started on lane-a vs lane-b) enqueue separate
-		// comments instead of colliding onto one fingerprint.
-		eventKey := string(event.Type)
-		if event.EntityID != "" {
-			eventKey += ":" + event.EntityID
-		}
-		if _, err := h.outbox.Enqueue(ctx, outbox.Intent{
-			OrchestrationID: event.DeliveryID, AdapterID: "atlassian", Operation: "atlassian.addJiraComment",
-			TargetKey: issueKey, PayloadJSON: string(payload),
-			OperationFingerprint: providerwrite.JiraCommentFingerprint(event.DeliveryID, eventKey, issueKey),
-		}); err != nil {
-			return fmt.Errorf("jirahooks: enqueue comment for %s on %s: %w", event.Type, issueKey, err)
-		}
-		acted = true
+	// eventKey folds EntityID (e.g. a lane id) into the fingerprint's
+	// event slot when present, so two different lanes' otherwise
+	// identically named events on the same delivery/issue (e.g.
+	// implementation.started on lane-a vs lane-b) enqueue separate
+	// comments instead of colliding onto one fingerprint.
+	eventKey := string(event.Type)
+	if event.EntityID != "" {
+		eventKey += ":" + event.EntityID
 	}
-
-	if event.Type == deliveryhooks.EventDeliveryCompleted && h.cfg.TransitionOnComplete {
-		enqueued, err := h.enqueueTransition(ctx, event.DeliveryID, issueKey)
-		if err != nil {
-			return fmt.Errorf("jirahooks: enqueue transition %s on delivery completion: %w", issueKey, err)
-		}
-		acted = acted || enqueued
-	}
-
-	if !acted {
-		return nil
+	if _, err := h.outbox.Enqueue(ctx, outbox.Intent{
+		OrchestrationID: event.DeliveryID, AdapterID: "atlassian", Operation: "atlassian.addJiraComment",
+		TargetKey: issueKey, PayloadJSON: string(payload),
+		OperationFingerprint: providerwrite.JiraCommentFingerprint(event.DeliveryID, eventKey, issueKey),
+	}); err != nil {
+		return fmt.Errorf("jirahooks: enqueue comment for %s on %s: %w", event.Type, issueKey, err)
 	}
 	return h.markFired(ctx, event, issueKey)
+}
+
+// service builds a jiraintegration.Service over this JiraHook's own
+// fields. See Handle's doc comment for why this is built per call instead
+// of once at construction.
+func (h *JiraHook) service() *jiraintegration.Service {
+	return jiraintegration.NewService(h.store, h.registry, h.outbox, h.cfg)
 }
 
 // resolveIssueKey returns the Jira issue key linked to deliveryID via its
@@ -190,49 +173,4 @@ func (h *JiraHook) resolveIssueKey(ctx context.Context, deliveryID string) (stri
 		}
 	}
 	return "", nil
-}
-
-// enqueueTransition reads issueKey's current status and available
-// transitions (both read-only, never gated), and - only if a transition
-// reaching defaultTransitionTargetStatus is actually reachable from
-// wherever the issue currently sits, and it is not already there - enqueues
-// one jira.transition intent capturing the observed from/to status pair.
-// No reachable transition, or the issue already being at the target status,
-// enqueues nothing and returns enqueued=false: a normal outcome, not an
-// error.
-func (h *JiraHook) enqueueTransition(ctx context.Context, deliveryID, issueKey string) (enqueued bool, err error) {
-	gate, err := h.registry.Gate(ctx, "atlassian")
-	if err != nil {
-		return false, fmt.Errorf("open atlassian adapter: %w", err)
-	}
-	fields, err := fetchJiraIssueFields(ctx, gate, deliveryID, issueKey)
-	if err != nil {
-		return false, err
-	}
-	if fields.Status != "" && fields.Status == defaultTransitionTargetStatus {
-		return false, nil
-	}
-	raw, err := gate.Call(ctx, deliveryID, "atlassian.getTransitionsForJiraIssue", map[string]any{"issueIdOrKey": issueKey})
-	if err != nil {
-		return false, fmt.Errorf("list available transitions: %w", err)
-	}
-	transitions, err := adapters.DecodeJiraTransitions(raw)
-	if err != nil {
-		return false, err
-	}
-	if _, _, ok := adapters.MatchJiraTransition(transitions, defaultTransitionTargetStatus); !ok {
-		return false, nil
-	}
-	payload, err := json.Marshal(map[string]any{"target_status": defaultTransitionTargetStatus, "from_status": fields.Status})
-	if err != nil {
-		return false, fmt.Errorf("encode transition payload: %w", err)
-	}
-	if _, err := h.outbox.Enqueue(ctx, outbox.Intent{
-		OrchestrationID: deliveryID, AdapterID: "atlassian", Operation: "atlassian.transitionJiraIssue",
-		TargetKey: issueKey, PayloadJSON: string(payload),
-		OperationFingerprint: providerwrite.JiraTransitionFingerprint(deliveryID, issueKey, fields.Status, defaultTransitionTargetStatus),
-	}); err != nil {
-		return false, fmt.Errorf("enqueue transition: %w", err)
-	}
-	return true, nil
 }

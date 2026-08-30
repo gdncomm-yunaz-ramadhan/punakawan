@@ -47,10 +47,15 @@
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
-        "required": ["side_effect"],
+        "required": ["side_effect", "description", "input_schema"],
         "additionalProperties": false,
         "properties": {
-          "side_effect": { "type": "boolean" }
+          "side_effect": { "type": "boolean" },
+          "description": { "type": "string", "minLength": 1 },
+          "input_schema": {
+            "type": "object",
+            "description": "A JSON Schema of type \"object\" describing this operation's call parameters."
+          }
         }
       }
     }

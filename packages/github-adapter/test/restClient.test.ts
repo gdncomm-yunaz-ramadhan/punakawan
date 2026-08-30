@@ -51,4 +51,29 @@ describe('GitHubRestClient', () => {
     assert.equal(data.resolveReviewThread.thread.isResolved, true);
     assert.equal(rest.resolvedThreadIds[0], 'thread-1');
   });
+
+  test('accepts an absolute URL verbatim, as a Link header rel="next" value would be', async () => {
+    const rest = createFakeGitHubRest();
+    const client = new GitHubRestClient({ token: 't', apiBaseUrl: 'https://api.github.com', graphqlUrl: 'https://api.github.com/graphql' }, rest.fetch);
+    const response = await client.request('https://api.github.com/repos/acme/widgets/pulls/42');
+    assert.equal((response.data as { number: number }).number, 42);
+  });
+
+  test('reports the response Link header for pagination', async () => {
+    const rest = createFakeGitHubRest();
+    const client = new GitHubRestClient({ token: 't', apiBaseUrl: 'https://api.github.com', graphqlUrl: 'https://api.github.com/graphql' }, rest.fetch);
+    const response = await client.request('/repos/acme/widgets/pulls/43/files?per_page=100');
+    assert.ok(response.linkHeader?.includes('rel="next"'));
+  });
+
+  test('an already-aborted signal rejects with an AbortError, not a wrapped generic error', async () => {
+    const rest = createFakeGitHubRest();
+    const client = new GitHubRestClient({ token: 't', apiBaseUrl: 'https://api.github.com', graphqlUrl: 'https://api.github.com/graphql' }, rest.fetch);
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      () => client.request('/repos/acme/widgets/pulls/42', { signal: controller.signal }),
+      (err: unknown) => err instanceof Error && err.name === 'AbortError',
+    );
+  });
 });
