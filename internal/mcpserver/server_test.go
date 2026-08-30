@@ -120,6 +120,7 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 
 	names := listToolNames(t, cs)
 	want := map[string]bool{
+		"list_adapter_operations": true, "call_adapter_operation": true,
 		"upsert_project": true, "list_projects": true,
 		"save_workflow": true, "get_workflow": true, "list_workflows": true, "invoke_workflow": true,
 		"plan_save": true, "plan_get": true,
@@ -152,6 +153,14 @@ func TestPublicToolsContainNoExecutionApprovalTools(t *testing.T) {
 	for _, forbidden := range []string{"approve_jira_delivery", "approve_github_pr_review"} {
 		if names[forbidden] {
 			t.Fatalf("obsolete approval tool %q is registered", forbidden)
+		}
+	}
+}
+
+func TestServerInstructionsExplainGenericAdapterBridge(t *testing.T) {
+	for _, tool := range []string{"list_adapter_operations", "call_adapter_operation"} {
+		if !strings.Contains(serverInstructions, tool) {
+			t.Errorf("server instructions do not explain %q", tool)
 		}
 	}
 }

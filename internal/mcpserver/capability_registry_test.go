@@ -6,6 +6,7 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 	a := newTestApp(t)
 	reg := CapabilityRegistry(a)
 	want := []string{
+		"list_adapter_operations", "call_adapter_operation",
 		"upsert_project", "list_projects",
 		"save_workflow", "get_workflow", "list_workflows", "invoke_workflow",
 		"plan_save", "plan_get",

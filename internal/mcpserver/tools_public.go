@@ -14,6 +14,8 @@ import (
 )
 
 func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
+	addTool(server, reg, &mcp.Tool{Name: "list_adapter_operations", Description: "List live adapter operations and input schemas."}, listAdapterOperationsHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "call_adapter_operation", Description: "Invoke one declared adapter operation; use its discovered input schema."}, callAdapterOperationHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "upsert_project", Description: "Create or update a project's repository configuration."}, upsertProjectHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "list_projects", Description: "List registered projects and concise repository metadata."}, listProjectsHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "save_workflow", Description: "Create or update a reusable workflow definition."}, saveWorkflowDefinitionHandler(a, reg))

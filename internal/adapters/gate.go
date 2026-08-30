@@ -54,6 +54,13 @@ func NewGate(adapterID string, manifest protocol.AdapterManifest, client caller)
 // operation must be enqueued through a domain service (which validates it
 // and durably records it in the outbox) rather than called directly, and an
 // undeclared operation is simply not something this adapter offers.
+
+// Manifest returns the authoritative manifest obtained from this adapter when
+// the Gate was initialized. Callers must treat the returned value as read-only.
+func (g *Gate) Manifest() protocol.AdapterManifest {
+	return g.manifest
+}
+
 func (g *Gate) Call(ctx context.Context, runID, op string, params map[string]any) (json.RawMessage, error) {
 	metadata, ok := g.manifest.Operations[op]
 	if !ok {

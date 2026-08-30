@@ -141,6 +141,15 @@ describe('manifest', () => {
       assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
+
+  test('describes every operation with an input schema agents can use', () => {
+    for (const [operation, definition] of Object.entries(manifest.operations)) {
+      assert.ok(definition.description, `${operation} should describe its purpose`);
+      assert.equal(definition.input_schema?.type, 'object', `${operation} should declare an object input schema`);
+    }
+    assert.deepEqual(manifest.operations['atlassian.searchJira']?.input_schema?.required, ['jql']);
+    assert.deepEqual(manifest.operations['atlassian.uploadJiraAttachment']?.input_schema?.required, ['issueIdOrKey', 'filePath']);
+  });
 });
 
 describe('getJiraIssue', () => {

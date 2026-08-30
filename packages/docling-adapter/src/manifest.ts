@@ -46,6 +46,7 @@ export const manifest: AdapterManifest = {
           doOcr: { type: 'boolean' },
           forceOcr: { type: 'boolean' },
         },
+        anyOf: [{ required: ['url'] }, { required: ['path'] }],
       },
     },
   },
