@@ -34,6 +34,19 @@ export const manifest: AdapterManifest = {
     secrets: [],
   },
   operations: {
-    'docling.convert': { side_effect: false },
+    'docling.convert': {
+      side_effect: false,
+      description: 'Submit a URL or local file to Docling Serve and return a normalized, source-preserving conversion result.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string' },
+          path: { type: 'string' },
+          toFormats: { type: 'array', items: { type: 'string' } },
+          doOcr: { type: 'boolean' },
+          forceOcr: { type: 'boolean' },
+        },
+      },
+    },
   },
 };

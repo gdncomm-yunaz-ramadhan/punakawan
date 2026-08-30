@@ -17,7 +17,9 @@ test('the docling adapter manifest validates against AdapterManifestSchema', () 
   assert.equal(parsed.protocol, 'punakawan.adapter/v1');
   assert.equal(parsed.runtime, 'node');
   assert.deepEqual(parsed.provides, ['document-conversion']);
-  assert.deepEqual(parsed.operations, { 'docling.convert': { side_effect: false } });
+  assert.equal(parsed.operations['docling.convert']?.side_effect, false);
+  assert.ok(parsed.operations['docling.convert']?.description);
+  assert.ok(parsed.operations['docling.convert']?.input_schema);
 });
 
 test('the manifest declares network access scoped to the configured Docling Serve host', () => {
