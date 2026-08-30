@@ -1,0 +1,126 @@
+internal/deliveryservice/types.go
+  c81065fbff0350f9 16,146-152,191-198
+internal/mcpserver/session_marker.go
+  c81065fbff0350f9 15-16
+internal/telemetry/clienthooks/testdata/claude_stop_failure.v1.json
+  c81065fbff0350f9 1-7
+internal/telemetry/clienthooks/event.go
+  c81065fbff0350f9 1-74
+internal/mcpserver/capability_registry_test.go
+  c81065fbff0350f9 13
+internal/telemetry/store.go
+  c81065fbff0350f9 1-541
+internal/delivery/deliveryview.go
+  c81065fbff0350f9 20,193-199,310-312
+internal/deliveryservice/telemetry_test.go
+  c81065fbff0350f9 1-124
+internal/telemetry/clienthooks/testdata/codex_subagent_stop.v1.json
+  c81065fbff0350f9 1-10
+internal/telemetry/clienthooks/clienthooks_test.go
+  c81065fbff0350f9 1-290
+internal/telemetry/clienthooks/testdata/claude_subagent_stop.v1.json
+  c81065fbff0350f9 1-9
+cmd/punakawan/setup_hooks_test.go
+  c81065fbff0350f9 136-250
+scripts/configure-agent.sh
+  c81065fbff0350f9 154-159
+internal/telemetry/clienthooks/claude.go
+  c81065fbff0350f9 1-140
+internal/telemetry/clienthooks/testdata/codex_stop.v1.json
+  c81065fbff0350f9 1-8
+scripts/install.ps1
+  c81065fbff0350f9 269-279
+cmd/punakawan/hooks_cmd_test.go
+  c81065fbff0350f9 14,20,76-78,89,91,93-99,101,120-122,124-125,134,139-140,149-150,172-266
+internal/mcpserver/tools_lifecycle.go
+  c81065fbff0350f9 7,13,92-217,237-246,260-262,264-267,277-280,284-352,354-361,363-367,369-377
+internal/telemetry/clienthooks/codex.go
+  c81065fbff0350f9 1-142
+internal/telemetry/clienthooks/testdata/claude_subagent_start.v1.json
+  c81065fbff0350f9 1-8
+internal/telemetry/clienthooks/testdata/codex_subagent_start.v1.json
+  c81065fbff0350f9 1-9
+internal/telemetry/clienthooks/testdata/transcript_main.v1.jsonl
+  c81065fbff0350f9 1-2
+internal/telemetry/clienthooks/testdata/codex_post_tool_use.v1.json
+  c81065fbff0350f9 1-10
+internal/telemetry/pricing_test.go
+  c81065fbff0350f9 1-81
+internal/storage/migrations/0029_delivery_telemetry.sql
+  c81065fbff0350f9 1-93
+internal/telemetry/clienthooks/testdata/claude_post_tool_use_failure.v1.json
+  c81065fbff0350f9 1-9
+internal/telemetry/clienthooks/testdata/claude_stop.v1.json
+  c81065fbff0350f9 1-7
+internal/telemetry/clienthooks/testdata/codex_session_end.v1.json
+  c81065fbff0350f9 1-8
+internal/deliveryservice/service.go
+  c81065fbff0350f9 6,11,26-31,44-50,114-116,121-153,167,171-192,201
+internal/telemetry/clienthooks/testdata/codex_session_start.v1.json
+  c81065fbff0350f9 1-8
+internal/delivery/deliveryview_test.go
+  c81065fbff0350f9 9,677-678
+cmd/punakawan/setup.go
+  c81065fbff0350f9 29,45-53,55,58-59,61-67,69-73,75
+internal/telemetry/spool_test.go
+  c81065fbff0350f9 1-180
+cmd/punakawan/hooks_cmd.go
+  c81065fbff0350f9 17-19,26,29-30,34-63,74-82,86,105-108,133,135,138,140-148,150,154-155,157-164,166-193,195-205,208-219,222-230,232-298,300-304,307-310,312-313,348-354
+internal/telemetry/types.go
+  c81065fbff0350f9 1-151
+internal/mcpserver/tools_public.go
+  c81065fbff0350f9 28-30
+internal/telemetry/clienthooks/testdata/claude_session_end.v1.json
+  c81065fbff0350f9 1-7
+internal/telemetry/store_test.go
+  c81065fbff0350f9 1-224
+cmd/punakawan/setup_hooks.go
+  c81065fbff0350f9 11-19,71-240
+internal/telemetry/clienthooks/testdata/claude_session_start.v1.json
+  c81065fbff0350f9 1-8
+internal/mcpserver/server_test.go
+  c81065fbff0350f9 127-128
+internal/telemetry/clienthooks/testdata/transcript_subagent.v1.jsonl
+  c81065fbff0350f9 1
+internal/telemetry/spool.go
+  c81065fbff0350f9 1-248
+internal/telemetry/clienthooks/testdata/claude_post_tool_use.v1.json
+  c81065fbff0350f9 1-9
+internal/telemetry/clienthooks/transcript.go
+  c81065fbff0350f9 1-170
+internal/telemetry/pricing.go
+  c81065fbff0350f9 1-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "2e49aa9c0c097dbf0818b16876eab0f1df3fe4c9",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 3935,
+      "total_deletions": 255,
+      "accepted_lines": 3807,
+      "overriden_lines": 0
+    }
+  }
+}
