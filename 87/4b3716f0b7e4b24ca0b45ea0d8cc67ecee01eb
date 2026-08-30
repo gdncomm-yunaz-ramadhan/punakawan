@@ -1,0 +1,60 @@
+internal/delivery/execution.go
+  c81065fbff0350f9 1-723
+web/panel/src/lib/api/transport.ts
+  c81065fbff0350f9 1-48
+internal/delivery/eventlog_export.go
+  c81065fbff0350f9 1-124
+internal/mcpserver/tools_sessions.go
+  c81065fbff0350f9 1-415
+scripts/production_imports_test.sh
+  c81065fbff0350f9 1-57
+internal/delivery/jira_source.go
+  c81065fbff0350f9 1-508
+internal/deliveryprojection/eventlog_adapter.go
+  c81065fbff0350f9 1-46
+internal/delivery/scheduler_view.go
+  c81065fbff0350f9 1-915
+web/panel/src/lib/api/client.ts
+  c81065fbff0350f9 5,9
+internal/mcpserver/tools_jira.go
+  c81065fbff0350f9 1-135
+internal/mcpserver/tools_provider_writes.go
+  c81065fbff0350f9 1-52
+internal/deliveryprojection/projector.go
+  c81065fbff0350f9 65,67,114-115
+internal/delivery/lifetime.go
+  c81065fbff0350f9 1-363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "874b3716f0b7e4b24ca0b45ea0d8cc67ecee01eb",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 3392,
+      "overriden_lines": 0
+    }
+  }
+}
