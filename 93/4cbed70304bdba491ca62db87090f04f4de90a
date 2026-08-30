@@ -1,0 +1,50 @@
+web/panel/src/routes/deliveries/DeliveryDetail.svelte
+  c81065fbff0350f9 8-9,252-273,282-339,367-390,396-415
+web/panel/src/routes/deliveries/DeliveriesList.svelte
+  c81065fbff0350f9 11-13,18,24,41-42,169-177,196-217,335
+web/panel/src/routes/deliveries/deliveryList.ts
+  c81065fbff0350f9 82-126
+web/panel/src/routes/projects/ProjectMetadata.svelte
+  c81065fbff0350f9 462,472-476,482-486
+web/panel/tests/deliveryList.test.ts
+  c81065fbff0350f9 10,121-191
+web/panel/tests/DeliveryDetail.test.ts
+  c81065fbff0350f9 133-137
+web/panel/src/routes/projects/ProjectDetail.svelte
+  c81065fbff0350f9 33,41,149-152
+web/panel/tests/DeliveriesList.test.ts
+  c81065fbff0350f9 89-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "934cbed70304bdba491ca62db87090f04f4de90a",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "c81065fbff0350f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdae60fa-e5ab-431f-84a3-9f9184464dd9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 445,
+      "total_deletions": 126,
+      "accepted_lines": 373,
+      "overriden_lines": 0
+    }
+  }
+}
