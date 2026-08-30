@@ -1,10 +1,13 @@
-.PHONY: bootstrap build test test-go test-ts installer-test lint generate protocol-check integration-test package doctor panel-dev panel-build panel-test
+.PHONY: bootstrap schema-types-build build test test-go test-ts installer-test lint generate protocol-check integration-test panel-assets-check repo-hygiene production-imports e2e-test verify-local
 
 bootstrap:
 	go mod download
 	pnpm install
 
-build:
+schema-types-build:
+	pnpm --filter @punakawan/schema-types build
+
+build: schema-types-build
 	go build ./...
 	pnpm -r --if-present build
 
@@ -16,11 +19,11 @@ installer-test:
 test-go:
 	go test ./...
 
-test-ts:
+test-ts: schema-types-build
 	pnpm -r --if-present test
 
-lint:
-	gofmt -l . | (! grep .)
+lint: schema-types-build
+	gofmt -l $$(git ls-files '*.go') | (! grep .)
 	go vet ./...
 	pnpm -r --if-present lint
 
@@ -35,6 +38,24 @@ protocol-check: generate
 
 integration-test: build
 	go test -tags=integration ./test/integration/...
+
+e2e-test: build
+	go test -tags=e2e ./test/e2e/...
+
+repo-hygiene:
+	bash scripts/repo_hygiene_test.sh
+
+# Fails, naming every unreferenced internal package, if any internal
+# package has drifted out of both the production import graph rooted at
+# ./cmd/... and the explicit allowlist in scripts/production_imports_test.sh.
+production-imports:
+	bash scripts/production_imports_test.sh
+
+panel-assets-check: schema-types-build
+	pnpm --filter @punakawan/panel build
+	git diff --exit-code -- internal/panel/assets/dist
+
+verify-local: bootstrap repo-hygiene protocol-check lint build test integration-test e2e-test production-imports panel-assets-check
 
 package:
 	go build -o dist/punakawan ./cmd/punakawan

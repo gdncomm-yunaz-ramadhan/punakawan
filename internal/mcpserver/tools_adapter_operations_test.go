@@ -21,7 +21,7 @@ func TestAdapterOperationHandlersDiscoverAndInvokeLiveOperations(t *testing.T) {
 			Args:    []string{"-test.run=TestAdapterOperationsFakeAdapter"},
 			Env:     []string{fakeAdapterOperationsEnv + "=1"},
 		},
-	}, a.OpenApprovals)
+	})
 
 	ctx := context.Background()
 	_, listed, err := listAdapterOperationsHandler(a)(ctx, nil, ListAdapterOperationsInput{AdapterID: "demo"})

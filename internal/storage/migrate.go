@@ -131,6 +131,23 @@ func migrate(ctx context.Context, db *sql.DB) error {
 }
 
 func applyMigration(ctx context.Context, db *sql.DB, m migration) error {
+	// A table rebuild (DROP + CREATE-under-the-old-name + RENAME) that
+	// other tables still hold a foreign key into cannot be done under
+	// PRAGMA defer_foreign_keys alone: that pragma only defers immediate
+	// per-statement violation errors, it does not re-validate the final
+	// schema at COMMIT - SQLite's own deferred-constraint counter is
+	// incremented by the DROP and is never decremented just because a new
+	// table with matching rows appears under the same name, so COMMIT
+	// still fails. SQLite's documented fix for this exact rebuild pattern
+	// is disabling foreign_keys for the whole operation instead, and that
+	// pragma is a no-op once a transaction is already open, so it must be
+	// toggled on this connection before BeginTx/after the transaction ends
+	// - not from inside the migration's own SQL text.
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("storage: disable foreign keys for migration %04d: %w", m.version, err)
+	}
+	defer db.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("storage: begin migration %04d: %w", m.version, err)
@@ -145,6 +162,27 @@ func applyMigration(ctx context.Context, db *sql.DB, m migration) error {
 		m.version, m.name, m.checksum,
 	); err != nil {
 		return fmt.Errorf("storage: record migration %04d: %w", m.version, err)
+	}
+	var violations []string
+	rows, err := tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		return fmt.Errorf("storage: foreign_key_check after migration %04d: %w", m.version, err)
+	}
+	for rows.Next() {
+		var table, rowid, referredTable, fkid sql.NullString
+		if err := rows.Scan(&table, &rowid, &referredTable, &fkid); err != nil {
+			rows.Close()
+			return fmt.Errorf("storage: scan foreign_key_check row for migration %04d: %w", m.version, err)
+		}
+		violations = append(violations, fmt.Sprintf("%s row %s -> missing %s", table.String, rowid.String, referredTable.String))
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("storage: read foreign_key_check for migration %04d: %w", m.version, err)
+	}
+	rows.Close()
+	if len(violations) > 0 {
+		return fmt.Errorf("storage: migration %04d (%s) left dangling foreign keys: %v", m.version, m.name, violations)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("storage: commit migration %04d: %w", m.version, err)

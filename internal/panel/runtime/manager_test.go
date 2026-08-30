@@ -25,6 +25,26 @@ type fakeEnv struct {
 	loadErr   map[string]error // path -> error to return from loader
 	closeErr  map[*app.App]error
 	now       time.Time
+
+	// timers records every idle-expiry timer the manager has ever scheduled,
+	// in schedule order, so a test can inspect the requested duration and
+	// fire (or confirm the cancellation of) any of them without waiting on
+	// real wall-clock time.
+	timers []*fakeTimer
+}
+
+// fakeTimer is a controllable stand-in for *time.Timer: its callback only
+// ever runs when a test explicitly invokes it.
+type fakeTimer struct {
+	d       time.Duration
+	f       func()
+	stopped bool
+}
+
+func (t *fakeTimer) Stop() bool {
+	wasPending := !t.stopped
+	t.stopped = true
+	return wasPending
 }
 
 func newFakeEnv() *fakeEnv {
@@ -91,8 +111,47 @@ func (f *fakeEnv) wasClosed(a *app.App) bool {
 	return false
 }
 
+// newTimer is a timerFactory implementation that records the schedule
+// instead of starting a real timer.
+func (f *fakeEnv) newTimer(d time.Duration, fn func()) scheduledTimer {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t := &fakeTimer{d: d, f: fn}
+	f.timers = append(f.timers, t)
+	return t
+}
+
+// timerCount returns how many timers have been scheduled so far (stopped or
+// not).
+func (f *fakeEnv) timerCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.timers)
+}
+
+// lastTimer returns the most recently scheduled timer, or nil if none has
+// been scheduled yet.
+func (f *fakeEnv) lastTimer() *fakeTimer {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.timers) == 0 {
+		return nil
+	}
+	return f.timers[len(f.timers)-1]
+}
+
+// fireLastTimer invokes the most recently scheduled timer's callback
+// synchronously, simulating what a real timer would do once its duration
+// elapses, without an actual wait.
+func (f *fakeEnv) fireLastTimer() {
+	t := f.lastTimer()
+	if t != nil && !t.stopped {
+		t.f()
+	}
+}
+
 func (f *fakeEnv) manager(opts ...Option) *ProjectRuntimeManager {
-	base := []Option{WithLoader(f.loader), WithCloser(f.closer), WithClock(f.clock)}
+	base := []Option{WithLoader(f.loader), WithCloser(f.closer), WithClock(f.clock), withTimerFactory(f.newTimer)}
 	return NewManager("primary", &app.App{}, append(base, opts...)...)
 }
 
@@ -188,7 +247,7 @@ func TestPrimaryNeverEvictedOrClosed(t *testing.T) {
 	f := newFakeEnv()
 	primary := &app.App{}
 	m := NewManager("primary", primary,
-		WithLoader(f.loader), WithCloser(f.closer), WithClock(f.clock),
+		WithLoader(f.loader), WithCloser(f.closer), WithClock(f.clock), withTimerFactory(f.newTimer),
 		WithMaxActive(2)) // primary + 1 slot
 	ctx := context.Background()
 
@@ -367,7 +426,7 @@ func TestInvalidateIdleClosesImmediately(t *testing.T) {
 func TestInvalidatePrimaryIsNoOp(t *testing.T) {
 	f := newFakeEnv()
 	primary := &app.App{}
-	m := NewManager("primary", primary, WithLoader(f.loader), WithCloser(f.closer), WithClock(f.clock))
+	m := NewManager("primary", primary, WithLoader(f.loader), WithCloser(f.closer), WithClock(f.clock), withTimerFactory(f.newTimer))
 
 	if err := m.Invalidate("primary"); err != nil {
 		t.Fatalf("invalidate primary: %v", err)
@@ -425,5 +484,160 @@ func TestLoaderErrorSurfaces(t *testing.T) {
 	}
 	if _, ok := m.pool["bad"]; ok {
 		t.Fatalf("failed load must not admit a pool entry")
+	}
+}
+
+// TestReleaseEvictsWhenPoolIsOverCap proves Release itself (not just the next
+// Acquire) brings an over-cap pool back within maxActive: while both "a" and
+// "b" are held, the pool is temporarily over cap (primary + a + b = 3 > 2)
+// because neither busy runtime is evictable; releasing both must never leave
+// more than maxActive runtimes pooled.
+func TestReleaseEvictsWhenPoolIsOverCap(t *testing.T) {
+	f := newFakeEnv()
+	m := f.manager(WithMaxActive(2)) // primary + 1 slot
+	ctx := context.Background()
+
+	_, releaseA, err := m.Acquire(ctx, "a", "/a")
+	if err != nil {
+		t.Fatalf("acquire a: %v", err)
+	}
+	_, releaseB, err := m.Acquire(ctx, "b", "/b")
+	if err != nil {
+		t.Fatalf("acquire b: %v", err)
+	}
+	if got := m.ActiveCount(); got != 3 {
+		t.Fatalf("ActiveCount = %d while both busy, want 3 (temporarily over cap)", got)
+	}
+
+	releaseA()
+	releaseB()
+
+	if got := m.ActiveCount(); got > 2 {
+		t.Fatalf("ActiveCount = %d after both released, want <= 2", got)
+	}
+}
+
+// TestIdleTimerScheduledOnReleaseFiresAtExactExpiry proves the idle-expiry
+// timer (replacing the old fixed periodic sweep) is scheduled for exactly the
+// released runtime's deadline, and that firing it closes the runtime exactly
+// as CloseIdle would.
+func TestIdleTimerScheduledOnReleaseFiresAtExactExpiry(t *testing.T) {
+	f := newFakeEnv()
+	m := f.manager(WithMaxActive(10), WithIdleTimeout(5*time.Minute))
+	ctx := context.Background()
+
+	_, release, err := m.Acquire(ctx, "a", "/a")
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	appA := m.pool["a"].App
+	release()
+
+	if got := f.lastTimer().d; got != 5*time.Minute {
+		t.Fatalf("scheduled idle timer duration = %v, want 5m", got)
+	}
+
+	f.advance(5 * time.Minute)
+	f.fireLastTimer()
+
+	if !f.wasClosed(appA) {
+		t.Fatalf("expected the runtime to be closed once its idle timer fired")
+	}
+	if _, ok := m.pool["a"]; ok {
+		t.Fatalf("closed runtime must be removed from pool")
+	}
+}
+
+// TestIdleTimerResetOnAcquireStopsThePriorTimer proves re-acquiring a runtime
+// before its idle deadline cancels the stale timer and schedules a fresh one
+// from the touch, so a runtime that is used again just before it would have
+// expired is never closed out from under its new caller.
+func TestIdleTimerResetOnAcquireStopsThePriorTimer(t *testing.T) {
+	f := newFakeEnv()
+	m := f.manager(WithMaxActive(10), WithIdleTimeout(5*time.Minute))
+	ctx := context.Background()
+
+	_, release, _ := m.Acquire(ctx, "a", "/a")
+	release()
+	firstTimer := f.lastTimer()
+	if firstTimer == nil {
+		t.Fatal("expected a timer to be scheduled after the first release")
+	}
+
+	f.advance(4 * time.Minute)
+	_, release2, err := m.Acquire(ctx, "a", "/a")
+	if err != nil {
+		t.Fatalf("second acquire: %v", err)
+	}
+	release2()
+
+	if !firstTimer.stopped {
+		t.Fatalf("expected the stale idle timer to be stopped when the runtime was re-acquired")
+	}
+	if got := f.lastTimer().d; got != 5*time.Minute {
+		t.Fatalf("rescheduled timer duration = %v, want 5m (reset from the touch)", got)
+	}
+}
+
+// TestStopIdleTimerPreventsLateFiring proves the documented shutdown order's
+// "stop idle timer" step actually disarms a pending timer: once stopped, an
+// attempted fire (as could otherwise race a concurrent Close) does nothing.
+func TestStopIdleTimerPreventsLateFiring(t *testing.T) {
+	f := newFakeEnv()
+	m := f.manager(WithMaxActive(10), WithIdleTimeout(time.Minute))
+	ctx := context.Background()
+
+	_, release, _ := m.Acquire(ctx, "a", "/a")
+	appA := m.pool["a"].App
+	release()
+
+	m.StopIdleTimer()
+	f.advance(time.Hour)
+	f.fireLastTimer()
+
+	if f.wasClosed(appA) {
+		t.Fatalf("stopped idle timer must never close a runtime")
+	}
+	if _, ok := m.pool["a"]; !ok {
+		t.Fatalf("runtime must remain pooled once its idle timer was stopped")
+	}
+}
+
+// TestConcurrentAcquireReleaseInvalidate races Acquire, Release, and
+// Invalidate for several projects under -race to prove the manager's
+// eviction/idle-timer bookkeeping never corrupts shared state, regardless of
+// how these operations interleave.
+func TestConcurrentAcquireReleaseInvalidate(t *testing.T) {
+	f := newFakeEnv()
+	m := f.manager(WithMaxActive(3))
+	ctx := context.Background()
+
+	const workers = 8
+	const rounds = 50
+	ids := []string{"a", "b", "c", "d"}
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < rounds; i++ {
+				id := ids[(w+i)%len(ids)]
+				_, release, err := m.Acquire(ctx, id, "/"+id)
+				if err != nil {
+					t.Errorf("acquire %s: %v", id, err)
+					return
+				}
+				if i%7 == 0 {
+					_ = m.Invalidate(id)
+				}
+				release()
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	if err := m.Close(ctx); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }

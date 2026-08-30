@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
-	"github.com/ygrip/punakawan/internal/approvals"
-	"github.com/ygrip/punakawan/internal/syncqueue"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// punakawanAdapterProtocol is the only protocol version this process knows
+// how to speak. protocol.AdapterManifest's own JSON decoding already rejects
+// any other value; validateManifest re-checks it so a manifest built without
+// going through that decode path (or a future decode-side relaxation) still
+// cannot slip past initialization.
+const punakawanAdapterProtocol = "punakawan.adapter/v1"
 
 // defaultEnvAllowlist mirrors tools.DefaultEnvAllowlist: every spawned
 // adapter process needs at least these to run node at all.
@@ -40,60 +47,18 @@ type AdapterSpec struct {
 // capabilities cannot silently drift apart.
 type Registry struct {
 	specs map[string]AdapterSpec
-	// approvals lazily resolves the shared approval store on first use, so a
-	// Registry built at app.Load never forces the SQLite kernel open until an
-	// adapter operation actually needs to gate on an approval.
-	approvals func() (*approvals.Store, error)
 
-	mu            sync.Mutex
-	clients       map[string]*Client
-	gates         map[string]*Gate
-	approvalScope string
-	// syncQueue lazily resolves the shared sync queue on first use, so a
-	// Registry built at app.Load never forces the SQLite kernel open until an
-	// adapter write actually fails and needs recording.
-	// nil (the default) leaves every Gate without a queue, unchanged from
-	// before SetSyncQueue is called.
-	syncQueue func() (*syncqueue.Queue, error)
+	mu      sync.Mutex
+	clients map[string]*Client
+	gates   map[string]*Gate
 }
 
-// NewRegistry constructs a Registry for the given adapter specs. store is a
-// provider resolved lazily the first time a Gate is created, not at
-// construction. Every Gate it creates defaults to per-run_id approval scope;
-// call SetApprovalScope to widen it for every adapter this Registry serves.
-func NewRegistry(specs map[string]AdapterSpec, store func() (*approvals.Store, error)) *Registry {
+// NewRegistry constructs a Registry for the given adapter specs.
+func NewRegistry(specs map[string]AdapterSpec) *Registry {
 	return &Registry{
-		specs:     specs,
-		approvals: store,
-		clients:   make(map[string]*Client),
-		gates:     make(map[string]*Gate),
-	}
-}
-
-// SetApprovalScope sets the approval scope (policy.ApprovalsPolicy.Scope)
-// applied to every Gate this Registry creates from this point on, and to
-// every Gate already memoized (punokawan-cy8). Call once, before the first
-// Gate(ctx, ...) call, e.g. right after NewRegistry in internal/app.
-func (r *Registry) SetApprovalScope(mode string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.approvalScope = mode
-	for _, g := range r.gates {
-		g.SetApprovalScope(mode)
-	}
-}
-
-// SetSyncQueue configures provider on every Gate this Registry creates from
-// this point on, and on every Gate already memoized (punokawan-nbz),
-// mirroring SetApprovalScope. provider is resolved lazily by each Gate only
-// when a write actually fails, so setting it here never opens the storage
-// kernel.
-func (r *Registry) SetSyncQueue(provider func() (*syncqueue.Queue, error)) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.syncQueue = provider
-	for _, g := range r.gates {
-		g.SetSyncQueue(provider)
+		specs:   specs,
+		clients: make(map[string]*Client),
+		gates:   make(map[string]*Gate),
 	}
 }
 
@@ -147,20 +112,17 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 		return nil, fmt.Errorf("adapters: fetch capabilities for %q: %w", adapterID, err)
 	}
 
+	if err := validateManifest(adapterID, manifest, spec); err != nil {
+		_ = client.Kill()
+		return nil, fmt.Errorf("adapters: invalid manifest from %q: %w", adapterID, err)
+	}
+
 	if _, err := client.Call(ctx, "initialize", manifest); err != nil {
 		_ = client.Kill()
 		return nil, fmt.Errorf("adapters: initialize %q: %w", adapterID, err)
 	}
 
-	store, err := r.approvals()
-	if err != nil {
-		_ = client.Kill()
-		return nil, fmt.Errorf("adapters: open approval store for %q: %w", adapterID, err)
-	}
-
-	gate := NewGate(adapterID, manifest, client, store)
-	gate.SetApprovalScope(r.approvalScope)
-	gate.SetSyncQueue(r.syncQueue)
+	gate := NewGate(adapterID, manifest, client)
 	r.clients[adapterID] = client
 	r.gates[adapterID] = gate
 	return gate, nil
@@ -181,6 +143,65 @@ func fetchManifest(ctx context.Context, client *Client) (protocol.AdapterManifes
 		return protocol.AdapterManifest{}, fmt.Errorf("decode manifest: %w", err)
 	}
 	return manifest, nil
+}
+
+// validateManifest checks the contract a manifest must satisfy before this
+// process will initialize an adapter with it: it must actually be the
+// adapter this Registry asked for, every operation must document itself
+// well enough for a caller to build a valid payload, and every secret it
+// asks for must be one this host has explicitly agreed to hand it - never
+// discovered only once a write is already in flight.
+func validateManifest(adapterID string, manifest protocol.AdapterManifest, spec AdapterSpec) error {
+	if manifest.Protocol != punakawanAdapterProtocol {
+		return fmt.Errorf("protocol %q does not match %q", manifest.Protocol, punakawanAdapterProtocol)
+	}
+	if manifest.Id != adapterID {
+		return fmt.Errorf("manifest id %q does not match configured adapter id %q", manifest.Id, adapterID)
+	}
+	if len(manifest.Operations) == 0 {
+		return fmt.Errorf("manifest declares no operations")
+	}
+	for op, metadata := range manifest.Operations {
+		if strings.TrimSpace(metadata.Description) == "" {
+			return fmt.Errorf("operation %q has no description", op)
+		}
+		if _, err := resolveInputSchema(metadata.InputSchema); err != nil {
+			return fmt.Errorf("operation %q has an invalid input_schema: %w", op, err)
+		}
+	}
+
+	allowedSecrets := make(map[string]bool, len(spec.EnvPassthrough))
+	for _, name := range spec.EnvPassthrough {
+		allowedSecrets[name] = true
+	}
+	for _, secret := range manifest.Permissions.Secrets {
+		if !allowedSecrets[secret] {
+			return fmt.Errorf("declares secret %q that this host has not authorized for it", secret)
+		}
+	}
+	return nil
+}
+
+// resolveInputSchema decodes and resolves an operation's declared
+// input_schema, requiring it to describe a JSON object: every operation's
+// call parameters are always a JSON object, never a scalar or array.
+func resolveInputSchema(raw protocol.AdapterManifestOperationsValueInputSchema) (*jsonschema.Resolved, error) {
+	encoded, err := json.Marshal(map[string]any(raw))
+	if err != nil {
+		return nil, fmt.Errorf("encode input_schema: %w", err)
+	}
+	var sch jsonschema.Schema
+	if err := json.Unmarshal(encoded, &sch); err != nil {
+		return nil, fmt.Errorf("decode input_schema: %w", err)
+	}
+	if sch.Type != "object" {
+		return nil, fmt.Errorf(`input_schema must declare "type": "object", got %q`, sch.Type)
+	}
+	resolved, err := sch.Resolve(nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolve input_schema: %w", err)
+	}
+	return resolved, nil
 }
 
 // buildEnv resolves defaultEnvAllowlist plus extra against this process's

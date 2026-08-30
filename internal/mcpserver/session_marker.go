@@ -12,7 +12,8 @@ import (
 
 // SessionMarkerDir is the per-worktree directory a started delivery session
 // drops its marker file into, and the directory name the hooks CLI
-// (cmd/punakawan hooks record-usage) walks upward from cwd looking for.
+// (cmd/punakawan hooks record-usage, cmd/punakawan hooks ingest) walks
+// upward from cwd looking for.
 const SessionMarkerDir = ".punakawan"
 
 // SessionMarkerFile is SessionMarkerDir's marker file name.

@@ -22,11 +22,22 @@ $InstallDir = if ($InstallDirOverridden) {
 } else {
     Join-Path $env:LOCALAPPDATA 'Programs\Punakawan'
 }
-$ConfigDir = if ($env:PUNAKAWAN_CONFIG_DIR) {
+# $ConfigDir is the exact directory internal/storage.DataDir resolves on
+# Windows (${PUNAKAWAN_DATA_DIR} if set, else %AppData%\punakawan): every
+# installed, machine-wide state - the storage kernel, the adapter trust
+# file, the telemetry spool, and everything this installer writes below -
+# lives under one directory so a relocated/overridden prefix cannot
+# diverge between what the installer wrote and what the built binary
+# resolves at runtime. PUNAKAWAN_CONFIG_DIR is accepted as a deprecated
+# alias for one release.
+$ConfigDir = if ($env:PUNAKAWAN_DATA_DIR) {
+    $env:PUNAKAWAN_DATA_DIR
+} elseif ($env:PUNAKAWAN_CONFIG_DIR) {
     $env:PUNAKAWAN_CONFIG_DIR
 } else {
     Join-Path $env:APPDATA 'punakawan'
 }
+$AdaptersDir = Join-Path $ConfigDir 'adapters'
 
 function Write-Step {
     param([string]$Message)
@@ -172,6 +183,53 @@ function Register-McpClient {
     }
 }
 
+# Deploy-Adapter installs one @punakawan workspace package's built runtime
+# files plus its production dependencies below "$AdaptersDir\$Slug" -
+# never inside $RepoRoot - using pnpm's own workspace deploy support so
+# relative workspace:* dependencies (adapter-sdk, schema-types) resolve to
+# real copied files instead of symlinks back into the checkout. The new
+# version deploys to its own versioned directory first; only once that
+# succeeds is the stable "$AdaptersDir\$Slug" name repointed at it (a
+# junction, which - unlike an NTFS symlink - a non-administrator account
+# can create), and only then are older versioned directories removed.
+function Deploy-Adapter {
+    param(
+        [string]$PackageName,
+        [string]$Slug
+    )
+
+    $target = Join-Path $AdaptersDir $Slug
+    if ($DryRun) {
+        Write-Host "    pnpm --filter $PackageName deploy --prod --legacy $target.<version> (atomically replacing $target)"
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path $AdaptersDir | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+    $versionedDir = "$target.$stamp"
+    if (Test-Path $versionedDir) { Remove-Item -Recurse -Force $versionedDir }
+
+    Push-Location $RepoRoot
+    try {
+        Invoke-External -Display "pnpm --filter $PackageName deploy --prod --legacy $versionedDir" -Action { pnpm --filter $PackageName deploy --prod --legacy $versionedDir }
+    } finally {
+        Pop-Location
+    }
+
+    if (Test-Path $target) {
+        # DirectoryInfo.Delete() (no -Recurse) removes only the reparse
+        # point itself, never descending into the versioned directory it
+        # points at - Remove-Item -Recurse on a junction/symlink has
+        # historically done the opposite on some PowerShell versions.
+        (Get-Item $target -Force).Delete()
+    }
+    New-Item -ItemType Junction -Path $target -Target $versionedDir | Out-Null
+
+    Get-ChildItem -Path $AdaptersDir -Directory -Filter "$Slug.*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $versionedDir } |
+        ForEach-Object { Remove-Item -Recurse -Force $_.FullName }
+}
+
 function Write-AdapterConfig {
     param(
         [string]$ConfigPath,
@@ -189,9 +247,14 @@ function Write-AdapterConfig {
         throw "Cannot safely add adapters to $ConfigPath; expected a block-style top-level adapters key."
     }
 
-    if ((Get-Content -Raw -Path $ConfigPath) -match "(?m)^\s{2}$([regex]::Escape($AdapterId)):\s*(?:#.*)?$") {
-        return
-    }
+    # Always replace this adapter id's own block (never someone else's)
+    # rather than skipping when it already exists, so a later install that
+    # deploys a new adapter version actually updates the recorded
+    # entrypoint path instead of leaving a stale one.
+    $content = Get-Content -Raw -Path $ConfigPath
+    $blockPattern = "(?m)^  $([regex]::Escape($AdapterId)):\s*(?:#.*)?$(?:\r?\n(?:    .*)?$)*"
+    $content = [regex]::Replace($content, $blockPattern, '')
+    Set-Content -Path $ConfigPath -Value $content.TrimEnd("`r", "`n") -Encoding UTF8
 
     $lines = @("  $AdapterId:", "    command: $NodePath", '    args:', "      - $EntryPoint", '    env_passthrough:')
     foreach ($name in $EnvPassthrough) {
@@ -271,6 +334,20 @@ function Configure-McpClients {
         -AddArguments (@('mcp', 'add', 'punakawan', '--scope', 'user', '--', $mcpCommand) + $mcpArguments) `
         -McpCommand $mcpCommand -McpArguments $mcpArguments
 
+    # User-level hooks are installed regardless of which client binaries
+    # were actually detected above: the hook config files
+    # (~/.codex/hooks.json, ~/.claude/settings.json) are independent of
+    # whether that client's CLI happens to be on PATH right now.
+    Write-Step 'Configuring Codex and Claude Code lifecycle telemetry hooks'
+    if ($DryRun) {
+        Write-Host "    $PunakawanPath setup --hooks-only"
+    } else {
+        & $PunakawanPath setup --hooks-only
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'Could not configure lifecycle telemetry hooks; delivery usage tracking will be incomplete until this is retried (run `punakawan setup` or check `punakawan doctor`).'
+        }
+    }
+
     $genericConfig = Join-Path $ConfigDir 'mcp-config.json'
     if ($DryRun) {
         Write-Step "Generic MCP config: $genericConfig"
@@ -328,6 +405,14 @@ Push-Location $RepoRoot
 try {
     Invoke-External -Display 'go mod download' -Action { go mod download }
     Invoke-External -Display 'pnpm install --frozen-lockfile' -Action { pnpm install --frozen-lockfile }
+    # Adapters (and the workspace packages they depend on) build in this
+    # exact order before Deploy-Adapter packages them below, so it always
+    # packages a freshly built dist\, never a stale one left over from an
+    # earlier checkout.
+    Invoke-External -Display 'pnpm --filter @punakawan/schema-types build' -Action { pnpm --filter @punakawan/schema-types build }
+    Invoke-External -Display 'pnpm --filter @punakawan/adapter-sdk build' -Action { pnpm --filter @punakawan/adapter-sdk build }
+    Invoke-External -Display 'pnpm --filter @punakawan/adapter-atlassian build' -Action { pnpm --filter @punakawan/adapter-atlassian build }
+    Invoke-External -Display 'pnpm --filter @punakawan/github-adapter build' -Action { pnpm --filter @punakawan/github-adapter build }
     Invoke-External -Display 'pnpm -r --if-present build' -Action { pnpm -r --if-present build }
 
     Write-Step 'Installing punakawan and punakawand'
@@ -348,17 +433,20 @@ try {
     Pop-Location
 }
 
-$atlassianAdapter = Join-Path $RepoRoot 'packages\adapter-atlassian\dist\run.js'
-$githubAdapter = Join-Path $RepoRoot 'packages\github-adapter\dist\run.js'
-if (-not $DryRun) {
-    if (-not (Test-Path $atlassianAdapter)) { throw "Build did not produce $atlassianAdapter" }
-    if (-not (Test-Path $githubAdapter)) { throw "Build did not produce $githubAdapter" }
-}
+$atlassianAdapter = Join-Path $AdaptersDir 'atlassian\dist\run.js'
+$githubAdapter = Join-Path $AdaptersDir 'github\dist\run.js'
 $globalConfig = Join-Path $ConfigDir 'config.yaml'
 $globalEnvironment = Join-Path $ConfigDir '.env'
 if ($DryRun) {
+    Deploy-Adapter -PackageName '@punakawan/adapter-atlassian' -Slug 'atlassian'
+    Deploy-Adapter -PackageName '@punakawan/github-adapter' -Slug 'github'
     Write-Step "Configuring global adapters: $globalConfig"
 } else {
+    Deploy-Adapter -PackageName '@punakawan/adapter-atlassian' -Slug 'atlassian'
+    Deploy-Adapter -PackageName '@punakawan/github-adapter' -Slug 'github'
+    if (-not (Test-Path $atlassianAdapter)) { throw "Deploy did not produce $atlassianAdapter" }
+    if (-not (Test-Path $githubAdapter)) { throw "Deploy did not produce $githubAdapter" }
+
     $nodePath = (Get-Command node -CommandType Application).Source
     Write-AdapterConfig -ConfigPath $globalConfig -AdapterId 'atlassian' -EntryPoint $atlassianAdapter -NodePath $nodePath -EnvPassthrough @('ATLASSIAN_API_TOKEN', 'ATLASSIAN_API_TOKEN_SCOPED', 'ATLASSIAN_HOST', 'ATLASSIAN_EMAIL')
     Write-AdapterConfig -ConfigPath $globalConfig -AdapterId 'github' -EntryPoint $githubAdapter -NodePath $nodePath -EnvPassthrough @('GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_API_URL', 'GITHUB_GRAPHQL_URL')

@@ -29,7 +29,7 @@ const manifest = {
   operations: {
     sleep: {
       side_effect: false,
-      description: 'Wait for an optional number of milliseconds.',
+      description: 'Sleep for the requested duration in milliseconds; used only to exercise cancellation.',
       input_schema: { type: 'object', properties: { ms: { type: 'number' } } },
     },
   },

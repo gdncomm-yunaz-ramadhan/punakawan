@@ -15,17 +15,26 @@
   let loading = $state(true);
   let error: string | null = $state(null);
 
-  // The selected plan's full manifest + version content, loaded lazily on
-  // row click. Kept separate from the list so a detail load failure never
-  // clears the list.
+  // The selected plan's exact revision + linked deliveries, loaded lazily
+  // on row click. Kept separate from the list so a detail load failure
+  // never clears the list.
   let selectedId: string | null = $state(null);
+  let selectedRevision: number | null = $state(null);
   let detail: PlanDetail | null = $state(null);
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
 
-  function requestedPlanId(): string | null {
-    if (typeof window === "undefined") return null;
-    return new URL(window.location.href).searchParams.get("plan");
+  // Reads both ?plan= and ?revision= via URLSearchParams - never a
+  // path-embedded pseudo-segment - so a link that names an exact delivery
+  // revision (e.g. from DeliveryDetail's plans tab) opens that same exact
+  // revision here instead of silently substituting the lineage's current
+  // head.
+  function requestedPlan(): { id: string | null; revision: number | null } {
+    if (typeof window === "undefined") return { id: null, revision: null };
+    const params = new URL(window.location.href).searchParams;
+    const revisionParam = params.get("revision");
+    const revision = revisionParam !== null ? Number(revisionParam) : null;
+    return { id: params.get("plan"), revision: Number.isFinite(revision) ? revision : null };
   }
 
   async function load() {
@@ -37,9 +46,9 @@
       // JSON `null`, not `[]`): a project with no plans must render the
       // empty state, never trip the catch below into "Failed to load plans".
       plans = res.items ?? [];
-      const requested = requestedPlanId();
-      if (requested && plans.some((plan) => plan.id === requested)) {
-        await select(requested);
+      const requested = requestedPlan();
+      if (requested.id && plans.some((plan) => plan.id === requested.id)) {
+        await select(requested.id, requested.revision ?? undefined);
       }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -50,21 +59,23 @@
 
   function closeDetail() {
     selectedId = null;
+    selectedRevision = null;
     detail = null;
   }
 
-  async function select(id: string) {
-    if (selectedId === id) {
-      // Toggle the modal closed on a second click of the same row.
+  async function select(id: string, revision?: number) {
+    if (selectedId === id && (revision === undefined || revision === selectedRevision)) {
+      // Toggle the modal closed on a second click of the same row/revision.
       closeDetail();
       return;
     }
     selectedId = id;
+    selectedRevision = revision ?? null;
     detail = null;
     detailError = null;
     detailLoading = true;
     try {
-      detail = await getPlan(projectId, id);
+      detail = await getPlan(projectId, id, revision);
     } catch (e) {
       detailError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -78,8 +89,8 @@
   // loaded (or if it fails), so it falls back to the plan id rather than
   // sitting blank.
   let dialogTitle = $derived.by(() => {
-    const m = detail?.manifest;
-    if (m) return m.title || m.id;
+    const p = detail?.plan;
+    if (p) return p.objective || p.id;
     return selectedId ?? "Plan detail";
   });
 
@@ -123,10 +134,10 @@
       <table>
         <thead>
           <tr>
-            <th scope="col">Title</th>
+            <th scope="col">Objective</th>
             <th scope="col">Status</th>
-            <th scope="col">Version</th>
-            <th scope="col">Related tasks</th>
+            <th scope="col">Revision</th>
+            <th scope="col">Linked deliveries</th>
           </tr>
         </thead>
         <tbody>
@@ -141,10 +152,10 @@
               onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), select(plan.id))}
               data-testid={`plan-row-${plan.id}`}
             >
-              <td class="title">{plan.title || plan.id}</td>
+              <td class="title">{plan.objective || plan.id}</td>
               <td><StatusBadge variant={statusVariant(plan.status)} label={plan.status} /></td>
-              <td class="version">{plan.current_version || "—"}</td>
-              <td class="tasks">{plan.related_tasks?.length ? plan.related_tasks.join(", ") : "—"}</td>
+              <td class="version">r{plan.current_revision || "—"}</td>
+              <td class="tasks">{plan.linked_deliveries?.length ?? 0}</td>
             </tr>
           {/each}
         </tbody>
@@ -159,36 +170,35 @@
   {:else if detailError}
     <ErrorStateCard title="Failed to load plan" message={detailError} />
   {:else if detail}
-    {@const m = detail.manifest}
-    <StatusBadge variant={statusVariant(m.status)} label={m.status} />
-    {#if m.description}<p class="description">{m.description}</p>{/if}
+    {@const p = detail.plan}
+    <StatusBadge variant={statusVariant(p.status ?? "")} label={p.status ?? "unknown"} />
 
     <dl class="meta">
       <dt>Plan ID</dt>
-      <dd><code>{m.id}</code></dd>
-      <dt>Current version</dt>
-      <dd>{m.current_version || "—"}</dd>
-      {#if m.related_tasks?.length}
-        <dt>Related tasks</dt>
-        <dd>{m.related_tasks.join(", ")}</dd>
+      <dd><code>{p.id}</code></dd>
+      <dt>Revision</dt>
+      <dd>r{p.revision}</dd>
+      {#if p.requirements?.length}
+        <dt>Requirements</dt>
+        <dd>{p.requirements.join(", ")}</dd>
       {/if}
-      {#if m.derived_from?.knowledge?.length}
-        <dt>Derived from knowledge</dt>
-        <dd>{m.derived_from.knowledge.join(", ")}</dd>
+      {#if p.acceptance_criteria?.length}
+        <dt>Acceptance criteria</dt>
+        <dd>{p.acceptance_criteria.join(", ")}</dd>
       {/if}
-      {#if m.derived_from?.workflows?.length}
-        <dt>Derived from workflows</dt>
-        <dd>{m.derived_from.workflows.join(", ")}</dd>
-      {/if}
-      {#if m.derived_from?.metadata?.length}
-        <dt>Derived from metadata</dt>
-        <dd>{m.derived_from.metadata.join(", ")}</dd>
+      {#if detail.linked_deliveries?.length}
+        <dt>Linked deliveries</dt>
+        <dd>
+          {#each detail.linked_deliveries as link (`${link.orchestration_id}-${link.plan_revision}`)}
+            <div>{link.orchestration_id} ({link.scope} r{link.plan_revision})</div>
+          {/each}
+        </dd>
       {/if}
     </dl>
 
-    {#if detail.current_version_content}
-      <h4>Current version content</h4>
-      <pre class="content">{detail.current_version_content}</pre>
+    {#if p.legacy_markdown}
+      <h4>Imported content</h4>
+      <pre class="content">{p.legacy_markdown}</pre>
     {/if}
   {/if}
 </Dialog>

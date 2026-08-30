@@ -4,21 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/ygrip/punakawan/internal/approvals"
-	"github.com/ygrip/punakawan/internal/storage"
-	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // fakeCaller records every "execute" call it receives instead of talking to
-// a real subprocess, so Gate's approval logic can be tested in isolation.
+// a real subprocess, so Gate's call behavior can be tested in isolation.
 // failOps, if set, makes Call return an error instead of a canned success
-// for any op named in it, so Gate's sync-queue-on-failure behavior
-// (punokawan-nbz) can be exercised without a real adapter failure.
+// for any op named in it.
 type fakeCaller struct {
 	calls   []map[string]any
 	failOps map[string]bool
@@ -31,11 +26,6 @@ func (f *fakeCaller) Call(ctx context.Context, method string, params any) (json.
 		return nil, fmt.Errorf("simulated adapter failure for %q", op)
 	}
 	return json.RawMessage(`{"ok":true}`), nil
-}
-
-func approvalRequired() *protocol.AdapterManifestOperationsValueApproval {
-	v := protocol.AdapterManifestOperationsValueApprovalRequired
-	return &v
 }
 
 func testManifest() protocol.AdapterManifest {
@@ -52,14 +42,32 @@ func testManifest() protocol.AdapterManifest {
 			Secrets:    []string{},
 		},
 		Operations: protocol.AdapterManifestOperations{
-			"atlassian.getJiraIssue": {SideEffect: false},
+			"atlassian.getJiraIssue": {
+				SideEffect:  false,
+				Description: "Fetch a Jira issue by key.",
+				InputSchema: protocol.AdapterManifestOperationsValueInputSchema{
+					"type":       "object",
+					"required":   []any{"issueIdOrKey"},
+					"properties": map[string]any{"issueIdOrKey": map[string]any{"type": "string"}},
+				},
+			},
 			"atlassian.addJiraComment": {
-				SideEffect: true,
-				Approval:   approvalRequired(),
+				SideEffect:  true,
+				Description: "Add a comment to a Jira issue.",
+				InputSchema: protocol.AdapterManifestOperationsValueInputSchema{
+					"type":       "object",
+					"required":   []any{"commentBody"},
+					"properties": map[string]any{"commentBody": map[string]any{"type": "string"}},
+				},
 			},
 			"atlassian.addWorklog": {
-				SideEffect: true,
-				Approval:   approvalRequired(),
+				SideEffect:  true,
+				Description: "Add a worklog entry to a Jira issue.",
+				InputSchema: protocol.AdapterManifestOperationsValueInputSchema{
+					"type":       "object",
+					"required":   []any{"issueIdOrKey"},
+					"properties": map[string]any{"issueIdOrKey": map[string]any{"type": "string"}},
+				},
 			},
 		},
 	}
@@ -67,14 +75,8 @@ func testManifest() protocol.AdapterManifest {
 
 func newTestGate(t *testing.T) (*Gate, *fakeCaller) {
 	t.Helper()
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	store := approvals.New(db, "test-project")
 	fc := &fakeCaller{}
-	return NewGate("atlassian", testManifest(), fc, store), fc
+	return NewGate("atlassian", testManifest(), fc), fc
 }
 
 func TestGateAllowsUnrestrictedOperation(t *testing.T) {
@@ -88,215 +90,61 @@ func TestGateAllowsUnrestrictedOperation(t *testing.T) {
 	}
 }
 
-func TestGateAllowsApprovalRequiredOperationWithoutApproval(t *testing.T) {
-	// Approval gating has been removed: an operation the manifest still
-	// marks approval-required executes immediately, same as any other op.
+// TestRawAdapterWriteIsRejected is the exact regression this Gate change
+// exists for: a raw call naming a side-effecting operation must fail before
+// the adapter process is ever invoked, so every write is forced through the
+// durable outbox instead.
+func TestRawAdapterWriteIsRejected(t *testing.T) {
 	g, fc := newTestGate(t)
 
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
-		t.Fatalf("Call: %v", err)
+	_, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"})
+	if err == nil {
+		t.Fatal("expected a side-effecting raw call to be rejected")
+	}
+	if got := err.Error(); !strings.Contains(got, "side-effecting operation") || !strings.Contains(got, "must be enqueued through a domain service") {
+		t.Fatalf("error = %q, want it to explain the operation must be enqueued", got)
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("expected the adapter process to never be invoked, got %d calls", len(fc.calls))
+	}
+}
+
+func TestCallRejectsUndeclaredOperation(t *testing.T) {
+	g, fc := newTestGate(t)
+	if _, err := g.Call(context.Background(), "run-1", "atlassian.doesNotExist", nil); err == nil {
+		t.Fatal("expected an undeclared operation to be rejected")
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("expected the adapter process to never be invoked, got %d calls", len(fc.calls))
+	}
+}
+
+func TestExecuteWriteInvokesASideEffectingOperationDirectly(t *testing.T) {
+	// ExecuteWrite is the one seam internal/providerwrite's worker uses to
+	// perform a write it already claimed from the durable outbox - this is
+	// the only place a side-effecting operation may still reach the adapter
+	// process directly.
+	g, fc := newTestGate(t)
+	if _, err := g.ExecuteWrite(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
+		t.Fatalf("ExecuteWrite: %v", err)
 	}
 	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addJiraComment" {
 		t.Fatalf("calls = %+v", fc.calls)
 	}
 }
 
-func TestGateRequestApprovalAndApproveRemainInertBookkeeping(t *testing.T) {
-	// RequestApproval/Approve still work as an audit-trail API, but nothing
-	// about calling them changes whether Call proceeds.
-	g, fc := newTestGate(t)
-
-	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := g.Approve("run-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
-		t.Fatalf("Call after approval: %v", err)
-	}
-	if len(fc.calls) != 1 {
-		t.Fatalf("calls = %+v", fc.calls)
-	}
-}
-
-func TestRequestApprovalStoresRedactedContentPreview(t *testing.T) {
+func TestExecuteWriteRejectsANonSideEffectingOperation(t *testing.T) {
 	g, _ := newTestGate(t)
-
-	preview := BuildApprovalPreview("atlassian.addJiraComment", map[string]any{
-		"issueIdOrKey": "PAY-1",
-		"commentBody":  "Ship it after the risks section is expanded.",
-		"apiToken":     "super-secret-value",
-	})
-	rec, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar, preview)
-	if err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if rec.Preview == nil {
-		t.Fatal("expected Preview to be populated so the human sees what they approve")
-	}
-	got := *rec.Preview
-	// The human must see the real content being written...
-	if !strings.Contains(got, "atlassian.addJiraComment") ||
-		!strings.Contains(got, "Ship it after the risks section is expanded.") {
-		t.Fatalf("preview missing operation/content: %q", got)
-	}
-	// ...but never the secret that rode along in the same params.
-	if strings.Contains(got, "super-secret-value") {
-		t.Fatalf("preview leaked a secret value: %q", got)
-	}
-	if !strings.Contains(got, "***redacted***") {
-		t.Fatalf("preview did not redact the sensitive key: %q", got)
+	if _, err := g.ExecuteWrite(context.Background(), "run-1", "atlassian.getJiraIssue", nil); err == nil {
+		t.Fatal("expected ExecuteWrite to reject a read-only operation")
 	}
 }
 
-func TestRequestApprovalWithoutPreviewLeavesPreviewUnset(t *testing.T) {
-	g, _ := newTestGate(t)
-
-	rec, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar)
-	if err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if rec.Preview != nil {
-		t.Fatalf("expected no preview when none supplied, got %q", *rec.Preview)
-	}
-}
-
-func TestGateDeniedOperationStillProceeds(t *testing.T) {
-	// Deny still records a denial in the audit trail, but no longer blocks
-	// the call - there is nothing left to enforce it.
-	g, fc := newTestGate(t)
-
-	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := g.Deny("run-1", "ygrip"); err != nil {
-		t.Fatalf("Deny: %v", err)
-	}
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
-		t.Fatalf("Call: %v", err)
-	}
-	if len(fc.calls) != 1 {
-		t.Fatalf("expected the adapter call to go through despite denial, got %+v", fc.calls)
-	}
-}
-
-func TestGateApprovalCoversEveryWriteInRun(t *testing.T) {
-	g, fc := newTestGate(t)
-
-	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := g.Approve("run-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
-
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.addWorklog", map[string]any{"timeSpentSeconds": 60}); err != nil {
-		t.Fatalf("Call second operation after run approval: %v", err)
-	}
-	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addWorklog" {
-		t.Fatalf("calls = %+v, want addWorklog", fc.calls)
-	}
-}
-
-func TestGateApprovalCoversDifferentAdaptersInSameRun(t *testing.T) {
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	store := approvals.New(db, "test-project")
-	firstCaller := &fakeCaller{}
-	secondCaller := &fakeCaller{}
-	first := NewGate("atlassian", testManifest(), firstCaller, store)
-	second := NewGate("another-adapter", testManifest(), secondCaller, store)
-
-	if _, err := first.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval: %v", err)
-	}
-	if err := first.Approve("run-1", "ygrip"); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
-	if _, err := second.Call(context.Background(), "run-1", "atlassian.addWorklog", nil); err != nil {
-		t.Fatalf("Call through second adapter: %v", err)
-	}
-	if len(secondCaller.calls) != 1 {
-		t.Fatalf("second adapter calls = %+v, want one", secondCaller.calls)
-	}
-}
-
-func TestGateDayScopeSharesApprovalAcrossRunIDs(t *testing.T) {
-	g, fc := newTestGate(t)
-	g.SetApprovalScope("day")
-
-	if _, err := g.RequestApproval("run-1", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval run-1: %v", err)
-	}
-	if err := g.Approve("run-1", "ygrip"); err != nil {
-		t.Fatalf("Approve run-1: %v", err)
-	}
-
-	// A different run_id, same adapter, same day: punokawan-cy8's whole
-	// point is that resuming the same task across runs should not re-prompt.
-	if _, err := g.RequestApproval("run-2", "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-		t.Fatalf("RequestApproval run-2: %v", err)
-	}
-	if _, err := g.Call(context.Background(), "run-2", "atlassian.addJiraComment", map[string]any{"commentBody": "hi"}); err != nil {
-		t.Fatalf("Call for run-2 without a separate approval: %v", err)
-	}
-	if len(fc.calls) != 1 {
-		t.Fatalf("calls = %+v, want one", fc.calls)
-	}
-}
-
-func TestCallEnqueuesFailureWhenSyncQueueIsSet(t *testing.T) {
-	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
-	if err != nil {
-		t.Fatalf("storage.Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	store := approvals.New(db, "test-project")
-	fc := &fakeCaller{failOps: map[string]bool{"atlassian.getJiraIssue": true}}
-	g := NewGate("atlassian", testManifest(), fc, store)
-
-	queue := syncqueue.New(db, "test-project")
-	g.SetSyncQueue(func() (*syncqueue.Queue, error) { return queue, nil })
-
-	if _, err := g.Call(context.Background(), "run-1", "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
-		t.Fatal("expected the simulated adapter failure to surface")
-	}
-
-	pending, err := queue.Pending()
-	if err != nil {
-		t.Fatalf("Pending: %v", err)
-	}
-	if len(pending) != 1 {
-		t.Fatalf("Pending = %+v, want exactly one queued failure", pending)
-	}
-	if pending[0].Adapter != "atlassian" || pending[0].Op != "atlassian.getJiraIssue" || pending[0].IssueIdOrKey != "PAY-1" {
-		t.Fatalf("queued entry = %+v, want adapter/op/issue_id_or_key set from the failed call", pending[0])
-	}
-}
-
-func TestCallWithoutSyncQueueJustReturnsTheError(t *testing.T) {
+func TestCallReturnsTheAdapterErrorOnFailure(t *testing.T) {
 	g, fc := newTestGate(t)
 	fc.failOps = map[string]bool{"atlassian.getJiraIssue": true}
 
 	if _, err := g.Call(context.Background(), "run-1", "atlassian.getJiraIssue", map[string]any{"issueIdOrKey": "PAY-1"}); err == nil {
 		t.Fatal("expected the simulated adapter failure to surface")
-	}
-}
-
-func TestOperationCategoryMapping(t *testing.T) {
-	cases := map[string]protocol.ApprovalRecordOperation{
-		"atlassian.updateConfluencePage": protocol.ApprovalRecordOperationConfluenceUpdate,
-		"atlassian.createJiraIssue":      protocol.ApprovalRecordOperationIssueCreation,
-		"atlassian.transitionJiraIssue":  protocol.ApprovalRecordOperationIssueTransition,
-		"atlassian.addJiraComment":       protocol.ApprovalRecordOperationExternalWrite,
-	}
-	for op, want := range cases {
-		if got := operationCategory(op); got != want {
-			t.Errorf("operationCategory(%q) = %q, want %q", op, got, want)
-		}
 	}
 }

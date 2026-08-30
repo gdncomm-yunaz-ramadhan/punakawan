@@ -37,13 +37,28 @@ func NewStore(db *storage.DB) *Store {
 // new plan lineage, matching delivery.NewID's convention.
 func NewID() string { return ulid.Make().String() }
 
-// Save appends a new revision to p.ID's lineage: Revision and
+// Save appends a new revision to p.ID's lineage, minting a fresh
+// idempotency key on every call: Save is a compatibility wrapper over
+// SaveWithKey for a caller with no idempotency key of its own, matching
+// its previous never-deduplicated behavior exactly.
+func (s *Store) Save(ctx context.Context, p Plan) (Plan, error) {
+	key, err := writeKey()
+	if err != nil {
+		return Plan{}, err
+	}
+	return s.SaveWithKey(ctx, key, p)
+}
+
+// SaveWithKey appends a new revision to p.ID's lineage: Revision and
 // PreviousRevision are always computed here and overwrite whatever p
 // carried in, so a lineage's revisions stay strictly sequential and
-// never mutate an existing (id, revision) row. Reuse an existing plan's
-// ID to add a revision on top of it, or a fresh ID (NewID) to start a
-// new lineage.
-func (s *Store) Save(ctx context.Context, p Plan) (Plan, error) {
+// never mutate an existing (plan_id, revision) row. Reuse an existing
+// plan's ID to add a revision on top of it, or a fresh ID (NewID) to
+// start a new lineage. Repeating the same idempotencyKey resolves to the
+// lineage's current head instead of appending a second, identical
+// revision - the property internal/deliveryservice's reconcile.go relies
+// on to make repeated reconciliation idempotent.
+func (s *Store) SaveWithKey(ctx context.Context, idempotencyKey string, p Plan) (Plan, error) {
 	if strings.TrimSpace(p.ID) == "" {
 		return Plan{}, fmt.Errorf("plan: save: id is required")
 	}
@@ -64,14 +79,9 @@ func (s *Store) Save(ctx context.Context, p Plan) (Plan, error) {
 		p.Steps[i].ID = id
 	}
 
-	key, err := writeKey()
-	if err != nil {
-		return Plan{}, err
-	}
-
-	err = s.db.Write(ctx, key, "save plan "+p.ID, func(tx *sql.Tx) error {
+	err := s.db.Write(ctx, idempotencyKey, "save plan "+p.ID, func(tx *sql.Tx) error {
 		var maxRevision sql.NullInt64
-		if err := tx.QueryRowContext(ctx, `SELECT MAX(revision) FROM plans WHERE id = ?`, p.ID).Scan(&maxRevision); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT MAX(revision) FROM plan_revisions WHERE plan_id = ?`, p.ID).Scan(&maxRevision); err != nil {
 			return fmt.Errorf("plan: save %s: read current revision: %w", p.ID, err)
 		}
 		if maxRevision.Valid {
@@ -88,7 +98,7 @@ func (s *Store) Save(ctx context.Context, p Plan) (Plan, error) {
 			return fmt.Errorf("plan: save %s: encode: %w", p.ID, err)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO plans (id, revision, data, created_at) VALUES (?, ?, ?, ?)`,
+			`INSERT INTO plan_revisions (plan_id, revision, data, created_at) VALUES (?, ?, ?, ?)`,
 			p.ID, p.Revision, string(data), p.CreatedAt.Format(time.RFC3339Nano),
 		); err != nil {
 			return fmt.Errorf("plan: save %s: insert revision %d: %w", p.ID, p.Revision, err)
@@ -96,10 +106,10 @@ func (s *Store) Save(ctx context.Context, p Plan) (Plan, error) {
 		return nil
 	})
 	if errors.Is(err, storage.ErrDuplicateWrite) {
-		// writeKey is fresh random bytes every call, so a genuine replay
-		// here would be surprising - fall back to reading back the
-		// lineage's actual current head rather than trusting the p this
-		// call computed, since this call's own write did not happen.
+		// A repeated idempotencyKey means this exact call already
+		// happened - fall back to reading back the lineage's actual
+		// current head rather than trusting the p this call computed,
+		// since this call's own write did not happen.
 		return s.Get(ctx, p.ID)
 	}
 	if err != nil {
@@ -108,11 +118,26 @@ func (s *Store) Save(ctx context.Context, p Plan) (Plan, error) {
 	return p, nil
 }
 
+// ExistsRevision reports whether exactly (id, revision) has been saved.
+func (s *Store) ExistsRevision(ctx context.Context, id string, revision int) (bool, error) {
+	var exists int
+	err := s.db.Reader().QueryRowContext(ctx,
+		`SELECT 1 FROM plan_revisions WHERE plan_id = ? AND revision = ?`, id, revision,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("plan: exists revision %s@%d: %w", id, revision, err)
+	}
+	return true, nil
+}
+
 // Get returns id's current (highest-revision) Plan.
 func (s *Store) Get(ctx context.Context, id string) (Plan, error) {
 	var data string
 	err := s.db.Reader().QueryRowContext(ctx,
-		`SELECT data FROM plans WHERE id = ? ORDER BY revision DESC LIMIT 1`, id,
+		`SELECT data FROM plan_revisions WHERE plan_id = ? ORDER BY revision DESC LIMIT 1`, id,
 	).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Plan{}, ErrNotFound
@@ -127,7 +152,7 @@ func (s *Store) Get(ctx context.Context, id string) (Plan, error) {
 func (s *Store) GetRevision(ctx context.Context, id string, revision int) (Plan, error) {
 	var data string
 	err := s.db.Reader().QueryRowContext(ctx,
-		`SELECT data FROM plans WHERE id = ? AND revision = ?`, id, revision,
+		`SELECT data FROM plan_revisions WHERE plan_id = ? AND revision = ?`, id, revision,
 	).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Plan{}, ErrNotFound
@@ -142,10 +167,10 @@ func (s *Store) GetRevision(ctx context.Context, id string, revision int) (Plan,
 // id.
 func (s *Store) List(ctx context.Context) ([]Plan, error) {
 	rows, err := s.db.Reader().QueryContext(ctx, `
-SELECT p.data FROM plans p
-INNER JOIN (SELECT id, MAX(revision) AS revision FROM plans GROUP BY id) latest
-  ON latest.id = p.id AND latest.revision = p.revision
-ORDER BY p.id`)
+SELECT p.data FROM plan_revisions p
+INNER JOIN (SELECT plan_id, MAX(revision) AS revision FROM plan_revisions GROUP BY plan_id) latest
+  ON latest.plan_id = p.plan_id AND latest.revision = p.revision
+ORDER BY p.plan_id`)
 	if err != nil {
 		return nil, fmt.Errorf("plan: list: %w", err)
 	}
@@ -188,6 +213,132 @@ func (s *Store) ListByProject(ctx context.Context, projectID string) ([]Plan, er
 				break
 			}
 		}
+	}
+	return out, nil
+}
+
+// LinkedPlan is one exact plan revision a delivery links, at whichever
+// scope it was linked under: "delivery" for the cross-project high-level
+// plan, "project" for one project's own detailed plan.
+type LinkedPlan struct {
+	ProjectID    string    `json:"project_id,omitempty"`
+	Scope        string    `json:"scope"`
+	Plan         Plan      `json:"plan"`
+	LinkedAt     time.Time `json:"linked_at"`
+	HeadRevision int       `json:"head_revision"`
+}
+
+// DeliveryPlanRef is one delivery that links a plan revision belonging to
+// a given project, the reverse of LinkedPlan's delivery -> plan
+// direction.
+type DeliveryPlanRef struct {
+	OrchestrationID string    `json:"orchestration_id"`
+	Scope           string    `json:"scope"`
+	PlanID          string    `json:"plan_id"`
+	PlanRevision    int       `json:"plan_revision"`
+	LinkedAt        time.Time `json:"linked_at"`
+}
+
+// ListByDelivery returns every plan revision orchestrationID links -
+// its own high-level plan (scope "delivery") plus one entry per
+// project-scoped detailed plan (scope "project") - each carrying the
+// exact linked Plan content alongside its lineage's current head
+// revision, so a caller can tell "this delivery still points at the
+// head" from "the plan moved on since this delivery linked it".
+//
+// This reaches across into internal/delivery's own delivery_plan_links
+// table by direct SQL rather than importing that package: both packages
+// share the one SQLite kernel (internal/app.OpenStorage), and importing
+// internal/delivery here would create the same cyclic dependency
+// internal/delivery.Store.LinkProjectPlan already avoids on plan.Store by
+// validating plan_revisions the same way, in the other direction.
+func (s *Store) ListByDelivery(ctx context.Context, orchestrationID string) ([]LinkedPlan, error) {
+	rows, err := s.db.Reader().QueryContext(ctx, `
+SELECT link.project_id, link.scope, link.plan_id, link.plan_revision, link.created_at
+FROM delivery_plan_links link
+WHERE link.orchestration_id = ?
+ORDER BY link.created_at, link.scope, link.project_id`, orchestrationID)
+	if err != nil {
+		return nil, fmt.Errorf("plan: list by delivery %s: %w", orchestrationID, err)
+	}
+	defer rows.Close()
+
+	type row struct {
+		projectID string
+		scope     string
+		planID    string
+		revision  int
+		createdAt string
+	}
+	var linkRows []row
+	for rows.Next() {
+		var r row
+		var projectID sql.NullString
+		if err := rows.Scan(&projectID, &r.scope, &r.planID, &r.revision, &r.createdAt); err != nil {
+			return nil, fmt.Errorf("plan: list by delivery %s: scan: %w", orchestrationID, err)
+		}
+		r.projectID = projectID.String
+		linkRows = append(linkRows, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("plan: list by delivery %s: %w", orchestrationID, err)
+	}
+
+	out := make([]LinkedPlan, 0, len(linkRows))
+	for _, r := range linkRows {
+		p, err := s.GetRevision(ctx, r.planID, r.revision)
+		if err != nil {
+			return nil, fmt.Errorf("plan: list by delivery %s: read %s@%d: %w", orchestrationID, r.planID, r.revision, err)
+		}
+		head, err := s.Get(ctx, r.planID)
+		if err != nil {
+			return nil, fmt.Errorf("plan: list by delivery %s: read head of %s: %w", orchestrationID, r.planID, err)
+		}
+		linkedAt, err := time.Parse(time.RFC3339Nano, r.createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("plan: list by delivery %s: parse linked_at: %w", orchestrationID, err)
+		}
+		out = append(out, LinkedPlan{
+			ProjectID: r.projectID, Scope: r.scope, Plan: p,
+			LinkedAt: linkedAt, HeadRevision: head.Revision,
+		})
+	}
+	return out, nil
+}
+
+// ListDeliveriesByProject returns every delivery that has ever linked a
+// plan revision to projectID, project-scoped links only (a
+// cross-project, delivery-scoped high-level plan names no single
+// project). This is ListByDelivery's reverse: "which deliveries used
+// this project's plans" rather than "which plans does this delivery
+// use".
+func (s *Store) ListDeliveriesByProject(ctx context.Context, projectID string) ([]DeliveryPlanRef, error) {
+	rows, err := s.db.Reader().QueryContext(ctx, `
+SELECT orchestration_id, scope, plan_id, plan_revision, created_at
+FROM delivery_plan_links
+WHERE project_id = ?
+ORDER BY created_at, orchestration_id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("plan: list deliveries by project %s: %w", projectID, err)
+	}
+	defer rows.Close()
+
+	out := []DeliveryPlanRef{}
+	for rows.Next() {
+		var ref DeliveryPlanRef
+		var createdAt string
+		if err := rows.Scan(&ref.OrchestrationID, &ref.Scope, &ref.PlanID, &ref.PlanRevision, &createdAt); err != nil {
+			return nil, fmt.Errorf("plan: list deliveries by project %s: scan: %w", projectID, err)
+		}
+		linkedAt, err := time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("plan: list deliveries by project %s: parse linked_at: %w", projectID, err)
+		}
+		ref.LinkedAt = linkedAt
+		out = append(out, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("plan: list deliveries by project %s: %w", projectID, err)
 	}
 	return out, nil
 }

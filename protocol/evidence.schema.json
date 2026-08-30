@@ -15,7 +15,7 @@
       "enum": [
         "source-excerpt", "repository-snapshot", "command-output", "test-report",
         "playwright-trace", "screenshot", "api-diff", "git-diff", "commit",
-        "user-answer", "approval-record", "external-response", "review-finding"
+        "user-answer", "external-response", "review-finding"
       ]
     },
     "path": { "type": "string" },

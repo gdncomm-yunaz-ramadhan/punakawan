@@ -1,12 +1,13 @@
 // Package app wires a discovered workspace to the services built from it
-// (policy, tool supervisor, approvals, git inspection, worktree lifecycle),
-// giving the CLI (and eventually the daemon, §3.1) a single bootstrap path
-// instead of each entrypoint wiring these individually.
+// (policy, tool supervisor, git inspection, worktree lifecycle), giving the
+// CLI (and eventually the daemon, §3.1) a single bootstrap path instead of
+// each entrypoint wiring these individually.
 package app
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,12 +15,12 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/learning"
+	"github.com/ygrip/punakawan/internal/outbox"
 	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/planexec"
 	"github.com/ygrip/punakawan/internal/policy"
@@ -27,10 +28,8 @@ import (
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/storage"
-	"github.com/ygrip/punakawan/internal/syncqueue"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
-	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/internal/workspace"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -46,12 +45,10 @@ type App struct {
 	AdapterRegistry *adapters.Registry
 	PrReviews       *prreview.Store
 	ContextRequests *contextrequest.Store
-	// RoleConfig is the shared §47 role-configuration resolver: it maps a
-	// project id + optional workflow to a role's effective configuration
-	// (project settings intersected with any workflow restriction). It is the
-	// single foundation the ROLE-* wiring (prompt injection, workflow
-	// restriction, run snapshot, Authorize gating) builds on. May be nil if
-	// construction failed; every call site must guard nil.
+	// RoleConfig resolves a project's persisted role prompt preferences
+	// (style + free-text instructions) for prompt rendering. It shapes prompt
+	// wording only - it never authorizes a tool or gates a workflow stage.
+	// May be nil if construction failed; every call site must guard nil.
 	RoleConfig *roleconfig.Resolver
 
 	knowledgeMu    sync.Mutex
@@ -59,9 +56,6 @@ type App struct {
 
 	storageMu sync.Mutex
 	storageDB *storage.DB
-
-	approvalsMu    sync.Mutex
-	approvalsStore *approvals.Store
 
 	planMu    sync.Mutex
 	planStore *plan.Store
@@ -72,8 +66,8 @@ type App struct {
 	learningMu    sync.Mutex
 	learningStore *learning.Store
 
-	syncQueueMu sync.Mutex
-	syncQueue   *syncqueue.Queue
+	outboxMu sync.Mutex
+	outbox   *outbox.Store
 
 	searchIndexMu sync.Mutex
 	searchIndex   *search.Index
@@ -149,7 +143,11 @@ func load(ws *workspace.Workspace) (*App, error) {
 	roots = append(roots, worktreesDir)
 	sup := tools.New(roots...)
 
-	wf, err := workflow.Open(ws.Root)
+	workflowRoot, err := ws.WorkflowRoot()
+	if err != nil {
+		return nil, err
+	}
+	wf, err := workflow.Open(workflowRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -158,9 +156,25 @@ func load(ws *workspace.Workspace) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	trustFilePath, err := storage.AdapterTrustFilePath()
+	if err != nil {
+		return nil, err
+	}
+	trust, err := adapters.LoadTrustFile(trustFilePath)
+	if err != nil {
+		return nil, err
+	}
+
 	mergedAdapters := ws.MergeAdapters(global)
 	specs := make(map[string]adapters.AdapterSpec, len(mergedAdapters))
 	for id, cfg := range mergedAdapters {
+		// A repository-local adapter command (one resolving inside this
+		// checkout) can be swapped out by anyone who can write into the
+		// checkout, so it must be explicitly trusted by this host before
+		// Punakawan will ever start it - see adapters.TrustStore.
+		if err := adapters.RequireTrustedIfRepositoryLocal(cfg.Command, ws.Root, trust); err != nil {
+			return nil, fmt.Errorf("app: adapter %q: %w", id, err)
+		}
 		specs[id] = adapters.AdapterSpec{
 			Command:        cfg.Command,
 			Args:           cfg.Args,
@@ -195,27 +209,17 @@ func load(ws *workspace.Workspace) (*App, error) {
 		a.ephemeralRoot = ws.Root
 	}
 
-	// The approval store and sync queue now live in the shared SQLite kernel,
-	// opened lazily so a command that never touches an approval or records a
-	// failed adapter write never pays to open the kernel. The registry
-	// therefore takes a provider (a.OpenApprovals, a.OpenSyncQueue) rather
-	// than an already-opened store, deferring the open to the first
-	// operation that actually needs it. The worktree manager needs no
-	// approval store at all: creating a worktree is internal execution
-	// infrastructure, not a human-approval-gated action.
-	registry := adapters.NewRegistry(specs, a.OpenApprovals)
-	registry.SetApprovalScope(pol.Approvals.Scope)
-	registry.SetSyncQueue(a.OpenSyncQueue)
+	registry := adapters.NewRegistry(specs)
 	a.AdapterRegistry = registry
 	a.Worktrees = gitops.NewWorktreeManager(sup, pol)
 
 	return a, nil
 }
 
-// newRoleResolver builds the shared §47 role-configuration resolver for a
-// workspace. Both lookups are resilient: a read failure surfaces as an error
-// to the caller of Effective/Authorize (which guard it) but never panics, and
-// a nil resolver is tolerated everywhere it is used.
+// newRoleResolver builds the shared role prompt-preference resolver for a
+// workspace. A read failure surfaces as an error to the caller (which guards
+// it) but never panics, and a nil resolver is tolerated everywhere it is
+// used.
 //
 // Limitation: the App currently holds no registry of non-primary project
 // roots, so Load resolves every project id to the primary workspace root. An
@@ -230,37 +234,8 @@ func newRoleResolver(ws *workspace.Workspace) *roleconfig.Resolver {
 		return ws.Root
 	}
 	return &roleconfig.Resolver{
-		Load: func(projectID string) (*protocol.RoleConfiguration, error) {
+		Load: func(projectID string) (*protocol.RolePreferences, error) {
 			return roleconfig.Load(rootFor(projectID))
-		},
-		Restrictions: func(projectID, workflowID string, role roleconfig.Role) (*roleconfig.Restriction, error) {
-			if workflowID == "" {
-				return nil, nil
-			}
-			store, err := workflowdef.Open(rootFor(projectID))
-			if err != nil {
-				return nil, err
-			}
-			def, err := store.Get(workflowID)
-			if errors.Is(err, workflowdef.ErrNotFound) {
-				return nil, nil // no definition: no restriction
-			}
-			if err != nil {
-				return nil, err
-			}
-			rr, ok := def.Roles[string(role)]
-			if !ok {
-				return nil, nil // role not restricted by this workflow
-			}
-			var mode *protocol.RoleConfigMode
-			if rr.Mode != nil {
-				m := protocol.RoleConfigMode(*rr.Mode)
-				mode = &m
-			}
-			return &roleconfig.Restriction{
-				Mode:         mode,
-				Capabilities: rr.Capabilities,
-			}, nil
 		},
 	}
 }
@@ -391,48 +366,11 @@ func (a *App) OpenPlanExec() (*planexec.Store, error) {
 	return a.planExecStore, nil
 }
 
-// OpenApprovals lazily opens the approval store, memoizing the result, scoped
-// to this workspace's id within the shared storage kernel. It is a thin
-// scope over the one shared *storage.DB rather than a per-project server,
-// so it starts nothing: the deferral simply avoids opening the kernel for
-// commands that never touch an approval. The adapter registry and
-// worktree manager hold this method as a provider, so the kernel opens on
-// the first approval-gated operation, not at Load.
-func (a *App) OpenApprovals() (*approvals.Store, error) {
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	a.approvalsMu.Lock()
-	defer a.approvalsMu.Unlock()
-
-	if a.approvalsStore != nil {
-		return a.approvalsStore, nil
-	}
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	db, err := a.OpenStorage(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	store := approvals.New(db, a.Workspace.ID)
-	// One-time import of any pre-kernel JSONL approvals file this workspace
-	// still has on disk. A failure is non-fatal: the store must still open,
-	// so the warning is logged rather than returned (losing old data beats a
-	// store that will not open). Runs once - OpenApprovals memoizes the store.
-	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
-		slog.Warn("approvals: legacy import failed; opening without imported data", "error", warn)
-	}
-	a.approvalsStore = store
-	return a.approvalsStore, nil
-}
-
 // OpenLearning lazily opens the learning-proposal side-store, memoizing the
-// result, scoped to this workspace's id within the shared storage kernel.
-// Like OpenApprovals, it is a thin scope over the one
-// shared *storage.DB rather than a per-project server, so it starts nothing:
-// the deferral simply avoids opening the kernel for commands that never touch
-// a learning proposal.
+// result, scoped to this workspace's id within the shared storage kernel. It
+// is a thin scope over the one shared *storage.DB rather than a per-project
+// server, so it starts nothing: the deferral simply avoids opening the
+// kernel for commands that never touch a learning proposal.
 func (a *App) OpenLearning() (*learning.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -452,8 +390,9 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 	}
 	store := learning.New(db, a.Workspace.ID)
 	// One-time import of any pre-kernel JSONL proposals file this workspace
-	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
-	// OpenLearning memoizes the store.
+	// still has on disk. A failure is non-fatal: the store must still open,
+	// so the warning is logged rather than returned (losing old data beats a
+	// store that will not open). Runs once - OpenLearning memoizes the store.
 	if warn := store.ImportLegacy(a.Workspace.Root); warn != nil {
 		slog.Warn("learning: legacy import failed; opening without imported data", "error", warn)
 	}
@@ -461,23 +400,21 @@ func (a *App) OpenLearning() (*learning.Store, error) {
 	return a.learningStore, nil
 }
 
-// OpenSyncQueue lazily opens the outbound-adapter-write sync queue, memoizing
-// the result, scoped to this workspace's id within the shared storage kernel.
-// Like OpenApprovals, it is a thin scope over the one
-// shared *storage.DB rather than a per-project server, so it starts nothing:
-// the deferral simply avoids opening the kernel for commands that never record
-// or inspect a failed adapter write. The adapter registry holds this method as
-// a provider, so the kernel opens on the first adapter write that fails, not at
-// Load.
-func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
+// OpenOutbox lazily opens the durable provider-write outbox, memoizing the
+// result. Unlike per-workspace stores, the outbox is not scoped to this
+// workspace's id: every enqueued intent already names its own
+// orchestration/execution/session, and the outbox's exactly-once claim
+// semantics require every worker (regardless of which workspace enqueued a
+// given intent) to see the same rows through the one shared kernel.
+func (a *App) OpenOutbox() (*outbox.Store, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
 	}
-	a.syncQueueMu.Lock()
-	defer a.syncQueueMu.Unlock()
+	a.outboxMu.Lock()
+	defer a.outboxMu.Unlock()
 
-	if a.syncQueue != nil {
-		return a.syncQueue, nil
+	if a.outbox != nil {
+		return a.outbox, nil
 	}
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -486,15 +423,8 @@ func (a *App) OpenSyncQueue() (*syncqueue.Queue, error) {
 	if err != nil {
 		return nil, err
 	}
-	queue := syncqueue.New(db, a.Workspace.ID)
-	// One-time import of any pre-kernel JSONL sync-queue file this workspace
-	// still has on disk; non-fatal on failure (see OpenApprovals). Runs once -
-	// OpenSyncQueue memoizes the queue.
-	if warn := queue.ImportLegacy(a.Workspace.Root); warn != nil {
-		slog.Warn("syncqueue: legacy import failed; opening without imported data", "error", warn)
-	}
-	a.syncQueue = queue
-	return a.syncQueue, nil
+	a.outbox = outbox.New(db)
+	return a.outbox, nil
 }
 
 // JiraWorkflow lazily loads and memoizes the workspace's Jira workflow
@@ -597,17 +527,13 @@ func (a *App) Close() error {
 	a.knowledgeStore = nil
 	a.knowledgeMu.Unlock()
 
-	a.approvalsMu.Lock()
-	a.approvalsStore = nil
-	a.approvalsMu.Unlock()
-
 	a.learningMu.Lock()
 	a.learningStore = nil
 	a.learningMu.Unlock()
 
-	a.syncQueueMu.Lock()
-	a.syncQueue = nil
-	a.syncQueueMu.Unlock()
+	a.outboxMu.Lock()
+	a.outbox = nil
+	a.outboxMu.Unlock()
 
 	if a.ephemeralRoot != "" {
 		os.RemoveAll(a.ephemeralRoot)

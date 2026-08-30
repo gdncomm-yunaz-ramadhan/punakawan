@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -508,6 +509,8 @@ func TestDeliveryViewIncludesHighLevelAndProjectPlans(t *testing.T) {
 		t.Fatalf("StartDeliveryWithOptions: %v", err)
 	}
 	project := registerProject(t, s, "billing")
+	seedPlanRevision(t, s, "billing-plan", 1, []string{project.Id})
+	seedPlanRevision(t, s, "billing-plan", 2, []string{project.Id})
 	if err := s.LinkProjectPlan(ctx, "link-billing-plan", view.Orchestration.Id, project.Id, "billing-plan", 2); err != nil {
 		t.Fatalf("LinkProjectPlan: %v", err)
 	}
@@ -652,5 +655,101 @@ func TestDeliveryViewDerivesTitleWithoutAnyTitleEvent(t *testing.T) {
 	}
 	if bareView.Title == "" {
 		t.Fatal("Title is empty for an orchestration with no requirements; want a non-empty last-resort label")
+	}
+}
+
+// TestDeliveryViewSurfacesCumulativeTelemetry asserts BuildDeliveryView
+// reports the same cumulative usage internal/telemetry itself computes,
+// and that it is additive across two sessions on the same orchestration.
+func TestDeliveryViewSurfacesCumulativeTelemetry(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id := NewID()
+
+	if _, err := s.CreateOrchestration(ctx, "create-"+id, id, []protocol.DeliveryOrchestrationUnresolvedInputsElem{{Reference: "note"}}); err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+
+	view, err := s.BuildDeliveryView(ctx, id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if view.Telemetry.Counters.InputTokens != 0 {
+		t.Fatalf("Telemetry.Counters.InputTokens = %d, want 0 before any session begins", view.Telemetry.Counters.InputTokens)
+	}
+
+	tstore := telemetry.NewStore(s.db)
+	sessA, err := tstore.Begin(ctx, telemetry.BeginRequest{DeliveryID: id, ClientKind: "claude-code", ExternalSessionID: "sess-a"})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	sessB, err := tstore.Begin(ctx, telemetry.BeginRequest{DeliveryID: id, ClientKind: "codex", ExternalSessionID: "sess-b"})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if _, err := tstore.IngestSnapshot(ctx, telemetry.SnapshotRequest{SessionID: sessA.ID, SourceID: "main", Sequence: 1, InputTokens: 10}); err != nil {
+		t.Fatalf("IngestSnapshot: %v", err)
+	}
+	if _, err := tstore.IngestSnapshot(ctx, telemetry.SnapshotRequest{SessionID: sessB.ID, SourceID: "main", Sequence: 1, InputTokens: 30}); err != nil {
+		t.Fatalf("IngestSnapshot: %v", err)
+	}
+
+	view, err = s.BuildDeliveryView(ctx, id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if view.Telemetry.Counters.InputTokens != 40 {
+		t.Fatalf("Telemetry.Counters.InputTokens = %d, want 40 (additive across both sessions)", view.Telemetry.Counters.InputTokens)
+	}
+}
+
+// TestAllOrchestrationStatesMatchesPerOrchestrationLookup covers the
+// batch path a list projection uses instead of calling GetOrchestration
+// once per id: for a handful of orchestrations with distinct titles and
+// statuses, the batched result must report the exact same orchestration
+// record and derived title GetOrchestration/BuildDeliveryView would each
+// report individually.
+func TestAllOrchestrationStatesMatchesPerOrchestrationLookup(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	first := createTestOrchestration(t, s)
+	second, err := s.CreateOrchestrationWithOptions(ctx, "create-second", NewID(), nil, OrchestrationOptions{Title: "Second delivery"})
+	if err != nil {
+		t.Fatalf("CreateOrchestrationWithOptions: %v", err)
+	}
+	if _, err := s.CancelOrchestration(ctx, "cancel-second", second.Id, second.Revision); err != nil {
+		t.Fatalf("CancelOrchestration: %v", err)
+	}
+
+	states, ids, err := s.AllOrchestrationStates(ctx)
+	if err != nil {
+		t.Fatalf("AllOrchestrationStates: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("ids = %+v, want exactly the 2 seeded orchestrations", ids)
+	}
+
+	firstView, err := s.BuildDeliveryView(ctx, first.Id)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView(first): %v", err)
+	}
+	firstState, ok := states[first.Id]
+	if !ok {
+		t.Fatalf("states missing %s", first.Id)
+	}
+	if firstState.Title != firstView.Title || firstState.Orchestration.Status != firstView.Orchestration.Status {
+		t.Fatalf("first state = %+v, want title %q status %s", firstState, firstView.Title, firstView.Orchestration.Status)
+	}
+
+	secondState, ok := states[second.Id]
+	if !ok {
+		t.Fatalf("states missing %s", second.Id)
+	}
+	if secondState.Title != "Second delivery" {
+		t.Fatalf("second title = %q, want %q", secondState.Title, "Second delivery")
+	}
+	if secondState.Orchestration.Status != protocol.DeliveryOrchestrationStatusCancelled {
+		t.Fatalf("second status = %s, want cancelled", secondState.Orchestration.Status)
 	}
 }

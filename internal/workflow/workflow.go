@@ -14,7 +14,6 @@ var validStates = map[protocol.WorkflowRunState]bool{
 	protocol.WorkflowRunStateContextBuilding:       true,
 	protocol.WorkflowRunStateAwaitingClarification: true,
 	protocol.WorkflowRunStatePlanning:              true,
-	protocol.WorkflowRunStateAwaitingApproval:      true,
 	protocol.WorkflowRunStateExecuting:             true,
 	protocol.WorkflowRunStateReviewing:             true,
 	protocol.WorkflowRunStateBlocked:               true,
@@ -40,10 +39,11 @@ func IsTerminal(state protocol.WorkflowRunState) bool {
 // diagram, mapped onto the state names protocol/workflow.schema.json
 // enumerates: intake (created) -> context dossier (context-building) ->
 // either the clarification loop (awaiting-clarification, which loops back
-// to context-building per §9.2) or straight to planning -> the delivery
-// approval gate (awaiting-approval) -> task execution (executing) ->
-// Bagong's independent review (reviewing), which either sends work back to
-// executing ("changes required", §9's diagram) or reaches completed.
+// to context-building per §9.2) or straight to planning -> task execution
+// (executing) -> Bagong's independent review (reviewing), which either
+// sends work back to executing ("changes required", §9's diagram) or
+// reaches completed. Execution is not gated behind a separate approval
+// state: authorized work proceeds straight from planning to executing.
 //
 // This is deliberately not a single linear sequence — §9's diagram has two
 // loops (clarification back to context-building, review back to
@@ -57,8 +57,7 @@ var forwardTransitions = map[protocol.WorkflowRunState][]protocol.WorkflowRunSta
 	protocol.WorkflowRunStateCreated:               {protocol.WorkflowRunStateContextBuilding},
 	protocol.WorkflowRunStateContextBuilding:       {protocol.WorkflowRunStateAwaitingClarification, protocol.WorkflowRunStatePlanning},
 	protocol.WorkflowRunStateAwaitingClarification: {protocol.WorkflowRunStateContextBuilding},
-	protocol.WorkflowRunStatePlanning:              {protocol.WorkflowRunStateAwaitingApproval},
-	protocol.WorkflowRunStateAwaitingApproval:      {protocol.WorkflowRunStateExecuting, protocol.WorkflowRunStatePlanning},
+	protocol.WorkflowRunStatePlanning:              {protocol.WorkflowRunStateExecuting},
 	protocol.WorkflowRunStateExecuting:             {protocol.WorkflowRunStateReviewing},
 	protocol.WorkflowRunStateReviewing:             {protocol.WorkflowRunStateExecuting, protocol.WorkflowRunStateCompleted},
 	// blocked has no fixed source stage (§9's diagram shows it reachable
@@ -69,7 +68,6 @@ var forwardTransitions = map[protocol.WorkflowRunState][]protocol.WorkflowRunSta
 		protocol.WorkflowRunStateContextBuilding,
 		protocol.WorkflowRunStateAwaitingClarification,
 		protocol.WorkflowRunStatePlanning,
-		protocol.WorkflowRunStateAwaitingApproval,
 		protocol.WorkflowRunStateExecuting,
 		protocol.WorkflowRunStateReviewing,
 	},

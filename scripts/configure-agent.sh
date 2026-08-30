@@ -163,4 +163,21 @@ else
   manual_claude
 fi
 
+# User-level hooks are installed regardless of which client binaries were
+# actually detected above: the hook config files (~/.codex/hooks.json,
+# ~/.claude/settings.json) are independent of whether that client's CLI
+# happens to be on PATH right now, and a client installed later still
+# benefits from telemetry being wired up already. PUNAKAWAN_SKIP_HOOKS=1
+# opts out entirely - only used by this repo's own installer test, which
+# verifies hook installation separately against an isolated $HOME instead
+# of ever touching this machine's real one from an ordinary install run.
+if [[ "${PUNAKAWAN_SKIP_HOOKS:-0}" != "1" ]]; then
+  log "Configuring Codex and Claude Code lifecycle telemetry hooks"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    print_command "$LAUNCHER" setup --hooks-only
+  else
+    "$LAUNCHER" setup --hooks-only || warn "Could not configure lifecycle telemetry hooks; delivery usage tracking will be incomplete until this is retried (run \`punakawan setup\` or check \`punakawan doctor\`)."
+  fi
+fi
+
 write_generic_config

@@ -1,0 +1,9 @@
+{
+  "session_id": "codex-thr-1",
+  "transcript_path": "{{TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "SubagentStart",
+  "model": "gpt-5-codex",
+  "agent_id": "agent-1",
+  "agent_type": "explore"
+}

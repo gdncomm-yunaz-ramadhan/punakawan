@@ -4,6 +4,7 @@ import path from 'node:path';
 import { markdownToAdf } from 'marklassian';
 import type { AtlassianRestClient, RestResponse } from './restClient.js';
 import { jiraText, normalizeConfluencePage, normalizeJiraIssue, normalizeJiraSearchIssue, type NormalizedJiraIssue } from './normalize.js';
+import { collectStartAtPages, DEFAULT_HARD_LIMIT_ITEMS } from './pagination.js';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
@@ -75,10 +76,11 @@ function optionalRaw<T extends Record<string, unknown>>(result: T, raw: RestResp
   return includeRaw ? { ...result, raw } : result;
 }
 
-export async function getJiraIssue(client: AtlassianRestClient, params: GetJiraIssueParams) {
+export async function getJiraIssue(client: AtlassianRestClient, params: GetJiraIssueParams, signal?: AbortSignal) {
   const fields = params.fields ?? [...DEFAULT_JIRA_ISSUE_FIELDS];
   const raw = await client.jira<Record<string, unknown>>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
     query: { fields: fields.join(',') },
+    signal,
   });
   const cloudId = await client.getCloudId();
   return optionalRaw({ normalized: normalizeJiraIssue(asRecord(raw.data), cloudId) }, raw, params.includeRaw);
@@ -97,10 +99,11 @@ function confluenceRepresentation(requested: string | undefined): string {
   return requested && supported.has(requested) ? requested : 'storage';
 }
 
-export async function getConfluencePage(client: AtlassianRestClient, params: GetConfluencePageParams) {
+export async function getConfluencePage(client: AtlassianRestClient, params: GetConfluencePageParams, signal?: AbortSignal) {
   const format = confluenceRepresentation(params.contentFormat);
   const raw = await client.confluence<Record<string, unknown>>(`/wiki/rest/api/content/${encodePath(params.pageId)}`, {
     query: { expand: `body.${format},version,space` },
+    signal,
   });
   const payload = { ...asRecord(raw.data), contentFormat: format };
   return optionalRaw({ normalized: normalizeConfluencePage(payload, await client.getCloudId()) }, raw, params.includeRaw);
@@ -113,12 +116,12 @@ export interface SearchJiraParams {
   includeRaw?: boolean;
 }
 
-export async function searchJira(client: AtlassianRestClient, params: SearchJiraParams) {
+export async function searchJira(client: AtlassianRestClient, params: SearchJiraParams, signal?: AbortSignal) {
   const body: Record<string, unknown> = { jql: params.jql };
   body.fields = params.fields ?? [...DEFAULT_JIRA_SEARCH_FIELDS];
   body.maxResults = params.maxResults ?? 20;
 
-  const raw = await client.jira<Record<string, unknown>>('/rest/api/3/search/jql', { method: 'POST', body });
+  const raw = await client.jira<Record<string, unknown>>('/rest/api/3/search/jql', { method: 'POST', body, signal });
   const payload = asRecord(raw.data);
   const issues = Array.isArray(payload.issues) ? payload.issues : [];
   const page = {
@@ -131,35 +134,49 @@ export async function searchJira(client: AtlassianRestClient, params: SearchJira
 
 export interface GetJiraCommentsParams {
   issueIdOrKey: string;
-  startAt?: number;
+  /** Page size requested per underlying REST call; every page is still collected up to the hard limit below. */
   maxResults?: number;
 }
 
-export async function getJiraComments(client: AtlassianRestClient, params: GetJiraCommentsParams) {
-  const startAt = Math.max(0, params.startAt ?? 0);
-  const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 20));
-  const raw = await client.jira<Record<string, unknown>>(
-    `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/comment`,
-    { query: { startAt, maxResults, orderBy: 'created' } },
-  );
-  const payload = asRecord(raw.data);
-  const comments = Array.isArray(payload.comments) ? payload.comments : [];
+function normalizeComment(entry: unknown) {
+  const comment = asRecord(entry);
+  const author = asRecord(comment.author);
   return {
-    comments: comments.map((entry) => {
-      const comment = asRecord(entry);
-      const author = asRecord(comment.author);
-      return {
-        id: asString(comment.id),
-        author: asString(author.displayName) ?? asString(author.accountId),
-        body: jiraText(comment.body),
-        created: asString(comment.created),
-        updated: asString(comment.updated),
-      };
-    }),
+    id: asString(comment.id),
+    author: asString(author.displayName) ?? asString(author.accountId),
+    body: jiraText(comment.body),
+    created: asString(comment.created),
+    updated: asString(comment.updated),
+  };
+}
+
+/**
+ * Fetches every comment on an issue, walking Jira's startAt/maxResults
+ * pagination (collectStartAtPages) instead of returning only the first
+ * page - a reconciler searching for one intent's marker comment must see
+ * every comment, not just however many fit the first response, or it would
+ * wrongly conclude a write never applied and replay it.
+ */
+export async function getJiraComments(client: AtlassianRestClient, params: GetJiraCommentsParams, signal?: AbortSignal) {
+  const pageSize = Math.min(100, Math.max(1, params.maxResults ?? 100));
+  const result = await collectStartAtPages(async (startAt) => {
+    const raw = await client.jira<Record<string, unknown>>(
+      `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/comment`,
+      { query: { startAt, maxResults: pageSize, orderBy: 'created' }, signal },
+    );
+    const payload = asRecord(raw.data);
+    const comments = Array.isArray(payload.comments) ? payload.comments : [];
+    return { values: comments, total: typeof payload.total === 'number' ? payload.total : undefined };
+  }, DEFAULT_HARD_LIMIT_ITEMS);
+
+  return {
+    comments: result.items.map(normalizeComment),
     page: {
-      startAt,
-      returned: comments.length,
-      total: typeof payload.total === 'number' ? payload.total : undefined,
+      returned: result.items.length,
+      total: result.items.length,
+      complete: result.complete,
+      pages: result.pages,
+      ...(result.truncated_reason ? { truncated_reason: result.truncated_reason } : {}),
     },
   };
 }
@@ -169,8 +186,8 @@ export interface GetJiraRemoteLinksParams {
   maxResults?: number;
 }
 
-export async function getJiraRemoteLinks(client: AtlassianRestClient, params: GetJiraRemoteLinksParams) {
-  const raw = await client.jira<unknown[]>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/remotelink`);
+export async function getJiraRemoteLinks(client: AtlassianRestClient, params: GetJiraRemoteLinksParams, signal?: AbortSignal) {
+  const raw = await client.jira<unknown[]>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/remotelink`, { signal });
   const all = Array.isArray(raw.data) ? raw.data : [];
   const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 20));
   const links = all.slice(0, maxResults).map((entry) => {
@@ -197,11 +214,11 @@ function quoteJql(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-export async function getJiraEpic(client: AtlassianRestClient, params: GetJiraEpicParams) {
+export async function getJiraEpic(client: AtlassianRestClient, params: GetJiraEpicParams, signal?: AbortSignal) {
   const maxChildren = Math.min(100, Math.max(1, params.maxChildren ?? 50));
   const [epic, children] = await Promise.all([
-    getJiraIssue(client, { issueIdOrKey: params.epicIdOrKey }),
-    searchJira(client, { jql: `parent = "${quoteJql(params.epicIdOrKey)}" ORDER BY key`, maxResults: maxChildren }),
+    getJiraIssue(client, { issueIdOrKey: params.epicIdOrKey }, signal),
+    searchJira(client, { jql: `parent = "${quoteJql(params.epicIdOrKey)}" ORDER BY key`, maxResults: maxChildren }, signal),
   ]);
   return { epic: epic.normalized, children: children.normalized, page: children.page };
 }
@@ -235,9 +252,10 @@ export interface ListJiraAttachmentsParams {
   maxResults?: number;
 }
 
-export async function listJiraAttachments(client: AtlassianRestClient, params: ListJiraAttachmentsParams) {
+export async function listJiraAttachments(client: AtlassianRestClient, params: ListJiraAttachmentsParams, signal?: AbortSignal) {
   const raw = await client.jira<Record<string, unknown>>(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
     query: { fields: 'attachment' },
+    signal,
   });
   const values = asRecord(raw.data).fields;
   const all = Array.isArray(asRecord(values).attachment) ? asRecord(values).attachment as unknown[] : [];
@@ -275,9 +293,10 @@ export async function downloadJiraAttachment(
   client: AtlassianRestClient,
   params: DownloadJiraAttachmentParams,
   workspaceRoot: string,
+  signal?: AbortSignal,
 ) {
   const target = workspacePath(workspaceRoot, params.outputPath);
-  const response = await client.jiraBytes(`/rest/api/3/attachment/content/${encodePath(params.attachmentId)}`);
+  const response = await client.jiraBytes(`/rest/api/3/attachment/content/${encodePath(params.attachmentId)}`, signal);
   await mkdir(path.dirname(target.absolute), { recursive: true });
   const [realRoot, realParent] = await Promise.all([realpath(workspaceRoot), realpath(path.dirname(target.absolute))]);
   if (realParent !== realRoot && !isInside(realRoot, realParent)) {
@@ -312,6 +331,7 @@ export async function uploadJiraAttachment(
   client: AtlassianRestClient,
   params: UploadJiraAttachmentParams,
   workspaceRoot: string,
+  signal?: AbortSignal,
 ) {
   const source = workspacePath(workspaceRoot, params.filePath);
   const [realRoot, realSource] = await Promise.all([realpath(workspaceRoot), realpath(source.absolute)]);
@@ -329,6 +349,7 @@ export async function uploadJiraAttachment(
     method: 'POST',
     multipart: form,
     headers: { 'X-Atlassian-Token': 'no-check' },
+    signal,
   });
   const uploaded = (Array.isArray(raw.data) ? raw.data : []).flatMap((entry) => {
     const compact = compactAttachment(entry);
@@ -341,8 +362,8 @@ export interface DeleteJiraAttachmentParams {
   attachmentId: string;
 }
 
-export async function deleteJiraAttachment(client: AtlassianRestClient, params: DeleteJiraAttachmentParams) {
-  await client.jira(`/rest/api/3/attachment/${encodePath(params.attachmentId)}`, { method: 'DELETE' });
+export async function deleteJiraAttachment(client: AtlassianRestClient, params: DeleteJiraAttachmentParams, signal?: AbortSignal) {
+  await client.jira(`/rest/api/3/attachment/${encodePath(params.attachmentId)}`, { method: 'DELETE', signal });
   return { ok: true, attachmentId: params.attachmentId, deleted: true };
 }
 
@@ -351,9 +372,10 @@ export interface SearchConfluenceParams {
   includeRaw?: boolean;
 }
 
-export async function searchConfluence(client: AtlassianRestClient, params: SearchConfluenceParams) {
+export async function searchConfluence(client: AtlassianRestClient, params: SearchConfluenceParams, signal?: AbortSignal) {
   const raw = await client.confluence<Record<string, unknown>>('/wiki/rest/api/content/search', {
     query: { cql: params.cql, expand: 'body.storage,version,space' },
+    signal,
   });
   const payload = asRecord(raw.data);
   const pages = Array.isArray(payload.results) ? payload.results : [];
@@ -369,10 +391,10 @@ export interface AddJiraCommentParams {
   commentBody: string;
 }
 
-export async function addJiraComment(client: AtlassianRestClient, params: AddJiraCommentParams) {
+export async function addJiraComment(client: AtlassianRestClient, params: AddJiraCommentParams, signal?: AbortSignal) {
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/comment`,
-    { method: 'POST', body: { body: markdownAdf(params.commentBody) } },
+    { method: 'POST', body: { body: markdownAdf(params.commentBody) }, signal },
   );
   const payload = asRecord(raw.data);
   const id = payload.id;
@@ -402,9 +424,10 @@ export interface GetTransitionsForJiraIssueParams {
   issueIdOrKey: string;
 }
 
-export async function getTransitionsForJiraIssue(client: AtlassianRestClient, params: GetTransitionsForJiraIssueParams) {
+export async function getTransitionsForJiraIssue(client: AtlassianRestClient, params: GetTransitionsForJiraIssueParams, signal?: AbortSignal) {
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/transitions`,
+    { signal },
   );
   return { transitions: extractTransitions(asRecord(raw.data)) };
 }
@@ -414,10 +437,11 @@ export interface TransitionJiraIssueParams {
   transitionId: string;
 }
 
-export async function transitionJiraIssue(client: AtlassianRestClient, params: TransitionJiraIssueParams) {
+export async function transitionJiraIssue(client: AtlassianRestClient, params: TransitionJiraIssueParams, signal?: AbortSignal) {
   const raw = await client.jira(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/transitions`, {
     method: 'POST',
     body: { transition: { id: params.transitionId } },
+    signal,
   });
   return { ok: true, payload: successPayload(raw) };
 }
@@ -427,10 +451,11 @@ export interface EditJiraIssueFieldsParams {
   fields: Record<string, unknown>;
 }
 
-export async function editJiraIssueFields(client: AtlassianRestClient, params: EditJiraIssueFieldsParams) {
+export async function editJiraIssueFields(client: AtlassianRestClient, params: EditJiraIssueFieldsParams, signal?: AbortSignal) {
   await client.jira(`/rest/api/3/issue/${encodePath(params.issueIdOrKey)}`, {
     method: 'PUT',
     body: { fields: params.fields },
+    signal,
   });
   return { ok: true, issueIdOrKey: params.issueIdOrKey, updatedFields: Object.keys(params.fields) };
 }
@@ -452,7 +477,7 @@ export interface EditJiraIssueParams {
   fields?: Record<string, unknown>;
 }
 
-export async function editJiraIssue(client: AtlassianRestClient, params: EditJiraIssueParams) {
+export async function editJiraIssue(client: AtlassianRestClient, params: EditJiraIssueParams, signal?: AbortSignal) {
   if (params.summary !== undefined && params.title !== undefined && params.summary !== params.title) {
     throw new Error('atlassian.editJiraIssue received conflicting "summary" and "title" values.');
   }
@@ -478,7 +503,7 @@ export async function editJiraIssue(client: AtlassianRestClient, params: EditJir
   if (Object.keys(fields).length === 0) {
     throw new Error('atlassian.editJiraIssue requires at least one editable field.');
   }
-  return editJiraIssueFields(client, { issueIdOrKey: params.issueIdOrKey, fields });
+  return editJiraIssueFields(client, { issueIdOrKey: params.issueIdOrKey, fields }, signal);
 }
 
 export interface SearchJiraUsersParams {
@@ -492,10 +517,11 @@ export interface SearchJiraUsersParams {
  * (or a separate hosted Atlassian MCP call) just to find an accountId for an
  * assignment (punokawan-t6y). Read-only.
  */
-export async function searchJiraUsers(client: AtlassianRestClient, params: SearchJiraUsersParams) {
+export async function searchJiraUsers(client: AtlassianRestClient, params: SearchJiraUsersParams, signal?: AbortSignal) {
   const maxResults = Math.min(50, Math.max(1, params.maxResults ?? 20));
   const raw = await client.jira<unknown[]>('/rest/api/3/user/search', {
     query: { query: params.query, maxResults },
+    signal,
   });
   const all = Array.isArray(raw.data) ? raw.data : [];
   const users = all.map((entry) => {
@@ -530,10 +556,11 @@ export interface ListJiraBoardsParams {
  * a caller with only a project key has no other way to learn the numeric
  * board id listSprintsForBoard requires. Read-only.
  */
-export async function listJiraBoards(client: AtlassianRestClient, params: ListJiraBoardsParams) {
+export async function listJiraBoards(client: AtlassianRestClient, params: ListJiraBoardsParams, signal?: AbortSignal) {
   const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 50));
   const raw = await client.jira<Record<string, unknown>>('/rest/agile/1.0/board', {
     query: { projectKeyOrId: params.projectKeyOrId, type: params.type, maxResults },
+    signal,
   });
   const payload = asRecord(raw.data);
   const values = Array.isArray(payload.values) ? payload.values : [];
@@ -573,11 +600,11 @@ export interface ListJiraSprintsParams {
  * find a sprint id. Read-only; 400s from Jira if boardId names a kanban
  * board (kanban boards have no sprints).
  */
-export async function listJiraSprints(client: AtlassianRestClient, params: ListJiraSprintsParams) {
+export async function listJiraSprints(client: AtlassianRestClient, params: ListJiraSprintsParams, signal?: AbortSignal) {
   const maxResults = Math.min(100, Math.max(1, params.maxResults ?? 50));
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/agile/1.0/board/${encodePath(String(params.boardId))}/sprint`,
-    { query: { state: params.state, maxResults } },
+    { query: { state: params.state, maxResults }, signal },
   );
   const payload = asRecord(raw.data);
   const values = Array.isArray(payload.values) ? payload.values : [];
@@ -614,7 +641,7 @@ export interface CreateIssueLinkParams {
  * directly onto Jira's inwardIssue/outwardIssue, so the semantic direction is
  * the link type's own (for "Blocks", outward blocks inward). A write.
  */
-export async function createIssueLink(client: AtlassianRestClient, params: CreateIssueLinkParams) {
+export async function createIssueLink(client: AtlassianRestClient, params: CreateIssueLinkParams, signal?: AbortSignal) {
   await client.jira('/rest/api/3/issueLink', {
     method: 'POST',
     body: {
@@ -622,6 +649,7 @@ export async function createIssueLink(client: AtlassianRestClient, params: Creat
       inwardIssue: { key: params.inwardIssueKey },
       outwardIssue: { key: params.outwardIssueKey },
     },
+    signal,
   });
   return {
     ok: true,
@@ -637,12 +665,12 @@ export interface AddWorklogParams {
   comment?: string;
 }
 
-export async function addWorklog(client: AtlassianRestClient, params: AddWorklogParams) {
+export async function addWorklog(client: AtlassianRestClient, params: AddWorklogParams, signal?: AbortSignal) {
   const body: Record<string, unknown> = { timeSpentSeconds: params.timeSpentSeconds };
   if (params.comment !== undefined) body.comment = markdownAdf(params.comment);
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/worklog`,
-    { method: 'POST', body },
+    { method: 'POST', body, signal },
   );
   const payload = asRecord(raw.data);
   const id = payload.id;
@@ -653,14 +681,53 @@ export async function addWorklog(client: AtlassianRestClient, params: AddWorklog
   };
 }
 
+export interface ListJiraWorklogsParams {
+  issueIdOrKey: string;
+  maxResults?: number;
+}
+
+/**
+ * Fetches every worklog entry on an issue, across all pages
+ * (collectStartAtPages) - the read a jira.worklog provider-write intent's
+ * reconciliation needs to positively determine whether an ambiguous
+ * addWorklog attempt already applied, by searching for the comment marker
+ * that attempt would have embedded.
+ */
+export async function listJiraWorklogs(client: AtlassianRestClient, params: ListJiraWorklogsParams, signal?: AbortSignal) {
+  const pageSize = Math.min(100, Math.max(1, params.maxResults ?? 100));
+  const result = await collectStartAtPages(async (startAt) => {
+    const raw = await client.jira<Record<string, unknown>>(
+      `/rest/api/3/issue/${encodePath(params.issueIdOrKey)}/worklog`,
+      { query: { startAt, maxResults: pageSize }, signal },
+    );
+    const payload = asRecord(raw.data);
+    const worklogs = Array.isArray(payload.worklogs) ? payload.worklogs : [];
+    return { values: worklogs, total: typeof payload.total === 'number' ? payload.total : undefined };
+  }, DEFAULT_HARD_LIMIT_ITEMS);
+
+  return {
+    worklogs: result.items.map((entry) => {
+      const worklog = asRecord(entry);
+      return {
+        id: asString(worklog.id),
+        comment: jiraText(worklog.comment),
+        timeSpentSeconds: typeof worklog.timeSpentSeconds === 'number' ? worklog.timeSpentSeconds : undefined,
+        started: asString(worklog.started),
+      };
+    }),
+    page: { returned: result.items.length, complete: result.complete, pages: result.pages, ...(result.truncated_reason ? { truncated_reason: result.truncated_reason } : {}) },
+  };
+}
+
 export interface GetIssueTypeFieldMetaParams {
   projectIdOrKey: string;
   issueTypeId: string;
 }
 
-export async function getIssueTypeFieldMeta(client: AtlassianRestClient, params: GetIssueTypeFieldMetaParams) {
+export async function getIssueTypeFieldMeta(client: AtlassianRestClient, params: GetIssueTypeFieldMetaParams, signal?: AbortSignal) {
   const raw = await client.jira<Record<string, unknown>>(
     `/rest/api/3/issue/createmeta/${encodePath(params.projectIdOrKey)}/issuetypes/${encodePath(params.issueTypeId)}`,
+    { signal },
   );
   return { payload: asRecord(raw.data) };
 }
@@ -674,7 +741,7 @@ export interface CreateJiraIssueParams {
   additionalFields?: Record<string, unknown>;
 }
 
-export async function createJiraIssue(client: AtlassianRestClient, params: CreateJiraIssueParams) {
+export async function createJiraIssue(client: AtlassianRestClient, params: CreateJiraIssueParams, signal?: AbortSignal) {
   const fields: Record<string, unknown> = {
     ...(params.additionalFields ?? {}),
     project: { key: params.projectKey },
@@ -687,6 +754,7 @@ export async function createJiraIssue(client: AtlassianRestClient, params: Creat
   const createResponse = await client.jira<Record<string, unknown>>('/rest/api/3/issue', {
     method: 'POST',
     body: { fields },
+    signal,
   });
   const created = asRecord(createResponse.data);
   const key = asString(created.key) ?? asString(created.id);
@@ -694,18 +762,44 @@ export async function createJiraIssue(client: AtlassianRestClient, params: Creat
 
   // Jira's create endpoint returns identifiers, not the fields needed by the
   // stable normalized result, so read the newly created issue once.
-  const fetched = await getJiraIssue(client, { issueIdOrKey: key });
+  const fetched = await getJiraIssue(client, { issueIdOrKey: key }, signal);
   return { normalized: fetched.normalized };
 }
 
+/**
+ * Normalizes a subtask summary for equality comparison exactly as the Go
+ * outbox reconciler (internal/providerwrite.normalizeSummary) and the
+ * fingerprint that identifies a create-subtask intent both do, so a
+ * summary that already exists (however it was created) always compares
+ * equal here.
+ */
 function normalizeSummaryForComparison(summary: string): string {
-  return summary.trim().replace(/\s+/g, ' ').toLowerCase();
+  return summary.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+}
+
+/**
+ * Embeds a marker in the description as its own trailing paragraph, so a
+ * reconciler can recognize the exact candidate this call created
+ * independent of whether its summary text is later edited. This
+ * deliberately is NOT an HTML comment (`<!-- ... -->`): markdownToAdf
+ * (marklassian) treats a raw HTML comment as an HTML block and drops it
+ * entirely, which would silently make the marker never reach Jira at all -
+ * the same reason addJiraComment's own marker (see
+ * internal/providerwrite/worker.go's jiraCommentMarker) uses plain
+ * bracketed text instead of a real comment.
+ */
+function withIntentMarker(description: string | undefined, intentMarker: string | undefined): string | undefined {
+  if (!intentMarker) return description;
+  const marker = `[${intentMarker}]`;
+  return description ? `${description}\n\n${marker}` : marker;
 }
 
 export interface CreateJiraSubtaskCandidate {
   summary: string;
   description?: string;
   additionalFields?: Record<string, unknown>;
+  /** Recorded (invisibly) on the created or matched issue so reconciliation can recognize this exact write intent's own subtask. */
+  intentMarker?: string;
 }
 
 export interface CreateJiraSubtaskParams {
@@ -715,38 +809,63 @@ export interface CreateJiraSubtaskParams {
   candidates: CreateJiraSubtaskCandidate[];
 }
 
-export interface CreateJiraSubtaskResult {
-  created: NormalizedJiraIssue[];
-  skipped: { summary: string; existingKey: string }[];
+export interface SubtaskResult {
+  summary: string;
+  issueKey: string;
+  outcome: 'created' | 'existing';
 }
 
+export interface CreateJiraSubtaskResult {
+  results: SubtaskResult[];
+}
+
+/**
+ * Creates every candidate subtask that does not already exist under
+ * parentKey, idempotently within and across calls. Existing children come
+ * from the parent issue's own fields.subtasks - Jira returns that array in
+ * full, unpaginated, regardless of how many subtasks a parent has - so no
+ * default page-size cap can silently hide an existing child the way
+ * capping a JQL search at its default maxResults used to (a parent with
+ * more subtasks than one search page fit could get a second, duplicate
+ * subtask created for a summary that already existed past page one). The
+ * in-memory existing-summary map is updated immediately after each create,
+ * so two duplicate candidates in the very same request collapse onto one
+ * created issue instead of two.
+ */
 export async function createJiraSubtask(
   client: AtlassianRestClient,
   params: CreateJiraSubtaskParams,
+  signal?: AbortSignal,
 ): Promise<CreateJiraSubtaskResult> {
-  const { normalized: existingChildren } = await searchJira(client, { jql: `parent = "${params.parentKey}"` });
+  const parent = await getJiraIssue(client, { issueIdOrKey: params.parentKey }, signal);
   const existingBySummary = new Map<string, string>();
-  for (const child of existingChildren) {
-    existingBySummary.set(normalizeSummaryForComparison(child.summary), child.key);
+  for (const child of parent.normalized.subtasks ?? []) {
+    if (child.key && child.summary) {
+      existingBySummary.set(normalizeSummaryForComparison(child.summary), child.key);
+    }
   }
 
-  const created: NormalizedJiraIssue[] = [];
-  const skipped: { summary: string; existingKey: string }[] = [];
+  const results: SubtaskResult[] = [];
   for (const candidate of params.candidates) {
-    const existingKey = existingBySummary.get(normalizeSummaryForComparison(candidate.summary));
+    const normalized = normalizeSummaryForComparison(candidate.summary);
+    const existingKey = existingBySummary.get(normalized);
     if (existingKey) {
-      skipped.push({ summary: candidate.summary, existingKey });
+      results.push({ summary: candidate.summary, issueKey: existingKey, outcome: 'existing' });
       continue;
     }
-    const result = await createJiraIssue(client, {
+    const created = await createJiraIssue(client, {
       projectKey: params.projectKey,
       issueTypeName: params.issueTypeName,
       summary: candidate.summary,
-      description: candidate.description,
+      description: withIntentMarker(candidate.description, candidate.intentMarker),
       parent: params.parentKey,
       additionalFields: candidate.additionalFields,
-    });
-    created.push(result.normalized);
+    }, signal);
+    // Update the map before the next candidate is considered, so a second
+    // occurrence of the same normalized summary later in this same
+    // candidates array is treated as existing rather than created again.
+    existingBySummary.set(normalized, created.normalized.key);
+    results.push({ summary: candidate.summary, issueKey: created.normalized.key, outcome: 'created' });
   }
-  return { created, skipped };
+  return { results };
 }

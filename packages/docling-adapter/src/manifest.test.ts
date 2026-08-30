@@ -18,7 +18,10 @@ test('the docling adapter manifest validates against AdapterManifestSchema', () 
   assert.equal(parsed.runtime, 'node');
   assert.deepEqual(parsed.provides, ['document-conversion']);
   assert.equal(parsed.operations['docling.convert']?.side_effect, false);
-  assert.equal(parsed.operations['docling.convert']?.description, 'Convert a URL or local path into normalized document sections.');
+  assert.equal(
+    parsed.operations['docling.convert']?.description,
+    'Submit a URL or local file to Docling Serve and return a normalized, source-preserving conversion result.',
+  );
   assert.deepEqual(parsed.operations['docling.convert']?.input_schema?.anyOf, [{ required: ['url'] }, { required: ['path'] }]);
 });
 

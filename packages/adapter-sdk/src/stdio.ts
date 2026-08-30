@@ -23,9 +23,40 @@ export interface JsonRpcResponse {
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
+/**
+ * The signature every adapter-specific operation (the concrete op an
+ * adapter's "execute" Handler dispatches to, e.g.
+ * packages/adapter-atlassian's addJiraComment) should share: operation
+ * name, its call parameters, and the AbortSignal for the in-flight
+ * request. Threading signal this deeply (rather than only into the
+ * top-level Handler) is what lets every fetch an operation makes actually
+ * observe cancellation, per stdio's own "cancel" notification.
+ */
+export type OperationHandler = (
+  operation: string,
+  params: Record<string, unknown>,
+  signal: AbortSignal,
+) => Promise<unknown>;
+
 const PARSE_ERROR = -32700;
 const METHOD_NOT_FOUND = -32601;
 const INTERNAL_ERROR = -32603;
+
+/**
+ * Reports whether err is the error fetch/undici rejects with when its
+ * request was aborted via AbortSignal - a DOMException (or, in some
+ * runtimes, the AbortSignal's own reason) named "AbortError". Distinguishing
+ * this from an ordinary rejection matters because the Go-side outbox worker
+ * (internal/providerwrite) needs to know a cancelled call's remote side may
+ * still have received the request before treating a timed-out write as
+ * merely retryable rather than ambiguous.
+ */
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof Error && err.name === 'AbortError') ||
+    (typeof err === 'object' && err !== null && 'name' in err && (err as { name: unknown }).name === 'AbortError')
+  );
+}
 
 /**
  * Without these, an error that escapes the handler().then().catch() chain
@@ -100,7 +131,11 @@ export function serveStdio(handlers: Record<string, Handler>): void {
           write({
             jsonrpc: '2.0',
             id: req.id,
-            error: { code: INTERNAL_ERROR, message: err instanceof Error ? err.message : String(err) },
+            error: {
+              code: INTERNAL_ERROR,
+              message: err instanceof Error ? err.message : String(err),
+              ...(isAbortError(err) ? { data: { code: 'cancelled' } } : {}),
+            },
           });
         }
       })

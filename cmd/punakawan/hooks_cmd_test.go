@@ -11,12 +11,13 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/mcpserver"
+	"github.com/ygrip/punakawan/internal/telemetry"
 )
 
 // setUpSubagentUsageFixture builds a real workspace (via newSmokeWorkspace),
 // an active delivery session rooted at repo-a, and drops the session marker
 // startDeliverySessionHandler would have written - the same shape
-// recordSubagentUsage looks for.
+// recordSubagentUsage/ingestHookEvent look for.
 func setUpSubagentUsageFixture(t *testing.T) (worktree string, sessionID string) {
 	t.Helper()
 	dir := newSmokeWorkspace(t)
@@ -72,7 +73,9 @@ func writeFakeSubagentTranscript(t *testing.T, lines ...string) string {
 	return path
 }
 
-func usageEntries(t *testing.T, worktree string) map[string]float64 {
+// telemetryTotals opens worktree's marker-named delivery and returns its
+// telemetry.Store cumulative usage projection.
+func telemetryTotals(t *testing.T, worktree string) telemetry.UsageProjection {
 	t.Helper()
 	a, err := app.Load(worktree)
 	if err != nil {
@@ -83,21 +86,19 @@ func usageEntries(t *testing.T, worktree string) map[string]float64 {
 	if err != nil {
 		t.Fatalf("OpenStorage: %v", err)
 	}
-	rows, err := db.Reader().Query(`SELECT category, quantity FROM delivery_usage_ledger`)
+	data, err := os.ReadFile(filepath.Join(worktree, mcpserver.SessionMarkerDir, mcpserver.SessionMarkerFile))
 	if err != nil {
-		t.Fatalf("query usage ledger: %v", err)
+		t.Fatalf("read marker: %v", err)
 	}
-	defer rows.Close()
-	out := map[string]float64{}
-	for rows.Next() {
-		var category string
-		var quantity float64
-		if err := rows.Scan(&category, &quantity); err != nil {
-			t.Fatalf("scan usage row: %v", err)
-		}
-		out[category] = quantity
+	var marker mcpserver.SessionMarker
+	if err := json.Unmarshal(data, &marker); err != nil {
+		t.Fatalf("decode marker: %v", err)
 	}
-	return out
+	totals, err := telemetry.NewStore(db).TotalsByDelivery(context.Background(), marker.OrchestrationID)
+	if err != nil {
+		t.Fatalf("TotalsByDelivery: %v", err)
+	}
+	return totals
 }
 
 func TestRecordSubagentUsageWritesTokenAndTimeEntries(t *testing.T) {
@@ -116,20 +117,12 @@ func TestRecordSubagentUsageWritesTokenAndTimeEntries(t *testing.T) {
 	var stderr bytes.Buffer
 	recordSubagentUsage(context.Background(), bytes.NewReader(payload), &stderr)
 
-	got := usageEntries(t, worktree)
-	want := map[string]float64{
-		"tokens_input":      11,
-		"tokens_output":     22,
-		"tokens_cache_read": 5,
-		"wall_clock_time":   60,
+	got := telemetryTotals(t, worktree)
+	if got.Counters.InputTokens != 11 || got.Counters.OutputTokens != 22 || got.Counters.CacheReadTokens != 5 {
+		t.Errorf("counters = %+v, want input=11 output=22 cache_read=5 (stderr: %s)", got.Counters, stderr.String())
 	}
-	for category, quantity := range want {
-		if got[category] != quantity {
-			t.Errorf("usage[%q] = %v, want %v (all: %+v, stderr: %s)", category, got[category], quantity, got, stderr.String())
-		}
-	}
-	if _, ok := got["tokens_cache_creation"]; ok {
-		t.Errorf("expected no tokens_cache_creation entry (zero quantity), got %+v", got)
+	if got.Counters.ElapsedMS != 60000 {
+		t.Errorf("elapsed ms = %d, want 60000 (stderr: %s)", got.Counters.ElapsedMS, stderr.String())
 	}
 }
 
@@ -138,10 +131,14 @@ func TestRecordSubagentUsageAcceptsRootTranscriptUsage(t *testing.T) {
 	transcript := writeFakeSubagentTranscript(t,
 		`{"type":"assistant","timestamp":"2026-08-27T07:00:00.000Z","message":{"role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}`,
 	)
-	payload, err := json.Marshal(subagentStopPayload{TranscriptPath: transcript, Cwd: worktree})
-	if err != nil { t.Fatalf("marshal payload: %v", err) }
+	payload, err := json.Marshal(subagentStopPayload{AgentID: "agent-1", TranscriptPath: transcript, Cwd: worktree})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
 	recordSubagentUsage(context.Background(), bytes.NewReader(payload), &bytes.Buffer{})
-	if got := usageEntries(t, worktree)["tokens_input"]; got != 10 { t.Fatalf("tokens_input = %v, want 10", got) }
+	if got := telemetryTotals(t, worktree).Counters.InputTokens; got != 10 {
+		t.Fatalf("input tokens = %v, want 10", got)
+	}
 }
 
 func TestRecordSubagentUsageNoOpsWithoutAgentID(t *testing.T) {
@@ -149,8 +146,8 @@ func TestRecordSubagentUsageNoOpsWithoutAgentID(t *testing.T) {
 	payload, _ := json.Marshal(subagentStopPayload{Cwd: worktree})
 	var stderr bytes.Buffer
 	recordSubagentUsage(context.Background(), bytes.NewReader(payload), &stderr)
-	if got := usageEntries(t, worktree); len(got) != 0 {
-		t.Fatalf("expected no usage entries with an empty agent_id, got %+v", got)
+	if got := telemetryTotals(t, worktree).Counters.InputTokens; got != 0 {
+		t.Fatalf("expected no usage recorded with an empty agent_id, got input tokens = %v", got)
 	}
 }
 
@@ -171,4 +168,100 @@ func TestRecordSubagentUsageNoOpsWithoutSessionMarker(t *testing.T) {
 func TestRecordSubagentUsageNoOpsOnMalformedPayload(t *testing.T) {
 	var stderr bytes.Buffer
 	recordSubagentUsage(context.Background(), bytes.NewReader([]byte("not json")), &stderr)
+}
+
+func spoolFileCount(t *testing.T, dataDir string) int {
+	t.Helper()
+	dir, err := telemetry.SpoolDir(dataDir)
+	if err != nil {
+		t.Fatalf("SpoolDir: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	count := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			count++
+		}
+	}
+	return count
+}
+
+func TestIngestHookEventSessionStartBeginsAndDrainsSpool(t *testing.T) {
+	worktree, _ := setUpSubagentUsageFixture(t)
+	dataDir, err := storageDataDir()
+	if err != nil {
+		t.Fatalf("storageDataDir: %v", err)
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"session_id": "codex-thr-1", "cwd": worktree, "hook_event_name": "SessionStart", "model": "gpt-5-codex",
+	})
+	var stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stderr)
+
+	a, err := app.Load(worktree)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	defer a.Close()
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		t.Fatalf("OpenStorage: %v", err)
+	}
+	session, err := telemetry.NewStore(db).GetSessionByExternalID(context.Background(), "codex", "codex-thr-1")
+	if err != nil {
+		t.Fatalf("GetSessionByExternalID: %v (stderr: %s)", err, stderr.String())
+	}
+	if session.Status != "active" {
+		t.Fatalf("session status = %q, want active", session.Status)
+	}
+	if got := spoolFileCount(t, dataDir); got != 0 {
+		t.Fatalf("spool files remaining = %d, want 0 after successful immediate ingestion", got)
+	}
+}
+
+func TestIngestHookEventPostToolUseSnapshotsUsage(t *testing.T) {
+	worktree, _ := setUpSubagentUsageFixture(t)
+	transcript := writeFakeSubagentTranscript(t,
+		`{"type":"assistant","timestamp":"2026-08-27T07:00:00.000Z","message":{"role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_1"}]}}`,
+	)
+	payload, _ := json.Marshal(map[string]any{
+		"session_id": "codex-thr-2", "cwd": worktree, "hook_event_name": "PostToolUse",
+		"transcript_path": transcript, "tool_name": "apply_patch", "tool_use_id": "call_1",
+	})
+	var stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "PostToolUse", bytes.NewReader(payload), &stderr)
+
+	got := telemetryTotals(t, worktree)
+	if got.Counters.InputTokens != 10 || got.Counters.OutputTokens != 20 {
+		t.Fatalf("counters = %+v, want input=10 output=20 (stderr: %s)", got.Counters, stderr.String())
+	}
+	if got.Counters.ToolCalls != 1 {
+		t.Fatalf("tool calls = %d, want 1 (stderr: %s)", got.Counters.ToolCalls, stderr.String())
+	}
+}
+
+func TestIngestHookEventNoOpsWithoutSessionMarker(t *testing.T) {
+	dir := newSmokeWorkspace(t)
+	worktree := filepath.Join(dir, "repo-a")
+	payload, _ := json.Marshal(map[string]any{"session_id": "codex-thr-3", "cwd": worktree, "hook_event_name": "SessionStart"})
+	var stderr bytes.Buffer
+	// Must not panic or block despite there being no punakawan session
+	// tracked at this worktree.
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stderr)
+}
+
+func TestIngestHookEventNoOpsOnMalformedPayload(t *testing.T) {
+	var stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader([]byte("not json")), &stderr)
+}
+
+func TestIngestHookEventRejectsUnsupportedClient(t *testing.T) {
+	var stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "not-a-real-client", "SessionStart", bytes.NewReader([]byte(`{}`)), &stderr)
+	if stderr.Len() == 0 {
+		t.Fatal("expected a logged warning for an unsupported --client value")
+	}
 }

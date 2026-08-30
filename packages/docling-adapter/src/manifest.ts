@@ -36,7 +36,7 @@ export const manifest: AdapterManifest = {
   operations: {
     'docling.convert': {
       side_effect: false,
-      description: 'Convert a URL or local path into normalized document sections.',
+      description: 'Submit a URL or local file to Docling Serve and return a normalized, source-preserving conversion result.',
       input_schema: {
         type: 'object',
         properties: {

@@ -22,7 +22,7 @@ func (s *Store) Count(ctx context.Context) (int, error) {
 }
 
 // KnowledgeListQuery narrows and paginates ListRecords. Empty string fields
-// mean "no filter" for that column (via the `? = '' OR col = ?` pattern, so
+// mean "no filter" for that column (via the `? = ” OR col = ?` pattern, so
 // the same query serves filtered and unfiltered browses). Type, Status and
 // ValidityState map to indexed columns; Repository and Source are filtered
 // against the record's JSON payload (scope.repository and source.provider

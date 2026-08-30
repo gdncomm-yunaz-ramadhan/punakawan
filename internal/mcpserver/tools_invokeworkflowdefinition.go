@@ -11,6 +11,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/deliveryservice"
 	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 )
@@ -86,13 +87,48 @@ func instantiatePlan(ctx context.Context, a *app.App, def workflowdef.Definition
 // is passed: a definition's inputs carry only references, so the run
 // gets the same derived title get_delivery would show for it anyway.
 func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any, planID string, planRevision int) (string, error) {
-	references, err := referencesFromInputs(inputs)
-	if err != nil {
-		return "", fmt.Errorf("delivery-shaped definition %q: %w", def.ID, err)
-	}
 	store, err := OpenDeliveryStore(ctx, a)
 	if err != nil {
 		return "", err
+	}
+
+	source, hasSource, err := sourceFromInputs(inputs)
+	if err != nil {
+		return "", fmt.Errorf("delivery-shaped definition %q: %w", def.ID, err)
+	}
+	if hasSource && source.Kind == deliveryservice.SourceJira {
+		plans, err := a.OpenPlan()
+		if err != nil {
+			return "", err
+		}
+		result, needsInput, err := deliveryservice.New(store, plans).StartOrResolve(ctx, deliveryservice.StartRequest{
+			IdempotencyKey:       delivery.NewID(),
+			Source:               source,
+			WorkflowDefinitionID: def.ID,
+		})
+		if err != nil {
+			return "", fmt.Errorf("start delivery for definition %q: %w", def.ID, err)
+		}
+		if needsInput != nil {
+			return "", fmt.Errorf("delivery-shaped definition %q needs input: %s", def.ID, needsInput.Question)
+		}
+		orchestrationID := result.Execution.OrchestrationID
+		orch, err := store.GetOrchestration(ctx, orchestrationID)
+		if err != nil {
+			return "", err
+		}
+		if _, err := store.UpdateOrchestrationDetails(ctx, delivery.NewID(), orchestrationID, orch.Revision, delivery.OrchestrationDetails{
+			PlanID:       &planID,
+			PlanRevision: &planRevision,
+		}); err != nil {
+			return "", fmt.Errorf("attach plan to delivery for definition %q: %w", def.ID, err)
+		}
+		return orchestrationID, nil
+	}
+
+	references, err := referencesFromInputs(inputs)
+	if err != nil {
+		return "", fmt.Errorf("delivery-shaped definition %q: %w", def.ID, err)
 	}
 	view, err := store.StartDeliveryWithOptions(ctx, delivery.NewID(), references, delivery.OrchestrationOptions{WorkflowDefinitionID: def.ID})
 	if err != nil {
@@ -105,6 +141,28 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 		return "", fmt.Errorf("attach plan to delivery for definition %q: %w", def.ID, err)
 	}
 	return view.Orchestration.Id, nil
+}
+
+// sourceFromInputs extracts inputs["source"] as a deliveryservice.SourceIdentity,
+// matching start_delivery's own source shape. It reports ok=false (no
+// error) when the definition's inputs carry no "source" key at all, so a
+// caller can fall back to the legacy references-based path unchanged.
+func sourceFromInputs(inputs map[string]any) (*deliveryservice.SourceIdentity, bool, error) {
+	raw, ok := inputs["source"]
+	if !ok {
+		return nil, false, nil
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil, false, fmt.Errorf(`input "source" must be an object with a "kind" field`)
+	}
+	kind, _ := m["kind"].(string)
+	tenant, _ := m["tenant"].(string)
+	key, _ := m["key"].(string)
+	if kind == "" {
+		return nil, false, fmt.Errorf(`input "source.kind" is required when "source" is given`)
+	}
+	return &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceKind(kind), Tenant: tenant, Key: key}, true, nil
 }
 
 // referencesFromInputs extracts inputs["references"] as a []string,

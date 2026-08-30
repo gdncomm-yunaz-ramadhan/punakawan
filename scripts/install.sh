@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Installs Punakawan from this checkout on macOS.
 set -euo pipefail
+shopt -s nullglob
 
 usage() {
   cat <<'EOF'
@@ -43,11 +44,20 @@ if [[ -n "${PUNAKAWAN_INSTALL_DIR:-}" ]]; then
 else
   INSTALL_DIR="$HOME/.local/bin"
 fi
-CONFIG_DIR="${PUNAKAWAN_CONFIG_DIR:-$HOME/Library/Application Support/punakawan}"
+# CONFIG_DIR is the exact directory internal/storage.DataDir resolves
+# (${PUNAKAWAN_DATA_DIR} if set, else the platform config dir): every
+# installed, machine-wide state - the storage kernel, the adapter trust
+# file, the telemetry spool, and everything this installer writes below -
+# lives under one directory so a relocated/overridden prefix cannot
+# diverge between what the installer wrote and what the built binary
+# resolves at runtime. PUNAKAWAN_CONFIG_DIR is accepted as a deprecated
+# alias for one release.
+CONFIG_DIR="${PUNAKAWAN_DATA_DIR:-${PUNAKAWAN_CONFIG_DIR:-$HOME/Library/Application Support/punakawan}}"
 GLOBAL_ENV="$CONFIG_DIR/.env"
 GLOBAL_CONFIG="$CONFIG_DIR/config.yaml"
-ATLASSIAN_ADAPTER_ENTRY="$REPO_ROOT/packages/adapter-atlassian/dist/run.js"
-GITHUB_ADAPTER_ENTRY="$REPO_ROOT/packages/github-adapter/dist/run.js"
+ADAPTERS_DIR="$CONFIG_DIR/adapters"
+ATLASSIAN_ADAPTER_ENTRY="$ADAPTERS_DIR/atlassian/dist/run.js"
+GITHUB_ADAPTER_ENTRY="$ADAPTERS_DIR/github/dist/run.js"
 
 log() {
   printf '\n==> %s\n' "$1"
@@ -70,15 +80,33 @@ run() {
   fi
 }
 
+# remove_adapter_entry deletes any existing top-level "  <adapter_id>:"
+# block from $GLOBAL_CONFIG (the block itself plus every more-indented
+# line under it), leaving every other adapter's block - one this
+# installer does not own - untouched. This is what lets
+# ensure_adapter_entry below unconditionally replace its own block on
+# every run instead of only ever adding one once, so a later install that
+# deploys a new adapter version actually updates the recorded entrypoint
+# path rather than leaving a stale one referencing a version this run just
+# deleted.
+remove_adapter_entry() {
+  local adapter_id="$1"
+  [[ -f "$GLOBAL_CONFIG" ]] || return 0
+  awk -v id="$adapter_id" '
+    BEGIN { skip = 0 }
+    $0 ~ "^  " id ":[[:space:]]*(#.*)?$" { skip = 1; next }
+    skip && $0 ~ "^  [A-Za-z0-9_-]+:[[:space:]]*(#.*)?$" { skip = 0 }
+    !skip { print }
+  ' "$GLOBAL_CONFIG" >"$GLOBAL_CONFIG.tmp"
+  mv "$GLOBAL_CONFIG.tmp" "$GLOBAL_CONFIG"
+}
+
 ensure_adapter_entry() {
   local adapter_id="$1"
   local adapter_entry="$2"
   shift 2
 
-  if grep -Eq "^[[:space:]]{2}${adapter_id}:[[:space:]]*(#.*)?$" "$GLOBAL_CONFIG"; then
-    return
-  fi
-
+  remove_adapter_entry "$adapter_id"
   {
     printf '  %s:\n' "$adapter_id"
     printf '    command: %s\n' "$(command -v node)"
@@ -92,12 +120,60 @@ ensure_adapter_entry() {
   } >>"$GLOBAL_CONFIG"
 }
 
+# deploy_adapter installs one @punakawan workspace package's built runtime
+# files plus its production dependencies below "$ADAPTERS_DIR/$slug" -
+# never inside this checkout - using pnpm's own workspace deploy support
+# so relative workspace:* dependencies (adapter-sdk, schema-types) resolve
+# to real copied files rather than symlinks back into $REPO_ROOT. The new
+# version is deployed to its own versioned directory first, then made
+# current by atomically repointing the stable "$ADAPTERS_DIR/$slug"
+# symlink at it (a single rename, so a launcher reading through that
+# symlink mid-install never observes a half-written adapter), and only
+# then are older versioned directories removed.
+deploy_adapter() {
+  local package_name="$1"
+  local slug="$2"
+  local target="$ADAPTERS_DIR/$slug"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '    pnpm --filter %q deploy --prod --legacy %q (atomically replacing %q)\n' "$package_name" "$target.<version>" "$target"
+    return
+  fi
+
+  mkdir -p "$ADAPTERS_DIR"
+  local stamp
+  stamp="$(date +%Y%m%d%H%M%S)-$$"
+  local versioned_dir="$target.$stamp"
+  rm -rf "$versioned_dir"
+  ( cd "$REPO_ROOT" && pnpm --filter "$package_name" deploy --prod --legacy "$versioned_dir" >/dev/null )
+
+  # ln -sfn replaces an existing symlink (or nothing at all) at $target in
+  # one command, on both GNU and BSD (macOS) ln: -n stops -f's unlink from
+  # instead resolving through the old symlink into the directory it
+  # pointed at, which is what makes this replace the symlink itself
+  # rather than moving a new entry into the versioned directory it used to
+  # name.
+  ln -sfn "$(basename "$versioned_dir")" "$target"
+
+  local existing
+  for existing in "$ADAPTERS_DIR/$slug".*; do
+    [[ -e "$existing" ]] || continue
+    [[ "$existing" == "$versioned_dir" ]] && continue
+    rm -rf "$existing"
+  done
+}
+
 configure_global_adapters() {
   log "Configuring global adapters"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '    add missing atlassian and github entries to %q\n' "$GLOBAL_CONFIG"
+    deploy_adapter "@punakawan/adapter-atlassian" atlassian
+    deploy_adapter "@punakawan/github-adapter" github
+    printf '    replace atlassian and github entries in %q\n' "$GLOBAL_CONFIG"
     return
   fi
+
+  deploy_adapter "@punakawan/adapter-atlassian" atlassian
+  deploy_adapter "@punakawan/github-adapter" github
 
   mkdir -p "$CONFIG_DIR"
   if [[ ! -f "$GLOBAL_CONFIG" ]]; then
@@ -182,18 +258,26 @@ log "Building Punakawan with embedded panel assets"
 cd "$REPO_ROOT"
 run go mod download
 run pnpm install --frozen-lockfile
+# Adapters (and the workspace packages they depend on) build in this exact
+# order before anything deploys them, so deploy_adapter always packages a
+# freshly built dist/, never a stale one left from an earlier checkout.
+run pnpm --filter @punakawan/schema-types build
+run pnpm --filter @punakawan/adapter-sdk build
+run pnpm --filter @punakawan/adapter-atlassian build
+run pnpm --filter @punakawan/github-adapter build
 run pnpm -r --if-present build
 
 log "Installing punakawan and punakawand"
 run mkdir -p "$INSTALL_DIR"
 run env "GOBIN=$INSTALL_DIR" go install ./cmd/punakawan ./cmd/punakawand
 
-if [[ "$DRY_RUN" -eq 0 ]]; then
-  [[ -f "$ATLASSIAN_ADAPTER_ENTRY" ]] || { printf 'Build did not produce %s\n' "$ATLASSIAN_ADAPTER_ENTRY" >&2; exit 1; }
-  [[ -f "$GITHUB_ADAPTER_ENTRY" ]] || { printf 'Build did not produce %s\n' "$GITHUB_ADAPTER_ENTRY" >&2; exit 1; }
-fi
 configure_global_adapters
 configure_global_environment
+
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  [[ -f "$ATLASSIAN_ADAPTER_ENTRY" ]] || { printf 'Deploy did not produce %s\n' "$ATLASSIAN_ADAPTER_ENTRY" >&2; exit 1; }
+  [[ -f "$GITHUB_ADAPTER_ENTRY" ]] || { printf 'Deploy did not produce %s\n' "$GITHUB_ADAPTER_ENTRY" >&2; exit 1; }
+fi
 
 if [[ "$INSTALL_DIR_OVERRIDDEN" -eq 0 && ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   profile=""

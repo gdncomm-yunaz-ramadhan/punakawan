@@ -7,6 +7,7 @@ package workflow
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -116,6 +117,7 @@ func (s *Store) refreshLocked() error {
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner.Split(scanCompleteLines)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		s.readOffset += int64(len(line)) + 1 // +1 for the newline json.Encoder wrote
@@ -123,7 +125,7 @@ func (s *Store) refreshLocked() error {
 			continue
 		}
 		var run protocol.WorkflowRun
-		if err := json.Unmarshal(line, &run); err != nil {
+		if err := json.Unmarshal(normalizeLegacyState(line), &run); err != nil {
 			return fmt.Errorf("workflow: decode run: %w", err)
 		}
 		s.cachedRuns = append(s.cachedRuns, run)
@@ -133,6 +135,48 @@ func (s *Store) refreshLocked() error {
 		return fmt.Errorf("workflow: scan %s: %w", s.path, err)
 	}
 	return nil
+}
+
+// normalizeLegacyState rewrites a persisted run record's raw top-level
+// "state" field from the removed "awaiting-approval" workflow state to
+// "executing" before decoding: protocol.WorkflowRun's generated strict enum
+// validation would otherwise reject any run appended while that state still
+// existed. Execution is no longer gated behind a separate approval state, so
+// a legacy run paused there resumes as already authorized to execute. line
+// is returned unchanged if it does not decode as an object or does not carry
+// the legacy state, so a malformed or already-current line still reaches the
+// real decode below and fails there with its normal error.
+func normalizeLegacyState(line []byte) []byte {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return line
+	}
+	state, ok := raw["state"]
+	if !ok || string(state) != `"awaiting-approval"` {
+		return line
+	}
+	raw["state"] = json.RawMessage(`"executing"`)
+	rewritten, err := json.Marshal(raw)
+	if err != nil {
+		return line
+	}
+	return rewritten
+}
+
+// scanCompleteLines is a bufio.SplitFunc like bufio.ScanLines, except it
+// never returns a final, unterminated line at EOF: refreshLocked must not
+// advance readOffset past a JSON record until Append has finished writing
+// its trailing newline, or a concurrent partial write would be decoded (or
+// permanently skipped) as a corrupt record instead of being retried on the
+// next refresh.
+func scanCompleteLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		return i + 1, data[0:i], nil
+	}
+	return 0, nil, nil
 }
 
 // List returns the full append-only history of run states.

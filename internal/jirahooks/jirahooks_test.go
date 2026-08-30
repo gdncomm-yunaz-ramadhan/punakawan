@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/adapters"
-	"github.com/ygrip/punakawan/internal/approvals"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
+	"github.com/ygrip/punakawan/internal/outbox"
+	"github.com/ygrip/punakawan/internal/providerwrite"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -41,10 +42,11 @@ func (f *fakeAdapterCaller) Call(ctx context.Context, method string, params any)
 	return json.RawMessage(`{"ok":true}`), nil
 }
 
-func approvalRequired() *protocol.AdapterManifestOperationsValueApproval {
-	v := protocol.AdapterManifestOperationsValueApprovalRequired
-	return &v
-}
+// permissiveInputSchema is just enough of an input_schema to satisfy Gate's
+// per-call payload validation without constraining which params a test may
+// pass - these tests exercise JiraHook/Lifecycle behavior, not adapter
+// schema strictness.
+var permissiveInputSchema = protocol.AdapterManifestOperationsValueInputSchema{"type": "object"}
 
 func testManifest() protocol.AdapterManifest {
 	return protocol.AdapterManifest{
@@ -56,10 +58,11 @@ func testManifest() protocol.AdapterManifest {
 			Secrets:    []string{},
 		},
 		Operations: protocol.AdapterManifestOperations{
-			"atlassian.getTransitionsForJiraIssue": {SideEffect: false},
-			"atlassian.addJiraComment":             {SideEffect: true, Approval: approvalRequired()},
-			"atlassian.addWorklog":                 {SideEffect: true, Approval: approvalRequired()},
-			"atlassian.transitionJiraIssue":        {SideEffect: true, Approval: approvalRequired()},
+			"atlassian.getJiraIssue":               {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.getTransitionsForJiraIssue": {SideEffect: false, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addJiraComment":             {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.addWorklog":                 {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
+			"atlassian.transitionJiraIssue":        {SideEffect: true, Description: "test fixture operation", InputSchema: permissiveInputSchema},
 		},
 	}
 }
@@ -72,14 +75,36 @@ func (f *fakeGateResolver) Gate(ctx context.Context, adapterID string) (*adapter
 	return f.gate, nil
 }
 
-// newTestHook builds a JiraHook wired to a fake adapter caller and a fresh
-// delivery.Store/storage kernel. Returns the hook, the underlying
-// delivery.Store (for capturing requirements), the fake caller (for
-// asserting on calls made), and an approve func a test calls with a
-// delivery id - Handle's own runID is the delivery id (see JiraHook.Handle),
-// and internal/adapters.Gate scopes one approval per run id, so approving
-// for a run must happen after that delivery id is known, not up front.
-func newTestHook(t *testing.T, cfg *jiraworkflow.Config) (hook *JiraHook, store *delivery.Store, fc *fakeAdapterCaller, approve func(deliveryID string)) {
+// drainOutbox runs a Worker against store until it reports no more claimable
+// work, so a test can observe the effect of every intent a Handle call
+// enqueued (Handle itself never executes a write - see jirahooks.go's
+// package doc comment). observer may be nil.
+func drainOutbox(t *testing.T, store *outbox.Store, registry providerwriteGateResolver, observer providerwrite.SuccessObserver) {
+	t.Helper()
+	worker := &providerwrite.Worker{ID: "test-worker", Store: store, Adapters: registry, Observer: observer}
+	for i := 0; i < 20; i++ {
+		did, err := worker.RunOnce(context.Background())
+		if err != nil {
+			t.Fatalf("drainOutbox: RunOnce: %v", err)
+		}
+		if !did {
+			return
+		}
+	}
+	t.Fatal("drainOutbox: too many iterations; an intent may be stuck retrying forever in this test")
+}
+
+// providerwriteGateResolver is the exact method set providerwrite.Worker
+// needs; *fakeGateResolver already satisfies it.
+type providerwriteGateResolver interface {
+	Gate(ctx context.Context, adapterID string) (*adapters.Gate, error)
+}
+
+// newTestHook builds a JiraHook wired to a fake adapter caller, a fresh
+// delivery.Store/storage kernel, and a durable outbox. Returns the hook, the
+// underlying delivery.Store (for capturing requirements), the outbox store
+// (for draining), and the fake caller (for asserting on calls made).
+func newTestHook(t *testing.T, cfg *jiraworkflow.Config) (hook *JiraHook, store *delivery.Store, ob *outbox.Store, fc *fakeAdapterCaller) {
 	t.Helper()
 	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
 	if err != nil {
@@ -87,25 +112,14 @@ func newTestHook(t *testing.T, cfg *jiraworkflow.Config) (hook *JiraHook, store 
 	}
 	t.Cleanup(func() { db.Close() })
 
-	approvalStore := approvals.New(db, "test-project")
 	fc = &fakeAdapterCaller{}
-	gate := adapters.NewGate("atlassian", testManifest(), fc, approvalStore)
+	gate := adapters.NewGate("atlassian", testManifest(), fc)
 
 	store = delivery.NewStore(db)
-	hook = &JiraHook{db: db, store: store, registry: &fakeGateResolver{gate: gate}, cfg: cfg}
-	approve = func(deliveryID string) {
-		t.Helper()
-		// addJiraComment and transitionJiraIssue share one run-scoped
-		// approval (internal/adapters.Gate's own semantics), so requesting
-		// against either op and approving covers both.
-		if _, err := gate.RequestApproval(deliveryID, "atlassian.addJiraComment", protocol.ApprovalRecordRequestedBySemar); err != nil {
-			t.Fatalf("RequestApproval(addJiraComment): %v", err)
-		}
-		if err := gate.Approve(deliveryID, "tester"); err != nil {
-			t.Fatalf("Approve: %v", err)
-		}
-	}
-	return hook, store, fc, approve
+	ob = outbox.New(db)
+	hook = NewJiraHook(db, store, nil, ob, cfg)
+	hook.registry = &fakeGateResolver{gate: gate}
+	return hook, store, ob, fc
 }
 
 // captureJiraRequirement seeds orchestrationID with a Jira-sourced
@@ -121,7 +135,7 @@ func captureJiraRequirement(t *testing.T, store *delivery.Store, orchestrationID
 
 func TestHandle_AutoLogOffIsANoOp(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: false, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -132,6 +146,7 @@ func TestHandle_AutoLogOffIsANoOp(t *testing.T) {
 	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
+	drainOutbox(t, ob, hook.registry, nil)
 	if len(fc.calls) != 0 {
 		t.Fatalf("calls = %+v, want none when auto_log is off", fc.calls)
 	}
@@ -139,7 +154,7 @@ func TestHandle_AutoLogOffIsANoOp(t *testing.T) {
 
 func TestHandle_NoLinkedIssueSkipsSilently(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -151,29 +166,48 @@ func TestHandle_NoLinkedIssueSkipsSilently(t *testing.T) {
 	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
+	drainOutbox(t, ob, hook.registry, nil)
 	if len(fc.calls) != 0 {
 		t.Fatalf("calls = %+v, want none when no Jira issue is linked", fc.calls)
 	}
 }
 
 func TestHandle_PostsCommentForConfiguredEventAndDedupesOnRetry(t *testing.T) {
+	// EventDeliveryStarted is now handled entirely by jiraintegration.Service
+	// (see jirahooks.go's Handle), which builds its own comment from the
+	// orchestration's actually-persisted title/projects rather than trusting
+	// whatever an event happens to carry - so this test attaches a real
+	// title and project instead of only setting them on a synthetic event,
+	// matching how internal/delivery's own CreateOrchestration dispatch
+	// always populates Title/Projects from the just-persisted record.
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	ctx := context.Background()
-	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
+	orch, err := store.CreateOrchestrationWithOptions(ctx, "create-1", delivery.NewID(), nil, delivery.OrchestrationOptions{Title: "Refund delivery"})
 	if err != nil {
-		t.Fatalf("CreateOrchestration: %v", err)
+		t.Fatalf("CreateOrchestrationWithOptions: %v", err)
+	}
+	project, err := store.RegisterProject(ctx, "register-proj-a", delivery.NewID(), "proj-a", "https://example.test/proj-a.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	if _, err := store.AttachProject(ctx, "attach-proj-a", orch.Id, orch.Revision, project.Id); err != nil {
+		t.Fatalf("AttachProject: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 
-	event := deliveryhooks.Event{
-		Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1,
-		Title: "Refund delivery", Projects: []string{"proj-a"},
-	}
+	event := deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}
 	if err := hook.Handle(ctx, event); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
+
+	// A retried dispatch of the exact same (delivery, event type, revision)
+	// must not enqueue a second intent.
+	if err := hook.Handle(ctx, event); err != nil {
+		t.Fatalf("Handle (retry): %v", err)
+	}
+	drainOutbox(t, ob, hook.registry, nil)
+
 	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addJiraComment" {
 		t.Fatalf("calls = %+v, want exactly one addJiraComment call", fc.calls)
 	}
@@ -181,32 +215,22 @@ func TestHandle_PostsCommentForConfiguredEventAndDedupesOnRetry(t *testing.T) {
 		t.Fatalf("issueIdOrKey = %v, want PAY-1", fc.calls[0]["issueIdOrKey"])
 	}
 	body, _ := fc.calls[0]["commentBody"].(string)
-	for _, want := range []string{"delivery started", "Refund delivery", "proj-a", orch.Id} {
+	for _, want := range []string{"delivery started", "Refund delivery", project.Id, orch.Id} {
 		if !strings.Contains(body, want) {
 			t.Errorf("commentBody = %q, want it to contain %q", body, want)
 		}
-	}
-
-	// A retried dispatch of the exact same (delivery, event type, revision)
-	// must not post a second comment.
-	if err := hook.Handle(ctx, event); err != nil {
-		t.Fatalf("Handle (retry): %v", err)
-	}
-	if len(fc.calls) != 1 {
-		t.Fatalf("calls after retry = %+v, want still exactly one (deduped)", fc.calls)
 	}
 }
 
 func TestHandle_LaneEventsDeduplicatePerLane(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"implementation.started", "implementation.completed"}}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 
 	for _, eventType := range []deliveryhooks.EventType{
 		deliveryhooks.EventImplementationStarted,
@@ -225,6 +249,7 @@ func TestHandle_LaneEventsDeduplicatePerLane(t *testing.T) {
 			}
 		}
 	}
+	drainOutbox(t, ob, hook.registry, nil)
 
 	if len(fc.calls) != 4 {
 		t.Fatalf("calls = %d, want one comment for each event type and lane; calls=%+v", len(fc.calls), fc.calls)
@@ -233,7 +258,7 @@ func TestHandle_LaneEventsDeduplicatePerLane(t *testing.T) {
 
 func TestHandle_EventNotInCommentEventsDoesNothing(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.completed"}}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -244,6 +269,7 @@ func TestHandle_EventNotInCommentEventsDoesNothing(t *testing.T) {
 	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
+	drainOutbox(t, ob, hook.registry, nil)
 	if len(fc.calls) != 0 {
 		t.Fatalf("calls = %+v, want none for an event type not in comment_events", fc.calls)
 	}
@@ -251,8 +277,9 @@ func TestHandle_EventNotInCommentEventsDoesNothing(t *testing.T) {
 
 func TestHandle_TransitionOnCompleteFiresMatchingTransition(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, TransitionOnComplete: true}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	fc.responses = map[string]string{
+		"atlassian.getJiraIssue":               `{"normalized":{"key":"PAY-1","status":"In Progress"}}`,
 		"atlassian.getTransitionsForJiraIssue": `{"transitions":[{"id":"31","name":"Close","toStatus":{"id":"3","name":"Done"}}]}`,
 	}
 	ctx := context.Background()
@@ -261,11 +288,11 @@ func TestHandle_TransitionOnCompleteFiresMatchingTransition(t *testing.T) {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 
 	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryCompleted, DeliveryID: orch.Id, Revision: 1}); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
+	drainOutbox(t, ob, hook.registry, nil)
 
 	var sawTransitions, sawTransition bool
 	for _, c := range fc.calls {
@@ -286,7 +313,7 @@ func TestHandle_TransitionOnCompleteFiresMatchingTransition(t *testing.T) {
 
 func TestHandle_TransitionOnCompleteFalseNeverCallsTransition(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, TransitionOnComplete: false}
-	hook, store, fc, _ := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
 	if err != nil {
@@ -297,14 +324,22 @@ func TestHandle_TransitionOnCompleteFalseNeverCallsTransition(t *testing.T) {
 	if err := hook.Handle(ctx, deliveryhooks.Event{Type: deliveryhooks.EventDeliveryCompleted, DeliveryID: orch.Id, Revision: 1}); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
+	drainOutbox(t, ob, hook.registry, nil)
 	if len(fc.calls) != 0 {
 		t.Fatalf("calls = %+v, want none with transition_on_complete false and no comment_events configured", fc.calls)
 	}
 }
 
-func TestHandle_FailedCommentIsNotMarkedFiredAndRetriesLater(t *testing.T) {
+// TestHandle_FailedWriteStaysRetryingWithoutDuplicatingTheIntent replaces
+// the pre-outbox version of this test (which asserted Handle itself
+// returned the adapter's error synchronously). Handle now only enqueues -
+// see jirahooks.go's package doc comment - so a write failure surfaces as
+// the outbox intent moving to retrying, not as an error from Handle; a
+// later dispatch of the same event must not create a second, competing
+// intent.
+func TestHandle_FailedWriteStaysRetryingWithoutDuplicatingTheIntent(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
 	fc.failOps = map[string]bool{"atlassian.addJiraComment": true}
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
@@ -312,30 +347,41 @@ func TestHandle_FailedCommentIsNotMarkedFiredAndRetriesLater(t *testing.T) {
 		t.Fatalf("CreateOrchestration: %v", err)
 	}
 	captureJiraRequirement(t, store, orch.Id, "PAY-1")
-	approve(orch.Id)
 	event := deliveryhooks.Event{Type: deliveryhooks.EventDeliveryStarted, DeliveryID: orch.Id, Revision: 1}
 
-	if err := hook.Handle(ctx, event); err == nil {
-		t.Fatal("expected the simulated adapter failure to surface")
+	if err := hook.Handle(ctx, event); err != nil {
+		t.Fatalf("Handle: %v", err)
 	}
+	drainOutbox(t, ob, hook.registry, nil)
 	if len(fc.calls) != 1 {
 		t.Fatalf("calls = %+v, want exactly one attempted addJiraComment call", fc.calls)
 	}
-
-	// Not marked fired: a later dispatch of the same event must retry, not
-	// silently skip.
-	fc.failOps = nil
-	if err := hook.Handle(ctx, event); err != nil {
-		t.Fatalf("Handle (retry after transient failure cleared): %v", err)
+	intent, err := ob.GetByFingerprint(ctx, providerwrite.JiraCommentFingerprint(orch.Id, string(event.Type), "PAY-1"))
+	if err != nil {
+		t.Fatalf("GetByFingerprint: %v", err)
 	}
-	if len(fc.calls) != 2 {
-		t.Fatalf("calls = %+v, want a second attempted addJiraComment call", fc.calls)
+	if intent.Status != outbox.StatusRetrying {
+		t.Fatalf("status = %q, want retrying", intent.Status)
+	}
+
+	// A retried dispatch of the same event must resolve to the same
+	// fingerprint rather than enqueue a competing second intent.
+	if err := hook.Handle(ctx, event); err != nil {
+		t.Fatalf("Handle (retry): %v", err)
+	}
+	stillOne, err := ob.GetByFingerprint(ctx, providerwrite.JiraCommentFingerprint(orch.Id, string(event.Type), "PAY-1"))
+	if err != nil {
+		t.Fatalf("GetByFingerprint: %v", err)
+	}
+	if stillOne.ID != intent.ID {
+		t.Fatalf("expected the same intent id, got a different one: %q vs %q", stillOne.ID, intent.ID)
 	}
 }
 
 func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 	cfg := &jiraworkflow.Config{AutoLog: true, LogWork: true}
-	hook, store, fc, approve := newTestHook(t, cfg)
+	hook, store, ob, fc := newTestHook(t, cfg)
+	fc.responses = map[string]string{"atlassian.addWorklog": `{"ok":true,"worklogId":"jira-worklog-1"}`}
 	ctx := context.Background()
 	orch, err := store.CreateOrchestration(ctx, "create-worklog", delivery.NewID(), nil)
 	if err != nil {
@@ -353,7 +399,6 @@ func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordWorkLog: %v", err)
 	}
-	approve(orch.Id)
 
 	event := deliveryhooks.Event{
 		Type: deliveryhooks.EventWorkLogged, DeliveryID: orch.Id, EntityID: entry.ID, Revision: 2,
@@ -362,18 +407,26 @@ func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 	if err := hook.Handle(ctx, event); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
+	drainOutbox(t, ob, hook.registry, NewWorklogSyncObserver(store))
+
 	if len(fc.calls) != 1 || fc.calls[0]["op"] != "atlassian.addWorklog" {
 		t.Fatalf("calls = %+v, want one addWorklog", fc.calls)
 	}
 	if fc.calls[0]["issueIdOrKey"] != "PAY-1901" || fc.calls[0]["timeSpentSeconds"] != 300 {
 		t.Fatalf("worklog call = %+v, want exact task and duration", fc.calls[0])
 	}
+	intent, err := ob.GetByFingerprint(ctx, providerwrite.JiraWorklogFingerprint(entry.ID))
+	if err != nil {
+		t.Fatalf("GetByFingerprint: %v", err)
+	}
+	if intent.Status != outbox.StatusSucceeded {
+		t.Fatalf("status = %q, want succeeded", intent.Status)
+	}
 	synced, err := store.GetWorkLog(ctx, orch.Id, entry.ID)
 	if err != nil {
 		t.Fatalf("GetWorkLog: %v", err)
 	}
 	if synced.SyncStatus != "synced" {
-		t.Fatalf("sync status = %q, want synced", synced.SyncStatus)
+		t.Fatalf("sync status = %q, want synced (observer must mark the ledger entry synced)", synced.SyncStatus)
 	}
 }
-

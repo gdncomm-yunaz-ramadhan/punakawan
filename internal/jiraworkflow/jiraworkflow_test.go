@@ -214,6 +214,49 @@ func TestShouldComment_UnconfiguredEmpty(t *testing.T) {
 	}
 }
 
+func TestTransitionPolicyFor(t *testing.T) {
+	c := &Config{Transitions: map[string]TransitionPolicy{
+		"PAY": {StartStatus: "In Progress", CompleteStatus: "Done"},
+	}}
+
+	policy, ok := c.TransitionPolicyFor("PAY")
+	if !ok {
+		t.Fatal("expected a configured policy for PAY")
+	}
+	if policy.StartStatus != "In Progress" || policy.CompleteStatus != "Done" {
+		t.Errorf("policy = %+v, want start=In Progress complete=Done", policy)
+	}
+
+	if _, ok := c.TransitionPolicyFor("OTHER"); ok {
+		t.Error("expected no configured policy for an unconfigured project")
+	}
+}
+
+func TestTransitionPolicyFor_NilMap(t *testing.T) {
+	c := &Config{}
+	if _, ok := c.TransitionPolicyFor("PAY"); ok {
+		t.Error("expected no configured policy when Transitions is nil")
+	}
+}
+
+func TestProjectKeyFromIssueKey(t *testing.T) {
+	cases := []struct {
+		issueKey string
+		want     string
+	}{
+		{"PAY-123", "PAY"},
+		{"MULTI-WORD-45", "MULTI-WORD"},
+		{"", ""},
+		{"NoHyphen", ""},
+		{"-123", ""},
+	}
+	for _, tc := range cases {
+		if got := ProjectKeyFromIssueKey(tc.issueKey); got != tc.want {
+			t.Errorf("ProjectKeyFromIssueKey(%q) = %q, want %q", tc.issueKey, got, tc.want)
+		}
+	}
+}
+
 func TestValidateStoryPoints_UnconfiguredScaleAllowsAny(t *testing.T) {
 	c := &Config{} // no scale configured at all
 	for _, v := range []float64{-1, 0, 4, 6, 100, 1000.5} {

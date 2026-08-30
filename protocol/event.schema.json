@@ -21,7 +21,6 @@
     "operation": { "type": "string" },
     "duration_ms": { "type": "integer", "minimum": 0 },
     "result": { "type": "string", "enum": ["success", "failure", "cancelled", "timeout"] },
-    "approval_id": { "type": "string" },
     "payload": { "type": "object" }
   }
 }

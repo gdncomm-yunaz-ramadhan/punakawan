@@ -18,11 +18,11 @@ func TestFromFinalPlanRecord(t *testing.T) {
 			RetrievedAt: retrievedAt,
 		},
 		FinalPlan: &protocol.KnowledgeRecordFinalPlan{
-			Requirements:          []string{"r1"},
-			AcceptanceCriteria:    []string{"a1"},
-			ArchitectureDecision:  &arch,
-			VerificationCriteria:  []string{"run integration suite", "manual smoke test"},
-			RepositoryImpactMap:   protocol.KnowledgeRecordFinalPlanRepositoryImpactMap{"checkout-api": "high"},
+			Requirements:         []string{"r1"},
+			AcceptanceCriteria:   []string{"a1"},
+			ArchitectureDecision: &arch,
+			VerificationCriteria: []string{"run integration suite", "manual smoke test"},
+			RepositoryImpactMap:  protocol.KnowledgeRecordFinalPlanRepositoryImpactMap{"checkout-api": "high"},
 		},
 	}
 

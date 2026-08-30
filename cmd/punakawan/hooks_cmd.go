@@ -13,18 +13,54 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/mcpserver"
+	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/internal/telemetry"
+	"github.com/ygrip/punakawan/internal/telemetry/clienthooks"
 	"github.com/ygrip/punakawan/internal/transcriptusage"
 )
 
 func newHooksCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hooks",
-		Short: "Claude Code hook integrations",
+		Short: "Codex and Claude Code hook integrations",
 	}
 	cmd.AddCommand(newHooksRecordUsageCmd())
+	cmd.AddCommand(newHooksIngestCmd())
+	cmd.AddCommand(newHooksInstallGlobalCmd())
 	return cmd
+}
+
+// newHooksInstallGlobalCmd installs punakawan's machine-global Codex
+// lifecycle hook config (~/.codex/hooks.json). It exists so a
+// non-interactive installer (scripts/install.sh, scripts/install.ps1,
+// scripts/configure-agent.sh) can configure Codex the same way `punakawan
+// setup` already configures Claude Code's per-project hooks, without
+// opening the credentialed subshell `setup` also does. Codex hooks are
+// user-global rather than per-project, unlike Claude Code's
+// .claude/settings.json, so there is no project directory to install
+// against here.
+func newHooksInstallGlobalCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "install-global",
+		Short: "Install punakawan's machine-global Codex lifecycle hook config",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			binaryPath, err := resolvePanelServiceBinary()
+			if err != nil {
+				return fmt.Errorf("hooks install-global: resolve installed binary: %w", err)
+			}
+			changed, err := ensureCodexHooks(binaryPath)
+			if err != nil {
+				return fmt.Errorf("hooks install-global: %w", err)
+			}
+			if changed {
+				fmt.Fprintln(cmd.OutOrStdout(), "configured codex lifecycle hooks in ~/.codex/hooks.json")
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "codex lifecycle hooks already configured")
+			}
+			return nil
+		},
+	}
 }
 
 // subagentStopPayload is the subset of a Claude Code SubagentStop hook's
@@ -35,15 +71,19 @@ type subagentStopPayload struct {
 	Cwd            string `json:"cwd"`
 }
 
-// newHooksRecordUsageCmd implements the SubagentStop end of punakawan's
-// hook-based usage tracking: given the hook's JSON payload on stdin, it
-// sums the finished subagent's real token usage and wall-clock time out of
-// its transcript and records it via delivery.Store.RecordUsage - the same
-// path report_delivery_usage uses, just invoked outside any MCP session.
+// newHooksRecordUsageCmd implements record-usage: a deprecated,
+// SubagentStop-only alias kept working for any hook config installed by an
+// earlier release (see setup_hooks.go's usageTrackingHookCommand history).
+// It now records into the same additive telemetry tables `hooks ingest`
+// does, rather than the deprecated delivery_usage_ledger, so it no longer
+// depends on that table remaining writable. New installs get the full
+// `hooks ingest --client claude-code --event SubagentStop` mapping
+// instead (see setup_hooks.go); this alias exists only so an
+// already-configured settings.json keeps working across the upgrade.
 func newHooksRecordUsageCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "record-usage",
-		Short: "Record a finished subagent's token usage and elapsed time (SubagentStop hook)",
+		Short: "(deprecated - use 'hooks ingest --client claude-code --event SubagentStop') record a finished subagent's usage",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Never fail: a tracking hiccup here must never block or fail
 			// the user's actual agent workflow. Every failure path below
@@ -60,6 +100,10 @@ func recordSubagentUsage(ctx context.Context, stdin io.Reader, stderr io.Writer)
 	var payload subagentStopPayload
 	if err := json.NewDecoder(stdin).Decode(&payload); err != nil {
 		logger.Warn("hooks record-usage: decode hook payload", "error", err)
+		return
+	}
+	if strings.TrimSpace(payload.AgentID) == "" {
+		logger.Info("hooks record-usage: hook payload has no agent_id")
 		return
 	}
 	if strings.TrimSpace(payload.TranscriptPath) == "" {
@@ -86,38 +130,187 @@ func recordSubagentUsage(ctx context.Context, stdin io.Reader, stderr io.Writer)
 	}
 	defer a.Close()
 
-	store, err := mcpserver.OpenDeliveryStore(ctx, a)
+	db, err := a.OpenStorage(ctx)
 	if err != nil {
-		logger.Warn("hooks record-usage: open delivery store", "error", err)
+		logger.Warn("hooks record-usage: open storage kernel", "error", err)
+		return
+	}
+	store := telemetry.NewStore(db)
+
+	// The pre-telemetry punakawan session id is the only stable identity
+	// this legacy payload has; reused as the external_session_id, it lets
+	// repeated SubagentStop calls for the same subagent across one
+	// punakawan session resume the same agent_sessions row rather than
+	// minting a new one per call.
+	session, err := store.Begin(ctx, telemetry.BeginRequest{
+		DeliveryID: marker.OrchestrationID, ExecutionID: marker.ExecutionID,
+		ClientKind: "legacy-hook", ExternalSessionID: marker.SessionID, Provider: "claude-code",
+	})
+	if err != nil {
+		logger.Warn("hooks record-usage: begin telemetry session", "error", err)
 		return
 	}
 
+	models := make([]telemetry.ModelUsage, 0, len(summary.ByModel))
+	var input, output, cacheWrite, cacheRead int64
 	for _, mu := range summary.ByModel {
-		recordUsageEntry(ctx, store, logger, marker.SessionID, "tokens_input", mu.Model, float64(mu.InputTokens))
-		recordUsageEntry(ctx, store, logger, marker.SessionID, "tokens_output", mu.Model, float64(mu.OutputTokens))
-		recordUsageEntry(ctx, store, logger, marker.SessionID, "tokens_cache_creation", mu.Model, float64(mu.CacheCreationInputTokens))
-		recordUsageEntry(ctx, store, logger, marker.SessionID, "tokens_cache_read", mu.Model, float64(mu.CacheReadInputTokens))
+		models = append(models, telemetry.ModelUsage{
+			Model: mu.Model, InputTokens: mu.InputTokens, OutputTokens: mu.OutputTokens,
+			CacheWriteTokens: mu.CacheCreationInputTokens, CacheReadTokens: mu.CacheReadInputTokens,
+		})
+		input += mu.InputTokens
+		output += mu.OutputTokens
+		cacheWrite += mu.CacheCreationInputTokens
+		cacheRead += mu.CacheReadInputTokens
 	}
-	if summary.ElapsedSeconds > 0 {
-		recordUsageEntry(ctx, store, logger, marker.SessionID, "wall_clock_time", "", summary.ElapsedSeconds)
+	sequence := input + output + cacheWrite + cacheRead
+	if _, err := store.IngestSnapshot(ctx, telemetry.SnapshotRequest{
+		SessionID: session.ID, SourceID: "agent:" + payload.AgentID, Sequence: sequence,
+		InputTokens: input, OutputTokens: output, CacheWriteTokens: cacheWrite, CacheReadTokens: cacheRead,
+		ElapsedMS: int64(summary.ElapsedSeconds * 1000), ModelUsage: models,
+	}); err != nil {
+		logger.Warn("hooks record-usage: ingest usage snapshot", "agent_id", payload.AgentID, "error", err)
 	}
 }
 
-// recordUsageEntry records one usage ledger entry, logging rather than
-// failing the caller if the write is rejected (e.g. the session has since
-// closed). unit_price/currency/price_source are deliberately left unset -
-// punakawan's own tool instructions forbid maintaining a hardcoded price
-// table; cost enrichment from real, current pricing is a separate concern.
-func recordUsageEntry(ctx context.Context, store *delivery.Store, logger *slog.Logger, sessionID, category, model string, quantity float64) {
-	if quantity <= 0 {
+// newHooksIngestCmd implements the general Codex/Claude Code lifecycle
+// hook entry point every event this package supports goes through:
+// `punakawan hooks ingest --client <kind> --event <event>` reads the raw
+// hook JSON on stdin, spools it durably, then attempts immediate
+// ingestion. See clienthooks.ParseCodexEvent/ParseClaudeEvent for the
+// exact event-to-action mapping.
+func newHooksIngestCmd() *cobra.Command {
+	var client, event string
+	cmd := &cobra.Command{
+		Use:   "ingest",
+		Short: "Ingest one Codex or Claude Code lifecycle hook event",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Never fail: see recordSubagentUsage's own doc comment - a
+			// tracking hiccup must never block or fail the caller's actual
+			// agent workflow.
+			ingestHookEvent(cmd.Context(), client, event, cmd.InOrStdin(), cmd.ErrOrStderr())
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&client, "client", "", "client kind: codex or claude-code")
+	cmd.Flags().StringVar(&event, "event", "", "lifecycle event name, e.g. SessionStart")
+	return cmd
+}
+
+// cwdPayload reads only a hook payload's "cwd" field - both supported
+// clients name it identically, so this command can locate the session
+// marker before it needs to know which client-specific shape the rest of
+// the payload has.
+type cwdPayload struct {
+	Cwd string `json:"cwd"`
+}
+
+func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader, stderr io.Writer) {
+	logger := slog.New(slog.NewTextHandler(stderr, nil))
+	client = strings.TrimSpace(client)
+	event = strings.TrimSpace(event)
+	if client == "" || event == "" {
+		logger.Warn("hooks ingest: --client and --event are required")
 		return
 	}
-	unit := "tokens"
-	if category == "wall_clock_time" {
-		unit = "seconds"
+
+	payload, err := io.ReadAll(stdin)
+	if err != nil {
+		logger.Warn("hooks ingest: read hook payload", "error", err)
+		return
 	}
-	if _, err := store.RecordUsage(ctx, delivery.NewID(), sessionID, "", "actual", category, model, quantity, unit, nil, "", ""); err != nil {
-		logger.Warn("hooks record-usage: record usage entry", "category", category, "model", model, "error", err)
+
+	var mapped clienthooks.Mapped
+	switch client {
+	case clienthooks.ClientKindCodex:
+		mapped, err = clienthooks.ParseCodexEvent(event, payload)
+	case clienthooks.ClientKindClaudeCode:
+		mapped, err = clienthooks.ParseClaudeEvent(event, payload)
+	default:
+		err = fmt.Errorf("hooks ingest: unsupported --client %q (want %q or %q)", client, clienthooks.ClientKindCodex, clienthooks.ClientKindClaudeCode)
+	}
+	if err != nil {
+		logger.Warn("hooks ingest: map hook event", "client", client, "event", event, "error", err)
+		return
+	}
+	if mapped.Action == clienthooks.ActionIgnore {
+		return
+	}
+
+	var cwd cwdPayload
+	_ = json.Unmarshal(payload, &cwd)
+	markerDir, marker, err := findSessionMarker(cwd.Cwd)
+	if err != nil {
+		logger.Info("hooks ingest: no punakawan delivery session tracked here", "cwd", cwd.Cwd, "reason", err)
+		return
+	}
+
+	a, err := app.Load(markerDir)
+	if err != nil {
+		logger.Warn("hooks ingest: load app", "dir", markerDir, "error", err)
+		return
+	}
+	defer a.Close()
+	db, err := a.OpenStorage(ctx)
+	if err != nil {
+		logger.Warn("hooks ingest: open storage kernel", "error", err)
+		return
+	}
+	store := telemetry.NewStore(db)
+
+	// Snapshot/Finalize name the external session, not yet a concrete
+	// telemetry.AgentSession id - resolve (or, if this client's
+	// SessionStart hook never fired, lazily create) it now. Begin is
+	// idempotent and cheap, so doing this unconditionally before spooling
+	// is safe even when a real SessionStart already ran moments ago.
+	if mapped.Action == clienthooks.ActionSnapshot || mapped.Action == clienthooks.ActionFinalize {
+		session, err := store.Begin(ctx, telemetry.BeginRequest{
+			DeliveryID: marker.OrchestrationID, ExecutionID: marker.ExecutionID,
+			ClientKind: client, ExternalSessionID: mapped.ExternalSessionID,
+		})
+		if err != nil {
+			logger.Warn("hooks ingest: resolve telemetry session", "error", err)
+			return
+		}
+		if mapped.Action == clienthooks.ActionSnapshot {
+			mapped.Snapshot.SessionID = session.ID
+		} else {
+			mapped.Finalize.SessionID = session.ID
+		}
+	}
+
+	dataDir, err := storageDataDir()
+	if err != nil {
+		logger.Warn("hooks ingest: resolve data dir", "error", err)
+		return
+	}
+	rec := telemetry.SpoolRecord{
+		EventID: telemetry.NewEventID(), ClientKind: client, EventName: event,
+		Begin: mapped.Begin, Snapshot: mapped.Snapshot, Finalize: mapped.Finalize,
+	}
+	if mapped.Begin != nil {
+		rec.Begin.DeliveryID = marker.OrchestrationID
+		rec.Begin.ExecutionID = marker.ExecutionID
+	}
+	if err := telemetry.WriteSpoolRecord(dataDir, rec); err != nil {
+		logger.Warn("hooks ingest: write spool record", "event_id", rec.EventID, "error", err)
+		return
+	}
+
+	if err := rec.Ingest(ctx, store); err != nil {
+		// Left in the spool for the next drain pass - not an error the
+		// caller (the actual coding agent's own hook invocation) should
+		// ever see.
+		logger.Info("hooks ingest: immediate ingestion deferred to next drain", "event_id", rec.EventID, "error", err)
+		return
+	}
+	spoolDir, err := telemetry.SpoolDir(dataDir)
+	if err != nil {
+		logger.Warn("hooks ingest: resolve spool dir for cleanup", "error", err)
+		return
+	}
+	if err := telemetry.RemoveSpoolFile(filepath.Join(spoolDir, rec.EventID+".json")); err != nil {
+		logger.Warn("hooks ingest: remove spooled file after successful ingestion", "event_id", rec.EventID, "error", err)
 	}
 }
 
@@ -151,4 +344,11 @@ func findSessionMarker(startDir string) (string, *mcpserver.SessionMarker, error
 		dir = parent
 	}
 	return "", nil, fmt.Errorf("no %s/%s found above %s", mcpserver.SessionMarkerDir, mcpserver.SessionMarkerFile, startDir)
+}
+
+// storageDataDir resolves ${PUNAKAWAN_DATA_DIR} (or the platform default),
+// the machine-global directory the telemetry spool lives under - distinct
+// from markerDir's project-scoped workspace app.Load opens.
+func storageDataDir() (string, error) {
+	return storage.DataDir()
 }

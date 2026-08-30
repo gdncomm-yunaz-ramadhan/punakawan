@@ -2,11 +2,10 @@ package delivery
 
 import (
 	"context"
-	"errors"
 	"testing"
 )
 
-func TestGitHubPRReviewPersistsApprovalAndResolution(t *testing.T) {
+func TestGitHubPRReviewPersistsProposalAndResolution(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	findings := []map[string]any{{
@@ -36,17 +35,6 @@ func TestGitHubPRReviewPersistsApprovalAndResolution(t *testing.T) {
 		t.Fatalf("reloaded findings = %#v, want persisted finding", got.Findings)
 	}
 
-	if err := s.ApproveGitHubPRReview(ctx, "approve-review", proposed.ID); err != nil {
-		t.Fatalf("ApproveGitHubPRReview: %v", err)
-	}
-	approved, err := s.GetGitHubPRReview(ctx, proposed.ID)
-	if err != nil {
-		t.Fatalf("GetGitHubPRReview after approval: %v", err)
-	}
-	if approved.Status != "approved" {
-		t.Fatalf("approved status = %q, want approved", approved.Status)
-	}
-
 	submitted, err := s.ResolveGitHubPRReview(ctx, "submit-review", proposed.ID, "701", "")
 	if err != nil {
 		t.Fatalf("ResolveGitHubPRReview success: %v", err)
@@ -54,16 +42,10 @@ func TestGitHubPRReviewPersistsApprovalAndResolution(t *testing.T) {
 	if submitted.Status != "submitted" || submitted.ExternalReviewID != "701" || submitted.Failure != "" {
 		t.Fatalf("submitted review = %+v, want submitted review id 701 without failure", submitted)
 	}
-	if err := s.ApproveGitHubPRReview(ctx, "approve-submitted-review", proposed.ID); !errors.Is(err, ErrInvalidState) {
-		t.Fatalf("ApproveGitHubPRReview after submission = %v, want ErrInvalidState", err)
-	}
 
 	failedProposal, err := s.ProposeGitHubPRReview(ctx, "propose-failed-review", "acme/widgets", 43, "def456", nil, "Cannot submit this review.", "COMMENT", "execution-1")
 	if err != nil {
 		t.Fatalf("ProposeGitHubPRReview for failure: %v", err)
-	}
-	if err := s.ApproveGitHubPRReview(ctx, "approve-failed-review", failedProposal.ID); err != nil {
-		t.Fatalf("ApproveGitHubPRReview for failure: %v", err)
 	}
 	failed, err := s.ResolveGitHubPRReview(ctx, "resolve-failed-review", failedProposal.ID, "", "github unavailable")
 	if err != nil {

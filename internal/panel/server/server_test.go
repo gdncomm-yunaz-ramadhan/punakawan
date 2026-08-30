@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -300,6 +302,69 @@ func TestServerGracefulShutdown(t *testing.T) {
 
 	if _, err := http.Get(fmt.Sprintf("http://%s/api/v1/system", s.Addr())); err == nil {
 		t.Fatal("expected the connection to be refused after shutdown")
+	}
+}
+
+// TestServerShutdownDrainsInFlightRequest proves Shutdown's first step (stop
+// accepting HTTP, drain active HTTP requests) actually waits for a request
+// whose handler is still running to finish, rather than cutting it off: a
+// raw connection sends only part of a POST body - so the handler is blocked
+// inside its JSON decode, mid-request - before Shutdown is called; Shutdown
+// must not return until the rest of the body is sent and the handler
+// completes, and the client must still receive a well-formed HTTP response
+// rather than a reset connection.
+func TestServerShutdownDrainsInFlightRequest(t *testing.T) {
+	s, _ := startTestServer(t)
+
+	conn, err := net.Dial("tcp", s.Addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	body := `{"bootstrap_token":"deliberately-invalid-token"}`
+	half := len(body) / 2
+	request := fmt.Sprintf(
+		"POST /api/v1/session/exchange HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		s.Addr(), len(body), body[:half],
+	)
+	if _, err := conn.Write([]byte(request)); err != nil {
+		t.Fatalf("write partial request: %v", err)
+	}
+
+	// Give the server a moment to accept the connection and start blocking in
+	// the handler's body decode before Shutdown is invoked.
+	time.Sleep(50 * time.Millisecond)
+
+	shutdownDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownDone <- s.Shutdown(ctx)
+	}()
+
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("Shutdown returned (err=%v) before the in-flight request's body was even fully sent - it did not drain", err)
+	case <-time.After(150 * time.Millisecond):
+		// Expected: Shutdown is still blocked draining the active connection.
+	}
+
+	if _, err := conn.Write([]byte(body[half:])); err != nil {
+		t.Fatalf("write remaining request body: %v", err)
+	}
+
+	if err := <-shutdownDone; err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("expected a well-formed HTTP response after draining, got: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (invalid bootstrap token, but still a real handled response)", resp.StatusCode)
 	}
 }
 

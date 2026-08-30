@@ -17,7 +17,6 @@ export interface WorkflowRun {
     | "context-building"
     | "awaiting-clarification"
     | "planning"
-    | "awaiting-approval"
     | "executing"
     | "reviewing"
     | "blocked"

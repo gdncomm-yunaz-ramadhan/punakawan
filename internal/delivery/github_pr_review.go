@@ -83,42 +83,6 @@ func (s *Store) GetGitHubPRReview(ctx context.Context, id string) (*GitHubPRRevi
 	return scanGitHubPRReview(s.db.Reader().QueryRowContext(ctx, githubPRReviewSelect+` WHERE id = ?`, strings.TrimSpace(id)))
 }
 
-// ApproveGitHubPRReview retains a review's explicit approval before an MCP
-// handler asks the adapter gate to submit it.
-func (s *Store) ApproveGitHubPRReview(ctx context.Context, key, id string) error {
-	key = strings.TrimSpace(key)
-	id = strings.TrimSpace(id)
-	if key == "" || id == "" {
-		return fmt.Errorf("delivery: GitHub PR review approval requires idempotency key and review id")
-	}
-	err := s.db.Write(ctx, key, "approve GitHub PR review "+id, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, `
-			UPDATE github_pr_reviews
-			SET status = 'approved', updated_at = ?
-			WHERE id = ? AND status = 'proposed'`,
-			time.Now().UTC().Format(timeLayout), id)
-		if err != nil {
-			return err
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if changed == 1 {
-			return nil
-		}
-		var status string
-		if err := tx.QueryRowContext(ctx, `SELECT status FROM github_pr_reviews WHERE id = ?`, id).Scan(&status); err != nil {
-			return noRow(err)
-		}
-		return ErrInvalidState
-	})
-	if errors.Is(err, storage.ErrDuplicateWrite) {
-		return nil
-	}
-	return err
-}
-
 // ResolveGitHubPRReview records the result of its one external submission.
 // A non-empty failure produces the terminal failed state; otherwise the
 // adapter's external review id is required for a submitted state.
@@ -138,7 +102,7 @@ func (s *Store) ResolveGitHubPRReview(ctx context.Context, key, id, externalRevi
 		result, err := tx.ExecContext(ctx, `
 			UPDATE github_pr_reviews
 			SET status = ?, external_review_id = ?, failure = ?, updated_at = ?
-			WHERE id = ? AND status IN ('proposed', 'approved')`,
+			WHERE id = ? AND status = 'proposed'`,
 			status, externalReviewID, failure, time.Now().UTC().Format(timeLayout), id)
 		if err != nil {
 			return err

@@ -37,33 +37,51 @@ func ListDeliveriesHandler(reader contract.DeliveryReader) http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, errDeliveryUnavailable)
 			return
 		}
-		list, err := reader.ListDeliveries(r.Context())
+		result, err := reader.ListDeliveries(r.Context())
 		if err != nil {
 			writeError(w, deliveryErrorStatus(err), err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": list})
+		writeJSON(w, http.StatusOK, result)
 	}
 }
 
-// DeliveryViewHandler serves GET /api/v1/deliveries/{orchestrationId},
-// optionally passing ?since_seq= through to the daemon per
-// delivery.BuildDeliveryViewSince's diffing (an invalid/absent value
-// silently falls back to 0, matching this package's existing query-param
-// handling elsewhere, e.g. task_handler.go's limit).
-func DeliveryViewHandler(reader contract.DeliveryReader) http.HandlerFunc {
+// DeliveryDetailHandler serves GET /api/v1/deliveries/{orchestrationId}.
+func DeliveryDetailHandler(reader contract.DeliveryReader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if reader == nil {
 			writeError(w, http.StatusServiceUnavailable, errDeliveryUnavailable)
 			return
 		}
-		sinceSeq, _ := strconv.Atoi(r.URL.Query().Get("since_seq"))
-		view, err := reader.GetDeliveryView(r.Context(), r.PathValue("orchestrationId"), sinceSeq)
+		detail, err := reader.GetDeliveryDetail(r.Context(), r.PathValue("orchestrationId"))
 		if err != nil {
 			writeError(w, deliveryErrorStatus(err), err)
 			return
 		}
-		writeJSON(w, http.StatusOK, view)
+		writeJSON(w, http.StatusOK, detail)
+	}
+}
+
+// DeliveryWatchHandler serves
+// GET /api/v1/deliveries/{orchestrationId}/watch?since_revision=N&wait_seconds=25,
+// forwarding straight to the daemon's own long-poll (an invalid/absent
+// since_revision or wait_seconds silently falls back to 0, matching this
+// package's existing query-param handling elsewhere, e.g. task_handler.go's
+// limit).
+func DeliveryWatchHandler(reader contract.DeliveryReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if reader == nil {
+			writeError(w, http.StatusServiceUnavailable, errDeliveryUnavailable)
+			return
+		}
+		sinceRevision, _ := strconv.Atoi(r.URL.Query().Get("since_revision"))
+		waitSeconds, _ := strconv.Atoi(r.URL.Query().Get("wait_seconds"))
+		detail, err := reader.WatchDeliveryDetail(r.Context(), r.PathValue("orchestrationId"), sinceRevision, waitSeconds)
+		if err != nil {
+			writeError(w, deliveryErrorStatus(err), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, detail)
 	}
 }
 
@@ -91,53 +109,6 @@ func DeliveryEvidenceHandler(reader contract.DeliveryReader) http.HandlerFunc {
 	}
 }
 
-// answerDeliveryQuestionBody is POST .../answer-question's request body,
-// mirroring daemon's own wire shape exactly (the unexported
-// answerDeliveryQuestionRequest in internal/daemon/delivery.go): set
-// provider for the resolved-requirement case, or both parent_task_id and
-// project_id for the ambiguous-routing case.
-type answerDeliveryQuestionBody struct {
-	Reference        string `json:"reference"`
-	ExpectedRevision int    `json:"expected_revision,omitempty"`
-
-	Provider   string `json:"provider,omitempty"`
-	ExternalId string `json:"external_id,omitempty"`
-	Url        string `json:"url,omitempty"`
-	Title      string `json:"title,omitempty"`
-	Summary    string `json:"summary,omitempty"`
-
-	ParentTaskId string `json:"parent_task_id,omitempty"`
-	ProjectId    string `json:"project_id,omitempty"`
-}
-
-// AnswerDeliveryQuestionHandler serves
-// POST /api/v1/deliveries/{orchestrationId}/answer-question.
-func AnswerDeliveryQuestionHandler(reader contract.DeliveryReader) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if reader == nil {
-			writeError(w, http.StatusServiceUnavailable, errDeliveryUnavailable)
-			return
-		}
-		var body answerDeliveryQuestionBody
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		in := daemon.AnswerDeliveryQuestionRequest{
-			Reference: body.Reference, ExpectedRevision: body.ExpectedRevision,
-			Provider: body.Provider, ExternalId: body.ExternalId, Url: body.Url,
-			Title: body.Title, Summary: body.Summary,
-			ParentTaskId: body.ParentTaskId, ProjectId: body.ProjectId,
-		}
-		view, err := reader.AnswerDeliveryQuestion(r.Context(), r.PathValue("orchestrationId"), in)
-		if err != nil {
-			writeError(w, deliveryErrorStatus(err), err)
-			return
-		}
-		writeJSON(w, http.StatusOK, view)
-	}
-}
-
 // cancelDeliveryBody is POST .../cancel's request body, mirroring daemon's
 // unexported cancelDeliveryRequest.
 type cancelDeliveryBody struct {
@@ -158,11 +129,11 @@ func CancelDeliveryHandler(reader contract.DeliveryReader) http.HandlerFunc {
 			return
 		}
 		in := daemon.CancelDeliveryRequest{ExpectedRevision: body.ExpectedRevision, Reason: body.Reason}
-		view, err := reader.CancelDelivery(r.Context(), r.PathValue("orchestrationId"), in)
+		detail, err := reader.CancelDelivery(r.Context(), r.PathValue("orchestrationId"), in)
 		if err != nil {
 			writeError(w, deliveryErrorStatus(err), err)
 			return
 		}
-		writeJSON(w, http.StatusOK, view)
+		writeJSON(w, http.StatusOK, detail)
 	}
 }

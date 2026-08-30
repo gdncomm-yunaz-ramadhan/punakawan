@@ -1,17 +1,17 @@
 // Package deliverysource implements contract.DeliveryReader over a
 // *daemon.Client connection, following this codebase's reader-per-subsystem
 // convention (internal/panel/sources): a thin wrapper around an
-// already-existing store - here, the daemon's own delivery.Store, reached
-// over its authenticated loopback transport rather than opened directly,
-// since internal/daemon.Daemon is the only process allowed to do that.
+// already-existing store - here, the daemon's own delivery.Store and
+// internal/deliveryprojection.Projector, reached over its authenticated
+// loopback transport rather than opened directly, since internal/daemon.
+// Daemon is the only process allowed to do that.
 package deliverysource
 
 import (
 	"context"
 
 	"github.com/ygrip/punakawan/internal/daemon"
-	"github.com/ygrip/punakawan/internal/delivery"
-	"github.com/ygrip/punakawan/pkg/protocol"
+	"github.com/ygrip/punakawan/internal/deliveryprojection"
 )
 
 // Source implements contract.DeliveryReader by forwarding every call
@@ -21,30 +21,25 @@ type Source struct {
 	Client *daemon.Client
 }
 
-// ListDeliveries returns every orchestration the daemon's delivery.Store
-// knows about, oldest first.
-func (s *Source) ListDeliveries(ctx context.Context) ([]*protocol.DeliveryOrchestration, error) {
+// ListDeliveries returns every delivery's compact summary.
+func (s *Source) ListDeliveries(ctx context.Context) (daemon.ListDeliveriesResult, error) {
 	return s.Client.ListDeliveries(ctx)
 }
 
-// GetDeliveryView returns orchestrationID's current view immediately.
-func (s *Source) GetDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int) (*delivery.DeliveryView, error) {
-	return s.Client.GetDeliveryView(ctx, orchestrationID, sinceSeq)
+// GetDeliveryDetail returns orchestrationID's current DeliveryDetail
+// immediately.
+func (s *Source) GetDeliveryDetail(ctx context.Context, orchestrationID string) (*deliveryprojection.DeliveryDetail, error) {
+	return s.Client.GetDeliveryDetail(ctx, orchestrationID)
 }
 
-// WatchDeliveryView long-polls the daemon for up to waitSeconds waiting for
-// LatestSeq to advance past sinceSeq.
-func (s *Source) WatchDeliveryView(ctx context.Context, orchestrationID string, sinceSeq, waitSeconds int) (*delivery.DeliveryView, error) {
-	return s.Client.WatchDeliveryView(ctx, orchestrationID, sinceSeq, waitSeconds)
-}
-
-// AnswerDeliveryQuestion resolves one pending question on orchestrationID.
-func (s *Source) AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in daemon.AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error) {
-	return s.Client.AnswerDeliveryQuestion(ctx, orchestrationID, in)
+// WatchDeliveryDetail long-polls the daemon for up to waitSeconds waiting
+// for ProjectionRevision to advance past sinceRevision.
+func (s *Source) WatchDeliveryDetail(ctx context.Context, orchestrationID string, sinceRevision, waitSeconds int) (*deliveryprojection.DeliveryDetail, error) {
+	return s.Client.WatchDeliveryDetail(ctx, orchestrationID, sinceRevision, waitSeconds)
 }
 
 // CancelDelivery cancels orchestrationID.
-func (s *Source) CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error) {
+func (s *Source) CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*deliveryprojection.DeliveryDetail, error) {
 	return s.Client.CancelDelivery(ctx, orchestrationID, in)
 }
 

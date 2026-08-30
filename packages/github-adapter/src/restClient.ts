@@ -11,12 +11,16 @@ export interface RestRequestOptions {
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
   headers?: Record<string, string>;
+  /** Propagated straight into fetch's own options so an in-flight request aborts when the caller's operation is cancelled. */
+  signal?: AbortSignal;
 }
 
 export interface RestResponse<T = unknown> {
   status: number;
   data: T;
   url: string;
+  /** The response's raw Link header, if any - callers walking Link-header pagination (collectLinkPages) read rel="next" out of this. */
+  linkHeader?: string;
 }
 
 function normalizeApiBaseUrl(value: string): string {
@@ -69,6 +73,20 @@ function errorDetail(data: unknown): string {
   }
 }
 
+/**
+ * An AbortError must reach the JSON-RPC layer (packages/adapter-sdk/src/stdio.ts)
+ * with its own name intact so it can be reported as `data: {code:
+ * "cancelled"}` instead of an ordinary rejection - wrapping it in a plain
+ * Error the way every other network failure below is wrapped (for a
+ * helpful "which request failed and why" message) would erase that
+ * distinction. Only a non-abort failure gets the wrapped, contextual
+ * message; an abort is rethrown exactly as fetch raised it.
+ */
+function rethrowUnlessAborted(error: unknown, context: string): Error {
+  if (error instanceof Error && error.name === 'AbortError') return error;
+  return new Error(`${context}: ${(error as Error).message}`);
+}
+
 /** Direct GitHub REST + GraphQL client; no separate MCP proxy is involved. */
 export class GitHubRestClient {
   constructor(
@@ -85,9 +103,22 @@ export class GitHubRestClient {
     };
   }
 
+  /**
+   * Builds an absolute request URL. pathOrURL may be a path relative to
+   * apiBaseUrl (the common case) or an absolute URL such as the one a
+   * Link header's rel="next" gives collectLinkPages - GitHub's own
+   * pagination links already carry every query parameter the first
+   * request set, so a caller walking pages must be able to fetch that URL
+   * verbatim rather than re-deriving it from path + query.
+   */
+  private resolveURL(pathOrURL: string): URL {
+    if (/^https?:\/\//i.test(pathOrURL)) return new URL(pathOrURL);
+    const normalizedPath = pathOrURL.startsWith('/') ? pathOrURL : `/${pathOrURL}`;
+    return new URL(`${this.config.apiBaseUrl}${normalizedPath}`);
+  }
+
   async request<T = unknown>(path: string, options: RestRequestOptions = {}): Promise<RestResponse<T>> {
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    const url = new URL(`${this.config.apiBaseUrl}${normalizedPath}`);
+    const url = this.resolveURL(path);
     for (const [key, value] of Object.entries(options.query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
@@ -101,9 +132,9 @@ export class GitHubRestClient {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(url, { method: options.method ?? 'GET', headers, body });
+      response = await this.fetchImpl(url, { method: options.method ?? 'GET', headers, body, signal: options.signal });
     } catch (error) {
-      throw new Error(`Direct GitHub REST request failed for ${url}: ${(error as Error).message}`);
+      throw rethrowUnlessAborted(error, `Direct GitHub REST request failed for ${url}`);
     }
 
     const text = response.status === 204 ? '' : await response.text();
@@ -127,7 +158,7 @@ export class GitHubRestClient {
       );
     }
 
-    return { status: response.status, data: data as T, url: url.toString() };
+    return { status: response.status, data: data as T, url: url.toString(), linkHeader: response.headers.get('link') ?? undefined };
   }
 
   /**
@@ -135,16 +166,17 @@ export class GitHubRestClient {
    * equivalent for (resolving a review thread has no REST endpoint - it is
    * GraphQL-only: https://docs.github.com/en/graphql/reference/mutations#resolvereviewthread).
    */
-  async graphql<T = unknown>(query: string, variables: Record<string, unknown>): Promise<T> {
+  async graphql<T = unknown>(query: string, variables: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     let response: Response;
     try {
       response = await this.fetchImpl(this.config.graphqlUrl, {
         method: 'POST',
         headers: this.headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ query, variables }),
+        signal,
       });
     } catch (error) {
-      throw new Error(`GitHub GraphQL request failed: ${(error as Error).message}`);
+      throw rethrowUnlessAborted(error, 'GitHub GraphQL request failed');
     }
 
     const payload = (await response.json()) as { data?: T; errors?: { message: string }[] };

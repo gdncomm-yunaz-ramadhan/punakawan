@@ -10,20 +10,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Level is one of the four canonical policy levels (§16.3). YAML files may
-// also use the informal §15.1 spellings ("allowed"/"approval"/"denied"),
-// which are normalized to these on load.
+// Level is one of the two deterministic policy levels. YAML files may also
+// use the informal "allowed"/"denied" spellings, which are normalized to
+// these on load. "require-approval"/"approval" are rejected outright:
+// execution is not gated on user confirmation, so silently treating an old
+// prompt boundary as authorization would be misleading.
 type Level string
 
 const (
-	LevelDeny                 Level = "deny"
-	LevelRequireApproval      Level = "require-approval"
-	LevelAllow                Level = "allow"
-	LevelAllowWithConstraints Level = "allow-with-constraints"
+	LevelDeny  Level = "deny"
+	LevelAllow Level = "allow"
 )
 
-// UnmarshalYAML normalizes both the §15.1 example vocabulary and the §16.3
-// canonical vocabulary to the same four Level values.
+// UnmarshalYAML normalizes the informal spellings to the two canonical
+// Level values, and rejects the removed "require-approval"/"approval"
+// levels with an actionable error.
 func (l *Level) UnmarshalYAML(value *yaml.Node) error {
 	var s string
 	if err := value.Decode(&s); err != nil {
@@ -32,12 +33,10 @@ func (l *Level) UnmarshalYAML(value *yaml.Node) error {
 	switch s {
 	case "allowed", "allow":
 		*l = LevelAllow
-	case "approval", "require-approval":
-		*l = LevelRequireApproval
 	case "denied", "deny":
 		*l = LevelDeny
-	case "allow-with-constraints":
-		*l = LevelAllowWithConstraints
+	case "require-approval", "approval":
+		return fmt.Errorf("policy: level %q was removed; choose \"allow\" or \"deny\"", s)
 	default:
 		return fmt.Errorf("policy: unknown level %q", s)
 	}
@@ -84,45 +83,33 @@ type Capabilities struct {
 	Execution  ExecutionPolicy  `yaml:"execution"`
 }
 
-// ApprovalsPolicy controls how broad one human approval is, independent of
-// which operations require one (that's Capabilities' job). "run" (default)
-// scopes an adapter-write approval to a single run_id, as before. "day"
-// shares one approval across every run against the same adapter within a
-// calendar UTC day, so resuming the same ticket/task across multiple runs
-// on the same day doesn't re-prompt for an approval that was, in practice,
-// already granted for the same unit of work (punokawan-cy8).
-type ApprovalsPolicy struct {
-	Scope string `yaml:"scope"`
-}
-
 // Policy is a workspace's loaded capability policy.
 type Policy struct {
-	Capabilities Capabilities    `yaml:"capabilities"`
-	Approvals    ApprovalsPolicy `yaml:"approvals"`
+	Capabilities Capabilities `yaml:"capabilities"`
 }
 
 // Default returns a conservative built-in policy used when no policy.yaml
-// exists yet: git pushes and default-branch writes are denied, external
-// writes require approval, execution is network-restricted.
+// exists yet: force-push and default-branch writes are denied; everything
+// else authorized work needs is allowed, since execution is not gated on
+// user confirmation.
 func Default() *Policy {
 	return &Policy{
-		Approvals: ApprovalsPolicy{Scope: "run"},
 		Capabilities: Capabilities{
 			Git: GitPolicy{
 				Commit:             LevelAllow,
-				Push:               LevelRequireApproval,
+				Push:               LevelAllow,
 				ForcePush:          LevelDeny,
 				DefaultBranchWrite: LevelDeny,
 			},
 			External: ExternalPolicy{
 				JiraRead:        LevelAllow,
-				JiraWrite:       LevelRequireApproval,
+				JiraWrite:       LevelAllow,
 				ConfluenceRead:  LevelAllow,
-				ConfluenceWrite: LevelRequireApproval,
+				ConfluenceWrite: LevelAllow,
 			},
 			Browser: BrowserPolicy{
 				ControlledProfile: LevelAllow,
-				ExistingProfile:   LevelRequireApproval,
+				ExistingProfile:   LevelAllow,
 				RecordInputs:      "sanitized",
 			},
 			Execution: ExecutionPolicy{

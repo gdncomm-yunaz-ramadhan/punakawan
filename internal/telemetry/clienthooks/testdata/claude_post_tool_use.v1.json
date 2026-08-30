@@ -1,0 +1,9 @@
+{
+  "session_id": "claude-sess-1",
+  "transcript_path": "{{TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": { "command": "go test ./..." },
+  "tool_use_id": "toolu_main_2"
+}

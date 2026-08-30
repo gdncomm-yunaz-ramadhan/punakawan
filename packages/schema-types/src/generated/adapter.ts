@@ -30,8 +30,10 @@ export interface AdapterManifest {
   operations: {
     [k: string]: {
       side_effect: boolean;
-      approval?: "required";
       description: string;
+      /**
+       * A JSON Schema of type "object" describing this operation's call parameters.
+       */
       input_schema: {
         [k: string]: unknown;
       };

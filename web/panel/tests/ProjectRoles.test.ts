@@ -10,30 +10,18 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
 type FetchMock = ReturnType<typeof vi.fn>;
 
 // The Defaults-shaped payload from the backend contract: four roles, each
-// with the capability keys it owns. Every role starts enabled/balanced with
-// all owned capabilities on.
+// with a style and free-text instructions. Every role starts balanced with
+// empty instructions.
 function defaultsPayload() {
-  const owned = [
-    { role: "semar", capabilities: ["workflows", "clarification", "coordinate_roles", "change_dossier", "handoff_capsule"] },
-    { role: "gareng", capabilities: ["contradictions", "cross_repository_impact", "security_checks", "blocking_risks", "change_dossier"] },
-    { role: "petruk", capabilities: ["plans", "tasks", "modify_files", "cross_repository_changes", "create_pull_request", "change_dossier"] },
-    { role: "bagong", capabilities: ["plan_verification", "rerun_checks", "cross_repository_verification", "challenge_dossier", "block_completion", "review_pull_request"] },
-  ];
-  const roleConfig = (mode: string, caps: string[]) => ({
-    enabled: true,
-    style: "balanced",
-    mode,
-    capabilities: Object.fromEntries(caps.map((k) => [k, true])),
-  });
+  const rolePreference = () => ({ style: "balanced", instructions: "" });
   return {
     roles: {
-      semar: roleConfig("execute", owned[0].capabilities),
-      gareng: roleConfig("propose", owned[1].capabilities),
-      petruk: roleConfig("execute", owned[2].capabilities),
-      bagong: roleConfig("propose", owned[3].capabilities),
+      semar: rolePreference(),
+      gareng: rolePreference(),
+      petruk: rolePreference(),
+      bagong: rolePreference(),
     },
     revision: 7,
-    owned,
   };
 }
 
@@ -44,7 +32,7 @@ function installBackend(opts: { onMutate?: () => Response } = {}) {
   (fetch as unknown as FetchMock).mockImplementation(async (url: string, init?: RequestInit) => {
     const method = (init?.method ?? "GET").toUpperCase();
     if (method === "GET") {
-      return jsonResponse({ roles: state.roles, revision: state.revision, owned: state.owned });
+      return jsonResponse({ roles: state.roles, revision: state.revision });
     }
     if (opts.onMutate) return opts.onMutate();
     // PATCH /roles/{role}  or POST /roles/{role}/reset
@@ -52,10 +40,8 @@ function installBackend(opts: { onMutate?: () => Response } = {}) {
     const body = JSON.parse(init!.body as string);
     if (method === "PATCH") {
       (state.roles as Record<string, unknown>)[role] = {
-        enabled: body.enabled,
         style: body.style,
-        mode: body.mode,
-        capabilities: body.capabilities,
+        instructions: body.instructions,
       };
     }
     state.revision += 1;
@@ -105,26 +91,27 @@ describe("ProjectRoles", () => {
     expect(bagong.getByText(/Separates what was proven from what was merely claimed/)).toBeTruthy();
   });
 
-  it("renders only the capability toggles a role owns", async () => {
+  it("renders only style and instructions fields, with no enabled/mode/capability controls", async () => {
     installBackend();
     render(ProjectRoles, { props: { projectId: "p1" } });
 
     await waitFor(() => expect(screen.getByLabelText("Semar role")).toBeTruthy());
 
-    const petruk = within(screen.getByLabelText("Petruk role"));
-    const gareng = within(screen.getByLabelText("Gareng role"));
+    const semar = within(screen.getByLabelText("Semar role"));
+    expect(semar.getByRole("radiogroup")).toBeTruthy();
+    expect(semar.getByRole("radio", { name: "Strict" })).toBeTruthy();
+    expect(semar.getByRole("radio", { name: "Balanced" })).toBeTruthy();
+    expect(semar.getByRole("radio", { name: "Creative" })).toBeTruthy();
+    expect(semar.getByLabelText("Instructions")).toBeTruthy();
 
-    // Petruk owns "modify_files" -> "Modify files"; it renders inside
-    // Petruk's card and NOT inside Gareng's.
-    expect(petruk.queryByLabelText("Modify files")).not.toBeNull();
-    expect(gareng.queryByLabelText("Modify files")).toBeNull();
-
-    // Gareng owns "cross_repository_impact"; Petruk does not.
-    expect(gareng.queryByLabelText("Cross repository impact")).not.toBeNull();
-    expect(petruk.queryByLabelText("Cross repository impact")).toBeNull();
+    // No mode/enabled/capability controls anywhere on the screen.
+    expect(screen.queryByLabelText(/Enable /)).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Assist" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Propose" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Execute" })).toBeNull();
   });
 
-  it("keeps Save disabled until a control changes, then saves with the loaded revision", async () => {
+  it("keeps Save disabled until a control changes, then saves style and instructions with the loaded revision", async () => {
     installBackend();
     render(ProjectRoles, { props: { projectId: "p1" } });
 
@@ -136,8 +123,9 @@ describe("ProjectRoles", () => {
     // Save starts disabled (card is not dirty).
     expect(saveBtn().hasAttribute("disabled")).toBe(true);
 
-    // Flip one owned capability toggle -> card becomes dirty -> Save enables.
-    await fireEvent.click(semar.getByLabelText("Workflows"));
+    // Pick a different style -> card becomes dirty -> Save enables.
+    await fireEvent.click(semar.getByRole("radio", { name: "Strict" }));
+    await fireEvent.input(semar.getByLabelText("Instructions"), { target: { value: "Prefer reversible migrations." } });
     await waitFor(() => expect(saveBtn().hasAttribute("disabled")).toBe(false));
 
     await fireEvent.click(saveBtn());
@@ -148,7 +136,8 @@ describe("ProjectRoles", () => {
       expect(patch![0]).toContain("/roles/semar");
       const body = JSON.parse(patch![1].body);
       expect(body.base_revision).toBe(7);
-      expect(body.capabilities.workflows).toBe(false);
+      expect(body.style).toBe("strict");
+      expect(body.instructions).toBe("Prefer reversible migrations.");
     });
   });
 });

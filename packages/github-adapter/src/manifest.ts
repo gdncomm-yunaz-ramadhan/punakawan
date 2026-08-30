@@ -1,36 +1,22 @@
 import type { AdapterManifest } from '@punakawan/schema-types';
 
-type InputSchema = AdapterManifest['operations'][string]['input_schema'];
-type Operation = AdapterManifest['operations'][string];
-
-const string = { type: 'string' };
-const number = { type: 'number' };
-const boolean = { type: 'boolean' };
-const stringArray = { type: 'array', items: string };
-
-function inputSchema(required: string[], properties: Record<string, unknown>): InputSchema {
-  return { type: 'object', properties, ...(required.length > 0 ? { required } : {}) };
-}
-
-function read(description: string, required: string[], properties: Record<string, unknown>): Operation {
-  return { side_effect: false, description, input_schema: inputSchema(required, properties) };
-}
-
-function write(description: string, required: string[], properties: Record<string, unknown>): Operation {
-  return { side_effect: true, approval: 'required', description, input_schema: inputSchema(required, properties) };
-}
-
 /**
  * Manifest for the GitHub adapter. Declares identity, capabilities, and
- * permissions per punakawan-go-typescript-detailed-plan.md §5.4/§13.2/§16
- * and punakawan-architecture-enhancement-plan.md §8 (create_pr/review_pr/
+ * permissions per punakawan-go-typescript-detailed-plan.md §5.4/§13.2 and
+ * punakawan-architecture-enhancement-plan.md §8 (create_pr/review_pr/
  * fix_pr_review).
  *
  * Read operations (PR metadata, diff files, CI checks, comments) are
  * side-effect free. Writes (creating a PR, labeling, requesting reviewers,
  * replying to a review comment, submitting a review, resolving a thread)
- * are declared with `approval: "required"`, enforced the same way Atlassian
- * writes are.
+ * declare `side_effect: true`, which routes them through
+ * validation/outbox/audit on the Go core side — it never means the write is
+ * gated on user confirmation; execution proceeds once authorized by policy.
+ *
+ * Every operation also declares a description and an input_schema: the Go
+ * core validates a payload against input_schema before it is ever enqueued
+ * or executed, so a malformed call fails fast with a precise diagnostic
+ * instead of reaching this adapter process at all.
  */
 export const manifest: AdapterManifest = {
   id: 'github',
@@ -45,17 +31,190 @@ export const manifest: AdapterManifest = {
     secrets: ['GITHUB_TOKEN'],
   },
   operations: {
-    'github.getRepository': read('Get a GitHub repository.', ['repository'], { repository: string }),
-    'github.getPullRequest': read('Get a GitHub pull request.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
-    'github.getPullRequestFiles': read('List files changed by a pull request.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
-    'github.getPullRequestChecks': read('List checks for a Git ref.', ['repository', 'ref'], { repository: string, ref: string }),
-    'github.listPullRequestComments': read('List issue and review comments on a pull request.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
-    'github.listUnresolvedReviewThreads': read('List unresolved pull-request review threads.', ['repository', 'pullRequestNumber'], { repository: string, pullRequestNumber: number }),
-    'github.createPullRequest': write('Create a pull request.', ['repository', 'baseBranch', 'headBranch', 'title'], { repository: string, baseBranch: string, headBranch: string, title: string, body: string, draft: boolean }),
-    'github.addLabels': write('Add labels to a pull request.', ['repository', 'pullRequestNumber', 'labels'], { repository: string, pullRequestNumber: number, labels: stringArray }),
-    'github.requestReviewers': write('Request pull-request reviewers.', ['repository', 'pullRequestNumber', 'reviewers'], { repository: string, pullRequestNumber: number, reviewers: stringArray }),
-    'github.replyToReviewComment': write('Reply to a pull-request review comment.', ['repository', 'pullRequestNumber', 'commentId', 'body'], { repository: string, pullRequestNumber: number, commentId: string, body: string }),
-    'github.createPullRequestReview': write('Submit a pull-request review.', ['repository', 'pullRequestNumber', 'body', 'event'], { repository: string, pullRequestNumber: number, body: string, event: { type: 'string', enum: ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'] }, commitId: string, comments: { type: 'array', items: { type: 'object', required: ['path', 'line', 'side', 'body'], properties: { path: string, line: number, side: { type: 'string', enum: ['LEFT', 'RIGHT'] }, body: string, startLine: number, startSide: { type: 'string', enum: ['LEFT', 'RIGHT'] } } } } }),
-    'github.resolveReviewThread': write('Resolve a pull-request review thread.', ['threadId'], { threadId: string }),
+    'github.getRepository': {
+      side_effect: false,
+      description: 'Check whether the configured credential can see a repository, and what access it has.',
+      input_schema: {
+        type: 'object',
+        required: ['repository'],
+        properties: { repository: { type: 'string' } },
+      },
+    },
+    'github.getPullRequest': {
+      side_effect: false,
+      description: 'Fetch one pull request\'s current metadata, including its labels and requested reviewers.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber'],
+        properties: { repository: { type: 'string' }, pullRequestNumber: { type: 'number' } },
+      },
+    },
+    'github.getPullRequestFiles': {
+      side_effect: false,
+      description: 'Fetch every file changed by a pull request, across all pages.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber'],
+        properties: { repository: { type: 'string' }, pullRequestNumber: { type: 'number' } },
+      },
+    },
+    'github.getPullRequestChecks': {
+      side_effect: false,
+      description: 'Fetch every check run reported for a commit, across all pages.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'ref'],
+        properties: { repository: { type: 'string' }, ref: { type: 'string' } },
+      },
+    },
+    'github.getCommitStatus': {
+      side_effect: false,
+      description: "Fetch a commit's combined legacy Status API state, separate from its Check Runs.",
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'ref'],
+        properties: { repository: { type: 'string' }, ref: { type: 'string' } },
+      },
+    },
+    'github.listPullRequestComments': {
+      side_effect: false,
+      description: 'Fetch every diff-line review comment and general issue comment on a pull request, across all pages.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber'],
+        properties: { repository: { type: 'string' }, pullRequestNumber: { type: 'number' } },
+      },
+    },
+    'github.listUnresolvedReviewThreads': {
+      side_effect: false,
+      description: 'Fetch a pull request\'s still-unresolved review threads, across all pages.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber'],
+        properties: { repository: { type: 'string' }, pullRequestNumber: { type: 'number' } },
+      },
+    },
+    'github.listPullRequestReviews': {
+      side_effect: false,
+      description: 'List every review submitted on a pull request, across all pages.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber'],
+        properties: { repository: { type: 'string' }, pullRequestNumber: { type: 'number' } },
+      },
+    },
+    'github.findPullRequest': {
+      side_effect: false,
+      description: 'Search open and closed pull requests for an exact head/base branch match.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'headBranch', 'baseBranch'],
+        properties: { repository: { type: 'string' }, headBranch: { type: 'string' }, baseBranch: { type: 'string' } },
+      },
+    },
+    'github.getReviewThread': {
+      side_effect: false,
+      description: 'Fetch one review thread\'s current resolution state by its GraphQL node id.',
+      input_schema: {
+        type: 'object',
+        required: ['threadId'],
+        properties: { threadId: { type: 'string' } },
+      },
+    },
+    'github.createPullRequest': {
+      side_effect: true,
+      description: 'Open a new pull request.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'baseBranch', 'headBranch', 'title'],
+        properties: {
+          repository: { type: 'string' },
+          baseBranch: { type: 'string' },
+          headBranch: { type: 'string' },
+          title: { type: 'string' },
+          body: { type: 'string' },
+          draft: { type: 'boolean' },
+        },
+      },
+    },
+    'github.addLabels': {
+      side_effect: true,
+      description: 'Add labels to a pull request.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber', 'labels'],
+        properties: {
+          repository: { type: 'string' },
+          pullRequestNumber: { type: 'number' },
+          labels: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    'github.requestReviewers': {
+      side_effect: true,
+      description: 'Request reviewers on a pull request.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber', 'reviewers'],
+        properties: {
+          repository: { type: 'string' },
+          pullRequestNumber: { type: 'number' },
+          reviewers: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    'github.replyToReviewComment': {
+      side_effect: true,
+      description: 'Reply to an existing review comment.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber', 'commentId', 'body'],
+        properties: {
+          repository: { type: 'string' },
+          pullRequestNumber: { type: 'number' },
+          commentId: { type: 'string' },
+          body: { type: 'string' },
+        },
+      },
+    },
+    'github.createPullRequestReview': {
+      side_effect: true,
+      description: 'Submit a review (approve, request changes, or comment) on a pull request.',
+      input_schema: {
+        type: 'object',
+        required: ['repository', 'pullRequestNumber', 'body', 'event'],
+        properties: {
+          repository: { type: 'string' },
+          pullRequestNumber: { type: 'number' },
+          body: { type: 'string' },
+          event: { type: 'string', enum: ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'] },
+          commitId: { type: 'string' },
+          comments: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['path', 'line', 'side', 'body'],
+              properties: {
+                path: { type: 'string' },
+                line: { type: 'number' },
+                side: { type: 'string', enum: ['LEFT', 'RIGHT'] },
+                body: { type: 'string' },
+                startLine: { type: 'number' },
+                startSide: { type: 'string', enum: ['LEFT', 'RIGHT'] },
+              },
+            },
+          },
+        },
+      },
+    },
+    'github.resolveReviewThread': {
+      side_effect: true,
+      description: 'Mark a review thread resolved.',
+      input_schema: {
+        type: 'object',
+        required: ['threadId'],
+        properties: { threadId: { type: 'string' } },
+      },
+    },
   },
 };

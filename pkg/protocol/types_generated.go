@@ -7,6 +7,7 @@ import "fmt"
 import "reflect"
 import "regexp"
 import "time"
+import "unicode/utf8"
 
 // Manifest describing a TypeScript adapter's identity, transport, capabilities,
 // and permissions. See punakawan-go-typescript-detailed-plan.md §5.4.
@@ -37,47 +38,17 @@ type AdapterManifest struct {
 }
 
 type AdapterManifestOperations map[string]struct {
-	// Approval corresponds to the JSON schema field "approval".
-	Approval *AdapterManifestOperationsValueApproval `json:"approval,omitempty,omitzero" yaml:"approval,omitempty" mapstructure:"approval,omitempty"`
-
 	// Description corresponds to the JSON schema field "description".
 	Description string `json:"description" yaml:"description" mapstructure:"description"`
 
-	// InputSchema corresponds to the JSON schema field "input_schema".
+	// A JSON Schema of type "object" describing this operation's call parameters.
 	InputSchema AdapterManifestOperationsValueInputSchema `json:"input_schema" yaml:"input_schema" mapstructure:"input_schema"`
 
 	// SideEffect corresponds to the JSON schema field "side_effect".
 	SideEffect bool `json:"side_effect" yaml:"side_effect" mapstructure:"side_effect"`
 }
 
-type AdapterManifestOperationsValueApproval string
-
-const AdapterManifestOperationsValueApprovalRequired AdapterManifestOperationsValueApproval = "required"
-
-var enumValues_AdapterManifestOperationsValueApproval = []interface{}{
-	"required",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *AdapterManifestOperationsValueApproval) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_AdapterManifestOperationsValueApproval {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_AdapterManifestOperationsValueApproval, v)
-	}
-	*j = AdapterManifestOperationsValueApproval(v)
-	return nil
-}
-
+// A JSON Schema of type "object" describing this operation's call parameters.
 type AdapterManifestOperationsValueInputSchema map[string]interface{}
 
 type AdapterManifestPermissions struct {
@@ -243,227 +214,6 @@ func (j *AdapterManifest) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s pattern match: must match %s", "Version", `^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`)
 	}
 	*j = AdapterManifest(plain)
-	return nil
-}
-
-// A recorded approval decision for a policy-gated operation. See
-// punakawan-go-typescript-detailed-plan.md §16.
-type ApprovalRecord struct {
-	// ApprovedBy corresponds to the JSON schema field "approved_by".
-	ApprovedBy *string `json:"approved_by,omitempty,omitzero" yaml:"approved_by,omitempty" mapstructure:"approved_by,omitempty"`
-
-	// CreatedAt corresponds to the JSON schema field "created_at".
-	CreatedAt time.Time `json:"created_at" yaml:"created_at" mapstructure:"created_at"`
-
-	// Id corresponds to the JSON schema field "id".
-	Id string `json:"id" yaml:"id" mapstructure:"id"`
-
-	// Operation corresponds to the JSON schema field "operation".
-	Operation ApprovalRecordOperation `json:"operation" yaml:"operation" mapstructure:"operation"`
-
-	// PolicyLevel corresponds to the JSON schema field "policy_level".
-	PolicyLevel *ApprovalRecordPolicyLevel `json:"policy_level,omitempty,omitzero" yaml:"policy_level,omitempty" mapstructure:"policy_level,omitempty"`
-
-	// Preview corresponds to the JSON schema field "preview".
-	Preview *string `json:"preview,omitempty,omitzero" yaml:"preview,omitempty" mapstructure:"preview,omitempty"`
-
-	// Reason corresponds to the JSON schema field "reason".
-	Reason *string `json:"reason,omitempty,omitzero" yaml:"reason,omitempty" mapstructure:"reason,omitempty"`
-
-	// RequestedBy corresponds to the JSON schema field "requested_by".
-	RequestedBy ApprovalRecordRequestedBy `json:"requested_by" yaml:"requested_by" mapstructure:"requested_by"`
-
-	// ResolvedAt corresponds to the JSON schema field "resolved_at".
-	ResolvedAt *time.Time `json:"resolved_at,omitempty,omitzero" yaml:"resolved_at,omitempty" mapstructure:"resolved_at,omitempty"`
-
-	// RunId corresponds to the JSON schema field "run_id".
-	RunId string `json:"run_id" yaml:"run_id" mapstructure:"run_id"`
-
-	// Status corresponds to the JSON schema field "status".
-	Status ApprovalRecordStatus `json:"status" yaml:"status" mapstructure:"status"`
-
-	// Target corresponds to the JSON schema field "target".
-	Target *string `json:"target,omitempty,omitzero" yaml:"target,omitempty" mapstructure:"target,omitempty"`
-}
-
-type ApprovalRecordOperation string
-
-const ApprovalRecordOperationConfluenceUpdate ApprovalRecordOperation = "confluence-update"
-const ApprovalRecordOperationDeploymentAction ApprovalRecordOperation = "deployment-action"
-const ApprovalRecordOperationDestructiveFilesystemAction ApprovalRecordOperation = "destructive-filesystem-action"
-const ApprovalRecordOperationExistingBrowserSessionAccess ApprovalRecordOperation = "existing-browser-session-access"
-const ApprovalRecordOperationExternalWrite ApprovalRecordOperation = "external-write"
-const ApprovalRecordOperationGitPush ApprovalRecordOperation = "git-push"
-const ApprovalRecordOperationIssueCreation ApprovalRecordOperation = "issue-creation"
-const ApprovalRecordOperationIssueTransition ApprovalRecordOperation = "issue-transition"
-const ApprovalRecordOperationNetworkHostExpansion ApprovalRecordOperation = "network-host-expansion"
-const ApprovalRecordOperationPullRequestCreation ApprovalRecordOperation = "pull-request-creation"
-const ApprovalRecordOperationSecretAccess ApprovalRecordOperation = "secret-access"
-
-var enumValues_ApprovalRecordOperation = []interface{}{
-	"external-write",
-	"git-push",
-	"pull-request-creation",
-	"issue-creation",
-	"issue-transition",
-	"confluence-update",
-	"existing-browser-session-access",
-	"secret-access",
-	"network-host-expansion",
-	"destructive-filesystem-action",
-	"deployment-action",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ApprovalRecordOperation) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_ApprovalRecordOperation {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ApprovalRecordOperation, v)
-	}
-	*j = ApprovalRecordOperation(v)
-	return nil
-}
-
-type ApprovalRecordPolicyLevel string
-
-const ApprovalRecordPolicyLevelAllow ApprovalRecordPolicyLevel = "allow"
-const ApprovalRecordPolicyLevelAllowWithConstraints ApprovalRecordPolicyLevel = "allow-with-constraints"
-const ApprovalRecordPolicyLevelDeny ApprovalRecordPolicyLevel = "deny"
-const ApprovalRecordPolicyLevelRequireApproval ApprovalRecordPolicyLevel = "require-approval"
-
-var enumValues_ApprovalRecordPolicyLevel = []interface{}{
-	"deny",
-	"require-approval",
-	"allow",
-	"allow-with-constraints",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ApprovalRecordPolicyLevel) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_ApprovalRecordPolicyLevel {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ApprovalRecordPolicyLevel, v)
-	}
-	*j = ApprovalRecordPolicyLevel(v)
-	return nil
-}
-
-type ApprovalRecordRequestedBy string
-
-const ApprovalRecordRequestedByBagong ApprovalRecordRequestedBy = "bagong"
-const ApprovalRecordRequestedByGareng ApprovalRecordRequestedBy = "gareng"
-const ApprovalRecordRequestedByPetruk ApprovalRecordRequestedBy = "petruk"
-const ApprovalRecordRequestedBySemar ApprovalRecordRequestedBy = "semar"
-
-var enumValues_ApprovalRecordRequestedBy = []interface{}{
-	"semar",
-	"gareng",
-	"petruk",
-	"bagong",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ApprovalRecordRequestedBy) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_ApprovalRecordRequestedBy {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ApprovalRecordRequestedBy, v)
-	}
-	*j = ApprovalRecordRequestedBy(v)
-	return nil
-}
-
-type ApprovalRecordStatus string
-
-const ApprovalRecordStatusApproved ApprovalRecordStatus = "approved"
-const ApprovalRecordStatusDenied ApprovalRecordStatus = "denied"
-const ApprovalRecordStatusPending ApprovalRecordStatus = "pending"
-
-var enumValues_ApprovalRecordStatus = []interface{}{
-	"pending",
-	"approved",
-	"denied",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ApprovalRecordStatus) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_ApprovalRecordStatus {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ApprovalRecordStatus, v)
-	}
-	*j = ApprovalRecordStatus(v)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ApprovalRecord) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["created_at"]; raw != nil && !ok {
-		return fmt.Errorf("field created_at in ApprovalRecord: required")
-	}
-	if _, ok := raw["id"]; raw != nil && !ok {
-		return fmt.Errorf("field id in ApprovalRecord: required")
-	}
-	if _, ok := raw["operation"]; raw != nil && !ok {
-		return fmt.Errorf("field operation in ApprovalRecord: required")
-	}
-	if _, ok := raw["requested_by"]; raw != nil && !ok {
-		return fmt.Errorf("field requested_by in ApprovalRecord: required")
-	}
-	if _, ok := raw["run_id"]; raw != nil && !ok {
-		return fmt.Errorf("field run_id in ApprovalRecord: required")
-	}
-	if _, ok := raw["status"]; raw != nil && !ok {
-		return fmt.Errorf("field status in ApprovalRecord: required")
-	}
-	type Plain ApprovalRecord
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	*j = ApprovalRecord(plain)
 	return nil
 }
 
@@ -4372,9 +4122,6 @@ type Event struct {
 	// Adapter corresponds to the JSON schema field "adapter".
 	Adapter *string `json:"adapter,omitempty,omitzero" yaml:"adapter,omitempty" mapstructure:"adapter,omitempty"`
 
-	// ApprovalId corresponds to the JSON schema field "approval_id".
-	ApprovalId *string `json:"approval_id,omitempty,omitzero" yaml:"approval_id,omitempty" mapstructure:"approval_id,omitempty"`
-
 	// DurationMs corresponds to the JSON schema field "duration_ms".
 	DurationMs *int `json:"duration_ms,omitempty,omitzero" yaml:"duration_ms,omitempty" mapstructure:"duration_ms,omitempty"`
 
@@ -4683,7 +4430,6 @@ type EvidenceRecord struct {
 type EvidenceRecordType string
 
 const EvidenceRecordTypeApiDiff EvidenceRecordType = "api-diff"
-const EvidenceRecordTypeApprovalRecord EvidenceRecordType = "approval-record"
 const EvidenceRecordTypeCommandOutput EvidenceRecordType = "command-output"
 const EvidenceRecordTypeCommit EvidenceRecordType = "commit"
 const EvidenceRecordTypeExternalResponse EvidenceRecordType = "external-response"
@@ -4707,7 +4453,6 @@ var enumValues_EvidenceRecordType = []interface{}{
 	"git-diff",
 	"commit",
 	"user-answer",
-	"approval-record",
 	"external-response",
 	"review-finding",
 }
@@ -7447,6 +7192,110 @@ func (j *MissingContextRequest) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+// A direct, non-persisted clarification result returned instead of a mutation when
+// required context is missing/contradictory or a material decision has more than
+// one defensible answer. See the improvement plan's Delivery contract and Public
+// result semantics.
+type NeedUserInput struct {
+	// Kind corresponds to the JSON schema field "kind".
+	Kind NeedUserInputKind `json:"kind" yaml:"kind" mapstructure:"kind"`
+
+	// MissingFields corresponds to the JSON schema field "missing_fields".
+	MissingFields []string `json:"missing_fields,omitempty,omitzero" yaml:"missing_fields,omitempty" mapstructure:"missing_fields,omitempty"`
+
+	// Options corresponds to the JSON schema field "options".
+	Options []NeedUserInputOptionsElem `json:"options,omitempty,omitzero" yaml:"options,omitempty" mapstructure:"options,omitempty"`
+
+	// Question corresponds to the JSON schema field "question".
+	Question string `json:"question" yaml:"question" mapstructure:"question"`
+}
+
+type NeedUserInputKind string
+
+const NeedUserInputKindDecisionRequired NeedUserInputKind = "decision_required"
+const NeedUserInputKindMissingContext NeedUserInputKind = "missing_context"
+
+var enumValues_NeedUserInputKind = []interface{}{
+	"missing_context",
+	"decision_required",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *NeedUserInputKind) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_NeedUserInputKind {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_NeedUserInputKind, v)
+	}
+	*j = NeedUserInputKind(v)
+	return nil
+}
+
+type NeedUserInputOptionsElem struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Impact corresponds to the JSON schema field "impact".
+	Impact string `json:"impact" yaml:"impact" mapstructure:"impact"`
+
+	// Label corresponds to the JSON schema field "label".
+	Label string `json:"label" yaml:"label" mapstructure:"label"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *NeedUserInputOptionsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["id"]; raw != nil && !ok {
+		return fmt.Errorf("field id in NeedUserInputOptionsElem: required")
+	}
+	if _, ok := raw["impact"]; raw != nil && !ok {
+		return fmt.Errorf("field impact in NeedUserInputOptionsElem: required")
+	}
+	if _, ok := raw["label"]; raw != nil && !ok {
+		return fmt.Errorf("field label in NeedUserInputOptionsElem: required")
+	}
+	type Plain NeedUserInputOptionsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = NeedUserInputOptionsElem(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *NeedUserInput) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in NeedUserInput: required")
+	}
+	if _, ok := raw["question"]; raw != nil && !ok {
+		return fmt.Errorf("field question in NeedUserInput: required")
+	}
+	type Plain NeedUserInput
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = NeedUserInput(plain)
+	return nil
+}
+
 // SSE envelope pushed to the Punakawan Panel frontend at GET /api/v1/events, per
 // punakawan-panel-implementation-plan.md §12. Distinct from Event
 // (event.schema.json), which is the per-run execution journal this envelope is
@@ -7482,8 +7331,6 @@ type PanelEventPayload map[string]interface{}
 type PanelEventType string
 
 const PanelEventTypeAdapterHealthChanged PanelEventType = "adapter.health_changed"
-const PanelEventTypeApprovalRequested PanelEventType = "approval.requested"
-const PanelEventTypeApprovalResolved PanelEventType = "approval.resolved"
 const PanelEventTypeContradictionDetected PanelEventType = "contradiction.detected"
 const PanelEventTypeContradictionResolved PanelEventType = "contradiction.resolved"
 const PanelEventTypeContradictionUpdated PanelEventType = "contradiction.updated"
@@ -7533,8 +7380,6 @@ var enumValues_PanelEventType = []interface{}{
 	"knowledge.created",
 	"knowledge.updated",
 	"knowledge.superseded",
-	"approval.requested",
-	"approval.resolved",
 	"evidence.created",
 	"git.state_changed",
 	"adapter.health_changed",
@@ -8108,7 +7953,7 @@ func (j *PreflightCheck) UnmarshalJSON(value []byte) error {
 // branch policy, build/test commands, required services, and CI/worker policy.
 // Explicit repository configuration takes precedence over global detected or
 // learned defaults; this record only stores the merged, effective values a
-// preflight run and approval manifest are computed against.
+// preflight run is computed against.
 type ProjectDeliveryProfile struct {
 	// BaseBranch corresponds to the JSON schema field "base_branch".
 	BaseBranch string `json:"base_branch" yaml:"base_branch" mapstructure:"base_branch"`
@@ -8687,202 +8532,147 @@ func (j *ReviewFinding) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type RoleConfig struct {
-	// Role-specific capability toggles. Keys are validated against the set owned by
-	// the role (see internal/roleconfig defaults); a capability not owned by the role
-	// is rejected by the API.
-	Capabilities RoleConfigCapabilities `json:"capabilities" yaml:"capabilities" mapstructure:"capabilities"`
+type RolePreference struct {
+	// Free-text guidance appended after the fixed style guidance, bounded to 2000
+	// characters.
+	Instructions string `json:"instructions" yaml:"instructions" mapstructure:"instructions"`
 
-	// Enabled corresponds to the JSON schema field "enabled".
-	Enabled bool `json:"enabled" yaml:"enabled" mapstructure:"enabled"`
-
-	// Action ceiling. assist: read/search/analyze/report only, no durable state
-	// changes. propose: may create reviewable proposals, nothing applied
-	// automatically. execute: may perform enabled capabilities, still under
-	// policy/workflow/approval.
-	Mode RoleConfigMode `json:"mode" yaml:"mode" mapstructure:"mode"`
-
-	// Reasoning posture. strict: stronger evidence, fewer assumptions, blocks on
-	// unresolved issues more readily. balanced: reasonable assumptions, flags
-	// uncertainty without over-blocking. creative: explores more alternatives,
-	// searches more broadly. Never changes permissions.
-	Style RoleConfigStyle `json:"style" yaml:"style" mapstructure:"style"`
+	// Selects one of three fixed prompt-guidance strings appended to the role's
+	// prompt. Never changes tool access or workflow requirements.
+	Style RolePreferenceStyle `json:"style" yaml:"style" mapstructure:"style"`
 }
 
-// Role-specific capability toggles. Keys are validated against the set owned by
-// the role (see internal/roleconfig defaults); a capability not owned by the role
-// is rejected by the API.
-type RoleConfigCapabilities map[string]bool
+type RolePreferenceStyle string
 
-type RoleConfigMode string
+const RolePreferenceStyleBalanced RolePreferenceStyle = "balanced"
+const RolePreferenceStyleCreative RolePreferenceStyle = "creative"
+const RolePreferenceStyleStrict RolePreferenceStyle = "strict"
 
-const RoleConfigModeAssist RoleConfigMode = "assist"
-const RoleConfigModeExecute RoleConfigMode = "execute"
-const RoleConfigModePropose RoleConfigMode = "propose"
-
-var enumValues_RoleConfigMode = []interface{}{
-	"assist",
-	"propose",
-	"execute",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *RoleConfigMode) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_RoleConfigMode {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_RoleConfigMode, v)
-	}
-	*j = RoleConfigMode(v)
-	return nil
-}
-
-type RoleConfigStyle string
-
-const RoleConfigStyleBalanced RoleConfigStyle = "balanced"
-const RoleConfigStyleCreative RoleConfigStyle = "creative"
-const RoleConfigStyleStrict RoleConfigStyle = "strict"
-
-var enumValues_RoleConfigStyle = []interface{}{
+var enumValues_RolePreferenceStyle = []interface{}{
 	"strict",
 	"balanced",
 	"creative",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *RoleConfigStyle) UnmarshalJSON(value []byte) error {
+func (j *RolePreferenceStyle) UnmarshalJSON(value []byte) error {
 	var v string
 	if err := json.Unmarshal(value, &v); err != nil {
 		return err
 	}
 	var ok bool
-	for _, expected := range enumValues_RoleConfigStyle {
+	for _, expected := range enumValues_RolePreferenceStyle {
 		if reflect.DeepEqual(v, expected) {
 			ok = true
 			break
 		}
 	}
 	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_RoleConfigStyle, v)
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_RolePreferenceStyle, v)
 	}
-	*j = RoleConfigStyle(v)
+	*j = RolePreferenceStyle(v)
 	return nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *RoleConfig) UnmarshalJSON(value []byte) error {
+func (j *RolePreference) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
 	}
-	if _, ok := raw["capabilities"]; raw != nil && !ok {
-		return fmt.Errorf("field capabilities in RoleConfig: required")
-	}
-	if _, ok := raw["enabled"]; raw != nil && !ok {
-		return fmt.Errorf("field enabled in RoleConfig: required")
-	}
-	if _, ok := raw["mode"]; raw != nil && !ok {
-		return fmt.Errorf("field mode in RoleConfig: required")
+	if _, ok := raw["instructions"]; raw != nil && !ok {
+		return fmt.Errorf("field instructions in RolePreference: required")
 	}
 	if _, ok := raw["style"]; raw != nil && !ok {
-		return fmt.Errorf("field style in RoleConfig: required")
+		return fmt.Errorf("field style in RolePreference: required")
 	}
-	type Plain RoleConfig
+	type Plain RolePreference
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
 	}
-	*j = RoleConfig(plain)
+	if utf8.RuneCountInString(string(plain.Instructions)) > 2000 {
+		return fmt.Errorf("field %s length: must be <= %d", "instructions", 2000)
+	}
+	*j = RolePreference(plain)
 	return nil
 }
 
-// Per-project configuration for the four Punakawan roles (Semar coordinates,
+// Per-project prompt preferences for the four Punakawan roles (Semar coordinates,
 // Gareng challenges, Petruk plans and builds, Bagong verifies). Persisted at
-// .punakawan/roles.yaml. See
-// punakawan-role-config-distinguished-improvements-plan.md Part I. User-facing
-// surface is deliberately small: enabled, style, mode, and a short list of
-// role-specific capability toggles. Style changes reasoning behavior, not
-// permissions; Mode gates whether a role may read (assist), propose (propose), or
-// execute (execute) durable changes, always still constrained by workflow
-// restrictions, project policy, and human approval. revision is bumped on every
-// save for optimistic locking.
-type RoleConfiguration struct {
+// .punakawan/roles.yaml. Style selects one of three fixed prompt-guidance strings
+// appended to a role's prompt; instructions is free text appended after that
+// guidance. This configuration only shapes prompt wording: it never authorizes
+// tools, grants permissions, or changes what a workflow requires. revision is
+// bumped on every save for optimistic locking.
+type RolePreferences struct {
 	// Revision corresponds to the JSON schema field "revision".
 	Revision int `json:"revision" yaml:"revision" mapstructure:"revision"`
 
 	// Roles corresponds to the JSON schema field "roles".
-	Roles RoleConfigurationRoles `json:"roles" yaml:"roles" mapstructure:"roles"`
+	Roles RolePreferencesRoles `json:"roles" yaml:"roles" mapstructure:"roles"`
 
 	// Version corresponds to the JSON schema field "version".
-	Version string `json:"version" yaml:"version" mapstructure:"version"`
+	Version int `json:"version" yaml:"version" mapstructure:"version"`
 }
 
-type RoleConfigurationRoles struct {
+type RolePreferencesRoles struct {
 	// Bagong corresponds to the JSON schema field "bagong".
-	Bagong RoleConfig `json:"bagong" yaml:"bagong" mapstructure:"bagong"`
+	Bagong RolePreference `json:"bagong" yaml:"bagong" mapstructure:"bagong"`
 
 	// Gareng corresponds to the JSON schema field "gareng".
-	Gareng RoleConfig `json:"gareng" yaml:"gareng" mapstructure:"gareng"`
+	Gareng RolePreference `json:"gareng" yaml:"gareng" mapstructure:"gareng"`
 
 	// Petruk corresponds to the JSON schema field "petruk".
-	Petruk RoleConfig `json:"petruk" yaml:"petruk" mapstructure:"petruk"`
+	Petruk RolePreference `json:"petruk" yaml:"petruk" mapstructure:"petruk"`
 
 	// Semar corresponds to the JSON schema field "semar".
-	Semar RoleConfig `json:"semar" yaml:"semar" mapstructure:"semar"`
+	Semar RolePreference `json:"semar" yaml:"semar" mapstructure:"semar"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *RoleConfigurationRoles) UnmarshalJSON(value []byte) error {
+func (j *RolePreferencesRoles) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
 	}
 	if _, ok := raw["bagong"]; raw != nil && !ok {
-		return fmt.Errorf("field bagong in RoleConfigurationRoles: required")
+		return fmt.Errorf("field bagong in RolePreferencesRoles: required")
 	}
 	if _, ok := raw["gareng"]; raw != nil && !ok {
-		return fmt.Errorf("field gareng in RoleConfigurationRoles: required")
+		return fmt.Errorf("field gareng in RolePreferencesRoles: required")
 	}
 	if _, ok := raw["petruk"]; raw != nil && !ok {
-		return fmt.Errorf("field petruk in RoleConfigurationRoles: required")
+		return fmt.Errorf("field petruk in RolePreferencesRoles: required")
 	}
 	if _, ok := raw["semar"]; raw != nil && !ok {
-		return fmt.Errorf("field semar in RoleConfigurationRoles: required")
+		return fmt.Errorf("field semar in RolePreferencesRoles: required")
 	}
-	type Plain RoleConfigurationRoles
+	type Plain RolePreferencesRoles
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
 	}
-	*j = RoleConfigurationRoles(plain)
+	*j = RolePreferencesRoles(plain)
 	return nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *RoleConfiguration) UnmarshalJSON(value []byte) error {
+func (j *RolePreferences) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
 	}
 	if _, ok := raw["revision"]; raw != nil && !ok {
-		return fmt.Errorf("field revision in RoleConfiguration: required")
+		return fmt.Errorf("field revision in RolePreferences: required")
 	}
 	if _, ok := raw["roles"]; raw != nil && !ok {
-		return fmt.Errorf("field roles in RoleConfiguration: required")
+		return fmt.Errorf("field roles in RolePreferences: required")
 	}
 	if _, ok := raw["version"]; raw != nil && !ok {
-		return fmt.Errorf("field version in RoleConfiguration: required")
+		return fmt.Errorf("field version in RolePreferences: required")
 	}
-	type Plain RoleConfiguration
+	type Plain RolePreferences
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
@@ -8890,10 +8680,10 @@ func (j *RoleConfiguration) UnmarshalJSON(value []byte) error {
 	if 0 > plain.Revision {
 		return fmt.Errorf("field %s: must be >= %v", "revision", 0)
 	}
-	if plain.Version != "punakawan.roles/v1" {
-		return fmt.Errorf("field %s: must be equal to %s", "version", "punakawan.roles/v1")
+	if plain.Version != 2 {
+		return fmt.Errorf("field %s: must be equal to %v", "version", 2)
 	}
-	*j = RoleConfiguration(plain)
+	*j = RolePreferences(plain)
 	return nil
 }
 
@@ -9788,7 +9578,6 @@ func (j *WorkflowRunPlanRef) UnmarshalJSON(value []byte) error {
 
 type WorkflowRunState string
 
-const WorkflowRunStateAwaitingApproval WorkflowRunState = "awaiting-approval"
 const WorkflowRunStateAwaitingClarification WorkflowRunState = "awaiting-clarification"
 const WorkflowRunStateBlocked WorkflowRunState = "blocked"
 const WorkflowRunStateCancelled WorkflowRunState = "cancelled"
@@ -9805,7 +9594,6 @@ var enumValues_WorkflowRunState = []interface{}{
 	"context-building",
 	"awaiting-clarification",
 	"planning",
-	"awaiting-approval",
 	"executing",
 	"reviewing",
 	"blocked",

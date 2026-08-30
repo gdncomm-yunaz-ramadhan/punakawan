@@ -54,8 +54,12 @@ func OpenDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error)
 	if cfg, err := a.JiraWorkflow(); err != nil {
 		slog.Warn("mcpserver: load Jira workflow config; continuing without Jira hooks", "error", err)
 	} else {
+		outboxStore, err := a.OpenOutbox()
+		if err != nil {
+			return nil, fmt.Errorf("mcpserver: open provider write outbox: %w", err)
+		}
 		hookStore := delivery.NewStore(db, delivery.WithWorkflowDefinitionResolver(resolver))
-		opts = append(opts, delivery.WithHooks(jirahooks.NewJiraHook(db, hookStore, a.AdapterRegistry, cfg)))
+		opts = append(opts, delivery.WithHooks(jirahooks.NewJiraHook(db, hookStore, a.AdapterRegistry, outboxStore, cfg)))
 		if cfg.LogWork {
 			opts = append(opts, delivery.WithRequiredJiraWorkLogs())
 		}

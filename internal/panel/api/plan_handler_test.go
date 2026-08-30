@@ -1,54 +1,65 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/ygrip/punakawan/internal/artifact"
+	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/plan"
+	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-// planTestStores builds a ProjectStores over a single temp-dir-backed
-// project and returns both the resolver-backed stores and the PlanStore
-// used to seed content.
-func planTestStores(t *testing.T) (*artifact.ProjectStores, *artifact.PlanStore) {
+// planTestStores opens a fresh storage kernel and returns both stores
+// plan_handler.go needs, plus the one registered delivery project
+// ("proj-a") its tests seed plans and links against.
+func planTestStores(t *testing.T) (*delivery.Store, *plan.Store, *protocol.DeliveryProject) {
 	t.Helper()
-	root := t.TempDir()
-	resolver := func(projectID string) (string, error) {
-		if projectID != "proj-a" {
-			return "", fmt.Errorf("unknown project %q", projectID)
-		}
-		return root, nil
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "storage.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
 	}
-	return artifact.NewProjectStores(resolver), &artifact.PlanStore{WorkspaceRoot: root}
+	t.Cleanup(func() { _ = db.Close() })
+	deliveries := delivery.NewStore(db)
+	plans := plan.NewStore(db)
+	project, err := deliveries.RegisterProject(context.Background(), "reg-proj-a", delivery.NewID(), "proj-a", "https://example.test/proj-a.git", "main")
+	if err != nil {
+		t.Fatalf("RegisterProject: %v", err)
+	}
+	return deliveries, plans, project
 }
 
-func TestListPlansHandlerReturnsSummaries(t *testing.T) {
-	stores, seed := planTestStores(t)
+func TestListPlansHandlerReturnsSummariesWithLinkedDeliveries(t *testing.T) {
+	deliveries, plans, project := planTestStores(t)
+	ctx := context.Background()
 
-	// One plan with an explicit manifest, one manifest-less (synthesized).
-	if err := seed.SaveManifest("plan-a", &artifact.PlanManifest{
-		Title:        "Plan A",
-		Status:       artifact.PlanStatusProposed,
-		RelatedTasks: []string{"punokawan-sv8"},
-		DerivedFrom:  artifact.Derivations{Knowledge: []string{"k1"}},
-	}); err != nil {
-		t.Fatalf("SaveManifest: %v", err)
+	planA, err := plans.Save(ctx, plan.Plan{ID: "plan-a", Objective: "Plan A", ProjectIDs: []string{project.Id}})
+	if err != nil {
+		t.Fatalf("Save plan-a: %v", err)
 	}
-	if _, err := seed.CreateVersion("plan-a", "proj-a", []byte("# a"), time.Now()); err != nil {
-		t.Fatalf("CreateVersion(plan-a): %v", err)
+	if _, err := plans.Save(ctx, plan.Plan{ID: "plan-b", Objective: "Plan B", ProjectIDs: []string{project.Id}}); err != nil {
+		t.Fatalf("Save plan-b: %v", err)
 	}
-	if _, err := seed.CreateVersion("plan-b", "proj-a", []byte("# b"), time.Now()); err != nil {
-		t.Fatalf("CreateVersion(plan-b): %v", err)
+
+	orch, err := deliveries.CreateOrchestration(ctx, "create-d1", "d1", nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	if _, err := deliveries.AttachProject(ctx, "attach-d1", orch.Id, orch.Revision, project.Id); err != nil {
+		t.Fatalf("AttachProject: %v", err)
+	}
+	if err := deliveries.LinkProjectPlan(ctx, "link-d1-plan-a", orch.Id, project.Id, planA.ID, planA.Revision); err != nil {
+		t.Fatalf("LinkProjectPlan: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/proj-a/plans", nil)
 	req.SetPathValue("projectId", "proj-a")
 	rec := httptest.NewRecorder()
-	ListPlansHandler(stores)(rec, req)
+	ListPlansHandler(deliveries, plans)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
@@ -62,40 +73,36 @@ func TestListPlansHandlerReturnsSummaries(t *testing.T) {
 	if len(body.Items) != 2 {
 		t.Fatalf("items = %+v, want 2", body.Items)
 	}
-	// Sorted by id: plan-a then plan-b.
 	a := body.Items[0]
-	if a.ID != "plan-a" || a.Title != "Plan A" || a.Status != artifact.PlanStatusProposed {
+	if a.ID != "plan-a" || a.Objective != "Plan A" || a.CurrentRevision != 1 {
 		t.Fatalf("plan-a summary = %+v", a)
 	}
-	if a.CurrentVersion != 1 {
-		t.Fatalf("plan-a current_version = %d, want 1 (manifest bumped by CreateVersion)", a.CurrentVersion)
-	}
-	if len(a.RelatedTasks) != 1 || a.RelatedTasks[0] != "punokawan-sv8" {
-		t.Fatalf("plan-a related_tasks = %v", a.RelatedTasks)
+	if len(a.LinkedDeliveries) != 1 || a.LinkedDeliveries[0].OrchestrationID != "d1" {
+		t.Fatalf("plan-a linked_deliveries = %+v, want one link to d1", a.LinkedDeliveries)
 	}
 	b := body.Items[1]
-	if b.ID != "plan-b" || b.Status != artifact.PlanStatusDraft {
-		t.Fatalf("plan-b summary = %+v, want synthesized draft", b)
+	if b.ID != "plan-b" || len(b.LinkedDeliveries) != 0 {
+		t.Fatalf("plan-b summary = %+v, want no linked deliveries", b)
 	}
 }
 
 func TestListPlansHandlerUnknownProject404(t *testing.T) {
-	stores, _ := planTestStores(t)
+	deliveries, plans, _ := planTestStores(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/nope/plans", nil)
 	req.SetPathValue("projectId", "nope")
 	rec := httptest.NewRecorder()
-	ListPlansHandler(stores)(rec, req)
+	ListPlansHandler(deliveries, plans)(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
 
 func TestListPlansHandlerEmptyProject(t *testing.T) {
-	stores, _ := planTestStores(t)
+	deliveries, plans, _ := planTestStores(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/proj-a/plans", nil)
 	req.SetPathValue("projectId", "proj-a")
 	rec := httptest.NewRecorder()
-	ListPlansHandler(stores)(rec, req)
+	ListPlansHandler(deliveries, plans)(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -110,20 +117,21 @@ func TestListPlansHandlerEmptyProject(t *testing.T) {
 	}
 }
 
-func TestPlanHandlerReturnsDetailWithContent(t *testing.T) {
-	stores, seed := planTestStores(t)
-	if _, err := seed.CreateVersion("plan-a", "proj-a", []byte("# hello v1"), time.Now()); err != nil {
-		t.Fatalf("CreateVersion: %v", err)
+func TestPlanHandlerReturnsHeadRevisionByDefault(t *testing.T) {
+	deliveries, plans, project := planTestStores(t)
+	ctx := context.Background()
+	if _, err := plans.Save(ctx, plan.Plan{ID: "plan-a", Objective: "v1", ProjectIDs: []string{project.Id}}); err != nil {
+		t.Fatalf("Save v1: %v", err)
 	}
-	if _, err := seed.CreateVersion("plan-a", "proj-a", []byte("# hello v2"), time.Now()); err != nil {
-		t.Fatalf("CreateVersion: %v", err)
+	if _, err := plans.Save(ctx, plan.Plan{ID: "plan-a", Objective: "v2", ProjectIDs: []string{project.Id}}); err != nil {
+		t.Fatalf("Save v2: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/proj-a/plans/plan-a", nil)
 	req.SetPathValue("projectId", "proj-a")
 	req.SetPathValue("planId", "plan-a")
 	rec := httptest.NewRecorder()
-	PlanHandler(stores)(rec, req)
+	PlanHandler(deliveries, plans)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
@@ -132,36 +140,81 @@ func TestPlanHandlerReturnsDetailWithContent(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Manifest == nil || resp.Manifest.ID != "plan-a" {
-		t.Fatalf("manifest = %+v", resp.Manifest)
+	if resp.Plan.Revision != 2 || resp.Plan.Objective != "v2" {
+		t.Fatalf("plan = %+v, want head revision 2 (v2)", resp.Plan)
 	}
-	if resp.Manifest.CurrentVersion != 2 {
-		t.Fatalf("current_version = %d, want 2", resp.Manifest.CurrentVersion)
+}
+
+// TestPlanHandlerRendersExactRevisionWhenRequested covers the exact
+// scenario a delivery's own plan link must never lose: a delivery links
+// revision 2 of a plan whose lineage has since moved to revision 3, and
+// asking for that plan through this exact delivery's link (?revision=2)
+// must still render revision 2, not silently substitute the head.
+func TestPlanHandlerRendersExactRevisionWhenRequested(t *testing.T) {
+	deliveries, plans, project := planTestStores(t)
+	ctx := context.Background()
+	if _, err := plans.Save(ctx, plan.Plan{ID: "plan-a", Objective: "v1", ProjectIDs: []string{project.Id}}); err != nil {
+		t.Fatalf("Save v1: %v", err)
 	}
-	if resp.CurrentVersionContent == nil || *resp.CurrentVersionContent != "# hello v2" {
-		t.Fatalf("current_version_content = %v, want %q", resp.CurrentVersionContent, "# hello v2")
+	v2, err := plans.Save(ctx, plan.Plan{ID: "plan-a", Objective: "v2", ProjectIDs: []string{project.Id}})
+	if err != nil {
+		t.Fatalf("Save v2: %v", err)
+	}
+	if _, err := plans.Save(ctx, plan.Plan{ID: "plan-a", Objective: "v3", ProjectIDs: []string{project.Id}}); err != nil {
+		t.Fatalf("Save v3: %v", err)
+	}
+
+	orch, err := deliveries.CreateOrchestration(ctx, "create-d1", "d1", nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	if _, err := deliveries.AttachProject(ctx, "attach-d1", orch.Id, orch.Revision, project.Id); err != nil {
+		t.Fatalf("AttachProject: %v", err)
+	}
+	if err := deliveries.LinkProjectPlan(ctx, "link-d1-v2", orch.Id, project.Id, v2.ID, v2.Revision); err != nil {
+		t.Fatalf("LinkProjectPlan: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/proj-a/plans/plan-a?revision=2", nil)
+	req.SetPathValue("projectId", "proj-a")
+	req.SetPathValue("planId", "plan-a")
+	rec := httptest.NewRecorder()
+	PlanHandler(deliveries, plans)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var resp planDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Plan.Revision != 2 || resp.Plan.Objective != "v2" {
+		t.Fatalf("plan = %+v, want exact revision 2 (v2), not the head", resp.Plan)
+	}
+	if len(resp.LinkedDeliveries) != 1 || resp.LinkedDeliveries[0].PlanRevision != 2 {
+		t.Fatalf("linked_deliveries = %+v, want one link naming revision 2", resp.LinkedDeliveries)
 	}
 }
 
 func TestPlanHandlerUnknownPlan404(t *testing.T) {
-	stores, _ := planTestStores(t)
+	deliveries, plans, _ := planTestStores(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/proj-a/plans/ghost", nil)
 	req.SetPathValue("projectId", "proj-a")
 	req.SetPathValue("planId", "ghost")
 	rec := httptest.NewRecorder()
-	PlanHandler(stores)(rec, req)
+	PlanHandler(deliveries, plans)(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 (body %s)", rec.Code, rec.Body.String())
 	}
 }
 
 func TestPlanHandlerUnknownProject404(t *testing.T) {
-	stores, _ := planTestStores(t)
+	deliveries, plans, _ := planTestStores(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/nope/plans/plan-a", nil)
 	req.SetPathValue("projectId", "nope")
 	req.SetPathValue("planId", "plan-a")
 	rec := httptest.NewRecorder()
-	PlanHandler(stores)(rec, req)
+	PlanHandler(deliveries, plans)(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}

@@ -1,0 +1,8 @@
+{
+  "session_id": "codex-thr-1",
+  "transcript_path": "{{TRANSCRIPT}}",
+  "cwd": "/workspace/repo-a",
+  "hook_event_name": "Stop",
+  "model": "gpt-5-codex",
+  "turn_id": "turn-2"
+}

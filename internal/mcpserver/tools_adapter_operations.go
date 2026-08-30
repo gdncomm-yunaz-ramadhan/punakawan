@@ -21,7 +21,6 @@ type AdapterOperation struct {
 	Description string         `json:"description,omitempty"`
 	InputSchema map[string]any `json:"input_schema,omitempty"`
 	SideEffect  bool           `json:"side_effect"`
-	Approval    string         `json:"approval,omitempty"`
 }
 
 type AdapterOperations struct {
@@ -47,16 +46,11 @@ func listAdapterOperationsHandler(a *app.App) func(context.Context, *mcp.CallToo
 			manifest := gate.Manifest()
 			operations := make([]AdapterOperation, 0, len(manifest.Operations))
 			for name, metadata := range manifest.Operations {
-				approval := ""
-				if metadata.Approval != nil {
-					approval = string(*metadata.Approval)
-				}
 				operations = append(operations, AdapterOperation{
 					Name:        name,
 					Description: metadata.Description,
 					InputSchema: map[string]any(metadata.InputSchema),
 					SideEffect:  metadata.SideEffect,
-					Approval:    approval,
 				})
 			}
 			sort.Slice(operations, func(i, j int) bool { return operations[i].Name < operations[j].Name })

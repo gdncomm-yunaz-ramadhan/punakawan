@@ -3,57 +3,47 @@ package roleconfig
 import (
 	"errors"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
+// maxInstructionsLen is the free-text instructions bound (protocol
+// roleconfig.schema.json's instructions.maxLength).
+const maxInstructionsLen = 2000
+
 // Sentinel errors, all errors.Is-matchable so the HTTP layer can map them to
 // stable status codes and machine-readable codes (mirrors internal/project).
 var (
-	ErrRevisionConflict  = errors.New("roleconfig: base revision does not match current revision")
-	ErrUnknownRole       = errors.New("roleconfig: unknown role")
-	ErrInvalidStyle      = errors.New("roleconfig: invalid style")
-	ErrInvalidMode       = errors.New("roleconfig: invalid mode")
-	ErrUnownedCapability = errors.New("roleconfig: capability not owned by role")
+	ErrRevisionConflict    = errors.New("roleconfig: base revision does not match current revision")
+	ErrUnknownRole         = errors.New("roleconfig: unknown role")
+	ErrInvalidStyle        = errors.New("roleconfig: invalid style")
+	ErrInstructionsTooLong = errors.New("roleconfig: instructions exceed the 2000-character bound")
 )
 
-// Patch is a partial update to one role's configuration. A nil pointer field
-// means "leave unchanged"; a non-nil Capabilities merges (each named key is set
-// to its given value, keys absent from the map are left as-is), so the Panel
-// can toggle one capability without resending the whole set.
+// Patch is a partial update to one role's prompt preference. A nil pointer
+// field means "leave unchanged".
 type Patch struct {
-	Enabled      *bool
-	Style        *protocol.RoleConfigStyle
-	Mode         *protocol.RoleConfigMode
-	Capabilities map[string]bool
+	Style        *protocol.RolePreferenceStyle
+	Instructions *string
 }
 
 // ValidStyle reports whether s is one of strict|balanced|creative.
-func ValidStyle(s protocol.RoleConfigStyle) bool {
+func ValidStyle(s protocol.RolePreferenceStyle) bool {
 	switch s {
-	case protocol.RoleConfigStyleStrict, protocol.RoleConfigStyleBalanced, protocol.RoleConfigStyleCreative:
+	case protocol.RolePreferenceStyleStrict, protocol.RolePreferenceStyleBalanced, protocol.RolePreferenceStyleCreative:
 		return true
 	}
 	return false
 }
 
-// ValidMode reports whether m is one of assist|propose|execute.
-func ValidMode(m protocol.RoleConfigMode) bool {
-	switch m {
-	case protocol.RoleConfigModeAssist, protocol.RoleConfigModePropose, protocol.RoleConfigModeExecute:
-		return true
-	}
-	return false
-}
-
-// Update applies patch to role within cfg under optimistic locking: baseRevision
-// must equal cfg.Revision or ErrRevisionConflict is returned and nothing is
-// mutated. Style/mode are validated against their enums; every capability key
-// in the patch must be owned by the role (ErrUnownedCapability otherwise) - a
-// role can never be granted another role's capability. On success cfg.Revision
-// is bumped by one; the caller persists with Save.
-func Update(cfg *protocol.RoleConfiguration, role Role, patch Patch, baseRevision int) error {
-	rc, err := RoleOf(cfg, role)
+// Update applies patch to role within cfg under optimistic locking:
+// baseRevision must equal cfg.Revision or ErrRevisionConflict is returned and
+// nothing is mutated. Style is validated against its enum; instructions is
+// bounded to maxInstructionsLen runes. On success cfg.Revision is bumped by
+// one; the caller persists with Save.
+func Update(cfg *protocol.RolePreferences, role Role, patch Patch, baseRevision int) error {
+	rp, err := RoleOf(cfg, role)
 	if err != nil {
 		return err
 	}
@@ -63,49 +53,33 @@ func Update(cfg *protocol.RoleConfiguration, role Role, patch Patch, baseRevisio
 	if patch.Style != nil && !ValidStyle(*patch.Style) {
 		return fmt.Errorf("roleconfig: style %q: %w", *patch.Style, ErrInvalidStyle)
 	}
-	if patch.Mode != nil && !ValidMode(*patch.Mode) {
-		return fmt.Errorf("roleconfig: mode %q: %w", *patch.Mode, ErrInvalidMode)
-	}
-	for key := range patch.Capabilities {
-		if !ownsCapability(role, key) {
-			return fmt.Errorf("roleconfig: role %q does not own capability %q: %w", role, key, ErrUnownedCapability)
-		}
+	if patch.Instructions != nil && utf8.RuneCountInString(*patch.Instructions) > maxInstructionsLen {
+		return fmt.Errorf("roleconfig: instructions length %d exceeds %d: %w",
+			utf8.RuneCountInString(*patch.Instructions), maxInstructionsLen, ErrInstructionsTooLong)
 	}
 
-	// All checks passed; apply. Capabilities merges onto a defensive copy so a
-	// partial failure above could never have left a half-applied map.
-	if patch.Enabled != nil {
-		rc.Enabled = *patch.Enabled
-	}
+	// All checks passed; apply.
 	if patch.Style != nil {
-		rc.Style = *patch.Style
+		rp.Style = *patch.Style
 	}
-	if patch.Mode != nil {
-		rc.Mode = *patch.Mode
-	}
-	if len(patch.Capabilities) > 0 {
-		if rc.Capabilities == nil {
-			rc.Capabilities = map[string]bool{}
-		}
-		for key, val := range patch.Capabilities {
-			rc.Capabilities[key] = val
-		}
+	if patch.Instructions != nil {
+		rp.Instructions = *patch.Instructions
 	}
 	cfg.Revision++
 	return nil
 }
 
-// Reset restores role to its recommended defaults under the same optimistic
+// Reset restores role to its recommended default under the same optimistic
 // locking as Update, bumping cfg.Revision on success.
-func Reset(cfg *protocol.RoleConfiguration, role Role, baseRevision int) error {
-	rc, err := RoleOf(cfg, role)
+func Reset(cfg *protocol.RolePreferences, role Role, baseRevision int) error {
+	rp, err := RoleOf(cfg, role)
 	if err != nil {
 		return err
 	}
 	if baseRevision != cfg.Revision {
 		return revisionConflict(baseRevision, cfg.Revision)
 	}
-	*rc = defaultRole(role)
+	*rp = defaultRole(role)
 	cfg.Revision++
 	return nil
 }

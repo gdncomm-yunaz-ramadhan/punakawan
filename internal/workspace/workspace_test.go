@@ -190,6 +190,67 @@ func TestMergeAdaptersProjectOverridesGlobal(t *testing.T) {
 	}
 }
 
+func TestGlobalConfigPathUsesDataDirOverride(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("PUNAKAWAN_DATA_DIR", dataDir)
+
+	path, err := GlobalConfigPath()
+	if err != nil {
+		t.Fatalf("GlobalConfigPath: %v", err)
+	}
+	want := filepath.Join(dataDir, "config.yaml")
+	if path != want {
+		t.Fatalf("GlobalConfigPath = %q, want %q", path, want)
+	}
+}
+
+func TestGlobalEnvPathUsesDataDirOverride(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("PUNAKAWAN_DATA_DIR", dataDir)
+
+	path, err := GlobalEnvPath()
+	if err != nil {
+		t.Fatalf("GlobalEnvPath: %v", err)
+	}
+	want := filepath.Join(dataDir, ".env")
+	if path != want {
+		t.Fatalf("GlobalEnvPath = %q, want %q", path, want)
+	}
+}
+
+func TestWorkflowRootIsWorkspaceRootForARealProject(t *testing.T) {
+	ws, err := Discover(fixtureRoot)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	root, err := ws.WorkflowRoot()
+	if err != nil {
+		t.Fatalf("WorkflowRoot: %v", err)
+	}
+	if root != ws.Root {
+		t.Fatalf("WorkflowRoot = %q, want workspace root %q", root, ws.Root)
+	}
+}
+
+func TestWorkflowRootIsDataDirForAnEphemeralWorkspace(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("PUNAKAWAN_DATA_DIR", dataDir)
+
+	ws, err := DiscoverOrEphemeral(t.TempDir())
+	if err != nil {
+		t.Fatalf("DiscoverOrEphemeral: %v", err)
+	}
+	defer os.RemoveAll(ws.Root)
+
+	root, err := ws.WorkflowRoot()
+	if err != nil {
+		t.Fatalf("WorkflowRoot: %v", err)
+	}
+	if root != dataDir {
+		t.Fatalf("WorkflowRoot = %q, want the process-wide data dir %q (not the deleted-on-close ephemeral root %q)", root, dataDir, ws.Root)
+	}
+}
+
 func TestPolicyPathDefault(t *testing.T) {
 	ws, err := Discover(fixtureRoot)
 	if err != nil {

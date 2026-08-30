@@ -16,7 +16,6 @@
         "session.started", "session.phase_changed", "session.progress", "session.completed", "session.failed",
         "task.created", "task.updated", "task.blocked", "task.completed",
         "knowledge.created", "knowledge.updated", "knowledge.superseded",
-        "approval.requested", "approval.resolved",
         "evidence.created",
         "git.state_changed",
         "adapter.health_changed",

@@ -1,109 +1,107 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import {
-    listDeliveries,
-    getDeliveryView,
-    cancelDelivery,
-    type DeliveryOrchestration,
-    type DeliveryView,
-  } from "../../lib/api/client";
+  import { onMount, onDestroy } from "svelte";
+  import { listDeliveries, getDeliveryDetail, cancelDelivery, type DeliverySummary } from "../../lib/api/client";
   import { navigate } from "../../lib/router/router.svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
-  import StatusBadge from "../../lib/components/StatusBadge.svelte";
+  import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import Icon from "../../lib/components/Icon.svelte";
   import Button from "../../lib/components/Button.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
   import {
-    deliveryLabel,
     filterDeliveries,
-    filterDeliveriesByStatus,
     sortDeliveries,
     deliverySortOptions,
-    deliveryStatusFilterOptions,
-    deliveryStatusInfo,
     isCancellableDelivery,
+    backoffDelay,
     type DeliverySortKey,
-    type DeliveryStatusFilter,
+    type DeliveryListRow,
   } from "./deliveryList";
 
-  interface DeliveryRow {
-    orchestration: DeliveryOrchestration;
-    view: DeliveryView | null;
-    viewError: string | null;
-  }
+  const POLL_INTERVAL_MS = 10_000;
 
-  let rows: DeliveryRow[] = $state([]);
+  let rows: DeliveryListRow[] = $state([]);
   let error: string | null = $state(null);
   let loading = $state(true);
-  // Only the very first load blanks the page for a spinner. Any panel event
-  // re-runs load(), and swapping the list out for "Loading…" would unmount the
-  // search box mid-keystroke, throwing away focus and caret position.
+  // Only the very first load blanks the page for a spinner. A background
+  // poll refresh re-runs load() and must never clear rows while it does -
+  // that would throw away scroll position and the search box's focus.
   let loaded = $state(false);
 
   let search = $state("");
-  let sortKey: DeliverySortKey = $state("recent");
-  let statusFilter: DeliveryStatusFilter = $state("all");
+  let sortKey: DeliverySortKey = $state("updated");
 
-  // Both lists are already fully in memory (one view fetch per card happens at
-  // load), so search and sort are pure derivations over them.
-  const visible = $derived(sortDeliveries(filterDeliveriesByStatus(filterDeliveries(rows, search), statusFilter), sortKey));
+  const visible = $derived(sortDeliveries(filterDeliveries(rows, search), sortKey));
 
-  // A delivery is an append-only event log: there is no remove, so the only
-  // lifecycle action the panel can offer is cancelling one still in flight.
-  //
-  // Only the id is held, never the row object: a background refresh replaces
-  // every row, and a captured row would post a stale expected_revision (and
-  // could keep the dialog open for a delivery that has since finished).
   let pendingCancelId: string | null = $state(null);
-  const pendingCancel = $derived.by(
-    () => rows.find((r) => r.orchestration.id === pendingCancelId) ?? null,
-  );
+  const pendingCancel = $derived.by(() => rows.find((r) => r.summary.id === pendingCancelId) ?? null);
   let cancelling = $state(false);
   let cancelError: string | null = $state(null);
 
-  // listDeliveries only returns the bare orchestration records (id,
-  // status, revision, timestamps) - the project/lane rollup and next
-  // action shown per card live in DeliveryView, so each orchestration's
-  // view is fetched alongside it. Orchestration counts are expected to
-  // stay small (this is "how many multi-project deliveries are in
-  // flight", not a general task list), so one view fetch per card is
-  // cheap; a failed individual fetch degrades that one card instead of
-  // the whole list.
-  async function load() {
-    loading = true;
-    error = null;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let consecutiveFailures = 0;
+  let stopped = false;
+
+  async function load(showSpinner: boolean) {
+    if (showSpinner) loading = true;
     try {
       const { items } = await listDeliveries();
-      rows = await Promise.all(
-        items.map(async (orchestration): Promise<DeliveryRow> => {
-          try {
-            const view = await getDeliveryView(orchestration.id);
-            return { orchestration, view, viewError: null };
-          } catch (e) {
-            return { orchestration, view: null, viewError: e instanceof Error ? e.message : String(e) };
-          }
-        }),
-      );
+      rows = items.map((summary): DeliveryListRow => ({ summary }));
+      error = null;
+      consecutiveFailures = 0;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      consecutiveFailures += 1;
+      // Never clear already-loaded rows on a refresh failure - only the
+      // very first load surfaces the error state; a background poll
+      // failure is silent (it will retry) unless nothing has ever loaded.
+      if (!loaded) error = e instanceof Error ? e.message : String(e);
     } finally {
-      loading = false;
+      if (showSpinner) loading = false;
       loaded = true;
+      scheduleNextPoll();
+    }
+  }
+
+  function scheduleNextPoll() {
+    if (stopped) return;
+    clearTimeout(pollTimer);
+    const delay = consecutiveFailures > 0 ? backoffDelay(consecutiveFailures - 1) : POLL_INTERVAL_MS;
+    pollTimer = setTimeout(() => {
+      if (document.hidden) {
+        // Paused while the tab is hidden; resume as soon as it is visible
+        // again rather than accumulating missed polls.
+        scheduleNextPoll();
+        return;
+      }
+      load(false);
+    }, delay);
+  }
+
+  function onVisibilityChange() {
+    if (!document.hidden) {
+      clearTimeout(pollTimer);
+      load(false);
     }
   }
 
   onMount(() => {
-    load();
+    load(true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  });
+
+  onDestroy(() => {
+    stopped = true;
+    clearTimeout(pollTimer);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
   });
 
   function open(id: string) {
     navigate(`/deliveries/${encodeURIComponent(id)}`);
   }
 
-  function startCancel(row: DeliveryRow) {
-    pendingCancelId = row.orchestration.id;
+  function startCancel(row: DeliveryListRow) {
+    pendingCancelId = row.summary.id;
     cancelError = null;
   }
 
@@ -119,11 +117,15 @@
     cancelling = true;
     cancelError = null;
     try {
-      await cancelDelivery(target.orchestration.id, {
-        expected_revision: target.orchestration.revision,
-      });
+      // The list's own summary carries no orchestration-scoped
+      // optimistic-concurrency counter (only projection_revision, a
+      // different number) - fetch the current detail immediately before
+      // cancelling to get a fresh orchestration_revision rather than
+      // guessing one.
+      const detail = await getDeliveryDetail(target.summary.id);
+      await cancelDelivery(target.summary.id, { expected_revision: detail.orchestration_revision });
       pendingCancelId = null;
-      await load();
+      await load(false);
     } catch (e) {
       cancelError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -131,11 +133,41 @@
     }
   }
 
+  const statusVariants: Record<string, BadgeVariant> = {
+    pending: "neutral",
+    active: "info",
+    completed: "success",
+    cancelled: "danger",
+  };
+
+  function formatDate(value: string): string {
+    return new Date(value).toLocaleString();
+  }
+
+  function formatDuration(ms: number): string {
+    const minutes = Math.max(0, Math.floor(ms / 60_000));
+    const hours = Math.floor(minutes / 60);
+    return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
+  }
+
+  function formatCost(summary: DeliverySummary): string {
+    const entries = Object.entries(summary.usage.estimated_costs ?? {});
+    if (entries.length === 0) return "unknown";
+    const formatted = entries
+      .map(([currency, amount]) => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount))
+      .join(" · ");
+    return summary.usage.pricing_complete ? formatted : `${formatted} (partial)`;
+  }
+
+  function sourceLabel(summary: DeliverySummary): string {
+    if (!summary.source || summary.source.kind === "adhoc") return "Ad-hoc";
+    return summary.source.key ?? "Jira";
+  }
 </script>
 
 <PageHeader
   title="Deliveries"
-  description="Every multi-project delivery orchestration this Punakawan instance is running - progress, runnable lanes, and blockers across every project it touches."
+  description="Every delivery this Punakawan instance is running - Jira or ad-hoc source, projects touched, plan, progress, and cost."
 />
 
 {#if loading && !loaded}
@@ -143,7 +175,7 @@
 {:else if error}
   <ErrorStateCard title="Failed to load deliveries" message={error} />
 {:else if rows.length === 0}
-  <EmptyStateCard title="No deliveries yet" message="Start a delivery orchestration to see it here." />
+  <EmptyStateCard title="No deliveries yet" message="Start a delivery to see it here." />
 {:else}
   <div class="toolbar">
     <div class="field">
@@ -151,7 +183,7 @@
       <input
         id="delivery-search"
         type="search"
-        placeholder="Title, id, status, project, or task"
+        placeholder="Title, Jira key, project, or plan objective"
         bind:value={search}
         autocomplete="off"
       />
@@ -164,74 +196,65 @@
         {/each}
       </select>
     </div>
-    <div class="field">
-      <label for="delivery-status">Status</label>
-      <select id="delivery-status" bind:value={statusFilter}>
-        {#each deliveryStatusFilterOptions as option (option.value)}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
-    </div>
   </div>
 
   {#if visible.length === 0}
     <EmptyStateCard
       title="No deliveries match your search"
-      message="Try adjusting the search or status filter to see more deliveries."
+      message={`Nothing matches “${search}”. Try a shorter search, or clear it to see all ${rows.length} deliveries.`}
     />
   {:else}
     <ul class="deliveries" aria-label="Deliveries">
-      {#each visible as row (row.orchestration.id)}
+      {#each visible as row (row.summary.id)}
+        {@const s = row.summary}
         <li>
           <div class="card">
-            <!-- aria-label keeps the whole card body from being read out as one
-                 enormous control name; the visible detail is still announced by
-                 the elements themselves. -->
             <button
               type="button"
               class="open-area"
-              aria-label={`Open delivery ${deliveryLabel(row.orchestration, row.view)}`}
-              onclick={() => open(row.orchestration.id)}
+              aria-label={`Open delivery ${s.title}`}
+              onclick={() => open(s.id)}
             >
               <span class="row">
                 <span class="title">
                   <span class="icon"><Icon name="git-branch" size={20} /></span>
                   <span class="heading">
-                    <strong class="name">{deliveryLabel(row.orchestration, row.view)}</strong>
-                    <span class="id">{row.orchestration.id}</span>
+                    <strong class="name">{s.title}</strong>
+                    <span class="source">{sourceLabel(s)}</span>
                   </span>
                 </span>
-                <StatusBadge variant={deliveryStatusInfo(row.orchestration.status).variant} label={deliveryStatusInfo(row.orchestration.status).label} />
+                <StatusBadge variant={statusVariants[s.status] ?? "neutral"} label={s.status} />
               </span>
-              {#if row.view}
-                <span class="next-action">{row.view.next_action}</span>
-                <span class="stats" aria-label="Delivery snapshot">
-                  <span><strong>{row.view.projects.length}</strong> projects</span>
-                  <span><strong>{row.view.lanes.length}</strong> lanes</span>
-                  <span class:danger={row.view.blockers.length > 0}
-                    ><strong>{row.view.blockers.length}</strong> blocked</span
-                  >
-                  <span><strong>{row.view.pending_questions.length}</strong> pending questions</span>
-                </span>
+
+              {#if s.projects.length}
+                <span class="projects">{s.projects.map((p) => p.slug).join(", ")}</span>
               {/if}
+
+              {#if s.plan}
+                <span class="plan">{s.plan.objective} <code>r{s.plan.revision}</code></span>
+              {/if}
+
+              {#if s.progress}
+                <span class="progress">{s.progress.summary}</span>
+              {:else if s.session}
+                <span class="progress">Session {s.session.status} ({s.session.participant || "unknown participant"})</span>
+              {/if}
+
+              <span class="stats" aria-label="Delivery usage">
+                <span><strong>{(s.usage.input_tokens + s.usage.output_tokens).toLocaleString()}</strong> tokens</span>
+                <span><strong>{s.usage.tool_calls.toLocaleString()}</strong> tool calls</span>
+                <span><strong>{formatDuration(s.usage.elapsed_ms)}</strong> elapsed</span>
+                <span><strong>{formatCost(s)}</strong> cost</span>
+              </span>
+              <span class="updated">Updated {formatDate(s.updated_at)}</span>
             </button>
-            <!-- Outside the button: an alert belongs in the document, not folded
-                 into a control's accessible name. -->
-            {#if !row.view && row.viewError}
-              <p class="view-error" role="alert">Failed to load details: {row.viewError}</p>
-            {/if}
             <div class="card-actions">
-              {#if isCancellableDelivery(row.orchestration)}
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onclick={() => startCancel(row)}
-                  ariaLabel={`Cancel delivery ${deliveryLabel(row.orchestration, row.view)}`}
-                >
+              {#if isCancellableDelivery(s)}
+                <Button variant="danger" size="sm" onclick={() => startCancel(row)} ariaLabel={`Cancel delivery ${s.title}`}>
                   Cancel
                 </Button>
               {/if}
-              <button type="button" class="open-hint" onclick={() => open(row.orchestration.id)}>
+              <button type="button" class="open-hint" onclick={() => open(s.id)}>
                 Open delivery <span aria-hidden="true">→</span>
               </button>
             </div>
@@ -245,8 +268,8 @@
 {#if pendingCancel}
   <DeliveryCancelDialog
     open={true}
-    label={deliveryLabel(pendingCancel.orchestration, pendingCancel.view)}
-    orchestrationId={pendingCancel.orchestration.id}
+    label={pendingCancel.summary.title}
+    orchestrationId={pendingCancel.summary.id}
     busy={cancelling}
     error={cancelError}
     onclose={closeCancel}
@@ -301,11 +324,9 @@
       transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
     }
   }
-  /* The card body is its own button so the Cancel action can sit beside it
-     without nesting one button inside another. */
   .open-area {
     display: grid;
-    gap: 0.55rem;
+    gap: 0.5rem;
     min-width: 0;
     padding: 0;
     border: 0;
@@ -396,18 +417,22 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
-  /* The id stays visible (and selectable) as secondary text so it can still
-     be copied for CLI use, without being what identifies the card. */
-  .id {
+  .source {
     font-size: 0.72rem;
     color: var(--color-text-muted);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     overflow-wrap: anywhere;
   }
-  .next-action {
+  .projects,
+  .plan,
+  .progress {
     display: block;
     color: var(--color-text);
-    font-size: 0.88rem;
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+  }
+  .plan code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--color-text-muted);
   }
   .stats {
     display: flex;
@@ -427,14 +452,9 @@
     color: var(--color-text);
     font-variant-numeric: tabular-nums;
   }
-  .stats .danger,
-  .stats .danger strong {
-    color: var(--color-danger);
-  }
-  .view-error {
-    margin: 0;
-    color: var(--color-danger);
-    font-size: 0.8rem;
+  .updated {
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
   }
   .open-hint {
     margin-left: auto;

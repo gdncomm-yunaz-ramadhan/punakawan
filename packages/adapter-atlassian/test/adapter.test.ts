@@ -40,6 +40,11 @@ import {
   FIXTURE_TRANSITIONS,
   FIXTURE_PARENT_KEY,
   FIXTURE_EXISTING_SUBTASKS,
+  FIXTURE_LARGE_PARENT_KEY,
+  FIXTURE_MANY_SUBTASKS,
+  FIXTURE_MARKER_ISSUE_KEY,
+  FIXTURE_MARKER,
+  FIXTURE_MANY_COMMENTS,
   FIXTURE_ISSUE_TYPE_FIELD_META,
   FIXTURE_COMMENTS,
   FIXTURE_REMOTE_LINKS,
@@ -85,20 +90,26 @@ describe('manifest', () => {
     assert.deepEqual(parsed.permissions.secrets, ['ATLASSIAN_API_TOKEN', 'ATLASSIAN_EMAIL']);
   });
 
-  test('declares the write operation as side-effecting and requiring approval', () => {
-    const operation = manifest.operations['atlassian.addJiraComment'];
-    assert.equal(operation?.side_effect, true);
-    assert.equal(operation?.approval, 'required');
+  test('declares the write operation as side-effecting with no approval member', () => {
+    assert.equal(manifest.operations['atlassian.addJiraComment']?.side_effect, true);
+    assert.equal('approval' in manifest.operations['atlassian.addJiraComment'], false);
+  });
+
+  test('every operation declares a non-empty description and an object input_schema', () => {
+    for (const [op, metadata] of Object.entries(manifest.operations)) {
+      assert.ok(typeof metadata.description === 'string' && metadata.description.length > 0, `${op} should declare a description`);
+      assert.equal(metadata.input_schema.type, 'object', `${op} should declare an object input_schema`);
+    }
   });
 
   test('declares read operations as side-effect free', () => {
     for (const op of ['atlassian.searchJira', 'atlassian.searchConfluence', 'atlassian.getJiraIssue', 'atlassian.getConfluencePage']) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
-      assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 
-  test('declares the new write operations as side-effecting and requiring approval', () => {
+  test('declares the new write operations as side-effecting with no approval member', () => {
     for (const op of [
       'atlassian.transitionJiraIssue',
       'atlassian.editJiraIssueFields',
@@ -110,8 +121,8 @@ describe('manifest', () => {
       'atlassian.uploadJiraAttachment',
       'atlassian.deleteJiraAttachment',
     ]) {
-      assert.equal(manifest.operations[op]?.side_effect, true, `${op} should be side-effecting`);
-      assert.equal(manifest.operations[op]?.approval, 'required', `${op} should require approval`);
+      assert.equal(manifest.operations[op]?.side_effect, true, `${op} should be side_effect: true`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 
@@ -127,7 +138,7 @@ describe('manifest', () => {
       'atlassian.listJiraSprints',
     ]) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
-      assert.equal(manifest.operations[op]?.approval, undefined, `${op} should not require approval`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 
@@ -210,6 +221,17 @@ describe('Jira context expansion', () => {
     assert.equal(result.comments[0]?.id, FIXTURE_COMMENTS[0]?.id);
     assert.equal(result.comments[0]?.body, 'Please cover Safari.');
     assert.equal(result.page.total, 1);
+    await client.close();
+  });
+
+  test('finds a marker comment on a page past the first', async () => {
+    const client = await fakeClient();
+    const result = await getJiraComments(client, { issueIdOrKey: FIXTURE_MARKER_ISSUE_KEY, maxResults: 20 });
+
+    assert.equal(result.comments.length, FIXTURE_MANY_COMMENTS.length);
+    assert.equal(result.page.complete, true);
+    assert.ok(result.page.pages >= 3, `expected at least 3 pages, got ${result.page.pages}`);
+    assert.ok(result.comments.some((c) => c.body?.includes(FIXTURE_MARKER)), 'expected the marker comment to be present');
     await client.close();
   });
 
@@ -612,6 +634,19 @@ describe('addWorklog', () => {
     assert.equal(result.timeSpentSeconds, 1800);
     await client.close();
   });
+
+  test('an already-aborted signal rejects before the fake remote effect completes', async () => {
+    const { client, rest } = fakeClientWithRest();
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(
+      () => addWorklog(client, { issueIdOrKey: 'PROJ-123', timeSpentSeconds: 900 }, controller.signal),
+      (err: unknown) => err instanceof Error && err.name === 'AbortError',
+    );
+    assert.equal(rest.addedWorklogs.length, 0);
+    await client.close();
+  });
 });
 
 describe('getIssueTypeFieldMeta', () => {
@@ -658,12 +693,13 @@ describe('createJiraSubtask', () => {
       ],
     });
 
-    assert.equal(result.created.length, 1);
-    assert.equal(result.created[0]?.summary, 'Add integration test for login flow');
+    const byOutcome = (outcome: 'created' | 'existing') => result.results.filter((r) => r.outcome === outcome);
+    assert.equal(byOutcome('created').length, 1);
+    assert.equal(byOutcome('created')[0]?.summary, 'Add integration test for login flow');
 
-    assert.equal(result.skipped.length, 1);
-    assert.equal(result.skipped[0]?.summary, '  write   UNIT tests  ');
-    assert.equal(result.skipped[0]?.existingKey, FIXTURE_EXISTING_SUBTASKS[0]?.key);
+    assert.equal(byOutcome('existing').length, 1);
+    assert.equal(byOutcome('existing')[0]?.summary, '  write   UNIT tests  ');
+    assert.equal(byOutcome('existing')[0]?.issueKey, FIXTURE_EXISTING_SUBTASKS[0]?.key);
 
     await client.close();
   });
@@ -677,9 +713,52 @@ describe('createJiraSubtask', () => {
       candidates: [{ summary: 'Totally new subtask A' }, { summary: 'Totally new subtask B' }],
     });
 
-    assert.equal(result.created.length, 2);
-    assert.equal(result.skipped.length, 0);
+    assert.equal(result.results.filter((r) => r.outcome === 'created').length, 2);
+    assert.equal(result.results.filter((r) => r.outcome === 'existing').length, 0);
 
+    await client.close();
+  });
+
+  test('45 existing subtasks: a duplicate positioned past the first page is still recognized, and a within-request duplicate collapses onto one created issue', async () => {
+    const { client, rest } = fakeClientWithRest();
+    const result = await createJiraSubtask(client, {
+      parentKey: FIXTURE_LARGE_PARENT_KEY,
+      projectKey: 'PROJ',
+      issueTypeName: 'Sub-task',
+      candidates: [
+        // Matches FIXTURE_MANY_SUBTASKS[40] - would be on page 3 of a 20-per-page listing.
+        { summary: '  existing SUBTASK forty  ' },
+        { summary: 'Brand new task' },
+        // Same normalized summary as the previous candidate, brand new to Jira,
+        // appearing twice in this very same request.
+        { summary: 'brand new task' },
+      ],
+    });
+
+    assert.equal(result.results.length, 3);
+    assert.equal(result.results[0]?.outcome, 'existing');
+    assert.equal(result.results[0]?.issueKey, FIXTURE_MANY_SUBTASKS[40]?.key);
+
+    assert.equal(result.results[1]?.outcome, 'created');
+    assert.equal(result.results[2]?.outcome, 'existing');
+    assert.equal(result.results[2]?.issueKey, result.results[1]?.issueKey);
+
+    // Only one Jira issue was actually created for the two duplicate "brand new task" candidates.
+    assert.equal(rest.createdIssues.length, 1);
+
+    await client.close();
+  });
+
+  test('embeds an intentMarker in the created issue description', async () => {
+    const { client, rest } = fakeClientWithRest();
+    await createJiraSubtask(client, {
+      parentKey: FIXTURE_PARENT_KEY,
+      projectKey: 'PROJ',
+      issueTypeName: 'Sub-task',
+      candidates: [{ summary: 'Marked subtask', intentMarker: 'punakawan:intent:abc-123' }],
+    });
+
+    assert.match(adfText(rest.createdIssues[0]?.fields.description) ?? '', /punakawan:intent:abc-123/);
     await client.close();
   });
 });
@@ -904,12 +983,14 @@ describe('execute via handlers', () => {
         candidates: [{ summary: 'Update docs' }, { summary: 'Handle edge case for logout' }],
       },
       new AbortController().signal,
-    )) as { created: { summary: string }[]; skipped: { summary: string; existingKey: string }[] };
+    )) as { results: { summary: string; issueKey: string; outcome: 'created' | 'existing' }[] };
 
-    assert.equal(result.created.length, 1);
-    assert.equal(result.created[0]?.summary, 'Handle edge case for logout');
-    assert.equal(result.skipped.length, 1);
-    assert.equal(result.skipped[0]?.existingKey, FIXTURE_EXISTING_SUBTASKS[1]?.key);
+    const created = result.results.filter((r) => r.outcome === 'created');
+    const existing = result.results.filter((r) => r.outcome === 'existing');
+    assert.equal(created.length, 1);
+    assert.equal(created[0]?.summary, 'Handle edge case for logout');
+    assert.equal(existing.length, 1);
+    assert.equal(existing[0]?.issueKey, FIXTURE_EXISTING_SUBTASKS[1]?.key);
 
     await handlers.shutdown(undefined, new AbortController().signal);
   });

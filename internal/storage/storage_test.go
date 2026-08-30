@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -278,6 +279,212 @@ func TestConcurrentReadersDuringWrite(t *testing.T) {
 	db.write.QueryRow(`SELECT v FROM t`).Scan(&final)
 	if final != 2 {
 		t.Fatalf("final v = %d, want 2 (no lost update)", final)
+	}
+}
+
+func TestRemoveExecutionApprovalsMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	ctx := context.Background()
+
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version    INTEGER PRIMARY KEY,
+			name       TEXT NOT NULL,
+			checksum   TEXT NOT NULL,
+			applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+		)`); err != nil {
+		t.Fatalf("bootstrap schema_migrations: %v", err)
+	}
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	for _, m := range migrations {
+		if m.version >= 26 {
+			continue
+		}
+		if err := applyMigration(ctx, raw, m); err != nil {
+			t.Fatalf("apply migration %04d: %v", m.version, err)
+		}
+	}
+
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO approvals (project_id, id, data) VALUES ('proj-1', 'appr-1', '{"status":"pending"}')`,
+	); err != nil {
+		t.Fatalf("seed pending approval: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO delivery_cases (id, jira_source_key, jira_issue_key, status, created_at, updated_at)
+		 VALUES ('case-1', 'jira:ABC-1', 'ABC-1', 'active', '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed delivery_cases: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO jira_assessments (id, case_id, execution_id, session_id, snapshot_id, clarity, approval, rationale, assessed_at)
+		 VALUES ('assess-1', 'case-1', 'exec-1', '', '', 'clear', 'approved', 'looks good', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed jira_assessments: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO github_pr_reviews (id, repository, pull_request_number, head_sha, findings_json, body, verdict, status, delivery_execution_id, external_review_id, created_at, updated_at, failure)
+		 VALUES ('review-1', 'org/repo', 1, 'deadbeef', '[]', 'lgtm', 'APPROVE', 'approved', 'exec-1', '', '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z', '')`,
+	); err != nil {
+		t.Fatalf("seed github_pr_reviews: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (apply remaining migrations): %v", err)
+	}
+	defer db.Close()
+
+	var approvalsTableCount int
+	if err := db.write.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'approvals'`,
+	).Scan(&approvalsTableCount); err != nil {
+		t.Fatalf("check approvals table: %v", err)
+	}
+	if approvalsTableCount != 0 {
+		t.Fatal("approvals table still exists after migration")
+	}
+
+	var clarity, rationale string
+	if err := db.write.QueryRow(
+		`SELECT clarity, rationale FROM jira_assessments WHERE id = 'assess-1'`,
+	).Scan(&clarity, &rationale); err != nil {
+		t.Fatalf("read migrated jira_assessments row: %v", err)
+	}
+	if clarity != "clear" || rationale != "looks good" {
+		t.Fatalf("jira_assessments row = clarity=%q rationale=%q, want clarity=clear rationale=%q", clarity, rationale, "looks good")
+	}
+
+	var reviewStatus string
+	if err := db.write.QueryRow(
+		`SELECT status FROM github_pr_reviews WHERE id = 'review-1'`,
+	).Scan(&reviewStatus); err != nil {
+		t.Fatalf("read migrated github_pr_reviews row: %v", err)
+	}
+	if reviewStatus != "proposed" {
+		t.Fatalf("github_pr_reviews status = %q, want proposed", reviewStatus)
+	}
+
+	if _, err := db.write.Exec(`UPDATE github_pr_reviews SET status = 'approved' WHERE id = 'review-1'`); err == nil {
+		t.Fatal("expected the rebuilt github_pr_reviews CHECK constraint to reject status = 'approved'")
+	}
+}
+
+func TestDeliveryLifetimesMigrationPreservesChildReferences(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	ctx := context.Background()
+
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version    INTEGER PRIMARY KEY,
+			name       TEXT NOT NULL,
+			checksum   TEXT NOT NULL,
+			applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+		)`); err != nil {
+		t.Fatalf("bootstrap schema_migrations: %v", err)
+	}
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	for _, m := range migrations {
+		if m.version >= 27 {
+			continue
+		}
+		if err := applyMigration(ctx, raw, m); err != nil {
+			t.Fatalf("apply migration %04d: %v", m.version, err)
+		}
+	}
+
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO delivery_cases (id, jira_source_key, jira_issue_key, status, created_at, updated_at)
+		 VALUES ('case-1', 'jira:ABC-1', 'ABC-1', 'active', '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed delivery_cases: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO delivery_executions (id, case_id, orchestration_id, ordinal, status, session_id, started_at)
+		 VALUES ('exec-1', 'case-1', 'orch-1', 1, 'active', 'session-1', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed delivery_executions: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO delivery_sessions (id, case_id, execution_id, orchestration_id, participant, status, started_at)
+		 VALUES ('session-1', 'case-1', 'exec-1', 'orch-1', 'agent', 'active', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed delivery_sessions: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO delivery_usage_ledger (id, case_id, execution_id, session_id, entry_kind, category, quantity, unit, recorded_at)
+		 VALUES ('usage-1', 'case-1', 'exec-1', 'session-1', 'actual', 'tokens', 100, 'token', '2026-08-29T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed delivery_usage_ledger: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (apply remaining migrations): %v", err)
+	}
+	defer db.Close()
+
+	rows, err := db.write.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		t.Fatalf("foreign_key_check: %v", err)
+	}
+	var violations []string
+	for rows.Next() {
+		var table, rowid, referredTable, fkid sql.NullString
+		if err := rows.Scan(&table, &rowid, &referredTable, &fkid); err != nil {
+			rows.Close()
+			t.Fatalf("scan foreign_key_check violation: %v", err)
+		}
+		violations = append(violations, fmt.Sprintf("%s row %s references missing %s", table.String, rowid.String, referredTable.String))
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read foreign_key_check: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("foreign_key_check reported violation(s) after migration: %v", violations)
+	}
+
+	for _, table := range []string{"delivery_executions", "delivery_sessions", "delivery_usage_ledger"} {
+		var count int
+		if err := db.write.QueryRow(
+			"SELECT COUNT(*) FROM "+table+" WHERE case_id = ?", "case-1",
+		).Scan(&count); err != nil {
+			t.Fatalf("check %s references rebuilt case: %v", table, err)
+		}
+		if count == 0 {
+			t.Fatalf("%s has no row still referencing rebuilt case-1", table)
+		}
+	}
+
+	var sourceKind, sourceKey, jiraIssueKey string
+	if err := db.write.QueryRow(`SELECT source_kind, source_key, jira_issue_key FROM delivery_cases WHERE id = 'case-1'`).Scan(&sourceKind, &sourceKey, &jiraIssueKey); err != nil {
+		t.Fatalf("read migrated delivery_cases row: %v", err)
+	}
+	if sourceKind != "jira" || sourceKey != "jira:ABC-1" || jiraIssueKey != "ABC-1" {
+		t.Fatalf("delivery_cases row = source_kind=%q source_key=%q jira_issue_key=%q, want jira/jira:ABC-1/ABC-1", sourceKind, sourceKey, jiraIssueKey)
 	}
 }
 

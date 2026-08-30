@@ -1,11 +1,11 @@
 // Package roleconfig loads, persists, and versions a Punakawan project's
-// four-role configuration (Semar coordinates, Gareng challenges, Petruk plans
-// and builds, Bagong verifies), per
-// punakawan-role-config-distinguished-improvements-plan.md Part I. Its
-// canonical file lives at <workspaceRoot>/.punakawan/roles.yaml. The
-// user-facing surface is intentionally small - enabled, style, mode, and a
-// short list of role-specific capability toggles - so users never configure
-// confidence matrices or numeric thresholds (§2.1).
+// four-role prompt preferences (Semar coordinates, Gareng challenges, Petruk
+// plans and builds, Bagong verifies). Its canonical file lives at
+// <workspaceRoot>/.punakawan/roles.yaml. The user-facing surface is
+// deliberately small - a style (strict/balanced/creative) and a bounded
+// free-text instruction per role - because that is the entire effect a
+// project can have on a role's prompt: it never authorizes a tool, changes a
+// workflow's requirements, or grants a permission.
 //
 // This package mirrors internal/project's stateless Load/Save-on-a-root model
 // (not an *app.App field) because role config is project-scoped and is read
@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	// SupportedVersion is the only roles.yaml schema version understood,
-	// matching protocol/roleconfig.schema.json's version const.
-	SupportedVersion = "punakawan.roles/v1"
+	// SupportedVersion is the only roles.yaml schema version this package
+	// writes, matching protocol/roleconfig.schema.json's version const.
+	SupportedVersion = 2
 
 	dirName     = ".punakawan"
 	configFile  = "roles.yaml"
@@ -69,18 +69,56 @@ func configPath(root string) string {
 	return filepath.Join(root, dirName, configFile)
 }
 
-// rolesFile is the on-disk YAML shape. It is exactly protocol.RoleConfiguration
+// rolesFile is the on-disk YAML shape. It is exactly protocol.RolePreferences
 // (whose yaml tags are load-bearing); the alias keeps the persistence type and
 // the API type identical so there is no drift between what is saved and what is
 // served.
-type rolesFile = protocol.RoleConfiguration
+type rolesFile = protocol.RolePreferences
+
+// Preferences is the "roles" sub-object shape - a role name maps directly to
+// its RolePreference, with no version/revision envelope. It is exactly
+// protocol.RolePreferencesRoles, kept as a short alias for callers (mostly
+// tests) that only need to build or inspect one role's preference without the
+// persisted envelope.
+type Preferences = protocol.RolePreferencesRoles
+
+// RolePreference is one role's style and free-text instructions. It is
+// exactly protocol.RolePreference.
+type RolePreference = protocol.RolePreference
+
+// legacyRolePreference is the minimal shape of a pre-version-2 roles.yaml
+// role entry. style is the only field that ever changed prompt wording, so it
+// is the only one this package still reads from an old file; enabled, mode,
+// and capabilities never enforced any real behavior and are discarded.
+type legacyRolePreference struct {
+	Style string `yaml:"style"`
+}
+
+// legacyRolesFile is the minimal shape of a pre-version-2 roles.yaml file,
+// read leniently (loose types, no required-field or enum validation) so a
+// hand-edited or older file still yields a usable migration.
+type legacyRolesFile struct {
+	Revision int `yaml:"revision"`
+	Roles    struct {
+		Semar  legacyRolePreference `yaml:"semar"`
+		Gareng legacyRolePreference `yaml:"gareng"`
+		Petruk legacyRolePreference `yaml:"petruk"`
+		Bagong legacyRolePreference `yaml:"bagong"`
+	} `yaml:"roles"`
+}
 
 // Load reads <root>/.punakawan/roles.yaml. If the file is absent it returns the
 // recommended Defaults() at revision 0: a project that has never had its roles
-// edited is a normal state, not an error (mirrors internal/project.Load). Any
-// role sub-object missing from an on-disk file is backfilled from defaults so a
-// partial or older file still yields a complete, usable configuration.
-func Load(root string) (*protocol.RoleConfiguration, error) {
+// edited is a normal state, not an error (mirrors internal/project.Load).
+//
+// A file already at SupportedVersion is read directly, backfilling any role
+// sub-object left zero-valued by a partial or hand-edited file. Anything else
+// - the pre-version-2 shape, or a file whose version does not parse as that
+// integer - is read leniently through legacyRolesFile: style is preserved per
+// role and every other, never-enforced field is discarded. The migrated
+// result is returned in memory at SupportedVersion; the file on disk is left
+// untouched until the next Save.
+func Load(root string) (*protocol.RolePreferences, error) {
 	path := configPath(root)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -91,25 +129,53 @@ func Load(root string) (*protocol.RoleConfiguration, error) {
 		return nil, fmt.Errorf("roleconfig: read %s: %w", path, err)
 	}
 
-	var rf rolesFile
-	if err := yaml.Unmarshal(data, &rf); err != nil {
+	var probe struct {
+		Version interface{} `yaml:"version"`
+	}
+	if err := yaml.Unmarshal(data, &probe); err != nil {
 		return nil, fmt.Errorf("roleconfig: parse %s: %w", path, err)
 	}
-	if rf.Version != SupportedVersion {
-		return nil, fmt.Errorf("roleconfig: unsupported version %q (want %q)", rf.Version, SupportedVersion)
+	if v, ok := probe.Version.(int); ok && v == SupportedVersion {
+		var rf rolesFile
+		if err := yaml.Unmarshal(data, &rf); err != nil {
+			return nil, fmt.Errorf("roleconfig: parse %s: %w", path, err)
+		}
+		backfillMissingRoles(&rf)
+		return &rf, nil
 	}
-	backfillMissingRoles(&rf)
-	return &rf, nil
+
+	var legacy legacyRolesFile
+	if err := yaml.Unmarshal(data, &legacy); err != nil {
+		return nil, fmt.Errorf("roleconfig: parse legacy %s: %w", path, err)
+	}
+	migrated := Defaults()
+	migrated.Revision = legacy.Revision
+	preserveStyle(&migrated.Roles.Semar, legacy.Roles.Semar.Style)
+	preserveStyle(&migrated.Roles.Gareng, legacy.Roles.Gareng.Style)
+	preserveStyle(&migrated.Roles.Petruk, legacy.Roles.Petruk.Style)
+	preserveStyle(&migrated.Roles.Bagong, legacy.Roles.Bagong.Style)
+	return &migrated, nil
+}
+
+// preserveStyle copies a legacy style string onto pref when it names one of
+// the three valid styles, leaving pref's default style untouched otherwise
+// (an empty or corrupt legacy value is not an error - it just does not
+// override the default).
+func preserveStyle(pref *protocol.RolePreference, style string) {
+	s := protocol.RolePreferenceStyle(style)
+	if ValidStyle(s) {
+		pref.Style = s
+	}
 }
 
 // backfillMissingRoles replaces any role sub-object left zero-valued by an
-// older or hand-edited file (empty style/mode means it was never populated)
-// with that role's recommended default, so Load always returns four complete
+// older or hand-edited file (empty style means it was never populated) with
+// that role's recommended default, so Load always returns four complete
 // roles.
-func backfillMissingRoles(rf *protocol.RoleConfiguration) {
+func backfillMissingRoles(rf *protocol.RolePreferences) {
 	d := Defaults()
-	fill := func(dst *protocol.RoleConfig, def protocol.RoleConfig) {
-		if dst.Style == "" || dst.Mode == "" || dst.Capabilities == nil {
+	fill := func(dst *protocol.RolePreference, def protocol.RolePreference) {
+		if dst.Style == "" {
 			*dst = def
 		}
 	}
@@ -144,7 +210,7 @@ type auditRecord struct {
 // roles/versions/<oldRevision>.yaml and an audit line is appended to
 // roles/audit.jsonl; the write itself is temp-file + rename so a crash
 // mid-write can never leave a half-written roles.yaml.
-func Save(root string, cfg *protocol.RoleConfiguration, opts SaveOptions) error {
+func Save(root string, cfg *protocol.RolePreferences, opts SaveOptions) error {
 	if cfg == nil {
 		return fmt.Errorf("roleconfig: save nil configuration")
 	}
@@ -257,19 +323,27 @@ func atomicWrite(path string, data []byte) error {
 	return nil
 }
 
-// RoleOf returns a pointer to the sub-config for role within cfg, or an error
-// if role is not one of the four. The pointer aliases cfg's field so callers
-// mutate in place.
-func RoleOf(cfg *protocol.RoleConfiguration, role Role) (*protocol.RoleConfig, error) {
+// RoleOf returns a pointer to the sub-preference for role within cfg, or an
+// error if role is not one of the four. The pointer aliases cfg's field so
+// callers mutate in place.
+func RoleOf(cfg *protocol.RolePreferences, role Role) (*protocol.RolePreference, error) {
+	return roleIn(&cfg.Roles, role)
+}
+
+// roleIn is RoleOf's lower-level counterpart, operating on the "roles"
+// sub-object directly (Preferences) rather than the full persisted envelope,
+// so callers that only ever hold a bare Preferences value (tests, the prompt
+// resolver) do not need to fabricate a whole RolePreferences file.
+func roleIn(roles *Preferences, role Role) (*protocol.RolePreference, error) {
 	switch role {
 	case Semar:
-		return &cfg.Roles.Semar, nil
+		return &roles.Semar, nil
 	case Gareng:
-		return &cfg.Roles.Gareng, nil
+		return &roles.Gareng, nil
 	case Petruk:
-		return &cfg.Roles.Petruk, nil
+		return &roles.Petruk, nil
 	case Bagong:
-		return &cfg.Roles.Bagong, nil
+		return &roles.Bagong, nil
 	}
 	return nil, fmt.Errorf("roleconfig: unknown role %q: %w", role, ErrUnknownRole)
 }

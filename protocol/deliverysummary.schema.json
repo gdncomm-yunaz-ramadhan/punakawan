@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/deliverysummary.schema.json",
+  "title": "DeliverySummary",
+  "description": "One delivery's compact panel-list row: enough to render, search, and sort every delivery without a per-card follow-up fetch. Carries no scheduler-internal concepts (lanes, blocked counts, pending questions, a lane-derived next action).",
+  "type": "object",
+  "required": ["id", "title", "status", "projects", "usage", "updated_at", "cancellable", "projection_revision"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "status": { "type": "string", "enum": ["pending", "active", "completed", "cancelled"] },
+    "source": {
+      "type": "object",
+      "description": "The delivery's originating Jira issue. Absent for an ad-hoc delivery with no single originating issue.",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "enum": ["jira", "adhoc"] },
+        "key": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "description": "The last locally observed Jira status - the target status of the most recent transition this delivery itself requested, never a live Jira read." }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "slug"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "slug": { "type": "string" }
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "description": "The delivery's own cross-project high-level plan link.",
+      "required": ["id", "revision", "objective"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "revision": { "type": "integer" },
+        "objective": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "required": ["summary", "reported_at"],
+      "additionalProperties": false,
+      "properties": {
+        "percent": { "type": "number" },
+        "summary": { "type": "string" },
+        "reported_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": ["status", "started_at"],
+      "additionalProperties": false,
+      "properties": {
+        "participant": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "status": { "type": "string" },
+        "started_at": { "type": "string", "format": "date-time" },
+        "stopped_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "required": ["input_tokens", "output_tokens", "cache_tokens", "tool_calls", "elapsed_ms", "estimated_costs", "pricing_complete"],
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": { "type": "integer" },
+        "output_tokens": { "type": "integer" },
+        "cache_tokens": { "type": "integer" },
+        "tool_calls": { "type": "integer" },
+        "elapsed_ms": { "type": "integer" },
+        "estimated_costs": {
+          "type": "object",
+          "description": "Currency to amount. More than one entry means the delivery's contributing sessions priced in more than one currency; empty when no contributing snapshot ever named a cost at all.",
+          "additionalProperties": { "type": "number" }
+        },
+        "pricing_complete": { "type": "boolean", "description": "False whenever any contributing usage was priced against an unknown model rate - the totals are then a partial, never a fabricated, sum." }
+      }
+    },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "cancellable": { "type": "boolean" },
+    "projection_revision": { "type": "integer", "description": "delivery_projection_versions' current revision for this delivery - the number a caller compares across list/detail calls, and passes back as since_revision to the watch endpoint." }
+  }
+}

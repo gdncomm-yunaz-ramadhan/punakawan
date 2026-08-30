@@ -83,6 +83,51 @@ type Config struct {
 	// tracking and a workspace may not want that just because it wants
 	// comments.
 	LogWork bool `yaml:"log_work"`
+
+	// Transitions maps a Jira project key (the prefix before the hyphen in
+	// every one of its issue keys, e.g. "PAY" for "PAY-123") to that
+	// project's start/complete transition policy. A project absent from
+	// this map has no configured policy: TransitionPolicyFor reports
+	// ok=false for it, and a caller keeps its own prior fallback behavior
+	// rather than attempting an unconfigured transition. Different Jira
+	// projects in the same workspace commonly use different workflow
+	// status names for functionally the same states, so this policy is
+	// necessarily per-project rather than one workspace-wide pair of names.
+	Transitions map[string]TransitionPolicy `yaml:"transitions"`
+}
+
+// TransitionPolicy names the Jira workflow status a project's issues
+// should be moved to when a delivery starts and when it completes. Either
+// field may be empty, meaning "attempt no transition for that instant" -
+// a workspace can configure just one of the two.
+type TransitionPolicy struct {
+	StartStatus    string `yaml:"start_status"`
+	CompleteStatus string `yaml:"complete_status"`
+}
+
+// TransitionPolicyFor returns the configured TransitionPolicy for
+// projectKey. ok is false when the project has no configured policy, in
+// which case the returned TransitionPolicy is the zero value and must not
+// be used to attempt a transition. Matching is exact and case-sensitive:
+// Jira project keys are conventionally all-uppercase and a workspace
+// config is expected to spell them exactly as Jira does.
+func (c *Config) TransitionPolicyFor(projectKey string) (TransitionPolicy, bool) {
+	if c.Transitions == nil {
+		return TransitionPolicy{}, false
+	}
+	policy, ok := c.Transitions[projectKey]
+	return policy, ok
+}
+
+// ProjectKeyFromIssueKey extracts the project key prefix from a Jira issue
+// key, e.g. "PAY-123" -> "PAY". Returns "" if issueKey does not look like a
+// standard PROJECT-123 key.
+func ProjectKeyFromIssueKey(issueKey string) string {
+	idx := strings.LastIndex(issueKey, "-")
+	if idx <= 0 {
+		return ""
+	}
+	return issueKey[:idx]
 }
 
 // ShouldComment reports whether eventName (a delivery event type name, e.g.

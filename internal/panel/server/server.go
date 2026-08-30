@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/artifact"
 	"github.com/ygrip/punakawan/internal/daemon"
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel"
 	"github.com/ygrip/punakawan/internal/panel/api"
@@ -20,6 +20,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/session"
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 )
 
@@ -59,8 +60,6 @@ type Server struct {
 	opts      Options
 	logger    *slog.Logger
 	startedAt time.Time
-
-	stopRuntimeSweep context.CancelFunc
 
 	sessions     *session.Manager
 	bootstrapURL string
@@ -160,18 +159,17 @@ func (s *Server) Start() error {
 		StartedAt:        s.startedAt,
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
-	mux.HandleFunc("GET /api/v1/system/settings", api.GetPanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime))
-	mux.HandleFunc("PATCH /api/v1/system/settings", session.RequireSession(s.sessions, api.UpdatePanelSettingsHandler(s.app.Workspace.Root, s.readers.Runtime)))
 
-	// Delivery orchestrations: served straight from the daemon's own
-	// delivery.Store over its authenticated loopback transport
-	// (internal/daemon/delivery.go), not through storage.Open/*app.App -
-	// s.readers.Delivery is nil when no daemon connection was available at
-	// startup, and every handler here degrades to 503 rather than panicking.
+	// Deliveries: served straight from the daemon's own delivery.Store and
+	// internal/deliveryprojection.Projector over its authenticated loopback
+	// transport (internal/daemon/delivery.go), not through
+	// storage.Open/*app.App - s.readers.Delivery is nil when no daemon
+	// connection was available at startup, and every handler here degrades
+	// to 503 rather than panicking.
 	mux.HandleFunc("GET /api/v1/deliveries", api.ListDeliveriesHandler(s.readers.Delivery))
-	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}", api.DeliveryViewHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}", api.DeliveryDetailHandler(s.readers.Delivery))
+	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}/watch", api.DeliveryWatchHandler(s.readers.Delivery))
 	mux.HandleFunc("GET /api/v1/deliveries/{orchestrationId}/evidence/{evidenceId}", api.DeliveryEvidenceHandler(s.readers.Delivery))
-	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/answer-question", session.RequireSession(s.sessions, api.AnswerDeliveryQuestionHandler(s.readers.Delivery)))
 	mux.HandleFunc("POST /api/v1/deliveries/{orchestrationId}/cancel", session.RequireSession(s.sessions, api.CancelDeliveryHandler(s.readers.Delivery)))
 
 	mux.HandleFunc("GET /api/v1/projects", api.ProjectsHandler(s.readers.Project))
@@ -186,13 +184,18 @@ func (s *Server) Start() error {
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/roles/{role}", session.RequireSession(s.sessions, api.RoleUpdateHandler(s.readers.Roles)))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/roles/{role}/reset", session.RequireSession(s.sessions, api.RoleResetHandler(s.readers.Roles)))
 
-	// Project-scoped plans (Phase 7), workflow definitions (Phase 6), and
-	// cached health (Phase 8). All resolve a {projectId} to its workspace
-	// root through the registry, falling back to the primary workspace so it
-	// stays reachable even before it is registered.
-	projectStores := artifact.NewProjectStores(s.resolveRoot)
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans", api.ListPlansHandler(projectStores))
-	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(projectStores))
+	// Project-scoped plans read the same shared SQLite kernel every delivery
+	// tool writes through - internal/plan's plan_revisions and
+	// internal/delivery's project registry/plan links - rather than a
+	// per-workspace filesystem store, so a plan a delivery links stays
+	// exact (its own revision, not whatever the lineage moved on to) no
+	// matter which project page renders it from.
+	planDeliveries, err := s.app.OpenStorage(context.Background())
+	if err != nil {
+		return fmt.Errorf("server: open storage kernel for project plans: %w", err)
+	}
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans", api.ListPlansHandler(delivery.NewStore(planDeliveries), plan.NewStore(planDeliveries)))
+	mux.HandleFunc("GET /api/v1/projects/{projectId}/plans/{planId}", api.PlanHandler(delivery.NewStore(planDeliveries), plan.NewStore(planDeliveries)))
 
 	// The capability set a workflow definition is validated against is derived
 	// from the MCP server's actual tool registration (agent-context plan §4.3),
@@ -272,52 +275,37 @@ func (s *Server) Start() error {
 		}
 	}()
 
-	// Periodically close project runtimes that have gone idle, so the pool does
-	// not hold Dolt/adapter processes open for workspaces no longer being
-	// browsed (Phase 3, §10.3). The primary and in-use runtimes are never
-	// closed by CloseIdle; Shutdown closes the rest.
-	if mgr := s.readers.Runtime; mgr != nil {
-		sweepCtx, cancelSweep := context.WithCancel(context.Background())
-		s.stopRuntimeSweep = cancelSweep
-		go func() {
-			t := time.NewTicker(2 * time.Minute)
-			defer t.Stop()
-			for {
-				select {
-				case <-sweepCtx.Done():
-					return
-				case <-t.C:
-					if err := mgr.CloseIdle(sweepCtx); err != nil {
-						s.logger.Warn("panel runtime idle sweep", "error", err)
-					}
-				}
-			}
-		}()
-	}
-
 	s.logger.Info("panel server started", "addr", listener.Addr().String())
 	return nil
 }
 
-// Shutdown gracefully stops the server, per §21's "graceful shutdown":
-// in-flight requests are given ctx's deadline to finish rather than being
-// dropped. Stopping never modifies canonical workspace state (§30) - this
-// server only reads from the stores behind its readers.
+// Shutdown gracefully stops the server in this order: stop accepting HTTP,
+// drain active HTTP requests, stop the runtime pool's idle timer, then close
+// its non-primary runtimes. (The primary App/storage this server was loaded
+// for is owned and closed by the caller, after Shutdown returns.) Stopping
+// never modifies canonical workspace state - this server only reads from the
+// stores behind its readers.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.sessions.InvalidateAll()
-	if s.stopRuntimeSweep != nil {
-		s.stopRuntimeSweep()
+
+	var shutdownErr error
+	if s.httpServer != nil {
+		s.logger.Info("panel server shutting down")
+		// http.Server.Shutdown stops accepting new connections immediately,
+		// then blocks until every in-flight request has completed or ctx's
+		// deadline expires - both halves of "stop accepting, then drain" in
+		// one call.
+		shutdownErr = s.httpServer.Shutdown(ctx)
 	}
+
 	if mgr := s.readers.Runtime; mgr != nil {
+		mgr.StopIdleTimer()
 		if err := mgr.Close(ctx); err != nil {
 			s.logger.Warn("panel runtime pool close", "error", err)
 		}
 	}
-	if s.httpServer == nil {
-		return nil
-	}
-	s.logger.Info("panel server shutting down")
-	return s.httpServer.Shutdown(ctx)
+
+	return shutdownErr
 }
 
 // loggingMiddleware writes one structured log line per request, per

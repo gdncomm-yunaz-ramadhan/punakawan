@@ -2,7 +2,6 @@ package roleconfig
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,232 +14,41 @@ import (
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-func modePtr(m protocol.RoleConfigMode) *protocol.RoleConfigMode { return &m }
-
-func TestEffectiveNilRestriction(t *testing.T) {
-	rc := protocol.RoleConfig{
-		Enabled:      true,
-		Style:        protocol.RoleConfigStyleBalanced,
-		Mode:         protocol.RoleConfigModeExecute,
-		Capabilities: map[string]bool{"a": true, "b": false},
-	}
-	eff := Effective(rc, nil)
-	if eff.Enabled != rc.Enabled || eff.Style != rc.Style || eff.Mode != rc.Mode {
-		t.Fatalf("effective scalars diverged: %+v vs %+v", eff, rc)
-	}
-	if len(eff.Capabilities) != len(rc.Capabilities) {
-		t.Fatalf("capabilities len = %d, want %d", len(eff.Capabilities), len(rc.Capabilities))
-	}
-	for k, v := range rc.Capabilities {
-		if eff.Capabilities[k] != v {
-			t.Errorf("capability %q = %v, want %v", k, eff.Capabilities[k], v)
+func TestPromptGuidanceEveryStyleIsConcreteAndDistinct(t *testing.T) {
+	seen := map[string]bool{}
+	for _, s := range []protocol.RolePreferenceStyle{
+		protocol.RolePreferenceStyleStrict,
+		protocol.RolePreferenceStyleBalanced,
+		protocol.RolePreferenceStyleCreative,
+	} {
+		block := PromptGuidance(Petruk, protocol.RolePreference{Style: s})
+		if !strings.Contains(block, "Role prompt preferences (petruk):") {
+			t.Errorf("style %q: missing header:\n%s", s, block)
 		}
-	}
-	// The effective map must be a copy, not an alias of rc's map.
-	eff.Capabilities["a"] = false
-	if !rc.Capabilities["a"] {
-		t.Errorf("mutating effective capabilities leaked into project config")
+		if seen[block] {
+			t.Errorf("style %q rendered guidance identical to a prior style", s)
+		}
+		seen[block] = true
 	}
 }
 
-func TestEffectiveModeOnlyReduces(t *testing.T) {
-	// propose ceiling clamps an execute project mode down to propose.
-	execRC := protocol.RoleConfig{Enabled: true, Mode: protocol.RoleConfigModeExecute, Capabilities: map[string]bool{}}
-	eff := Effective(execRC, &Restriction{Mode: modePtr(protocol.RoleConfigModePropose)})
-	if eff.Mode != protocol.RoleConfigModePropose {
-		t.Errorf("execute clamped by propose ceiling = %q, want propose", eff.Mode)
-	}
-
-	// execute ceiling does NOT raise a propose project mode.
-	propRC := protocol.RoleConfig{Enabled: true, Mode: protocol.RoleConfigModePropose, Capabilities: map[string]bool{}}
-	eff = Effective(propRC, &Restriction{Mode: modePtr(protocol.RoleConfigModeExecute)})
-	if eff.Mode != protocol.RoleConfigModePropose {
-		t.Errorf("propose raised by execute ceiling = %q, want propose (never raised)", eff.Mode)
+func TestPromptGuidanceOmitsEmptyInstructions(t *testing.T) {
+	block := PromptGuidance(Semar, protocol.RolePreference{Style: protocol.RolePreferenceStyleBalanced})
+	lines := strings.Split(strings.TrimSpace(block), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected header + one guidance line with no instructions line, got:\n%s", block)
 	}
 }
 
-func TestEffectiveCapabilitiesOnlyReduce(t *testing.T) {
-	rc := protocol.RoleConfig{
-		Enabled:      true,
-		Mode:         protocol.RoleConfigModeExecute,
-		Capabilities: map[string]bool{"on": true, "off": false},
-	}
-	// {cap:false} switches an on capability off.
-	eff := Effective(rc, &Restriction{Capabilities: map[string]bool{"on": false}})
-	if eff.Capabilities["on"] {
-		t.Errorf("restriction false did not switch 'on' off")
-	}
-	// {cap:true} does NOT enable a project-disabled capability.
-	eff = Effective(rc, &Restriction{Capabilities: map[string]bool{"off": true}})
-	if eff.Capabilities["off"] {
-		t.Errorf("restriction true wrongly enabled a project-disabled capability")
-	}
-}
-
-func TestAuthorizeFailsClosed(t *testing.T) {
-	base := EffectiveRoleConfig{
-		Enabled:      true,
-		Mode:         protocol.RoleConfigModeExecute,
-		Capabilities: map[string]bool{"cap": true},
-	}
-
-	// Disabled role -> denied.
-	disabled := base
-	disabled.Enabled = false
-	assertNotAuthorized(t, Authorize(disabled, "cap", protocol.RoleConfigModeExecute), "disabled role")
-
-	// Effective mode below needed -> denied.
-	lowMode := base
-	lowMode.Mode = protocol.RoleConfigModeAssist
-	assertNotAuthorized(t, Authorize(lowMode, "", protocol.RoleConfigModeExecute), "mode below needed")
-
-	// Disabled capability -> denied.
-	assertNotAuthorized(t, Authorize(base, "missing", protocol.RoleConfigModeExecute), "disabled capability")
-
-	// Happy path: enabled, mode >= needed, capability on -> nil.
-	if err := Authorize(base, "cap", protocol.RoleConfigModeExecute); err != nil {
-		t.Errorf("happy path Authorize = %v, want nil", err)
-	}
-	// Capability empty (not gated) is allowed when mode suffices.
-	if err := Authorize(base, "", protocol.RoleConfigModePropose); err != nil {
-		t.Errorf("ungated Authorize = %v, want nil", err)
-	}
-}
-
-func TestAuthorizeModeRankOrdering(t *testing.T) {
-	// needed=propose passes when eff=execute, fails when eff=assist.
-	execEff := EffectiveRoleConfig{Enabled: true, Mode: protocol.RoleConfigModeExecute, Capabilities: map[string]bool{}}
-	if err := Authorize(execEff, "", protocol.RoleConfigModePropose); err != nil {
-		t.Errorf("execute vs needed=propose = %v, want nil", err)
-	}
-	assistEff := EffectiveRoleConfig{Enabled: true, Mode: protocol.RoleConfigModeAssist, Capabilities: map[string]bool{}}
-	assertNotAuthorized(t, Authorize(assistEff, "", protocol.RoleConfigModePropose), "assist vs needed=propose")
-
-	// propose satisfies needed=propose (>= boundary), and assist satisfies assist.
-	propEff := EffectiveRoleConfig{Enabled: true, Mode: protocol.RoleConfigModePropose, Capabilities: map[string]bool{}}
-	if err := Authorize(propEff, "", protocol.RoleConfigModePropose); err != nil {
-		t.Errorf("propose vs needed=propose = %v, want nil", err)
-	}
-	if err := Authorize(assistEff, "", protocol.RoleConfigModeAssist); err != nil {
-		t.Errorf("assist vs needed=assist = %v, want nil", err)
-	}
-}
-
-// TestStyleDoesNotChangeAuthorization guards the guardrail that a role's tone
-// (Style) is presentation only: switching strict/balanced/creative must not
-// change what the role is permitted to do. Authorization depends on Enabled,
-// Mode, and the capability set — never on Style.
-func TestStyleDoesNotChangeAuthorization(t *testing.T) {
-	styles := []protocol.RoleConfigStyle{
-		protocol.RoleConfigStyleStrict,
-		protocol.RoleConfigStyleBalanced,
-		protocol.RoleConfigStyleCreative,
-	}
-	checks := []struct {
-		capability string
-		needed     protocol.RoleConfigMode
-	}{
-		{"modify_files", protocol.RoleConfigModeExecute},
-		{"modify_files", protocol.RoleConfigModePropose},
-		{"absent", protocol.RoleConfigModeExecute},
-		{"", protocol.RoleConfigModeAssist},
-	}
-
-	var baseline []bool
-	for i, style := range styles {
-		eff := EffectiveRoleConfig{
-			Enabled:      true,
-			Style:        style,
-			Mode:         protocol.RoleConfigModePropose,
-			Capabilities: map[string]bool{"modify_files": true},
-		}
-		var got []bool
-		for _, c := range checks {
-			got = append(got, Authorize(eff, c.capability, c.needed) == nil)
-		}
-		if i == 0 {
-			baseline = got
-			continue
-		}
-		for j := range got {
-			if got[j] != baseline[j] {
-				t.Errorf("style %q changed authorization for %+v: got %v, want %v (baseline strict)",
-					style, checks[j], got[j], baseline[j])
-			}
-		}
-	}
-}
-
-func TestPromptBlock(t *testing.T) {
-	eff := EffectiveRoleConfig{
-		Enabled: true,
-		Style:   protocol.RoleConfigStyleStrict,
-		Mode:    protocol.RoleConfigModePropose,
-		Capabilities: map[string]bool{
-			"zeta":  true,
-			"alpha": true,
-			"gamma": false,
-			"beta":  false,
-		},
-	}
-	block := PromptBlock(Gareng, eff, nil)
-
-	if !strings.Contains(block, "Role configuration (gareng):") {
-		t.Errorf("missing header:\n%s", block)
-	}
-	if !strings.Contains(block, "- Style: strict") {
-		t.Errorf("missing style:\n%s", block)
-	}
-	if !strings.Contains(block, "- Mode: propose") {
-		t.Errorf("missing mode:\n%s", block)
-	}
-	for _, cap := range []string{"alpha", "zeta", "beta", "gamma"} {
-		if !strings.Contains(block, "  - "+cap) {
-			t.Errorf("missing capability %q:\n%s", cap, block)
-		}
-	}
-	if !strings.Contains(block, "- Disabled:") {
-		t.Errorf("missing Disabled section:\n%s", block)
-	}
-	// Enabled capabilities are sorted: alpha before zeta.
-	if strings.Index(block, "- alpha") > strings.Index(block, "- zeta") {
-		t.Errorf("enabled capabilities not sorted:\n%s", block)
-	}
-	// Disabled capabilities are sorted: beta before gamma.
-	if strings.Index(block, "- beta") > strings.Index(block, "- gamma") {
-		t.Errorf("disabled capabilities not sorted:\n%s", block)
-	}
-	// Enabled section precedes Disabled section.
-	if strings.Index(block, "- Enabled:") > strings.Index(block, "- Disabled:") {
-		t.Errorf("Enabled must precede Disabled:\n%s", block)
-	}
-
-	// One-line mode reminder per mode.
-	reminders := map[protocol.RoleConfigMode]string{
-		protocol.RoleConfigModeAssist:  "You may read and analyze only; you may not make durable changes.",
-		protocol.RoleConfigModePropose: "You may propose durable changes but may not execute them.",
-		protocol.RoleConfigModeExecute: "You may execute enabled actions, under project policy and human approval.",
-	}
-	for mode, want := range reminders {
-		e := eff
-		e.Mode = mode
-		b := PromptBlock(Gareng, e, nil)
-		if !strings.Contains(b, want) {
-			t.Errorf("mode %q reminder missing %q:\n%s", mode, want, b)
-		}
-	}
-}
-
-func TestPromptBlockNoDisabledSection(t *testing.T) {
-	eff := EffectiveRoleConfig{
-		Enabled:      true,
-		Style:        protocol.RoleConfigStyleBalanced,
-		Mode:         protocol.RoleConfigModeExecute,
-		Capabilities: map[string]bool{"only": true},
-	}
-	block := PromptBlock(Semar, eff, nil)
-	if strings.Contains(block, "- Disabled:") {
-		t.Errorf("unexpected Disabled section when nothing is disabled:\n%s", block)
+func TestPromptGuidanceAppendsInstructionsAfterStyle(t *testing.T) {
+	block := PromptGuidance(Bagong, protocol.RolePreference{
+		Style:        protocol.RolePreferenceStyleCreative,
+		Instructions: "Flag any missing test coverage explicitly.",
+	})
+	styleIdx := strings.Index(block, "Explore multiple viable approaches")
+	instrIdx := strings.Index(block, "Flag any missing test coverage explicitly.")
+	if styleIdx < 0 || instrIdx < 0 || instrIdx < styleIdx {
+		t.Errorf("expected fixed style guidance before free-text instructions:\n%s", block)
 	}
 }
 
@@ -282,15 +90,15 @@ func TestPromptBlockLearnedFactsGatedByAcceptance(t *testing.T) {
 		t.Fatalf("append pending: %v", err)
 	}
 
-	eff := EffectiveRoleConfig{Enabled: true, Style: protocol.RoleConfigStyleBalanced, Mode: protocol.RoleConfigModePropose}
+	pref := protocol.RolePreference{Style: protocol.RolePreferenceStyleBalanced}
 
 	proposals, err := store.List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	block := PromptBlock(Petruk, eff, proposals)
+	block := PromptBlock(Petruk, pref, proposals)
 	if strings.Contains(block, "Learned project facts:") || strings.Contains(block, pending.Rationale) {
-		t.Fatalf("pending proposal must stay inactive until approved (AC4), got:\n%s", block)
+		t.Fatalf("pending proposal must stay inactive until approved, got:\n%s", block)
 	}
 
 	// Transition to accepted at the Store level - the real (if currently
@@ -309,7 +117,7 @@ func TestPromptBlockLearnedFactsGatedByAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	block = PromptBlock(Petruk, eff, proposals)
+	block = PromptBlock(Petruk, pref, proposals)
 	if !strings.Contains(block, "Learned project facts:") {
 		t.Fatalf("accepted proposal missing heading, got:\n%s", block)
 	}
@@ -365,16 +173,16 @@ func demo() int {
 		t.Fatalf("newly detected convention proposal ArtifactType = %q, want %q", proposal.ArtifactType, learning.TypeConvention)
 	}
 
-	eff := EffectiveRoleConfig{Enabled: true, Style: protocol.RoleConfigStyleBalanced, Mode: protocol.RoleConfigModePropose}
+	pref := protocol.RolePreference{Style: protocol.RolePreferenceStyleBalanced}
 
 	proposals, err := store.List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	for _, role := range []Role{Petruk, Bagong} {
-		block := PromptBlock(role, eff, proposals)
+		block := PromptBlock(role, pref, proposals)
 		if strings.Contains(block, "Learned project facts:") || strings.Contains(block, proposal.Rationale) {
-			t.Fatalf("%s: pending inferred convention must stay inactive until approved (AC4), got:\n%s", role, block)
+			t.Fatalf("%s: pending inferred convention must stay inactive until approved, got:\n%s", role, block)
 		}
 	}
 
@@ -393,7 +201,7 @@ func demo() int {
 		t.Fatalf("List: %v", err)
 	}
 	for _, role := range []Role{Petruk, Bagong} {
-		block := PromptBlock(role, eff, proposals)
+		block := PromptBlock(role, pref, proposals)
 		if !strings.Contains(block, "Learned project facts:") {
 			t.Fatalf("%s: accepted convention missing heading, got:\n%s", role, block)
 		}
@@ -403,44 +211,27 @@ func demo() int {
 	}
 }
 
-func TestResolverEffectiveEndToEnd(t *testing.T) {
-	fixed := Defaults() // Semar defaults to execute mode.
+func TestResolverGet(t *testing.T) {
+	fixed := Defaults()
+	strict := protocol.RolePreferenceStyleStrict
+	fixed.Roles.Semar.Style = strict
+
 	r := Resolver{
-		Load: func(projectID string) (*protocol.RoleConfiguration, error) {
+		Load: func(projectID string) (*protocol.RolePreferences, error) {
 			c := fixed
 			return &c, nil
 		},
-		Restrictions: func(projectID, workflowID string, role Role) (*Restriction, error) {
-			return &Restriction{Mode: modePtr(protocol.RoleConfigModePropose)}, nil
-		},
 	}
 
-	eff, err := r.Effective("proj", "wf-1", Semar)
+	pref, err := r.Get("proj", Semar)
 	if err != nil {
-		t.Fatalf("Effective: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
-	if eff.Mode != protocol.RoleConfigModePropose {
-		t.Errorf("resolver effective mode = %q, want propose (clamped from execute)", eff.Mode)
+	if pref.Style != strict {
+		t.Errorf("resolved style = %q, want strict", pref.Style)
 	}
 
-	// Empty workflowID -> no restriction applied, project mode preserved.
-	eff, err = r.Effective("proj", "", Semar)
-	if err != nil {
-		t.Fatalf("Effective no workflow: %v", err)
-	}
-	if eff.Mode != protocol.RoleConfigModeExecute {
-		t.Errorf("resolver effective mode without workflow = %q, want execute", eff.Mode)
-	}
-}
-
-func assertNotAuthorized(t *testing.T, err error, ctx string) {
-	t.Helper()
-	if err == nil {
-		t.Errorf("%s: Authorize = nil, want ErrNotAuthorized", ctx)
-		return
-	}
-	var nae ErrNotAuthorized
-	if !errors.As(err, &nae) {
-		t.Errorf("%s: err = %v, want ErrNotAuthorized", ctx, err)
+	if _, err := r.Get("proj", Role("togog")); err == nil {
+		t.Errorf("Get(unknown role) = nil error, want ErrUnknownRole")
 	}
 }

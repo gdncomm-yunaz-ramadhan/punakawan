@@ -22,7 +22,6 @@ export interface EvidenceRecord {
     | "git-diff"
     | "commit"
     | "user-answer"
-    | "approval-record"
     | "external-response"
     | "review-finding";
   path?: string;

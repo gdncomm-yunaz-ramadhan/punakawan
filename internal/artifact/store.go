@@ -1,10 +1,15 @@
 package artifact
 
 import (
+	"errors"
 	"time"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
+
+// ErrVersionNotFound is returned by a Store's Version when the requested
+// version number does not exist anywhere in id's lineage.
+var ErrVersionNotFound = errors.New("artifact: version not found")
 
 // Store is §4's per-artifact-type contract every panel review/proposal
 // handler actually needs: "version reader" (Current/Version) and
@@ -16,11 +21,10 @@ import (
 // likewise handled generically by internal/validation plus each type's own
 // content shape, not by a method here.
 //
-// *PlanStore already satisfies this interface without modification.
 // internal/recipe's RecipeStore adapter (kept in that package, not here,
-// so internal/artifact never needs to import internal/recipe) satisfies it
-// too, letting internal/panel/api's handlers accept whichever store
-// matches the artifact type in the request path instead of being
+// so internal/artifact never needs to import internal/recipe) satisfies
+// this interface, letting internal/panel/api's handlers accept whichever
+// store matches the artifact type in the request path instead of being
 // compiled against one concrete type.
 type Store interface {
 	// Current returns id's current (latest) version reference.
@@ -37,5 +41,3 @@ type Store interface {
 	// can't just be each method's own internal locking.
 	LockArtifact(id string) func()
 }
-
-var _ Store = (*PlanStore)(nil)

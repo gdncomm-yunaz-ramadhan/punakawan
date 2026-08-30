@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/daemon"
-	"github.com/ygrip/punakawan/internal/delivery"
+	"github.com/ygrip/punakawan/internal/deliveryprojection"
 	"github.com/ygrip/punakawan/internal/dossier"
 	"github.com/ygrip/punakawan/internal/impact"
 	"github.com/ygrip/punakawan/internal/knowledge"
@@ -187,17 +187,6 @@ type EvidencePreview struct {
 	DiffSummary *DiffSummary
 }
 
-// ApprovalFilter narrows ApprovalReader.List.
-type ApprovalFilter struct {
-	Status string
-}
-
-// ApprovalReader lists approval records, per §8.5. The panel's MVP is
-// read-only: no Approve/Resolve method exists here on purpose.
-type ApprovalReader interface {
-	List(ctx context.Context, workspaceID string, filter ApprovalFilter) ([]protocol.ApprovalRecord, error)
-}
-
 // GlobalSearchResult pairs one workspace's search.Result with the
 // workspace it came from and its fused rank score, per §10.1's global
 // search: every registered workspace is queried through the same
@@ -270,37 +259,25 @@ type ProjectReader interface {
 	DeleteMetadata(ctx context.Context, projectID, key string, baseRevision int) (*project.Project, error)
 }
 
-// RoleCapabilityInfo is one role's owned-capability catalog: the fixed set of
-// capability keys that role may carry (internal/roleconfig.OwnedCapabilities),
-// in Panel/prompt order. GetRoles returns one per role so the Panel knows which
-// toggles to render for each role without hard-coding the catalog client-side.
-type RoleCapabilityInfo struct {
-	Role         string   `json:"role"`
-	Capabilities []string `json:"capabilities"`
-}
-
-// RolesReader reads and mutates a project's four-role configuration, per the
-// role-config distinguished-improvements plan Part I. It mirrors the metadata
-// mutations on ProjectReader: reads (GetRoles) never mutate; UpdateRole/ResetRole
-// each load the config fresh, apply an optimistically-locked change through
-// internal/roleconfig, and persist a new immutable revision, returning the
-// updated configuration so the handler can render the changed roles and new
-// revision.
+// RolesReader reads and mutates a project's four-role prompt preferences. It
+// mirrors the metadata mutations on ProjectReader: reads (GetRoles) never
+// mutate; UpdateRole/ResetRole each load the preferences fresh, apply an
+// optimistically-locked change through internal/roleconfig, and persist a new
+// immutable revision, returning the updated preferences so the handler can
+// render the changed roles and new revision.
 //
 // The contract depends on internal/roleconfig directly (no import cycle:
 // roleconfig imports only pkg/protocol, not this package), so the patch shape
 // is roleconfig.Patch verbatim rather than a translated local copy. Errors
 // returned wrap roleconfig's exported error vars (ErrRevisionConflict,
-// ErrUnknownRole, ErrInvalidStyle, ErrInvalidMode, ErrUnownedCapability) and
+// ErrUnknownRole, ErrInvalidStyle, ErrInstructionsTooLong) and
 // ErrWorkspaceUnavailable for an unknown project id, all matchable with
 // errors.Is.
 type RolesReader interface {
-	// GetRoles returns the current configuration, the owned-capability catalog
-	// for all four roles, and an error. The catalog is static per role but is
-	// returned alongside the config so the Panel renders in one round-trip.
-	GetRoles(ctx context.Context, projectID string) (*protocol.RoleConfiguration, []RoleCapabilityInfo, error)
-	UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RoleConfiguration, error)
-	ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RoleConfiguration, error)
+	// GetRoles returns the current prompt preferences and an error.
+	GetRoles(ctx context.Context, projectID string) (*protocol.RolePreferences, error)
+	UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RolePreferences, error)
+	ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RolePreferences, error)
 }
 
 // ContradictionReader reads and mutates a project's Contradiction Ledger, per
@@ -354,28 +331,28 @@ type DossierReader interface {
 	ExportDossierJSON(ctx context.Context, projectID, id string) ([]byte, error)
 }
 
-// DeliveryReader reads and mutates delivery orchestrations by proxying to
-// the daemon's own delivery.Store (internal/daemon/delivery.go) over its
-// authenticated loopback transport - the daemon, not this panel instance,
-// is the only process allowed to open delivery.Store's storage directly
-// (see internal/daemon.Daemon's own doc comment). The three mutators and
-// GetDeliveryView/WatchDeliveryView mirror daemon.Client's own methods
-// exactly; this interface exists only so HTTP handlers and the events
-// watcher depend on a narrow contract instead of the concrete *daemon.Client,
-// matching every other reader in this package.
+// DeliveryReader reads and mutates deliveries by proxying to the daemon's
+// own delivery.Store and internal/deliveryprojection.Projector
+// (internal/daemon/delivery.go) over its authenticated loopback transport -
+// the daemon, not this panel instance, is the only process allowed to open
+// delivery.Store's storage directly (see internal/daemon.Daemon's own doc
+// comment). ListDeliveries/GetDeliveryDetail/WatchDeliveryDetail/
+// CancelDelivery mirror daemon.Client's own methods exactly; this
+// interface exists only so HTTP handlers and the events watcher depend on
+// a narrow contract instead of the concrete *daemon.Client, matching every
+// other reader in this package.
 type DeliveryReader interface {
-	ListDeliveries(ctx context.Context) ([]*protocol.DeliveryOrchestration, error)
-	// GetDeliveryView returns orchestrationID's current view immediately.
-	// sinceSeq mirrors delivery.BuildDeliveryViewSince: pass a prior
-	// response's LatestSeq to populate NewlyRunnableLaneIDs.
-	GetDeliveryView(ctx context.Context, orchestrationID string, sinceSeq int) (*delivery.DeliveryView, error)
-	// WatchDeliveryView is GetDeliveryView, except the daemon blocks
-	// server-side for up to waitSeconds waiting for LatestSeq to advance
-	// past sinceSeq - the events package's DeliveryWatcher is this
-	// method's only caller, long-polling it in a loop per orchestration.
-	WatchDeliveryView(ctx context.Context, orchestrationID string, sinceSeq, waitSeconds int) (*delivery.DeliveryView, error)
-	AnswerDeliveryQuestion(ctx context.Context, orchestrationID string, in daemon.AnswerDeliveryQuestionRequest) (*delivery.DeliveryView, error)
-	CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*delivery.DeliveryView, error)
+	ListDeliveries(ctx context.Context) (daemon.ListDeliveriesResult, error)
+	// GetDeliveryDetail returns orchestrationID's current DeliveryDetail
+	// immediately.
+	GetDeliveryDetail(ctx context.Context, orchestrationID string) (*deliveryprojection.DeliveryDetail, error)
+	// WatchDeliveryDetail is GetDeliveryDetail, except the daemon blocks
+	// server-side for up to waitSeconds waiting for ProjectionRevision to
+	// advance past sinceRevision - the events package's DeliveryWatcher is
+	// this method's only caller, long-polling it in a loop per
+	// orchestration.
+	WatchDeliveryDetail(ctx context.Context, orchestrationID string, sinceRevision, waitSeconds int) (*deliveryprojection.DeliveryDetail, error)
+	CancelDelivery(ctx context.Context, orchestrationID string, in daemon.CancelDeliveryRequest) (*deliveryprojection.DeliveryDetail, error)
 	// GetDeliveryEvidence fetches one lane-scoped evidence artifact's raw
 	// bytes and media type by id, scoped to orchestrationID.
 	GetDeliveryEvidence(ctx context.Context, orchestrationID, evidenceID string) ([]byte, string, error)

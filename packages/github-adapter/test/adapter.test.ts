@@ -3,7 +3,21 @@ import assert from 'node:assert/strict';
 import { createHandlers } from '../src/adapter.js';
 import { manifest } from '../src/manifest.js';
 import { AdapterManifestSchema } from '@punakawan/schema-types';
-import { createFakeGitHubRest, FIXTURE_PR_NUMBER, FIXTURE_REPO, INACCESSIBLE_REPO, type FakeGitHubRest } from './fakeGitHubRest.js';
+import {
+  createFakeGitHubRest,
+  FIXTURE_FRESH_HEAD_SHA,
+  FIXTURE_MANY_CHECK_RUNS,
+  FIXTURE_MANY_FILES,
+  FIXTURE_MANY_ISSUE_COMMENTS,
+  FIXTURE_MANY_REVIEW_COMMENTS,
+  FIXTURE_MANY_REVIEW_THREADS,
+  FIXTURE_PR_NUMBER,
+  FIXTURE_PULL_REQUEST,
+  FIXTURE_REPO,
+  FIXTURE_STALE_HEAD_SHA,
+  INACCESSIBLE_REPO,
+  type FakeGitHubRest,
+} from './fakeGitHubRest.js';
 
 function fakeHandlers(): { handlers: ReturnType<typeof createHandlers>; rest: FakeGitHubRest } {
   const rest = createFakeGitHubRest();
@@ -16,18 +30,29 @@ describe('manifest', () => {
     assert.doesNotThrow(() => AdapterManifestSchema.parse(manifest));
   });
 
-  test('declares every write operation as approval-required', () => {
+  test('declares every write operation as side-effecting with no approval member', () => {
     const writeOps = ['github.createPullRequest', 'github.addLabels', 'github.requestReviewers', 'github.createPullRequestReview', 'github.replyToReviewComment', 'github.resolveReviewThread'];
     for (const op of writeOps) {
       assert.equal(manifest.operations[op]?.side_effect, true, `${op} should be side_effect: true`);
-      assert.equal(manifest.operations[op]?.approval, 'required', `${op} should require approval`);
+      assert.equal('approval' in (manifest.operations[op] ?? {}), false, `${op} should not declare an approval member`);
     }
   });
 
   test('declares every read operation as side-effect free', () => {
-    const readOps = ['github.getRepository', 'github.getPullRequest', 'github.getPullRequestFiles', 'github.getPullRequestChecks', 'github.listPullRequestComments', 'github.listUnresolvedReviewThreads'];
+    const readOps = [
+      'github.getRepository', 'github.getPullRequest', 'github.getPullRequestFiles', 'github.getPullRequestChecks',
+      'github.getCommitStatus', 'github.listPullRequestComments', 'github.listUnresolvedReviewThreads',
+      'github.listPullRequestReviews', 'github.findPullRequest', 'github.getReviewThread',
+    ];
     for (const op of readOps) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
+    }
+  });
+
+  test('every operation declares a non-empty description and an object input_schema', () => {
+    for (const [op, metadata] of Object.entries(manifest.operations)) {
+      assert.ok(typeof metadata.description === 'string' && metadata.description.length > 0, `${op} should declare a description`);
+      assert.equal(metadata.input_schema.type, 'object', `${op} should declare an object input_schema`);
     }
   });
 });
@@ -72,6 +97,17 @@ describe('createHandlers().execute', () => {
     assert.equal(result.normalized[0]?.path, 'src/refund.ts');
   });
 
+  test('github.getPullRequestFiles returns all 250 files across pages, with complete=true', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!(
+      { op: 'github.getPullRequestFiles', repository: FIXTURE_REPO, pullRequestNumber: FIXTURE_PR_NUMBER + 1 },
+      new AbortController().signal,
+    )) as { normalized: { path: string }[]; page: { returned: number; complete: boolean; pages: number } };
+    assert.equal(result.normalized.length, FIXTURE_MANY_FILES.length);
+    assert.equal(result.page.complete, true);
+    assert.ok(result.page.pages >= 3, `expected at least 3 pages, got ${result.page.pages}`);
+  });
+
   test('github.getPullRequestChecks normalizes check runs', async () => {
     const { handlers } = fakeHandlers();
     const result = (await handlers.execute!({ op: 'github.getPullRequestChecks', repository: FIXTURE_REPO, ref: 'abc123' }, new AbortController().signal)) as {
@@ -79,6 +115,27 @@ describe('createHandlers().execute', () => {
     };
     assert.equal(result.normalized.length, 2);
     assert.equal(result.normalized[1]?.conclusion, 'failure');
+  });
+
+  test('github.getPullRequestChecks returns all 180 check runs across pages, with complete=true', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!(
+      { op: 'github.getPullRequestChecks', repository: FIXTURE_REPO, ref: 'many-checks-sha' },
+      new AbortController().signal,
+    )) as { normalized: { name: string }[]; page: { returned: number; complete: boolean; pages: number } };
+    assert.equal(result.normalized.length, FIXTURE_MANY_CHECK_RUNS.length);
+    assert.equal(result.page.complete, true);
+    assert.ok(result.page.pages >= 2, `expected at least 2 pages, got ${result.page.pages}`);
+  });
+
+  test('github.getCommitStatus normalizes the combined legacy status', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!({ op: 'github.getCommitStatus', repository: FIXTURE_REPO, ref: 'abc123' }, new AbortController().signal)) as {
+      normalized: { state: string; statuses: { context: string; state: string }[] };
+    };
+    assert.equal(result.normalized.state, 'success');
+    assert.equal(result.normalized.statuses.length, 1);
+    assert.equal(result.normalized.statuses[0]?.context, 'ci/legacy-build');
   });
 
   test('github.listPullRequestComments merges review and issue comments', async () => {
@@ -91,6 +148,16 @@ describe('createHandlers().execute', () => {
     assert.equal(result.normalized[1]?.kind, 'issue');
   });
 
+  test('github.listPullRequestComments returns all 130 comments across pages, with complete=true', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!(
+      { op: 'github.listPullRequestComments', repository: FIXTURE_REPO, pullRequestNumber: FIXTURE_PR_NUMBER + 1 },
+      new AbortController().signal,
+    )) as { normalized: { kind: string }[]; page: { returned: number; complete: boolean } };
+    assert.equal(result.normalized.length, FIXTURE_MANY_REVIEW_COMMENTS.length + FIXTURE_MANY_ISSUE_COMMENTS.length);
+    assert.equal(result.page.complete, true);
+  });
+
   test('github.listUnresolvedReviewThreads filters out resolved threads', async () => {
     const { handlers } = fakeHandlers();
     const result = (await handlers.execute!({ op: 'github.listUnresolvedReviewThreads', repository: FIXTURE_REPO, pullRequestNumber: FIXTURE_PR_NUMBER }, new AbortController().signal)) as {
@@ -101,6 +168,52 @@ describe('createHandlers().execute', () => {
     assert.equal(result.normalized[0]?.comments[0]?.body, 'This rounds down, should round to nearest cent.');
   });
 
+  test('github.listUnresolvedReviewThreads walks all 140 threads across pages and reports complete=true', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!(
+      { op: 'github.listUnresolvedReviewThreads', repository: FIXTURE_REPO, pullRequestNumber: FIXTURE_PR_NUMBER + 2 },
+      new AbortController().signal,
+    )) as { normalized: { id: string }[]; page: { complete: boolean; pages: number } };
+    const expectedUnresolved = FIXTURE_MANY_REVIEW_THREADS.filter((t) => !t.isResolved).length;
+    assert.equal(result.normalized.length, expectedUnresolved);
+    assert.equal(result.page.complete, true);
+    assert.ok(result.page.pages >= 2, `expected at least 2 GraphQL pages, got ${result.page.pages}`);
+  });
+
+  test('github.listPullRequestReviews lists submitted reviews', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!(
+      { op: 'github.listPullRequestReviews', repository: FIXTURE_REPO, pullRequestNumber: FIXTURE_PR_NUMBER },
+      new AbortController().signal,
+    )) as { normalized: { commitId: string | undefined; state: string }[] };
+    assert.ok(result.normalized.length >= 1);
+    assert.equal(result.normalized[0]?.commitId, FIXTURE_STALE_HEAD_SHA);
+  });
+
+  test('github.findPullRequest finds an exact head/base match among open pull requests', async () => {
+    const { handlers } = fakeHandlers();
+    const found = (await handlers.execute!(
+      { op: 'github.findPullRequest', repository: FIXTURE_REPO, headBranch: FIXTURE_PULL_REQUEST.head.ref, baseBranch: FIXTURE_PULL_REQUEST.base.ref },
+      new AbortController().signal,
+    )) as { normalized: { number: number } | undefined };
+    assert.equal(found.normalized?.number, FIXTURE_PR_NUMBER);
+
+    const notFound = (await handlers.execute!(
+      { op: 'github.findPullRequest', repository: FIXTURE_REPO, headBranch: 'no-such-branch', baseBranch: 'main' },
+      new AbortController().signal,
+    )) as { normalized: { number: number } | undefined };
+    assert.equal(notFound.normalized, undefined);
+  });
+
+  test('github.getReviewThread reports current resolution state by node id', async () => {
+    const { handlers } = fakeHandlers();
+    const result = (await handlers.execute!({ op: 'github.getReviewThread', threadId: 'thread-unresolved-1' }, new AbortController().signal)) as {
+      normalized: { id: string; isResolved: boolean } | undefined;
+    };
+    assert.equal(result.normalized?.id, 'thread-unresolved-1');
+    assert.equal(result.normalized?.isResolved, false);
+  });
+
   test('github.createPullRequest posts to the pulls endpoint', async () => {
     const { handlers, rest } = fakeHandlers();
     const result = (await handlers.execute!(
@@ -109,6 +222,21 @@ describe('createHandlers().execute', () => {
     )) as { normalized: { number: number; title: string } };
     assert.equal(result.normalized.title, 'Fix it');
     assert.equal(rest.createdPullRequests[0]?.head, 'punakawan/fix');
+  });
+
+  test('an already-aborted signal rejects github.createPullRequest before the fake remote effect completes', async () => {
+    const { handlers, rest } = fakeHandlers();
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(
+      () => handlers.execute!(
+        { op: 'github.createPullRequest', repository: FIXTURE_REPO, baseBranch: 'main', headBranch: 'punakawan/fix', title: 'Fix it', body: 'Body text' },
+        controller.signal,
+      ),
+      (err: unknown) => err instanceof Error && err.name === 'AbortError',
+    );
+    assert.equal(rest.createdPullRequests.length, 0);
   });
 
   test('github.createPullRequestReview posts its verdict and inline comments', async () => {

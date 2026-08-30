@@ -6,11 +6,15 @@ import {
   addLabels,
   createPullRequestReview,
   createPullRequest,
+  findPullRequest,
+  getCommitStatus,
   getPullRequest,
   getPullRequestChecks,
   getPullRequestFiles,
   getRepository,
+  getReviewThread,
   listPullRequestComments,
+  listPullRequestReviews,
   listUnresolvedReviewThreads,
   replyToReviewComment,
   requestReviewers,
@@ -46,47 +50,52 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
       return AdapterManifestSchema.parse(manifest);
     },
 
-    async execute(params) {
+    async execute(params, signal) {
       const { op, ...rest } = params as { op: string } & Record<string, unknown>;
 
       switch (op) {
         case 'github.getRepository': {
           const { repository } = rest as { repository: string };
           if (!repository) throw new Error('github.getRepository requires "repository"');
-          return getRepository(getClient(), { repository });
+          return getRepository(getClient(), { repository }, signal);
         }
         case 'github.getPullRequest': {
           const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };
           if (!repository || pullRequestNumber === undefined) {
             throw new Error('github.getPullRequest requires "repository" and "pullRequestNumber"');
           }
-          return getPullRequest(getClient(), { repository, pullRequestNumber });
+          return getPullRequest(getClient(), { repository, pullRequestNumber }, signal);
         }
         case 'github.getPullRequestFiles': {
           const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };
           if (!repository || pullRequestNumber === undefined) {
             throw new Error('github.getPullRequestFiles requires "repository" and "pullRequestNumber"');
           }
-          return getPullRequestFiles(getClient(), { repository, pullRequestNumber });
+          return getPullRequestFiles(getClient(), { repository, pullRequestNumber }, signal);
         }
         case 'github.getPullRequestChecks': {
           const { repository, ref } = rest as { repository: string; ref: string };
           if (!repository || !ref) throw new Error('github.getPullRequestChecks requires "repository" and "ref"');
-          return getPullRequestChecks(getClient(), { repository, ref });
+          return getPullRequestChecks(getClient(), { repository, ref }, signal);
+        }
+        case 'github.getCommitStatus': {
+          const { repository, ref } = rest as { repository: string; ref: string };
+          if (!repository || !ref) throw new Error('github.getCommitStatus requires "repository" and "ref"');
+          return getCommitStatus(getClient(), { repository, ref }, signal);
         }
         case 'github.listPullRequestComments': {
           const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };
           if (!repository || pullRequestNumber === undefined) {
             throw new Error('github.listPullRequestComments requires "repository" and "pullRequestNumber"');
           }
-          return listPullRequestComments(getClient(), { repository, pullRequestNumber });
+          return listPullRequestComments(getClient(), { repository, pullRequestNumber }, signal);
         }
         case 'github.listUnresolvedReviewThreads': {
           const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };
           if (!repository || pullRequestNumber === undefined) {
             throw new Error('github.listUnresolvedReviewThreads requires "repository" and "pullRequestNumber"');
           }
-          return listUnresolvedReviewThreads(getClient(), { repository, pullRequestNumber });
+          return listUnresolvedReviewThreads(getClient(), { repository, pullRequestNumber }, signal);
         }
         case 'github.createPullRequest': {
           const { repository, baseBranch, headBranch, title, body, draft } = rest as {
@@ -95,21 +104,28 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
           if (!repository || !baseBranch || !headBranch || !title) {
             throw new Error('github.createPullRequest requires "repository", "baseBranch", "headBranch", and "title"');
           }
-          return createPullRequest(getClient(), { repository, baseBranch, headBranch, title, body: body ?? '', draft });
+          return createPullRequest(getClient(), { repository, baseBranch, headBranch, title, body: body ?? '', draft }, signal);
+        }
+        case 'github.findPullRequest': {
+          const { repository, headBranch, baseBranch } = rest as { repository: string; headBranch: string; baseBranch: string };
+          if (!repository || !headBranch || !baseBranch) {
+            throw new Error('github.findPullRequest requires "repository", "headBranch", and "baseBranch"');
+          }
+          return findPullRequest(getClient(), { repository, headBranch, baseBranch }, signal);
         }
         case 'github.addLabels': {
           const { repository, pullRequestNumber, labels } = rest as { repository: string; pullRequestNumber: number; labels: string[] };
           if (!repository || pullRequestNumber === undefined || !labels) {
             throw new Error('github.addLabels requires "repository", "pullRequestNumber", and "labels"');
           }
-          return addLabels(getClient(), { repository, pullRequestNumber, labels });
+          return addLabels(getClient(), { repository, pullRequestNumber, labels }, signal);
         }
         case 'github.requestReviewers': {
           const { repository, pullRequestNumber, reviewers } = rest as { repository: string; pullRequestNumber: number; reviewers: string[] };
           if (!repository || pullRequestNumber === undefined || !reviewers) {
             throw new Error('github.requestReviewers requires "repository", "pullRequestNumber", and "reviewers"');
           }
-          return requestReviewers(getClient(), { repository, pullRequestNumber, reviewers });
+          return requestReviewers(getClient(), { repository, pullRequestNumber, reviewers }, signal);
         }
         case 'github.createPullRequestReview': {
           const { repository, pullRequestNumber, body, event, commitId, comments } = rest as {
@@ -122,7 +138,14 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
           if (!['APPROVE', 'REQUEST_CHANGES', 'COMMENT'].includes(event)) {
             throw new Error('github.createPullRequestReview event must be APPROVE, REQUEST_CHANGES, or COMMENT');
           }
-          return createPullRequestReview(getClient(), { repository, pullRequestNumber, body, event, commitId, comments });
+          return createPullRequestReview(getClient(), { repository, pullRequestNumber, body, event, commitId, comments }, signal);
+        }
+        case 'github.listPullRequestReviews': {
+          const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };
+          if (!repository || pullRequestNumber === undefined) {
+            throw new Error('github.listPullRequestReviews requires "repository" and "pullRequestNumber"');
+          }
+          return listPullRequestReviews(getClient(), { repository, pullRequestNumber }, signal);
         }
         case 'github.replyToReviewComment': {
           const { repository, pullRequestNumber, commentId, body } = rest as {
@@ -131,12 +154,17 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
           if (!repository || pullRequestNumber === undefined || !commentId || !body) {
             throw new Error('github.replyToReviewComment requires "repository", "pullRequestNumber", "commentId", and "body"');
           }
-          return replyToReviewComment(getClient(), { repository, pullRequestNumber, commentId, body });
+          return replyToReviewComment(getClient(), { repository, pullRequestNumber, commentId, body }, signal);
         }
         case 'github.resolveReviewThread': {
           const { threadId } = rest as { threadId: string };
           if (!threadId) throw new Error('github.resolveReviewThread requires "threadId"');
-          return resolveReviewThread(getClient(), { threadId });
+          return resolveReviewThread(getClient(), { threadId }, signal);
+        }
+        case 'github.getReviewThread': {
+          const { threadId } = rest as { threadId: string };
+          if (!threadId) throw new Error('github.getReviewThread requires "threadId"');
+          return getReviewThread(getClient(), { threadId }, signal);
         }
         default:
           throw new Error(`Unsupported op: ${op}`);

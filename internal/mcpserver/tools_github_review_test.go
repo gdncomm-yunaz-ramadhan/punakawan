@@ -12,7 +12,20 @@ import (
 
 const fakeGitHubReviewAdapterEnv = "PUNAKAWAN_TEST_GITHUB_REVIEW_ADAPTER"
 
-func TestGitHubPRReviewHandlersSubmitThroughApprovedGate(t *testing.T) {
+// githubCreatePullRequestReviewOperation names the adapter operation
+// githubintegration.Service.SubmitReview enqueues - kept here as a test
+// fixture constant since this test's fake adapter needs to name it too,
+// even though the production call site no longer references it directly.
+const githubCreatePullRequestReviewOperation = "github.createPullRequestReview"
+
+// githubGetPullRequestOperation names the read op
+// githubintegration.Service.SubmitReview issues first, to confirm the pull
+// request's head SHA still matches the proposal before submitting a review.
+const githubGetPullRequestOperation = "github.getPullRequest"
+
+func TestGitHubPRReviewHandlersProposeThenSubmitDirectly(t *testing.T) {
+	// Execution proceeds straight from proposed to submitted: side_effect no
+	// longer implies an approval gate a caller must clear first.
 	a := newTestApp(t)
 	a.AdapterRegistry = adapters.NewRegistry(map[string]adapters.AdapterSpec{
 		"github": {
@@ -20,7 +33,7 @@ func TestGitHubPRReviewHandlersSubmitThroughApprovedGate(t *testing.T) {
 			Args:    []string{"-test.run=TestGitHubPRReviewFakeAdapter"},
 			Env:     []string{fakeGitHubReviewAdapterEnv + "=1"},
 		},
-	}, a.OpenApprovals)
+	})
 	ctx := context.Background()
 	findings := []map[string]any{{
 		"title":       "Rounding loses cents",
@@ -43,19 +56,6 @@ func TestGitHubPRReviewHandlersSubmitThroughApprovedGate(t *testing.T) {
 		t.Fatalf("propose handler: %v", err)
 	}
 
-	_, approved, err := approveGitHubPRReviewHandler(a)(ctx, nil, ApproveGitHubPRReviewInput{
-		ReviewID:   proposed.Review.ID,
-		ApprovedBy: "Ada Lovelace",
-	})
-	if err != nil {
-		t.Fatalf("approve handler: %v", err)
-	}
-	if approved.Review.Status != "approved" {
-		t.Fatalf("approved review status = %q, want approved", approved.Review.Status)
-	}
-
-	// A second proposal in the same delivery execution reuses the retained
-	// adapter approval instead of prompting for another confirmation.
 	_, second, err := proposeGitHubPRReviewHandler(a)(ctx, nil, ProposeGitHubPRReviewInput{
 		Repository:          "acme/widgets",
 		PullRequestNumber:   43,
@@ -66,16 +66,6 @@ func TestGitHubPRReviewHandlersSubmitThroughApprovedGate(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("second propose handler: %v", err)
-	}
-	_, secondApproved, err := approveGitHubPRReviewHandler(a)(ctx, nil, ApproveGitHubPRReviewInput{
-		ReviewID:   second.Review.ID,
-		ApprovedBy: "Grace Hopper",
-	})
-	if err != nil {
-		t.Fatalf("second approve handler: %v", err)
-	}
-	if secondApproved.Review.Status != "approved" {
-		t.Fatalf("second approved review status = %q, want approved", secondApproved.Review.Status)
 	}
 
 	_, submitted, err := submitGitHubPRReviewHandler(a)(ctx, nil, SubmitGitHubPRReviewInput{ReviewID: proposed.Review.ID})
@@ -137,7 +127,16 @@ func TestGitHubPRReviewFakeAdapter(t *testing.T) {
 					"secrets":    []string{},
 				},
 				"operations": map[string]any{
-					githubCreatePullRequestReviewOperation: map[string]any{"side_effect": true, "approval": "required"},
+					githubCreatePullRequestReviewOperation: map[string]any{
+						"side_effect":  true,
+						"description":  "test fixture operation",
+						"input_schema": map[string]any{"type": "object"},
+					},
+					githubGetPullRequestOperation: map[string]any{
+						"side_effect":  false,
+						"description":  "test fixture operation",
+						"input_schema": map[string]any{"type": "object"},
+					},
 				},
 			})
 		case "initialize":
@@ -146,6 +145,12 @@ func TestGitHubPRReviewFakeAdapter(t *testing.T) {
 			var params map[string]any
 			if err := json.Unmarshal(request.Params, &params); err != nil {
 				writeFakeGitHubReviewAdapterError(output, request.ID, "invalid execute params")
+				continue
+			}
+			if params["op"] == githubGetPullRequestOperation {
+				writeFakeGitHubReviewAdapterResult(output, request.ID, map[string]any{
+					"normalized": map[string]any{"headSha": fakeGitHubReviewCurrentHeadSHA(params)},
+				})
 				continue
 			}
 			if !fakeGitHubReviewSubmissionIsExpected(params) {
@@ -168,6 +173,21 @@ func writeFakeGitHubReviewAdapterResult(output *json.Encoder, id int64, result a
 
 func writeFakeGitHubReviewAdapterError(output *json.Encoder, id int64, message string) {
 	_ = output.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -1, "message": message}})
+}
+
+// fakeGitHubReviewCurrentHeadSHA echoes back the head SHA each of this
+// test's two proposals was made against, so SubmitReview's own freshness
+// pre-flight (github.getPullRequest) sees an unmoved head for both and
+// never itself the reason a submission fails.
+func fakeGitHubReviewCurrentHeadSHA(params map[string]any) string {
+	switch params["pullRequestNumber"] {
+	case float64(42):
+		return "abc123"
+	case float64(43):
+		return "def456"
+	default:
+		return ""
+	}
 }
 
 func fakeGitHubReviewSubmissionIsExpected(params map[string]any) bool {

@@ -13,4 +13,10 @@ vulnerabilities.
 ## Scope
 
 Reports involving repository integrity, credential exposure, process
-supervision, delivery approvals, or the loopback panel are in scope.
+supervision, adapter write authorization, or the loopback panel are in
+scope. Execution is not gated on user confirmation: an adapter operation
+declaring `side_effect: true` is meant to route through schema validation, a
+durable outbox, and an audit trail before reaching the target system, not
+through a human approval step. A report that this authorization path can be
+bypassed, or that a write reaches a provider without going through it, is in
+scope.

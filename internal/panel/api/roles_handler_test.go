@@ -14,37 +14,30 @@ import (
 )
 
 // fakeRolesReader is an in-memory contract.RolesReader backed by a single
-// project's configuration, seeded with roleconfig.Defaults(). It reuses the
+// project's preferences, seeded with roleconfig.Defaults(). It reuses the
 // real roleconfig.Update/Reset so the handlers' error mapping is exercised
 // against the same errors the production ProjectSource returns.
 type fakeRolesReader struct {
-	cfgs map[string]*protocol.RoleConfiguration
+	cfgs map[string]*protocol.RolePreferences
 }
 
 func newFakeRolesReader() *fakeRolesReader {
 	d := roleconfig.Defaults()
 	return &fakeRolesReader{
-		cfgs: map[string]*protocol.RoleConfiguration{"proj-a": &d},
+		cfgs: map[string]*protocol.RolePreferences{"proj-a": &d},
 	}
 }
 
-func (f *fakeRolesReader) GetRoles(ctx context.Context, projectID string) (*protocol.RoleConfiguration, []contract.RoleCapabilityInfo, error) {
+func (f *fakeRolesReader) GetRoles(ctx context.Context, projectID string) (*protocol.RolePreferences, error) {
 	cfg, ok := f.cfgs[projectID]
 	if !ok {
-		return nil, nil, contract.ErrWorkspaceUnavailable
-	}
-	owned := make([]contract.RoleCapabilityInfo, 0, len(roleconfig.AllRoles))
-	for _, role := range roleconfig.AllRoles {
-		owned = append(owned, contract.RoleCapabilityInfo{
-			Role:         string(role),
-			Capabilities: roleconfig.OwnedCapabilities(role),
-		})
+		return nil, contract.ErrWorkspaceUnavailable
 	}
 	cp := *cfg
-	return &cp, owned, nil
+	return &cp, nil
 }
 
-func (f *fakeRolesReader) UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RoleConfiguration, error) {
+func (f *fakeRolesReader) UpdateRole(ctx context.Context, projectID, role string, patch roleconfig.Patch, baseRevision int) (*protocol.RolePreferences, error) {
 	cfg, ok := f.cfgs[projectID]
 	if !ok {
 		return nil, contract.ErrWorkspaceUnavailable
@@ -57,7 +50,7 @@ func (f *fakeRolesReader) UpdateRole(ctx context.Context, projectID, role string
 	return &cp, nil
 }
 
-func (f *fakeRolesReader) ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RoleConfiguration, error) {
+func (f *fakeRolesReader) ResetRole(ctx context.Context, projectID, role string, baseRevision int) (*protocol.RolePreferences, error) {
 	cfg, ok := f.cfgs[projectID]
 	if !ok {
 		return nil, contract.ErrWorkspaceUnavailable
@@ -87,16 +80,15 @@ func doRoles(t *testing.T, method, target, projectID, role, body string, h http.
 	return rec
 }
 
-func TestRolesListReturnsRolesRevisionAndOwned(t *testing.T) {
+func TestRolesListReturnsRolesAndRevision(t *testing.T) {
 	rec := doRoles(t, http.MethodGet, "/api/v1/projects/proj-a/roles", "proj-a", "", "",
 		RolesListHandler(newFakeRolesReader()))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Roles    protocol.RoleConfigurationRoles `json:"roles"`
-		Revision int                             `json:"revision"`
-		Owned    []contract.RoleCapabilityInfo   `json:"owned"`
+		Roles    protocol.RolePreferencesRoles `json:"roles"`
+		Revision int                           `json:"revision"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -104,24 +96,21 @@ func TestRolesListReturnsRolesRevisionAndOwned(t *testing.T) {
 	if body.Revision != 0 {
 		t.Fatalf("revision = %d, want 0 (defaults)", body.Revision)
 	}
-	if !body.Roles.Semar.Enabled {
-		t.Fatalf("semar enabled = false, want true (defaults)")
-	}
-	if len(body.Owned) != 4 {
-		t.Fatalf("owned = %+v, want 4 role catalogs", body.Owned)
+	if body.Roles.Semar.Style != protocol.RolePreferenceStyleBalanced {
+		t.Fatalf("semar style = %q, want balanced (defaults)", body.Roles.Semar.Style)
 	}
 }
 
 func TestRoleUpdateHappyPathBumpsRevision(t *testing.T) {
 	rec := doRoles(t, http.MethodPatch, "/api/v1/projects/proj-a/roles/semar", "proj-a", "semar",
-		`{"enabled":false,"base_revision":0}`,
+		`{"style":"strict","instructions":"Prefer reversible migrations.","base_revision":0}`,
 		RoleUpdateHandler(newFakeRolesReader()))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Roles    protocol.RoleConfigurationRoles `json:"roles"`
-		Revision int                             `json:"revision"`
+		Roles    protocol.RolePreferencesRoles `json:"roles"`
+		Revision int                           `json:"revision"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -129,14 +118,17 @@ func TestRoleUpdateHappyPathBumpsRevision(t *testing.T) {
 	if body.Revision != 1 {
 		t.Fatalf("revision = %d, want 1", body.Revision)
 	}
-	if body.Roles.Semar.Enabled {
-		t.Fatalf("semar enabled = true, want false after patch")
+	if body.Roles.Semar.Style != protocol.RolePreferenceStyleStrict {
+		t.Fatalf("semar style = %q, want strict after patch", body.Roles.Semar.Style)
+	}
+	if body.Roles.Semar.Instructions != "Prefer reversible migrations." {
+		t.Fatalf("semar instructions = %q, unexpected", body.Roles.Semar.Instructions)
 	}
 }
 
 func TestRoleUpdateRevisionConflict(t *testing.T) {
 	rec := doRoles(t, http.MethodPatch, "/api/v1/projects/proj-a/roles/semar", "proj-a", "semar",
-		`{"enabled":false,"base_revision":99}`,
+		`{"style":"strict","base_revision":99}`,
 		RoleUpdateHandler(newFakeRolesReader()))
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", rec.Code)
@@ -152,24 +144,38 @@ func TestRoleUpdateRevisionConflict(t *testing.T) {
 	}
 }
 
-func TestRoleUpdateUnownedCapability(t *testing.T) {
-	// modify_files is Petruk's, not Semar's, so patching it onto semar is rejected.
+func TestRoleUpdateInvalidStyle(t *testing.T) {
 	rec := doRoles(t, http.MethodPatch, "/api/v1/projects/proj-a/roles/semar", "proj-a", "semar",
-		`{"capabilities":{"modify_files":true},"base_revision":0}`,
+		`{"style":"chaotic","base_revision":0}`,
 		RoleUpdateHandler(newFakeRolesReader()))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 	var body map[string]string
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if body["code"] != "unowned_capability" {
-		t.Fatalf("code = %q, want unowned_capability", body["code"])
+	if body["code"] != "invalid_style" {
+		t.Fatalf("code = %q, want invalid_style", body["code"])
+	}
+}
+
+func TestRoleUpdateInstructionsTooLong(t *testing.T) {
+	tooLong := strings.Repeat("a", 2001)
+	rec := doRoles(t, http.MethodPatch, "/api/v1/projects/proj-a/roles/semar", "proj-a", "semar",
+		`{"instructions":"`+tooLong+`","base_revision":0}`,
+		RoleUpdateHandler(newFakeRolesReader()))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["code"] != "instructions_too_long" {
+		t.Fatalf("code = %q, want instructions_too_long", body["code"])
 	}
 }
 
 func TestRoleUpdateUnknownRole404(t *testing.T) {
 	rec := doRoles(t, http.MethodPatch, "/api/v1/projects/proj-a/roles/nobody", "proj-a", "nobody",
-		`{"enabled":false,"base_revision":0}`,
+		`{"style":"strict","base_revision":0}`,
 		RoleUpdateHandler(newFakeRolesReader()))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
@@ -183,9 +189,9 @@ func TestRoleUpdateUnknownRole404(t *testing.T) {
 
 func TestRoleResetRestoresDefaults(t *testing.T) {
 	reader := newFakeRolesReader()
-	// First disable semar (rev 0 -> 1), then reset it back (rev 1 -> 2).
+	// First change semar away from defaults (rev 0 -> 1), then reset it back (rev 1 -> 2).
 	if rec := doRoles(t, http.MethodPatch, "/api/v1/projects/proj-a/roles/semar", "proj-a", "semar",
-		`{"enabled":false,"base_revision":0}`, RoleUpdateHandler(reader)); rec.Code != http.StatusOK {
+		`{"style":"strict","base_revision":0}`, RoleUpdateHandler(reader)); rec.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	rec := doRoles(t, http.MethodPost, "/api/v1/projects/proj-a/roles/semar/reset", "proj-a", "semar",
@@ -194,8 +200,8 @@ func TestRoleResetRestoresDefaults(t *testing.T) {
 		t.Fatalf("reset status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Roles    protocol.RoleConfigurationRoles `json:"roles"`
-		Revision int                             `json:"revision"`
+		Roles    protocol.RolePreferencesRoles `json:"roles"`
+		Revision int                           `json:"revision"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -203,7 +209,7 @@ func TestRoleResetRestoresDefaults(t *testing.T) {
 	if body.Revision != 2 {
 		t.Fatalf("revision = %d, want 2", body.Revision)
 	}
-	if !body.Roles.Semar.Enabled {
-		t.Fatalf("semar enabled = false, want true after reset to defaults")
+	if body.Roles.Semar.Style != protocol.RolePreferenceStyleBalanced {
+		t.Fatalf("semar style = %q, want balanced after reset to defaults", body.Roles.Semar.Style)
 	}
 }

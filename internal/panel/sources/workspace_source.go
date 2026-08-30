@@ -62,7 +62,6 @@ var activeStates = map[protocol.WorkflowRunState]bool{
 	protocol.WorkflowRunStateContextBuilding:       true,
 	protocol.WorkflowRunStateAwaitingClarification: true,
 	protocol.WorkflowRunStatePlanning:              true,
-	protocol.WorkflowRunStateAwaitingApproval:      true,
 	protocol.WorkflowRunStateExecuting:             true,
 	protocol.WorkflowRunStateReviewing:             true,
 }

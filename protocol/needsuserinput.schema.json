@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/protocol/needsuserinput.schema.json",
+  "title": "NeedUserInput",
+  "description": "A direct, non-persisted clarification result returned instead of a mutation when required context is missing/contradictory or a material decision has more than one defensible answer. See the improvement plan's Delivery contract and Public result semantics.",
+  "type": "object",
+  "required": ["kind", "question"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": { "type": "string", "enum": ["missing_context", "decision_required"] },
+    "question": { "type": "string" },
+    "missing_fields": { "type": "array", "items": { "type": "string" } },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "impact"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "impact": { "type": "string" }
+        }
+      }
+    }
+  }
+}

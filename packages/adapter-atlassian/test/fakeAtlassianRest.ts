@@ -19,6 +19,21 @@ export const FIXTURE_COMMENTS = [
   { id: '8001', author: { displayName: 'Product Owner' }, body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Please cover Safari.' }] }] }, created: '2026-07-15T10:00:00Z', updated: '2026-07-15T10:00:00Z' },
 ];
 
+function adfParagraph(text: string) {
+  return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] };
+}
+
+/** Marker paginated across three pages (maxResults 20) so a search that only checked page one would miss it. */
+export const FIXTURE_MARKER_ISSUE_KEY = 'PROJ-500';
+export const FIXTURE_MARKER = 'punakawan:intent:marker-across-pages';
+export const FIXTURE_MANY_COMMENTS = Array.from({ length: 45 }, (_, i) => ({
+  id: String(9000 + i),
+  author: { displayName: 'Agent' },
+  body: adfParagraph(i === 40 ? `Applied. <!-- ${FIXTURE_MARKER} -->` : `Comment number ${i}`),
+  created: '2026-07-15T10:00:00Z',
+  updated: '2026-07-15T10:00:00Z',
+}));
+
 export const FIXTURE_REMOTE_LINKS = [
   { id: 42, globalId: 'spec-42', relationship: 'specification', object: { title: 'Login design', summary: 'Auth flow', url: 'https://docs.example.test/login' } },
 ];
@@ -42,6 +57,17 @@ export const FIXTURE_EXISTING_SUBTASKS = [
   { key: 'PROJ-202', fields: { summary: 'Update docs', status: { name: 'To Do' }, updated: '2026-07-10T00:00:00.000+0000' } },
   { key: 'PROJ-203', fields: { summary: 'Fix flaky CI job', status: { name: 'Done' }, updated: '2026-07-10T00:00:00.000+0000' } },
 ];
+
+/** 45 existing subtasks under FIXTURE_LARGE_PARENT_KEY, one of which (index 40, conceptually "page 3" of 20-per-page) is the dedup target. */
+export const FIXTURE_LARGE_PARENT_KEY = 'PROJ-900';
+export const FIXTURE_MANY_SUBTASKS = Array.from({ length: 45 }, (_, i) => ({
+  key: `PROJ-${901 + i}`,
+  fields: {
+    summary: i === 40 ? 'Existing subtask forty' : `Existing subtask ${i}`,
+    status: { name: 'To Do' },
+    updated: '2026-07-10T00:00:00.000+0000',
+  },
+}));
 
 export const FIXTURE_BOARDS = [
   { id: 42, name: 'PROJ board', type: 'scrum' },
@@ -110,6 +136,13 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
   const deletedAttachments: string[] = [];
 
   const fakeFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    // Real fetch would observe init.signal itself; this fake replaces fetch
+    // entirely, so it must check the signal itself to exercise
+    // cancellation - a request already aborted before this call started
+    // must never let a POST/PUT below reach its "recorded effect" array.
+    if (init?.signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     const method = (init?.method ?? 'GET').toUpperCase();
     const parsedBody = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
@@ -137,7 +170,18 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
       if (key === FIXTURE_JIRA_ISSUE.key) return json(FIXTURE_JIRA_ISSUE);
       if (key === FIXTURE_PARENT_KEY) return json({
         id: '10200', key: FIXTURE_PARENT_KEY,
-        fields: { summary: 'Authentication epic', status: { name: 'In Progress' }, issuetype: { name: 'Epic' }, updated: '2026-07-10T00:00:00.000+0000' },
+        fields: {
+          summary: 'Authentication epic', status: { name: 'In Progress' }, issuetype: { name: 'Epic' },
+          updated: '2026-07-10T00:00:00.000+0000', subtasks: FIXTURE_EXISTING_SUBTASKS,
+        },
+      });
+      if (key === FIXTURE_LARGE_PARENT_KEY) return json({
+        id: '10900', key: FIXTURE_LARGE_PARENT_KEY,
+        fields: {
+          summary: 'Large parent with many subtasks', status: { name: 'In Progress' }, issuetype: { name: 'Epic' },
+          updated: '2026-07-10T00:00:00.000+0000',
+          subtasks: [...FIXTURE_MANY_SUBTASKS, ...createdIssues.filter((issue) => issue.fields.parent && (issue.fields.parent as Record<string, unknown>).key === FIXTURE_LARGE_PARENT_KEY).map((issue) => ({ key: issue.key, fields: { summary: issue.fields.summary, status: { name: 'To Do' } } }))],
+        },
       });
       const created = createdIssues.find((issue) => issue.key === key);
       if (created) {
@@ -157,11 +201,31 @@ export function createFakeAtlassianRest(): FakeAtlassianRest {
 
     const commentMatch = path.match(/^\/rest\/api\/3\/issue\/([^/]+)\/comment$/);
     if (commentMatch && method === 'GET') {
-      return json({ startAt: 0, maxResults: 20, total: FIXTURE_COMMENTS.length, comments: FIXTURE_COMMENTS });
+      const key = decodeURIComponent(commentMatch[1] ?? '');
+      const all = key === FIXTURE_MARKER_ISSUE_KEY ? FIXTURE_MANY_COMMENTS : FIXTURE_COMMENTS;
+      const startAt = Number(url.searchParams.get('startAt') ?? '0');
+      const maxResults = Number(url.searchParams.get('maxResults') ?? '20');
+      const page = all.slice(startAt, startAt + maxResults);
+      return json({ startAt, maxResults, total: all.length, comments: page });
     }
     if (commentMatch && method === 'POST') {
       addedComments.push({ issueIdOrKey: decodeURIComponent(commentMatch[1] ?? ''), body: parsedBody });
       return json({ id: String(5000 + addedComments.length), body: parsedBody.body }, 201);
+    }
+
+    const worklogMatchGet = path.match(/^\/rest\/api\/3\/issue\/([^/]+)\/worklog$/);
+    if (worklogMatchGet && method === 'GET') {
+      const key = decodeURIComponent(worklogMatchGet[1] ?? '');
+      const mine = addedWorklogs.filter((entry) => entry.issueIdOrKey === key).map((entry, i) => ({
+        id: String(6000 + i + 1),
+        comment: entry.body.comment,
+        timeSpentSeconds: entry.body.timeSpentSeconds,
+        started: '2026-07-15T10:00:00Z',
+      }));
+      const startAt = Number(url.searchParams.get('startAt') ?? '0');
+      const maxResults = Number(url.searchParams.get('maxResults') ?? '20');
+      const page = mine.slice(startAt, startAt + maxResults);
+      return json({ startAt, maxResults, total: mine.length, worklogs: page });
     }
 
     const remoteLinkMatch = path.match(/^\/rest\/api\/3\/issue\/([^/]+)\/remotelink$/);

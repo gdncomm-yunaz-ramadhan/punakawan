@@ -2,40 +2,32 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DeliveriesList from "../src/routes/deliveries/DeliveriesList.svelte";
 import { setCsrfToken } from "../src/lib/session";
+import type { DeliverySummary } from "../src/lib/api/client";
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
 }
 
-function orchestration(id: string, status = "active", over: Record<string, unknown> = {}) {
+function summary(id: string, over: Partial<DeliverySummary> = {}): DeliverySummary {
   return {
     id,
-    revision: 1,
-    status,
-    unresolved_inputs: [],
-    created_at: "2026-08-01T00:00:00Z",
+    title: id,
+    status: "active",
+    projects: [{ id: "proj-a", slug: "proj-a" }],
+    usage: {
+      input_tokens: 1200,
+      output_tokens: 300,
+      cache_tokens: 0,
+      tool_calls: 7,
+      elapsed_ms: 90_000,
+      estimated_costs: { USD: 1.23 },
+      pricing_complete: true,
+    },
     updated_at: "2026-08-10T00:00:00Z",
+    cancellable: true,
+    projection_revision: 1,
     ...over,
-  };
-}
-
-function deliveryView(id: string) {
-  return {
-    orchestration: orchestration(id),
-    projects: [
-      { project_id: "proj-a", lane_ids: ["lane-1"], counts_by_status: { runnable: 1 } },
-      { project_id: "proj-b", lane_ids: ["lane-2"], counts_by_status: { blocked: 1 } },
-    ],
-    lanes: [
-      { lane_id: "lane-1", project_id: "proj-a", status: "runnable" },
-      { lane_id: "lane-2", project_id: "proj-b", status: "blocked", blocked_by: ["lane-1"] },
-    ],
-    blockers: [{ lane_id: "lane-2", blocked_by: ["lane-1"] }],
-    pending_questions: [],
-    next_action: "Wait for lane-1 to finish before lane-2 can start.",
-    latest_seq: 3,
-    newly_runnable_lane_ids: [],
-  };
+  } as DeliverySummary;
 }
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -49,12 +41,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Serves a list plus a per-orchestration view, so the cards render their
-// rollup. POSTs (the cancel) are routed to onPost when a test supplies one.
+// installBackend serves GET /api/v1/deliveries (the list), GET
+// /api/v1/deliveries/{id} (the detail a cancel confirms against), and
+// routes POSTs (the cancel) to onPost when a test supplies one.
 function installBackend(
-  items: ReturnType<typeof orchestration>[],
-  views: Record<string, unknown> = {},
-  opts: { onPost?: (url: string) => Response } = {},
+  items: DeliverySummary[],
+  opts: { onPost?: (url: string) => Response; snapshotRevision?: number } = {},
 ) {
   (fetch as unknown as FetchMock).mockImplementation(async (url: string, init?: RequestInit) => {
     const method = (init?.method ?? "GET").toUpperCase();
@@ -62,33 +54,77 @@ function installBackend(
       if (opts.onPost) return opts.onPost(url);
       return jsonResponse({});
     }
-    if (url === "/api/v1/deliveries") return jsonResponse({ items });
+    if (url === "/api/v1/deliveries") return jsonResponse({ items, snapshot_revision: opts.snapshotRevision ?? 1 });
     const id = url.replace("/api/v1/deliveries/", "").split("?")[0];
-    if (views[id]) return jsonResponse(views[id]);
-    if (items.some((o) => o.id === id)) return jsonResponse(deliveryView(id));
+    const found = items.find((i) => i.id === id);
+    if (found) return jsonResponse({ ...found, orchestration_revision: 1, activity: [] });
     throw new Error(`unexpected url ${url}`);
   });
 }
 
 describe("DeliveriesList", () => {
-  it("renders every orchestration with its project/lane rollup and next action", async () => {
-    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
-      if (url === "/api/v1/deliveries") return jsonResponse({ items: [orchestration("orc-1")] });
-      if (url === "/api/v1/deliveries/orc-1") return jsonResponse(deliveryView("orc-1"));
-      throw new Error(`unexpected url ${url}`);
-    });
+  it("renders a delivery's title, status, projects, plan, progress, usage, and updated time", async () => {
+    installBackend([
+      summary("orc-1", {
+        title: "Migrate billing to v2",
+        source: { kind: "jira", key: "PAY-1842", status: "In Progress" },
+        plan: { id: "plan-1", revision: 3, objective: "Ship the v2 billing rollout" },
+        progress: { percent: 40, summary: "Half the projects migrated", reported_at: "2026-08-09T00:00:00Z" },
+      }),
+    ]);
 
     const { container } = render(DeliveriesList);
 
-    await waitFor(() => expect(screen.getByText("orc-1")).toBeTruthy());
-    expect(screen.getByText("Wait for lane-1 to finish before lane-2 can start.")).toBeTruthy();
-    expect(container.textContent).toContain("2 projects");
-    expect(container.textContent).toContain("2 lanes");
-    expect(container.textContent).toContain("1 blocked");
+    await waitFor(() => expect(screen.getByText("Migrate billing to v2")).toBeTruthy());
+    expect(screen.getByText("active", { exact: false })).toBeTruthy();
+    expect(screen.getByText("PAY-1842")).toBeTruthy();
+    expect(screen.getByText("proj-a")).toBeTruthy();
+    expect(container.textContent).toContain("Ship the v2 billing rollout");
+    expect(container.textContent).toContain("r3");
+    expect(container.textContent).toContain("Half the projects migrated");
+    expect(container.textContent).toContain("1,500");
+    expect(container.textContent).toContain("7");
+    expect(container.textContent).toContain("1m");
+    expect(container.textContent).toContain("$1.23");
+    expect(container.textContent).toContain("Updated");
+  });
+
+  it("labels an ad-hoc delivery as Ad-hoc", async () => {
+    installBackend([summary("orc-1", { title: "Ad-hoc cleanup", source: { kind: "adhoc" } })]);
+
+    render(DeliveriesList);
+    await waitFor(() => expect(screen.getByText("Ad-hoc cleanup")).toBeTruthy());
+    expect(screen.getByText("Ad-hoc")).toBeTruthy();
+  });
+
+  it("shows unknown for a delivery with no estimated cost yet", async () => {
+    installBackend([summary("orc-1", { title: "Fresh delivery", usage: { ...summary("x").usage, estimated_costs: {} } })]);
+
+    const { container } = render(DeliveriesList);
+    await waitFor(() => expect(screen.getByText("Fresh delivery")).toBeTruthy());
+    expect(container.textContent).toContain("unknown");
+  });
+
+  it("never renders lane/blocked/pending-question language anywhere on the page", async () => {
+    installBackend([summary("orc-1", { title: "Migrate billing" })]);
+
+    const { container } = render(DeliveriesList);
+    await waitFor(() => expect(screen.getByText("Migrate billing")).toBeTruthy());
+
+    const text = container.textContent?.toLowerCase() ?? "";
+    expect(text).not.toContain("lane");
+    expect(text).not.toContain("blocked");
+    expect(text).not.toContain("pending question");
+    for (const el of container.querySelectorAll("[aria-label]")) {
+      const label = (el.getAttribute("aria-label") ?? "").toLowerCase();
+      expect(label).not.toContain("lane");
+      expect(label).not.toContain("blocked");
+      expect(label).not.toContain("pending question");
+    }
   });
 
   it("shows the empty state when there are no deliveries", async () => {
-    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ items: [] }));
+    (fetch as unknown as FetchMock).mockResolvedValue(jsonResponse({ items: [], snapshot_revision: 0 }));
 
     render(DeliveriesList);
 
@@ -107,53 +143,10 @@ describe("DeliveriesList", () => {
     });
   });
 
-  it("renders the backend title as the heading and keeps the id as muted text", async () => {
-    const rawId = "c642fb0e8a69bdcae2be77e3ab";
-    installBackend([orchestration(rawId, "active", { title: "Migrate billing to v2" })], {
-      [rawId]: deliveryView(rawId),
-    });
-
-    const { container } = render(DeliveriesList);
-
-    await waitFor(() => expect(screen.getByText("Migrate billing to v2")).toBeTruthy());
-    expect(container.querySelector(".name")?.textContent).toBe("Migrate billing to v2");
-    expect(container.querySelector(".id")?.textContent).toBe(rawId);
-  });
-
-  it("leads with the view's title when only the view carries one, keeping the id as muted text", async () => {
-    const rawId = "c642fb0e8a69bdcae2be77e3ab";
-    const view = { ...deliveryView(rawId), title: "Retire the legacy pricing endpoint" };
-    installBackend([orchestration(rawId)], { [rawId]: view });
-
-    const { container } = render(DeliveriesList);
-
-    await waitFor(() =>
-      expect(container.querySelector(".name")?.textContent).toBe("Retire the legacy pricing endpoint"),
-    );
-    expect(container.querySelector(".id")?.textContent).toBe(rawId);
-  });
-
-  it("derives a readable heading from the view when neither the record nor the view has a title", async () => {
-    const rawId = "c642fb0e8a69bdcae2be77e3ab";
-    const view = {
-      ...deliveryView(rawId),
-      lanes: [
-        { lane_id: "lane-1", project_id: "proj-a", status: "runnable", parent_task_id: "PUN-42" },
-        { lane_id: "lane-2", project_id: "proj-b", status: "blocked", parent_task_id: "PUN-43" },
-      ],
-    };
-    installBackend([orchestration(rawId)], { [rawId]: view });
-
-    const { container } = render(DeliveriesList);
-
-    await waitFor(() => expect(container.querySelector(".name")?.textContent).toBe("PUN-42, PUN-43"));
-    expect(container.querySelector(".id")?.textContent).toBe(rawId);
-  });
-
   it("filters and distinguishes an empty result from having no deliveries", async () => {
     installBackend([
-      orchestration("orc-1", "active", { title: "Migrate billing" }),
-      orchestration("orc-2", "active", { title: "Refresh checkout" }),
+      summary("orc-1", { title: "Migrate billing" }),
+      summary("orc-2", { title: "Refresh checkout" }),
     ]);
 
     render(DeliveriesList);
@@ -170,8 +163,8 @@ describe("DeliveriesList", () => {
 
   it("reorders the list when the sort control changes", async () => {
     installBackend([
-      orchestration("orc-1", "active", { title: "Zulu", updated_at: "2026-08-20T00:00:00Z" }),
-      orchestration("orc-2", "active", { title: "Alpha", updated_at: "2026-08-01T00:00:00Z" }),
+      summary("orc-1", { title: "Zulu", updated_at: "2026-08-20T00:00:00Z" }),
+      summary("orc-2", { title: "Alpha", updated_at: "2026-08-01T00:00:00Z" }),
     ]);
 
     const { container } = render(DeliveriesList);
@@ -183,39 +176,10 @@ describe("DeliveriesList", () => {
     await waitFor(() => expect(names()).toEqual(["Alpha", "Zulu"]));
   });
 
-  it("offers recent, title, and oldest sort options", async () => {
-    installBackend([orchestration("orc-1", "active", { title: "Migrate billing" })]);
-
-    render(DeliveriesList);
-    await screen.findByText("Migrate billing");
-
-    const sort = screen.getByLabelText("Sort by");
-    expect(Array.from(sort.querySelectorAll("option")).map((option) => option.textContent)).toEqual([
-      "Recent",
-      "Title",
-      "Oldest",
-    ]);
-  });
-
-  it("filters delivery cards by status and shows their semantic chip", async () => {
-    installBackend([
-      orchestration("orc-active", "active", { title: "Still running" }),
-      orchestration("orc-done", "completed", { title: "All finished" }),
-    ]);
-
-    const { container } = render(DeliveriesList);
-    await screen.findByText("Still running");
-
-    await fireEvent.change(screen.getByLabelText("Status"), { target: { value: "completed" } });
-    await waitFor(() => expect(screen.queryByText("Still running")).toBeNull());
-    expect(screen.getByText("All finished")).toBeTruthy();
-    expect(container.querySelector(".status-variant-success")?.textContent).toContain("Completed");
-  });
-
   it("offers Cancel only for a delivery still in flight", async () => {
     installBackend([
-      orchestration("orc-active", "active", { title: "Still running" }),
-      orchestration("orc-done", "completed", { title: "All finished" }),
+      summary("orc-active", { title: "Still running", cancellable: true }),
+      summary("orc-done", { title: "All finished", status: "completed", cancellable: false }),
     ]);
 
     render(DeliveriesList);
@@ -227,10 +191,10 @@ describe("DeliveriesList", () => {
 
   it("confirms a cancel, saying what it does and does not undo", async () => {
     const posted: string[] = [];
-    installBackend([orchestration("orc-1", "active", { title: "Migrate billing" })], {}, {
+    installBackend([summary("orc-1", { title: "Migrate billing" })], {
       onPost: (url) => {
         posted.push(url);
-        return jsonResponse(deliveryView("orc-1"));
+        return jsonResponse({});
       },
     });
 
@@ -248,7 +212,7 @@ describe("DeliveriesList", () => {
   });
 
   it("surfaces a failed cancel in the dialog instead of closing it", async () => {
-    installBackend([orchestration("orc-1", "active", { title: "Migrate billing" })], {}, {
+    installBackend([summary("orc-1", { title: "Migrate billing" })], {
       onPost: () => jsonResponse({ error: "revision conflict" }, false, 409),
     });
 

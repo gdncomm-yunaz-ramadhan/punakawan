@@ -106,6 +106,48 @@ func TestInvokeWorkflowAlwaysProducesDelivery(t *testing.T) {
 	}
 }
 
+// TestInvokeWorkflowJiraSourceRoutesThroughStartOrResolve: a delivery-shaped
+// definition invoked with inputs.source naming a Jira source calls the
+// same deliveryservice.Service.StartOrResolve path start_delivery's own
+// source field uses, so invoking it twice for the same tenant+key reuses
+// the same active lifetime instead of minting a second orchestration.
+func TestInvokeWorkflowJiraSourceRoutesThroughStartOrResolve(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	saveTestDefinition(t, a, workflowdef.Definition{
+		Version: workflowdef.SchemaVersion,
+		ID:      "jira-source-delivery",
+		Name:    "Jira Source Delivery",
+		Enabled: true,
+		Roles: map[string]workflowdef.RoleRestriction{
+			"gareng": {Required: false},
+		},
+	})
+
+	var first InvokeWorkflowDefinitionOutput
+	callTool(t, cs, "invoke_workflow", map[string]any{
+		"definition_id": "jira-source-delivery",
+		"inputs": map[string]any{
+			"source": map[string]any{"kind": "jira", "tenant": "tenant-a", "key": "SRC-1"},
+		},
+	}, &first)
+	if first.RunId == "" {
+		t.Fatal("invoke_workflow returned an empty run id")
+	}
+
+	var second InvokeWorkflowDefinitionOutput
+	callTool(t, cs, "invoke_workflow", map[string]any{
+		"definition_id": "jira-source-delivery",
+		"inputs": map[string]any{
+			"source": map[string]any{"kind": "jira", "tenant": "tenant-a", "key": "SRC-1"},
+		},
+	}, &second)
+	if second.RunId != first.RunId {
+		t.Fatalf("second invocation run id = %s, want %s (same active Jira lifetime reused)", second.RunId, first.RunId)
+	}
+}
+
 // TestStartDeliveryRejectsUnknownWorkflowDefinitionId: start_delivery
 // given a workflow_definition_id that does not exist must fail closed
 // rather than silently proceeding without it.

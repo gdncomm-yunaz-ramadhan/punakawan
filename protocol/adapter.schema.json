@@ -49,12 +49,14 @@
         "type": "object",
         "required": ["side_effect", "description", "input_schema"],
         "additionalProperties": false,
-          "properties": {
-            "side_effect": { "type": "boolean" },
-            "approval": { "type": "string", "enum": ["required"] },
-            "description": { "type": "string" },
-            "input_schema": { "type": "object" }
+        "properties": {
+          "side_effect": { "type": "boolean" },
+          "description": { "type": "string", "minLength": 1 },
+          "input_schema": {
+            "type": "object",
+            "description": "A JSON Schema of type \"object\" describing this operation's call parameters."
           }
+        }
       }
     }
   }
