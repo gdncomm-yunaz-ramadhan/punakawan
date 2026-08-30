@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -154,9 +155,25 @@ func load(ws *workspace.Workspace) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	trustFilePath, err := storage.AdapterTrustFilePath()
+	if err != nil {
+		return nil, err
+	}
+	trust, err := adapters.LoadTrustFile(trustFilePath)
+	if err != nil {
+		return nil, err
+	}
+
 	mergedAdapters := ws.MergeAdapters(global)
 	specs := make(map[string]adapters.AdapterSpec, len(mergedAdapters))
 	for id, cfg := range mergedAdapters {
+		// A repository-local adapter command (one resolving inside this
+		// checkout) can be swapped out by anyone who can write into the
+		// checkout, so it must be explicitly trusted by this host before
+		// Punakawan will ever start it - see adapters.TrustStore.
+		if err := adapters.RequireTrustedIfRepositoryLocal(cfg.Command, ws.Root, trust); err != nil {
+			return nil, fmt.Errorf("app: adapter %q: %w", id, err)
+		}
 		specs[id] = adapters.AdapterSpec{
 			Command:        cfg.Command,
 			Args:           cfg.Args,

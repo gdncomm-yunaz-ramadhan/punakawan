@@ -8,6 +8,11 @@ import (
 
 const dbFileName = "punakawan.db"
 
+// adapterTrustFileName is the host-owned file listing every
+// repository-local adapter executable this host has agreed to run, keyed
+// by its own normalized path and expected SHA-256 digest.
+const adapterTrustFileName = "adapter-trust.json"
+
 // dataDirOverrideEnv lets a test point the storage kernel at an isolated
 // directory instead of this machine's real, shared data directory. Set
 // via t.Setenv, never meant for production use - there is exactly one
@@ -40,6 +45,18 @@ func DBPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, dbFileName), nil
+}
+
+// AdapterTrustFilePath returns the canonical adapter trust file path under
+// DataDir. The file itself is optional - a host that has never trusted any
+// repository-local adapter command simply has none on disk yet, and every
+// such command is rejected until an operator adds one.
+func AdapterTrustFilePath() (string, error) {
+	dir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, adapterTrustFileName), nil
 }
 
 // WorktreesDir returns the central directory execution worktrees are
