@@ -529,7 +529,7 @@ export interface LinkedDeliveryRef {
 export interface PlanSummary {
   id: string;
   objective: string;
-  status: string;
+  status?: string;
   current_revision: number;
   project_ids?: string[];
   linked_deliveries?: LinkedDeliveryRef[];

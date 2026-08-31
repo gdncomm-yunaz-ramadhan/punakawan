@@ -59,6 +59,29 @@ describe("ProjectPlans", () => {
     await waitFor(() => expect(within(dialog).getByText("r3")).toBeTruthy());
   });
 
+  it("opens a plan with no status or linked delivery", async () => {
+    const unlinkedPlan = {
+      id: "plan-unlinked",
+      objective: "Prepare release notes",
+      current_revision: 1,
+      project_ids: ["proj-a"],
+      linked_deliveries: [],
+    };
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url.includes("/plans/plan-unlinked")) return jsonResponse({ plan: { ...unlinkedPlan, revision: 1 } });
+      return jsonResponse({ items: [unlinkedPlan] });
+    });
+
+    render(ProjectPlans, { props: { projectId: "proj-a" } });
+    await waitFor(() => expect(screen.getByText("Prepare release notes")).toBeTruthy());
+    expect(screen.getByText("Not recorded")).toBeTruthy();
+    expect(screen.getByText("0")).toBeTruthy();
+
+    await fireEvent.click(screen.getByTestId("plan-row-plan-unlinked"));
+    const dialog = await waitFor(() => screen.getByRole("dialog"));
+    expect(within(dialog).getByText("No deliveries linked to this plan.")).toBeTruthy();
+  });
+
   // A delivery linking revision 2 while the plan head is revision 3 must
   // render revision 2, not silently substitute the head - here reached via
   // ?plan=&revision= in the URL, exactly the shape DeliveryDetail's own
@@ -88,5 +111,41 @@ describe("ProjectPlans", () => {
 
     render(ProjectPlans, { props: { projectId: "proj-a" } });
     await waitFor(() => expect(screen.getByText("No plans yet")).toBeTruthy());
+  });
+
+  it("treats a malformed empty list response as an empty plan state", async () => {
+    (fetch as unknown as FetchMock).mockImplementation(async () => jsonResponse(null));
+
+    render(ProjectPlans, { props: { projectId: "proj-a" } });
+    await waitFor(() => expect(screen.getByText("No plans yet")).toBeTruthy());
+  });
+
+  it("keeps the plan list visible when loading a selected plan fails", async () => {
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url.includes("/plans/plan-a")) return jsonResponse({ error: "plan unavailable" }, false, 503);
+      return jsonResponse({ items: [planA] });
+    });
+
+    render(ProjectPlans, { props: { projectId: "proj-a" } });
+    await waitFor(() => expect(screen.getByTestId("plan-row-plan-a")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("plan-row-plan-a"));
+
+    const dialog = await waitFor(() => screen.getByRole("dialog"));
+    expect(within(dialog).getByText("Failed to load plan")).toBeTruthy();
+    expect(screen.getByText("Move checkout to payments v2")).toBeTruthy();
+  });
+
+  it("shows a detail error when the selected plan payload is malformed", async () => {
+    (fetch as unknown as FetchMock).mockImplementation(async (url: string) => {
+      if (url.includes("/plans/plan-a")) return jsonResponse({});
+      return jsonResponse({ items: [planA] });
+    });
+
+    render(ProjectPlans, { props: { projectId: "proj-a" } });
+    await waitFor(() => expect(screen.getByTestId("plan-row-plan-a")).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("plan-row-plan-a"));
+
+    const dialog = await waitFor(() => screen.getByRole("dialog"));
+    expect(within(dialog).getByText("Failed to load plan")).toBeTruthy();
   });
 });

@@ -45,7 +45,7 @@
       // Guard against a null/absent items array (a Go nil slice marshals to
       // JSON `null`, not `[]`): a project with no plans must render the
       // empty state, never trip the catch below into "Failed to load plans".
-      plans = res.items ?? [];
+      plans = Array.isArray(res?.items) ? res.items : [];
       const requested = requestedPlan();
       if (requested.id && plans.some((plan) => plan.id === requested.id)) {
         await select(requested.id, requested.revision ?? undefined);
@@ -75,7 +75,9 @@
     detailError = null;
     detailLoading = true;
     try {
-      detail = await getPlan(projectId, id, revision);
+      const next = await getPlan(projectId, id, revision);
+      if (!next?.plan?.id) throw new Error("Plan detail is unavailable.");
+      detail = next;
     } catch (e) {
       detailError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -97,8 +99,8 @@
   // Plan status is a free-form string, not an Availability value, so it
   // renders through StatusBadge's generic variant mode. Unknown statuses
   // fall back to a neutral pill rather than guessing a semantic color.
-  function statusVariant(status: string): BadgeVariant {
-    switch (status.toLowerCase()) {
+  function statusVariant(status?: string | null): BadgeVariant {
+    switch (status?.toLowerCase()) {
       case "active":
       case "approved":
       case "accepted":
@@ -153,7 +155,7 @@
               data-testid={`plan-row-${plan.id}`}
             >
               <td class="title">{plan.objective || plan.id}</td>
-              <td><StatusBadge variant={statusVariant(plan.status)} label={plan.status} /></td>
+              <td><StatusBadge variant={statusVariant(plan.status)} label={plan.status || "Not recorded"} /></td>
               <td class="version">r{plan.current_revision || "—"}</td>
               <td class="tasks">{plan.linked_deliveries?.length ?? 0}</td>
             </tr>
@@ -171,7 +173,7 @@
     <ErrorStateCard title="Failed to load plan" message={detailError} />
   {:else if detail}
     {@const p = detail.plan}
-    <StatusBadge variant={statusVariant(p.status ?? "")} label={p.status ?? "unknown"} />
+    <StatusBadge variant={statusVariant(p.status)} label={p.status || "Not recorded"} />
 
     <dl class="meta">
       <dt>Plan ID</dt>
@@ -195,6 +197,10 @@
         </dd>
       {/if}
     </dl>
+
+    {#if !detail.linked_deliveries?.length}
+      <EmptyStateCard title="No deliveries linked to this plan." message="This plan remains available for this project." />
+    {/if}
 
     {#if p.legacy_markdown}
       <h4>Imported content</h4>
@@ -248,11 +254,6 @@
   td.tasks {
     color: var(--color-text-muted);
     word-break: break-word;
-  }
-  .description {
-    margin: 0.4rem 0 0;
-    color: var(--color-text);
-    font-size: 0.9rem;
   }
   dl.meta {
     margin: 0.9rem 0 0;
