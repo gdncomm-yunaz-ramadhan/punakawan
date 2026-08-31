@@ -100,6 +100,37 @@ describe("DeliveryDetail", () => {
     expect(dialog.textContent).toContain("Tool calls");
   });
 
+  it("shows total linked projects, plans, and sessions in overview metrics", async () => {
+    installBackend(
+      detail({
+        projects: [{ id: "billing", slug: "billing" }, { id: "checkout", slug: "checkout" }],
+        project_plans: [
+          { project_id: "billing", project_slug: "billing", plan: { id: "plan-billing", objective: "Ship billing", revision: 1 }, head_revision: 1 },
+          { project_id: "checkout", project_slug: "checkout", plan: { id: "plan-checkout", objective: "Ship checkout", revision: 1 }, head_revision: 1 },
+        ],
+        sessions: [
+          { id: "session-1", case_id: "case-1", execution_id: "exec-1", orchestration_id: "orc-1", participant: "codex", status: "closed", started_at: "2026-08-10T00:00:00Z", checkpoints: [] },
+          { id: "session-2", case_id: "case-1", execution_id: "exec-1", orchestration_id: "orc-1", participant: "codex", status: "closed", started_at: "2026-08-10T01:00:00Z", checkpoints: [] },
+          { id: "session-3", case_id: "case-1", execution_id: "exec-1", orchestration_id: "orc-1", participant: "codex", status: "closed", started_at: "2026-08-10T02:00:00Z", checkpoints: [] },
+        ],
+      }),
+    );
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("heading", { name: "Migrate billing to v2" });
+    await fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+
+    const metricValue = (label: string) => {
+      for (const metric of container.querySelectorAll(".metric")) {
+        if (metric.querySelector(".label")?.textContent === label) return metric.querySelector(".value")?.textContent;
+      }
+      return undefined;
+    };
+    expect(metricValue("Total projects")).toBe("2");
+    expect(metricValue("Total plans")).toBe("2");
+    expect(metricValue("Total sessions")).toBe("3");
+  });
+
   it("never renders lane/blocked/pending-question language anywhere on the page", async () => {
     installBackend(detail());
 

@@ -202,6 +202,9 @@
             </button>
           {/snippet}
         </MetricCard>
+        <MetricCard size="small" columns={3} label="Total projects" value={(d.projects ?? []).length} />
+        <MetricCard size="small" columns={3} label="Total plans" value={(d.project_plans ?? []).length} />
+        <MetricCard size="small" columns={3} label="Total sessions" value={(d.sessions ?? []).length} />
       </BentoGrid>
       {#if d.progress}
         <div class="progress-block">
