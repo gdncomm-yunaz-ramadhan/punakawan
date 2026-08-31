@@ -3,14 +3,16 @@
   import { navigate } from "../../lib/router/router.svelte";
   import PageHeader from "../../lib/components/PageHeader.svelte";
   import ErrorStateCard from "../../lib/components/cards/ErrorStateCard.svelte";
+  import EmptyStateCard from "../../lib/components/cards/EmptyStateCard.svelte";
   import BentoGrid from "../../lib/components/cards/BentoGrid.svelte";
   import MetricCard from "../../lib/components/cards/MetricCard.svelte";
   import TableCard from "../../lib/components/cards/TableCard.svelte";
   import DataTable from "../../lib/components/data/DataTable.svelte";
   import StatusBadge, { type BadgeVariant } from "../../lib/components/StatusBadge.svelte";
   import Button from "../../lib/components/Button.svelte";
-  import type { IconName } from "../../lib/components/Icon.svelte";
+  import Icon, { type IconName } from "../../lib/components/Icon.svelte";
   import Tabs from "../../lib/components/Tabs.svelte";
+  import Dialog from "../../lib/components/overlay/Dialog.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
   import { backoffDelay } from "./deliveryList";
 
@@ -25,6 +27,7 @@
   let cancelling = $state(false);
   let cancelError: string | null = $state(null);
   let confirmingCancel = $state(false);
+  let costDetailOpen = $state(false);
 
   const WATCH_WAIT_SECONDS = 25;
 
@@ -123,23 +126,13 @@
     cancelled: "danger",
   };
 
-  // Tabs are computed from what the loaded detail actually has, per the
-  // "do not render a tab with no applicable data" rule - Overview is
-  // always shown, every other tab only appears once there is something
-  // to show in it.
-  const tabs = $derived.by(() => {
-    if (!detail) return [];
-    const list: { id: string; label: string; icon: IconName }[] = [
-      { id: "overview", label: "Overview", icon: "dashboard" as IconName },
-    ];
-    if (detail.plan_detail) list.push({ id: "plan", label: "Plan", icon: "file" as IconName });
-    if (detail.projects.length) list.push({ id: "projects", label: "Projects", icon: "folder" as IconName });
-    if (detail.jira) list.push({ id: "jira", label: "Jira", icon: "git-branch" as IconName });
-    if (detail.github) list.push({ id: "github", label: "GitHub", icon: "git-branch" as IconName });
-    if (detail.sessions && detail.sessions.length) list.push({ id: "sessions", label: "Sessions", icon: "users" as IconName });
-    if (detail.activity.length) list.push({ id: "activity", label: "Activity", icon: "activity" as IconName });
-    return list;
-  });
+  const tabs: { id: string; label: string; icon: IconName }[] = [
+    { id: "overview", label: "Overview", icon: "dashboard" },
+    { id: "projects", label: "Projects", icon: "folder" },
+    { id: "jira", label: "Jira", icon: "git-branch" },
+    { id: "sessions", label: "Sessions", icon: "users" },
+    { id: "activity", label: "Activity", icon: "activity" },
+  ];
 
   function tabFromUrl(): string {
     if (typeof window === "undefined") return "overview";
@@ -147,7 +140,7 @@
   }
   let activeId = $state(tabFromUrl());
   $effect(() => {
-    if (tabs.length && !tabs.some((t) => t.id === activeId)) activeId = "overview";
+    if (!tabs.some((t) => t.id === activeId)) activeId = "overview";
   });
 
   function selectTab(id: string) {
@@ -201,12 +194,14 @@
   {#if activeId === "overview"}
     <div id="tabpanel-overview" role="tabpanel" aria-labelledby="tab-overview" class="overview">
       <BentoGrid>
-        <MetricCard size="small" columns={3} label="Source" value={d.source?.kind === "jira" ? (d.source.key ?? "Jira") : "Ad-hoc"} />
         {#if d.workflow}<MetricCard size="small" columns={3} label="Workflow" value={d.workflow.name || d.workflow.id} />{/if}
-        <MetricCard size="small" columns={3} label="Tool calls" value={d.usage.tool_calls.toLocaleString()} />
-        <MetricCard size="small" columns={3} label="Tokens" value={(d.usage.input_tokens + d.usage.output_tokens).toLocaleString()} />
-        <MetricCard size="small" columns={3} label="Elapsed" value={formatDuration(d.usage.elapsed_ms)} />
-        <MetricCard size="small" columns={3} label="Estimated cost" value={formatCosts(d.usage.estimated_costs, d.usage.pricing_complete)} />
+        <MetricCard size="small" columns={3} label="Estimated cost" value={formatCosts(d.usage.estimated_costs, d.usage.pricing_complete)}>
+          {#snippet cornerAction()}
+            <button type="button" aria-label="Cost detail" onclick={() => (costDetailOpen = true)}>
+              <Icon name="info" size={16} />
+            </button>
+          {/snippet}
+        </MetricCard>
       </BentoGrid>
       {#if d.progress}
         <div class="progress-block">
@@ -222,29 +217,6 @@
           <p class="muted">Started {formatDate(d.session.started_at)}{#if d.session.stopped_at}, stopped {formatDate(d.session.stopped_at)}{/if}</p>
         </div>
       {/if}
-    </div>
-  {:else if activeId === "plan" && d.plan_detail}
-    <div id="tabpanel-plan" role="tabpanel" aria-labelledby="tab-plan">
-      <h2>{d.plan_detail.objective} <code>r{d.plan_detail.revision}</code></h2>
-      {#if d.plan_detail.steps?.length}
-        <ol class="steps">
-          {#each d.plan_detail.steps as step, i (step.id ?? i)}
-            <li>
-              <strong>{step.objective}</strong>
-              {#if step.expected_outcome}<p>{step.expected_outcome}</p>{/if}
-              {#if step.acceptance_criteria?.length}
-                <ul>{#each step.acceptance_criteria as ac (ac)}<li>{ac}</li>{/each}</ul>
-              {/if}
-              {#if step.verification_method}<p class="muted">Verify: {step.verification_method}</p>{/if}
-            </li>
-          {/each}
-        </ol>
-      {/if}
-      {#if d.plan_detail.acceptance_criteria?.length}
-        <h3>Acceptance criteria</h3>
-        <ul>{#each d.plan_detail.acceptance_criteria as ac (ac)}<li>{ac}</li>{/each}</ul>
-      {/if}
-      {#if d.plan_detail.verification}<p><strong>Verification:</strong> {d.plan_detail.verification}</p>{/if}
     </div>
   {:else if activeId === "projects"}
     <div id="tabpanel-projects" role="tabpanel" aria-labelledby="tab-projects">
@@ -272,15 +244,19 @@
         </TableCard>
       </BentoGrid>
     </div>
-  {:else if activeId === "jira" && d.jira}
+  {:else if activeId === "jira"}
     <div id="tabpanel-jira" role="tabpanel" aria-labelledby="tab-jira">
-      <h2>{d.jira.issue_key}{#if d.jira.parent_status} · {d.jira.parent_status}{/if}</h2>
-      <p class="muted">
-        Writes: {d.jira.write_health.succeeded} succeeded, {d.jira.write_health.pending + d.jira.write_health.retrying} pending,
-        {d.jira.write_health.failed} failed
-      </p>
-      <BentoGrid>
-        {#if d.jira.touched_items.length}
+      {#if d.jira}
+        <h2>{d.jira.issue_key}{#if d.jira.parent_status} · {d.jira.parent_status}{/if}</h2>
+        <p class="muted">
+          Writes: {d.jira.write_health?.succeeded ?? 0} succeeded, {(d.jira.write_health?.pending ?? 0) + (d.jira.write_health?.retrying ?? 0)} pending,
+          {d.jira.write_health?.failed ?? 0} failed
+        </p>
+        {#if (d.jira.touched_items?.length ?? 0) + (d.jira.transitions?.length ?? 0) + (d.jira.worklogs?.length ?? 0) === 0}
+          <EmptyStateCard title="No Jira activity recorded for this delivery." message="Touched subtasks, transitions, and worklogs will appear here." />
+        {:else}
+          <BentoGrid>
+        {#if d.jira.touched_items?.length}
           <TableCard title="Touched subtasks" size="full">
             <DataTable
               columns={[
@@ -288,7 +264,7 @@
                 { key: "jiraKey", label: "Jira key" },
                 { key: "touches", label: "Touches", sortable: true, align: "right" },
               ]}
-              rows={d.jira.touched_items.map((item) => ({
+              rows={(d.jira.touched_items ?? []).map((item) => ({
                 id: item.parent_task_id,
                 task: item.parent_task_id,
                 jiraKey: item.jira_issue_key,
@@ -298,7 +274,7 @@
             />
           </TableCard>
         {/if}
-        {#if d.jira.transitions.length}
+        {#if d.jira.transitions?.length}
           <TableCard title="Status transitions" size="full">
             <DataTable
               columns={[
@@ -307,7 +283,7 @@
                 { key: "writeStatus", label: "Write status" },
                 { key: "occurred", label: "Occurred", sortable: true },
               ]}
-              rows={d.jira.transitions.map((t) => ({
+              rows={(d.jira.transitions ?? []).map((t) => ({
                 id: `${t.occurred_at}-${t.to_status}`,
                 from: t.from_status || "—",
                 to: t.to_status,
@@ -318,7 +294,7 @@
             />
           </TableCard>
         {/if}
-        {#if d.jira.worklogs.length}
+        {#if d.jira.worklogs?.length}
           <TableCard title="Worklogs" size="full">
             <DataTable
               columns={[
@@ -326,7 +302,7 @@
                 { key: "duration", label: "Duration" },
                 { key: "sync", label: "Sync" },
               ]}
-              rows={d.jira.worklogs.map((w) => ({
+              rows={(d.jira.worklogs ?? []).map((w) => ({
                 id: w.id,
                 summary: w.summary,
                 duration: formatDuration(w.duration_seconds * 1000),
@@ -336,29 +312,10 @@
             />
           </TableCard>
         {/if}
-      </BentoGrid>
-    </div>
-  {:else if activeId === "github" && d.github}
-    <div id="tabpanel-github" role="tabpanel" aria-labelledby="tab-github">
-      <h2>{d.github.repository || "Repository not recorded"}{#if d.github.pull_request_number} #{d.github.pull_request_number}{/if}</h2>
-      {#if d.github.head_sha}<p class="muted">Head <code>{d.github.head_sha}</code></p>{/if}
-      <p class="muted">
-        Writes: {d.github.write_health.succeeded} succeeded, {d.github.write_health.pending + d.github.write_health.retrying} pending,
-        {d.github.write_health.failed} failed
-      </p>
-      {#if d.github.reviews.length}
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Verdict</th><th>Status</th><th>Recorded</th></tr></thead>
-            <tbody>
-              {#each d.github.reviews as review (review.id)}
-                <tr><td>{review.verdict}</td><td>{review.status}</td><td>{formatDate(review.created_at)}</td></tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+          </BentoGrid>
+        {/if}
       {:else}
-        <p class="muted">No reviews recorded.</p>
+        <EmptyStateCard title="No Jira activity recorded for this delivery." message="This delivery is not linked to Jira." />
       {/if}
     </div>
   {:else if activeId === "sessions"}
@@ -382,13 +339,12 @@
               status: session.status,
               started: formatDate(session.started_at),
               duration: sessionDuration(session.started_at, session.ended_at),
-              checkpoints: session.checkpoints.length,
+              checkpoints: session.checkpoints?.length ?? 0,
             }))}
             emptyMessage="No sessions recorded."
           />
         </TableCard>
       </BentoGrid>
-      <p class="muted">Aggregate tokens, tool calls, and estimated cost across every session are shown in the Overview tab.</p>
     </div>
   {:else if activeId === "activity"}
     <div id="tabpanel-activity" role="tabpanel" aria-labelledby="tab-activity">
@@ -402,7 +358,7 @@
               { key: "summary", label: "Summary" },
               { key: "occurred", label: "Occurred", sortable: true },
             ]}
-            rows={d.activity.map((entry, i) => ({
+            rows={(d.activity ?? []).map((entry, i) => ({
               id: i,
               index: i + 1,
               kind: entry.kind,
@@ -415,6 +371,17 @@
       </BentoGrid>
     </div>
   {/if}
+{/if}
+
+{#if detail}
+  <Dialog open={costDetailOpen} title="Estimated cost detail" onclose={() => (costDetailOpen = false)}>
+    <dl class="breakdown">
+      <dt>Tokens</dt><dd>{(detail.usage.input_tokens + detail.usage.output_tokens).toLocaleString()}</dd>
+      <dt>Estimated cost</dt><dd>{formatCosts(detail.usage.estimated_costs, detail.usage.pricing_complete)}</dd>
+      <dt>Elapsed time</dt><dd>{formatDuration(detail.usage.elapsed_ms)}</dd>
+      <dt>Tool calls</dt><dd>{detail.usage.tool_calls.toLocaleString()}</dd>
+    </dl>
+  </Dialog>
 {/if}
 
 <style>
@@ -444,13 +411,23 @@
     font-size: 1rem;
     margin: 0 0 0.75rem;
   }
-  h3 {
-    font-size: 0.88rem;
-    margin: 1rem 0 0.5rem;
-  }
   .overview {
     display: grid;
     gap: 1.25rem;
+  }
+  .breakdown {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.7rem 1rem;
+    margin: 0;
+  }
+  .breakdown dt {
+    color: var(--color-text-muted);
+  }
+  .breakdown dd {
+    margin: 0;
+    font-weight: 600;
+    text-align: right;
   }
   .progress-block {
     border-left: 3px solid var(--color-accent);
@@ -463,40 +440,8 @@
     color: var(--color-text-muted);
     font-size: 0.8rem;
   }
-  .table-wrap {
-    overflow-x: auto;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-  }
-  th,
-  td {
-    padding: 0.65rem 0.75rem;
-    text-align: left;
-    border-bottom: 1px solid var(--color-border);
-    vertical-align: top;
-  }
-  tr:last-child td {
-    border-bottom: 0;
-  }
-  th {
-    color: var(--color-text-muted);
-    font-size: 0.72rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     word-break: break-word;
-  }
-  .steps {
-    display: grid;
-    gap: 0.75rem;
-    padding-left: 1.25rem;
   }
 </style>

@@ -86,7 +86,7 @@ describe("DeliveriesList", () => {
     expect(container.textContent).toContain("Updated");
   });
 
-  it("renders an overview metric-card row aggregating cost, plans, projects, and sessions", async () => {
+  it("does not render aggregate metric cards above delivery results", async () => {
     installBackend([
       summary("orc-1", {
         projects: [{ id: "proj-a", slug: "proj-a" }],
@@ -121,37 +121,13 @@ describe("DeliveriesList", () => {
       }),
     ]);
 
-    const { container } = render(DeliveriesList);
+    render(DeliveriesList);
     await waitFor(() => expect(screen.getByText("orc-1")).toBeTruthy());
 
-    expect(screen.getByText("Total cost")).toBeTruthy();
-    expect(screen.getByText("Plans")).toBeTruthy();
-    expect(screen.getByText("Projects")).toBeTruthy();
-    expect(screen.getByText("Sessions")).toBeTruthy();
-
-    // Two distinct plan ids collapse to one, and proj-a/proj-b collapse to
-    // two; only orc-1 carries a session.
-    expect(container.textContent).toContain("$3.00");
-    expect(container.textContent).toContain("€4.00");
-
-    const metricValue = (label: string) => {
-      for (const metric of container.querySelectorAll(".metric")) {
-        if (metric.querySelector(".label")?.textContent === label) {
-          return metric.querySelector(".value")?.textContent;
-        }
-      }
-      return undefined;
-    };
-    expect(metricValue("Plans")).toBe("1");
-    expect(metricValue("Projects")).toBe("2");
-    expect(metricValue("Sessions")).toBe("1");
-
-    await fireEvent.click(screen.getByLabelText("Cost breakdown"));
-    const dialog = screen.getByRole("dialog");
-    expect(dialog.textContent).toContain("Total cost");
-    expect(dialog.textContent).toContain("Elapsed time");
-    expect(dialog.textContent).toContain("Tokens spent");
-    expect(dialog.textContent).toContain("Tool calls");
+    expect(screen.queryByText("Total cost")).toBeNull();
+    expect(screen.queryByText("Plans")).toBeNull();
+    expect(screen.queryByText("Sessions")).toBeNull();
+    expect(screen.queryByLabelText("Cost breakdown")).toBeNull();
   });
 
   it("labels an ad-hoc delivery as Ad-hoc", async () => {

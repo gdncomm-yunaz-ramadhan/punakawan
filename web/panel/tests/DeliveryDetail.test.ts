@@ -57,24 +57,47 @@ function installBackend(d: DeliveryDetailModel, opts: { onPost?: (url: string) =
 }
 
 describe("DeliveryDetail", () => {
-  it("renders the title, description, and overview metrics; skips tabs with no data", async () => {
+  it("renders required tabs and their empty states when no delivery data exists", async () => {
     installBackend(detail());
 
     render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
     expect(screen.getByText("Move every billing caller onto the v2 pricing endpoint.")).toBeTruthy();
-    expect(screen.getByText("$12.50")).toBeTruthy();
-    expect(screen.getByText("5")).toBeTruthy();
-
-    // Only the always-present Overview tab shows up when nothing else has data.
-    expect(screen.getByRole("tab", { name: "Overview" })).toBeTruthy();
+    for (const tab of ["Overview", "Projects", "Jira", "Sessions", "Activity"]) {
+      expect(screen.getByRole("tab", { name: tab })).toBeTruthy();
+    }
     expect(screen.queryByRole("tab", { name: "Plan" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Projects" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Jira" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "GitHub" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Sessions" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Activity" })).toBeNull();
+    expect(screen.getByText("Estimated cost")).toBeTruthy();
+    expect(screen.queryByText("Source")).toBeNull();
+    expect(screen.queryByText("Tool calls")).toBeNull();
+    expect(screen.queryByText("Tokens")).toBeNull();
+    expect(screen.queryByText("Elapsed")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Projects" }));
+    expect(screen.getByText("No projects linked to this delivery.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("tab", { name: "Jira" }));
+    expect(screen.getByText("No Jira activity recorded for this delivery.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
+    expect(screen.getByText("No sessions recorded.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
+    expect(screen.getByText("No activity recorded.")).toBeTruthy();
+  });
+
+  it("opens cost detail from the estimated cost info button", async () => {
+    installBackend(detail());
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("heading", { name: "Migrate billing to v2" });
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    await fireEvent.click(screen.getByLabelText("Cost detail"));
+    const dialog = screen.getByRole("dialog", { name: "Estimated cost detail" });
+    expect(dialog.textContent).toContain("Tokens");
+    expect(dialog.textContent).toContain("$12.50");
+    expect(dialog.textContent).toContain("Elapsed time");
+    expect(dialog.textContent).toContain("Tool calls");
   });
 
   it("never renders lane/blocked/pending-question language anywhere on the page", async () => {
@@ -87,27 +110,6 @@ describe("DeliveryDetail", () => {
     expect(text).not.toContain("lane");
     expect(text).not.toContain("blocked");
     expect(text).not.toContain("pending question");
-  });
-
-  it("shows a Plan tab only when plan_detail is present", async () => {
-    installBackend(
-      detail({
-        plan_detail: {
-          id: "plan-1",
-          objective: "Ship the v2 billing rollout",
-          revision: 3,
-          steps: [{ objective: "Cut over reads", expected_outcome: "Reads use v2" }],
-        },
-      }),
-    );
-
-    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
-    await screen.findByRole("tab", { name: "Plan" });
-
-    await fireEvent.click(screen.getByRole("tab", { name: "Plan" }));
-    const panel = screen.getByRole("tabpanel", { name: "Plan" });
-    expect(within(panel).getByText("r3", { exact: false })).toBeTruthy();
-    expect(within(panel).getByText("Cut over reads")).toBeTruthy();
   });
 
   it("shows a Projects tab with each project's linked plan", async () => {
@@ -158,6 +160,25 @@ describe("DeliveryDetail", () => {
     expect(within(panel).getAllByText("BILL-42", { exact: false }).length).toBeGreaterThan(0);
     expect(within(panel).getByText("PUN-12")).toBeTruthy();
     expect(within(panel).getByText("In Progress")).toBeTruthy();
+  });
+
+  it("renders a Jira empty state when touched_items is null", async () => {
+    installBackend(
+      detail({
+        jira: {
+          issue_key: "BILL-42",
+          touched_items: null as unknown as [],
+          transitions: [],
+          worklogs: [],
+          write_health: { pending: 0, retrying: 0, reconciling: 0, failed: 0, succeeded: 0, cancelled: 0 },
+        },
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("tab", { name: "Jira" });
+    await fireEvent.click(screen.getByRole("tab", { name: "Jira" }));
+    expect(screen.getByText("No Jira activity recorded for this delivery.")).toBeTruthy();
   });
 
   it("shows a Sessions tab with each session's participant and duration", async () => {
