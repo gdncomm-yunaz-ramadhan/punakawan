@@ -1,0 +1,48 @@
+prompts/bagong/prompt.md
+  a1264f1ebebd2632 8-11,89-92,132-133
+prompts/petruk/prompt.md
+  a1264f1ebebd2632 8-11,84,86-90,92-110
+cmd/punakawan/hooks_cmd.go
+  a1264f1ebebd2632 10,17,19,194,211,246-256,369-498
+cmd/punakawan/hooks_cmd_test.go
+  a1264f1ebebd2632 9,15-16,253,271-369
+internal/mcpserver/tools_public.go
+  a1264f1ebebd2632 25-26
+cmd/punakawan/doctor_cmd.go
+  a1264f1ebebd2632 707-708
+prompts/gareng/prompt.md
+  a1264f1ebebd2632 8-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "3927c3f9074c08b6b0b50bc58a81b09135d5231a",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "a1264f1ebebd2632": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a809af2a-4594-4899-8957-d70f61f4e76c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 319,
+      "total_deletions": 56,
+      "accepted_lines": 296,
+      "overriden_lines": 0
+    }
+  }
+}
