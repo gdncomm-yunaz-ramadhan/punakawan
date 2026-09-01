@@ -1,0 +1,36 @@
+prompts/semar/prompt.md
+  a1264f1ebebd2632 8-11,41-46,50-65,70-72,78-82,116,120-123,125-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "5fcfc9031b13ce513cc335aa6458d6c5784ab29c",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "a1264f1ebebd2632": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a809af2a-4594-4899-8957-d70f61f4e76c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 47,
+      "total_deletions": 20,
+      "accepted_lines": 47,
+      "overriden_lines": 0
+    }
+  }
+}
