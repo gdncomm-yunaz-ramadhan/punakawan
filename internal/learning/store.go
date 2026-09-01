@@ -123,9 +123,9 @@ type Proposal struct {
 	// an accepted proposal is not built here.
 	ProfileRevision int `json:"profile_revision,omitempty"`
 
-	// Supersedes/SupersededBy form the same forward-pointer supersession
-	// chain as KnowledgeAdapter.head (adapters.go): SupersededBy on a
-	// rolled-back or replaced proposal names the proposal that replaces it;
+	// Supersedes/SupersededBy form a forward-pointer supersession chain:
+	// SupersededBy on a rolled-back or replaced proposal names the
+	// proposal that replaces it;
 	// Supersedes on that replacement names the one it replaced, restoring a
 	// prior accepted value. Neither is set by Append itself — callers (e.g.
 	// Rollback) populate them explicitly.

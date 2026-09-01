@@ -171,7 +171,6 @@
               <span class="stats" aria-label="Project snapshot">
                 <span><strong>{p.repository_count}</strong> repos</span>
                 <span><strong>{p.active_session_count}</strong> active</span>
-                <span><strong>{p.knowledge_count}</strong> knowledge</span>
               </span>
             </button>
             <div class="card-actions">
@@ -205,8 +204,8 @@
       </p>
       <p class="scope">
         It does <strong>not</strong> delete the repository or any of its files. The workspace directory
-        (<code>{pendingRemoval.path}</code>), its <code>.punakawan</code> folder, knowledge, tasks, and evidence all stay
-        exactly where they are on disk. Registering the same path again brings the project back.
+        (<code>{pendingRemoval.path}</code>), its <code>.punakawan</code> folder, tasks, and evidence all stay exactly
+        where they are on disk. Registering the same path again brings the project back.
       </p>
 
       <div class="field">

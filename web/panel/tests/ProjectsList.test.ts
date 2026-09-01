@@ -19,7 +19,6 @@ function project(id: string, over: Record<string, unknown> = {}) {
     primary: false,
     availability: "available",
     repository_count: 1,
-    knowledge_count: 0,
     active_session_count: 0,
     metadata_count: 0,
     ...over,

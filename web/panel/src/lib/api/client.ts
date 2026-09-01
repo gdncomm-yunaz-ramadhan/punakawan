@@ -26,7 +26,6 @@ export interface WorkspaceSummary {
   availability: Availability;
   repository_count: number;
   active_session_count: number;
-  knowledge_count: number;
   last_activity_at: string;
   pinned: boolean;
   // True only for the single workspace this panel instance serves.
@@ -42,199 +41,6 @@ export interface SourceHealth {
 
 export function getSystem(): Promise<SystemInfo> {
   return getJSON<SystemInfo>("/system");
-}
-
-export interface KnowledgeRelation {
-  target: string;
-  type: string;
-}
-
-// RetrievalRecipeSelectorClause mirrors
-// pkg/protocol.KnowledgeRecordRetrievalRecipeSelectorAllElem (and its
-// Any-side sibling) structurally: go-jsonschema explodes each nesting
-// level into its own named Go type, but every level shares this same
-// field/operator/value-or-nested-group shape, so one recursive TS type
-// covers the whole two-level-bounded AST rather than naming each level.
-export interface RetrievalRecipeSelectorClause {
-  field?: string;
-  operator?: "equals" | "not_equals" | "phrase_contains" | "contains" | "in" | "not_in" | "greater_than" | "less_than";
-  value?: unknown;
-  all?: RetrievalRecipeSelectorClause[];
-  any?: RetrievalRecipeSelectorClause[];
-}
-
-export interface RetrievalRecipeSelector {
-  all?: RetrievalRecipeSelectorClause[];
-  any?: RetrievalRecipeSelectorClause[];
-}
-
-export interface RetrievalRecipeInput {
-  name: string;
-  type: string;
-  required?: boolean;
-  default?: string;
-}
-
-export interface RetrievalRecipeOrdering {
-  field: string;
-  direction: "ascending" | "descending";
-}
-
-export interface RetrievalRecipeOutput {
-  entity_type: string;
-  identity_field: string;
-  fields: string[];
-}
-
-export interface RetrievalRecipeLastExecution {
-  status?: "success" | "failure";
-  executed_at?: string;
-  result_count?: number;
-  compiled_query_hash?: string;
-  evidence_id?: string;
-  provider_request_id?: string;
-  session_id?: string;
-  task_id?: string;
-  bindings?: Record<string, unknown>;
-}
-
-export interface RetrievalRecipeValidation {
-  status?: "pending" | "passed" | "failed";
-  validation_id?: string;
-  compiled_query_hash?: string;
-  sample_size?: number;
-  accepted_at?: string;
-  accepted_by?: string;
-  accepted_result_count?: number;
-  provider_instance_fingerprint?: string;
-  evidence_ids?: string[];
-}
-
-// RetrievalRecipe mirrors pkg/protocol.KnowledgeRecordRetrievalRecipe -
-// present on KnowledgeRecord.retrieval_recipe when
-// KnowledgeRecord.type === "retrieval_recipe".
-export interface RetrievalRecipe {
-  capability: string;
-  intent: string;
-  provider: string;
-  resource: string;
-  operation: string;
-  read_only: boolean;
-  recipe_version?: number;
-  selector: RetrievalRecipeSelector;
-  inputs?: RetrievalRecipeInput[];
-  ordering?: RetrievalRecipeOrdering[];
-  output: RetrievalRecipeOutput;
-  applies_to?: {
-    workspace_ids?: string[];
-    repository_ids?: string[];
-  };
-  last_execution?: RetrievalRecipeLastExecution;
-  validation?: RetrievalRecipeValidation;
-}
-
-export interface KnowledgeRecord {
-  id: string;
-  type: string;
-  status: string;
-  title: string;
-  summary?: string;
-  content?: string;
-  tags?: string[];
-  aliases?: string[];
-  scope?: {
-    project?: string;
-    organization?: string;
-    module?: string;
-    path?: string;
-    repository?: string;
-  };
-  source: {
-    provider: string;
-    external_id?: string;
-    uri?: string;
-    version?: unknown;
-    section?: string;
-    content_hash?: string;
-    retrieved_at: string;
-  };
-  extraction: {
-    method: string;
-    confidence?: number;
-    extractor_version?: string;
-  };
-  validity: {
-    state: string;
-    verified_at?: string;
-    verified_by?: string[];
-  };
-  relations?: KnowledgeRelation[];
-  superseded_by?: string;
-  // Present when type === "retrieval_recipe" (punakawan-procedural-
-  // knowledge-retrieval-recipe-plan-final.md Phase 0/5).
-  retrieval_recipe?: RetrievalRecipe;
-  // Type-specific structured bodies carried by role/context records. The
-  // panel renders whichever is present as the record's substance (a record
-  // often has no free-form summary/content — its body lives here). Kept as
-  // `unknown` because the panel only pretty-prints them generically.
-  requirement?: unknown;
-  petruk_plan?: unknown;
-  context_dossier?: unknown;
-  semar_synthesis?: unknown;
-  gareng_review?: unknown;
-  bagong_review?: unknown;
-  convention_profile?: unknown;
-}
-
-export interface KnowledgeEvent {
-  type: "put" | "supersede" | "delete";
-  record_id: string;
-  record_type: string;
-  superseded_by?: string;
-  timestamp: string;
-}
-
-export interface SearchMatch {
-  Kind: "identifier" | "alias" | "bm25" | "fuzzy" | "related";
-  Fields?: string[];
-  Terms?: string[];
-}
-
-export interface SearchResult {
-  Id: string;
-  Title: string;
-  Summary: string;
-  Type: string;
-  Score: number;
-  Match: SearchMatch;
-  Explanation?: string[];
-  Record: KnowledgeRecord;
-}
-
-export interface KnowledgeFilter {
-  type?: string;
-  state?: string;
-  repository?: string;
-  source?: string;
-  stale?: boolean;
-  has_relation?: boolean;
-  has_conflict?: boolean;
-  q?: string;
-  limit?: number;
-}
-
-function buildKnowledgeQuery(filter: KnowledgeFilter): string {
-  const params = new URLSearchParams();
-  if (filter.type) params.set("type", filter.type);
-  if (filter.state) params.set("state", filter.state);
-  if (filter.repository) params.set("repository", filter.repository);
-  if (filter.source) params.set("source", filter.source);
-  if (filter.stale) params.set("stale", "true");
-  if (filter.has_relation) params.set("has_relation", "true");
-  if (filter.has_conflict) params.set("has_conflict", "true");
-  if (filter.q) params.set("q", filter.q);
-  if (filter.limit) params.set("limit", String(filter.limit));
-  return params.toString();
 }
 
 // --- Projects (Phase 2, plan §5) -----------------------------------------
@@ -257,7 +63,6 @@ export interface ProjectSummary {
   // it after a narrowing cast.
   availability: string;
   repository_count: number;
-  knowledge_count: number;
   active_session_count: number;
   metadata_count: number;
 }
@@ -587,36 +392,6 @@ export function getHealth(id: string): Promise<HealthResponse> {
 
 export function refreshHealth(id: string): Promise<HealthResponse> {
   return mutateJSON<HealthResponse>(`/projects/${encodeURIComponent(id)}/health/refresh`, { method: "POST" });
-}
-
-// --- Project-scoped knowledge reads ---------------------------------------
-
-export function listProjectKnowledge(
-  id: string,
-  filter: KnowledgeFilter = {},
-): Promise<{ items: (KnowledgeRecord | SearchResult)[] }> {
-  const qs = buildKnowledgeQuery(filter);
-  return getJSON<{ items: (KnowledgeRecord | SearchResult)[] }>(
-    `/projects/${encodeURIComponent(id)}/knowledge${qs ? `?${qs}` : ""}`,
-  );
-}
-
-export function getProjectKnowledge(id: string, knowledgeId: string): Promise<KnowledgeRecord> {
-  return getJSON<KnowledgeRecord>(
-    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}`,
-  );
-}
-
-export function getProjectKnowledgeRelations(id: string, knowledgeId: string): Promise<{ items: KnowledgeRecord[] }> {
-  return getJSON<{ items: KnowledgeRecord[] }>(
-    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/relations`,
-  );
-}
-
-export function getProjectKnowledgeHistory(id: string, knowledgeId: string): Promise<{ items: KnowledgeEvent[] }> {
-  return getJSON<{ items: KnowledgeEvent[] }>(
-    `/projects/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(knowledgeId)}/history`,
-  );
 }
 
 // --- Deliveries (multi-project orchestration) ----------------------------

@@ -11,7 +11,6 @@ function project(over: Partial<ProjectSummary> & { id: string }): ProjectSummary
     primary: false,
     availability: "available",
     repository_count: 0,
-    knowledge_count: 0,
     active_session_count: 0,
     metadata_count: 0,
     ...over,

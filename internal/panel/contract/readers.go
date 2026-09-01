@@ -4,8 +4,7 @@
 // consume existing Punakawan service interfaces. It should not scatter
 // format-specific parsing throughout HTTP handlers." Implementations live
 // in internal/panel/sources, each wrapping an already-existing store
-// (workflow, knowledge, evidence, approvals) rather than duplicating
-// its state.
+// (workflow, evidence, approvals) rather than duplicating its state.
 package contract
 
 import (
@@ -17,10 +16,8 @@ import (
 	"github.com/ygrip/punakawan/internal/deliveryprojection"
 	"github.com/ygrip/punakawan/internal/dossier"
 	"github.com/ygrip/punakawan/internal/impact"
-	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/roleconfig"
-	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -51,7 +48,6 @@ type WorkspaceSummary struct {
 	Availability       protocol.PanelSourceHealthAvailability `json:"availability"`
 	RepositoryCount    int                                    `json:"repository_count"`
 	ActiveSessionCount int                                    `json:"active_session_count"`
-	KnowledgeCount     int                                    `json:"knowledge_count"`
 	LastActivityAt     time.Time                              `json:"last_activity_at"`
 	Pinned             bool                                   `json:"pinned"`
 	// Primary is true for the one workspace this panel instance's *app.App
@@ -110,42 +106,6 @@ type SessionReader interface {
 	Get(ctx context.Context, workspaceID, sessionID string) (SessionDetail, error)
 }
 
-// KnowledgeReader searches and describes durable knowledge, per §8.1 and
-// §10. Search reuses internal/search's existing BM25F+relation-expansion
-// pipeline (AEP-M6) directly - the panel does not reimplement ranking.
-type KnowledgeReader interface {
-	// List browses without a query (search.Search returns nothing for an
-	// empty query, so this is a separate path per §14.6's filter rail:
-	// type, state, repository, source, and staleness, not text relevance).
-	List(ctx context.Context, workspaceID string, filter KnowledgeFilter) ([]protocol.KnowledgeRecord, error)
-	Search(ctx context.Context, workspaceID string, req search.Request) ([]search.Result, error)
-	Get(ctx context.Context, workspaceID, knowledgeID string) (protocol.KnowledgeRecord, error)
-	Relations(ctx context.Context, workspaceID, knowledgeID string) ([]protocol.KnowledgeRecord, error)
-	// History returns every put/supersede/delete event
-	// internal/knowledge.Store has recorded for one record, in append
-	// (chronological) order. This is coarser than §14.6's history section
-	// ("created/verified/updated/disputed/superseded/invalidated"): bd
-	// itself only distinguishes put (create-or-update, not itself
-	// distinguishable from a re-verification), supersede, and delete - an
-	// honest gap in the underlying event log, not fabricated here.
-	History(ctx context.Context, workspaceID, knowledgeID string) ([]knowledge.Event, error)
-}
-
-// KnowledgeFilter narrows KnowledgeReader.List, per §14.6's filter rail.
-// HasConflict/HasRelation are derived from the record's own embedded
-// Relations rather than a separate index: "conflicts-with" is just one of
-// the 20 relation types a record can declare on itself.
-type KnowledgeFilter struct {
-	Type        string
-	State       string
-	Repository  string
-	Source      string
-	Stale       bool
-	HasConflict bool
-	HasRelation bool
-	Limit       int
-}
-
 // EvidenceReader lists and describes evidence records, per §8.4. Large
 // artifacts are not loaded by List/Get: Get returns the
 // protocol.EvidenceRecord's metadata (path, hash, type) only. Preview is
@@ -187,25 +147,6 @@ type EvidencePreview struct {
 	DiffSummary *DiffSummary
 }
 
-// GlobalSearchResult pairs one workspace's search.Result with the
-// workspace it came from and its fused rank score, per §10.1's global
-// search: every registered workspace is queried through the same
-// KnowledgeReader.Search path, then merged by rank rather than raw score
-// (search.FuseRankedLists) since separate BM25F corpora are not
-// comparable on score alone.
-type GlobalSearchResult struct {
-	WorkspaceID string        `json:"workspace_id"`
-	Result      search.Result `json:"result"`
-	RRFScore    float64       `json:"rrf_score"`
-}
-
-// GlobalSearchReader searches every registered workspace at once, per
-// §10.1. Unlike KnowledgeReader, it takes no workspaceID: that is the
-// entire point of "global."
-type GlobalSearchReader interface {
-	Search(ctx context.Context, req search.Request) ([]GlobalSearchResult, error)
-}
-
 // ProjectSummary is one project's panel-facing overview, per the project
 // performance plan §3/§14. A project shares its id with the workspace it is
 // rooted in (project id == registry workspace id). The count fields are
@@ -222,7 +163,6 @@ type ProjectSummary struct {
 	Primary            bool   `json:"primary"`
 	Availability       string `json:"availability"`
 	RepositoryCount    int    `json:"repository_count"`
-	KnowledgeCount     int    `json:"knowledge_count"`
 	ActiveSessionCount int    `json:"active_session_count"`
 	MetadataCount      int    `json:"metadata_count"`
 }

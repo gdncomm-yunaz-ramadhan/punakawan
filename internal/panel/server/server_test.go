@@ -24,15 +24,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/workflowdef"
-	"github.com/ygrip/punakawan/pkg/protocol"
 )
-
-func requireDolt(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-}
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
@@ -48,8 +40,8 @@ func runGit(t *testing.T, dir string, args ...string) {
 // helper.
 func newTestApp(t *testing.T) *app.App {
 	t.Helper()
-	// Isolate the shared SQLite kernel to a per-test temp dir so OpenKnowledge/
-	// OpenTaskStore never touch this machine's real, shared database.
+	// Isolate the shared SQLite kernel to a per-test temp dir so OpenTaskStore
+	// never touches this machine's real, shared database.
 	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
 	dir := t.TempDir()
@@ -215,70 +207,6 @@ func TestServerStaticFallbackServesIndexForUnknownPath(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "Punakawan Panel") {
 		t.Fatalf("body = %s, want it to contain the panel's index.html", body)
-	}
-}
-
-func TestServerKnowledgeEndpoints(t *testing.T) {
-	requireDolt(t)
-	s, a := startTestServer(t)
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	rec := protocol.KnowledgeRecord{
-		Id:         "pkw:requirement/repo-a/refund-sla",
-		Type:       protocol.KnowledgeRecordTypeRequirement,
-		Title:      "Refund SLA policy",
-		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
-		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodManual},
-		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
-	}
-	if err := store.Put(rec); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-
-	status, body := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ := body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want 1", items)
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/"+rec.Id)
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if body["id"] != rec.Id {
-		t.Fatalf("id = %v, want %v", body["id"], rec.Id)
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/relations")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if _, ok := body["items"]; !ok {
-		t.Fatalf("expected an items field: %+v", body)
-	}
-
-	status, body = getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/"+rec.Id+"/history")
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	items, _ = body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("history items = %+v, want 1 put event", items)
-	}
-}
-
-func TestServerKnowledgeHandlerUnknownIDReturns404(t *testing.T) {
-	requireDolt(t)
-	s, a := startTestServer(t)
-	status, _ := getJSON(t, s.Addr(), "/api/v1/projects/"+a.Workspace.ID+"/knowledge/no-such-id")
-	if status != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", status)
 	}
 }
 

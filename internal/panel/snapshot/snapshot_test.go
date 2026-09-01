@@ -95,7 +95,7 @@ func TestGetOrRefreshMissingReturnsNilStale(t *testing.T) {
 	done := make(chan struct{})
 	c := New(func(ctx context.Context, id string) (*ProjectSnapshot, error) {
 		defer close(done)
-		return &ProjectSnapshot{ProjectID: id, KnowledgeCount: 7}, nil
+		return &ProjectSnapshot{ProjectID: id, RepositoryCount: 7}, nil
 	})
 
 	got, stale := c.GetOrRefresh(context.Background(), "p1")
@@ -105,7 +105,7 @@ func TestGetOrRefreshMissingReturnsNilStale(t *testing.T) {
 	<-done
 	waitFor(t, func() bool {
 		s, ok := c.Get("p1")
-		return ok && s.KnowledgeCount == 7
+		return ok && s.RepositoryCount == 7
 	})
 }
 

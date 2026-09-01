@@ -5,10 +5,8 @@ import (
 	"fmt"
 
 	"github.com/ygrip/punakawan/internal/app"
-	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/runtime"
-	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -109,59 +107,6 @@ func (p ProjectEvidenceReader) Preview(ctx context.Context, workspaceID, evidenc
 	err := p.with(ctx, workspaceID, func(a *app.App) error {
 		var e error
 		out, e = (&EvidenceSource{App: a}).Preview(ctx, workspaceID, evidenceID, offset, limit)
-		return e
-	})
-	return out, err
-}
-
-// ProjectKnowledgeReader is a contract.KnowledgeReader resolved per project id.
-type ProjectKnowledgeReader struct{ *AppResolver }
-
-func (p ProjectKnowledgeReader) List(ctx context.Context, workspaceID string, filter contract.KnowledgeFilter) ([]protocol.KnowledgeRecord, error) {
-	var out []protocol.KnowledgeRecord
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&KnowledgeSource{App: a}).List(ctx, workspaceID, filter)
-		return e
-	})
-	return out, err
-}
-
-func (p ProjectKnowledgeReader) Search(ctx context.Context, workspaceID string, req search.Request) ([]search.Result, error) {
-	var out []search.Result
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&KnowledgeSource{App: a}).Search(ctx, workspaceID, req)
-		return e
-	})
-	return out, err
-}
-
-func (p ProjectKnowledgeReader) Get(ctx context.Context, workspaceID, knowledgeID string) (protocol.KnowledgeRecord, error) {
-	var out protocol.KnowledgeRecord
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&KnowledgeSource{App: a}).Get(ctx, workspaceID, knowledgeID)
-		return e
-	})
-	return out, err
-}
-
-func (p ProjectKnowledgeReader) Relations(ctx context.Context, workspaceID, knowledgeID string) ([]protocol.KnowledgeRecord, error) {
-	var out []protocol.KnowledgeRecord
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&KnowledgeSource{App: a}).Relations(ctx, workspaceID, knowledgeID)
-		return e
-	})
-	return out, err
-}
-
-func (p ProjectKnowledgeReader) History(ctx context.Context, workspaceID, knowledgeID string) ([]knowledge.Event, error) {
-	var out []knowledge.Event
-	err := p.with(ctx, workspaceID, func(a *app.App) error {
-		var e error
-		out, e = (&KnowledgeSource{App: a}).History(ctx, workspaceID, knowledgeID)
 		return e
 	})
 	return out, err

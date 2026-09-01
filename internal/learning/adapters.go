@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/artifact"
-	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/project"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -257,115 +256,6 @@ func (a *MetadataAdapter) CreateVersion(id, workspaceID string, content []byte, 
 }
 
 // ---------------------------------------------------------------------------
-// Knowledge adapter
-// ---------------------------------------------------------------------------
-
-// KnowledgeAdapter reviews a knowledge record. On acceptance it writes a new
-// immutable record version and supersedes the previous one (plan §6.3),
-// mirroring the retrieval-recipe adapter but for any record type.
-type KnowledgeAdapter struct {
-	Store     *knowledge.Store
-	locksOnce sync.Once
-	locks     *artifact.KeyedMutex
-}
-
-func (a *KnowledgeAdapter) LockArtifact(id string) func() {
-	a.locksOnce.Do(func() { a.locks = artifact.NewKeyedMutex() })
-	return a.locks.Lock(id)
-}
-
-// head follows the SupersededBy chain to the live record.
-func (a *KnowledgeAdapter) head(id string) (protocol.KnowledgeRecord, error) {
-	rec, err := a.Store.Get(id)
-	if err != nil {
-		return protocol.KnowledgeRecord{}, err
-	}
-	seen := map[string]bool{rec.Id: true}
-	for rec.SupersededBy != nil {
-		next := *rec.SupersededBy
-		if seen[next] {
-			break
-		}
-		nr, err := a.Store.Get(next)
-		if err != nil {
-			break
-		}
-		rec = nr
-		seen[next] = true
-	}
-	return rec, nil
-}
-
-func (a *KnowledgeAdapter) reference(rec protocol.KnowledgeRecord) (protocol.ArtifactReference, error) {
-	content, err := marshalCanonical(rec)
-	if err != nil {
-		return protocol.ArtifactReference{}, err
-	}
-	ws := ""
-	if rec.Scope != nil && rec.Scope.Project != nil {
-		ws = *rec.Scope.Project
-	}
-	return protocol.ArtifactReference{
-		Type:         protocol.ArtifactReferenceTypeKnowledge,
-		Id:           rec.Id,
-		Version:      1,
-		RevisionHash: artifact.Hash(content),
-		WorkspaceId:  ws,
-		Format:       protocol.ArtifactReferenceFormatJson,
-	}, nil
-}
-
-func (a *KnowledgeAdapter) Current(id string) (protocol.ArtifactReference, error) {
-	head, err := a.head(id)
-	if err != nil {
-		return protocol.ArtifactReference{}, err
-	}
-	return a.reference(head)
-}
-
-func (a *KnowledgeAdapter) Version(id string, version int) ([]byte, protocol.ArtifactReference, error) {
-	head, err := a.head(id)
-	if err != nil {
-		return nil, protocol.ArtifactReference{}, err
-	}
-	ref, err := a.reference(head)
-	if err != nil {
-		return nil, protocol.ArtifactReference{}, err
-	}
-	content, err := marshalCanonical(head)
-	if err != nil {
-		return nil, protocol.ArtifactReference{}, err
-	}
-	return content, ref, nil
-}
-
-func (a *KnowledgeAdapter) CreateVersion(id, workspaceID string, content []byte, now time.Time) (protocol.ArtifactReference, error) {
-	var proposed protocol.KnowledgeRecord
-	if err := json.Unmarshal(content, &proposed); err != nil {
-		return protocol.ArtifactReference{}, fmt.Errorf("learning: knowledge candidate is not a valid record: %w", err)
-	}
-	head, err := a.head(id)
-	if err != nil {
-		return protocol.ArtifactReference{}, err
-	}
-	newID, err := mintVersionID(head.Id)
-	if err != nil {
-		return protocol.ArtifactReference{}, err
-	}
-	proposed.Id = newID
-	if proposed.Type == "" {
-		proposed.Type = head.Type
-	}
-	if err := a.Store.Put(proposed); err != nil {
-		return protocol.ArtifactReference{}, err
-	}
-	if err := a.Store.Supersede(head.Id, newID); err != nil {
-		return protocol.ArtifactReference{}, err
-	}
-	return a.reference(proposed)
-}
-
-// ---------------------------------------------------------------------------
 // Convention adapter
 // ---------------------------------------------------------------------------
 
@@ -433,6 +323,5 @@ func (a *ConventionAdapter) CreateVersion(id, workspaceID string, content []byte
 var (
 	_ artifact.Store = (*WorkflowAdapter)(nil)
 	_ artifact.Store = (*MetadataAdapter)(nil)
-	_ artifact.Store = (*KnowledgeAdapter)(nil)
 	_ artifact.Store = (*ConventionAdapter)(nil)
 )

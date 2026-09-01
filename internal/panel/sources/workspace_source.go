@@ -212,35 +212,19 @@ func unavailableDetail(entry protocol.PanelWorkspaceRegistryEntry, err error) co
 func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *protocol.PanelWorkspaceRegistryEntry, skipGit bool) (contract.WorkspaceDetail, error) {
 	now := time.Now().UTC()
 
-	// The heavy probe groups below are mutually independent - knowledge opens
-	// a Dolt store, and (unless skipGit) git shells out to `git status` per
-	// repo - so running them sequentially made a single describe() the sum of
-	// their latency (~6s for the overview, which describes only the primary
-	// workspace). Fan them out and assemble their health slices back in a
-	// fixed order afterwards so the output stays deterministic (tests and the
-	// health board depend on ordering). adapter health is a cheap PATH
-	// lookup, left inline.
+	// The heavy probe groups below are mutually independent - (unless
+	// skipGit) git shells out to `git status` per repo - so running them
+	// sequentially made a single describe() the sum of their latency.
+	// Fan them out and assemble their health slices back in a fixed order
+	// afterwards so the output stays deterministic (tests and the health
+	// board depend on ordering). adapter health is a cheap PATH lookup,
+	// left inline.
 	var (
-		knowledgeCount  int
-		knowledgeHealth []protocol.PanelSourceHealth
-		activeSessions  int
-		workflowHealth  []protocol.PanelSourceHealth
-		gitH            []protocol.PanelSourceHealth
-		wg              sync.WaitGroup
+		activeSessions int
+		workflowHealth []protocol.PanelSourceHealth
+		gitH           []protocol.PanelSourceHealth
+		wg             sync.WaitGroup
 	)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if store, err := a.OpenKnowledge(); err != nil {
-			knowledgeHealth = append(knowledgeHealth, healthDown("knowledge", err, now))
-		} else if recs, err := store.AllWithUpdatedAt(); err != nil {
-			knowledgeHealth = append(knowledgeHealth, healthDown("knowledge", err, now))
-		} else {
-			knowledgeCount = len(recs)
-			knowledgeHealth = append(knowledgeHealth, healthOK("knowledge", now))
-		}
-	}()
 
 	wg.Add(1)
 	go func() {
@@ -267,10 +251,8 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 
 	wg.Wait()
 
-	// Reassemble in the original sequential order: knowledge, workflow, git,
-	// adapters.
-	health := make([]protocol.PanelSourceHealth, 0, len(knowledgeHealth)+len(workflowHealth)+len(gitH)+len(a.AdapterRegistry.Specs()))
-	health = append(health, knowledgeHealth...)
+	// Reassemble in the original sequential order: workflow, git, adapters.
+	health := make([]protocol.PanelSourceHealth, 0, len(workflowHealth)+len(gitH)+len(a.AdapterRegistry.Specs()))
 	health = append(health, workflowHealth...)
 	health = append(health, gitH...)
 	health = append(health, adapterHealth(a, now)...)
@@ -291,7 +273,6 @@ func (w *WorkspaceSource) describe(ctx context.Context, a *app.App, entry *proto
 		Availability:       overallAvailability(health),
 		RepositoryCount:    len(a.Workspace.Repositories),
 		ActiveSessionCount: activeSessions,
-		KnowledgeCount:     knowledgeCount,
 		LastActivityAt:     now,
 		Pinned:             pinned,
 		Primary:            a.Workspace.ID == w.App.Workspace.ID,

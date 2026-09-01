@@ -240,19 +240,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/health", api.HealthHandler(healthCache))
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/health/refresh", session.RequireSession(s.sessions, api.HealthRefreshHandler(healthCache)))
 
-	// Project-scoped Knowledge reads resolve the
-	// backing *app.App per project id through the runtime pool (the primary
-	// is used directly), so Knowledge works for any registered project.
-	projResolver := &sources.AppResolver{
-		PrimaryID: s.app.Workspace.ID,
-		Primary:   s.app,
-		Runtime:   s.readers.Runtime,
-		Resolve:   s.resolveRoot,
-	}
-	projKnowledge := sources.ProjectKnowledgeReader{AppResolver: projResolver}
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge", api.KnowledgeListHandler(projKnowledge))
-	mux.HandleFunc("GET /api/v1/projects/{workspaceId}/knowledge/{knowledgeRest...}", api.KnowledgeDetailHandler(projKnowledge))
-
 	mux.HandleFunc("POST /api/v1/session/exchange", session.ExchangeHandler(s.sessions))
 
 	mux.Handle("/", static)

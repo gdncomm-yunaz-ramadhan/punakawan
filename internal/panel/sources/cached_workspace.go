@@ -184,7 +184,7 @@ func (c *CachedWorkspaceReader) cachedSummary(ctx context.Context, e protocol.Pa
 // live per-source Health detail Get computes.
 //
 // This is the read the project pages actually want. They render counts
-// (repositories, knowledge, active sessions) and never display per-source
+// (repositories, active sessions) and never display per-source
 // health - but recomputing health means opening the project's Dolt store and
 // running `git status` once per repository. Against a project with several
 // repositories that is several seconds of work, and routing the project
@@ -265,7 +265,6 @@ func (c *CachedWorkspaceReader) snapshotToSummary(s *snapshot.ProjectSnapshot, e
 		Availability:       protocol.PanelSourceHealthAvailability(s.Availability),
 		RepositoryCount:    s.RepositoryCount,
 		ActiveSessionCount: s.ActiveRunCount,
-		KnowledgeCount:     s.KnowledgeCount,
 		LastActivityAt:     s.UpdatedAt,
 		Pinned:             e.Pinned != nil && *e.Pinned,
 		Primary:            s.ProjectID == c.primaryID,
@@ -288,7 +287,6 @@ func summaryToSnapshot(sum contract.WorkspaceSummary) *snapshot.ProjectSnapshot 
 		UpdatedAt:       updated,
 		Availability:    string(sum.Availability),
 		RepositoryCount: sum.RepositoryCount,
-		KnowledgeCount:  sum.KnowledgeCount,
 		ActiveRunCount:  sum.ActiveSessionCount,
 	}
 }

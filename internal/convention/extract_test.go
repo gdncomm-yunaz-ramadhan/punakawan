@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -30,7 +29,7 @@ func mkdir(t *testing.T, dir, name string) {
 // TestExtractObservedRepo builds a fixture repo with explicit config files
 // (.editorconfig, go.mod + a .go file, .golangci.yml) and consistently
 // kebab-case top-level directories, then asserts Extract detects all of it,
-// produces a record that passes knowledge.Validate, and — since this
+// produces a record - and, since this
 // fixture also has a naming-convention signal, which is always inferred
 // per §27.4 — reports the overall record as inferred despite most of its
 // signals being observed.
@@ -49,10 +48,6 @@ func TestExtractObservedRepo(t *testing.T) {
 	rec, err := Extract(dir, "checkout-platform", "checkout-api")
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
-	}
-
-	if err := knowledge.Validate(rec); err != nil {
-		t.Fatalf("Validate: %v", err)
 	}
 
 	if rec.Id != "pkw:convention/checkout-platform/checkout-api" {
@@ -130,9 +125,6 @@ func TestExtractPurelyObservedRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
-	if err := knowledge.Validate(rec); err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
 
 	if rec.Structure.NamingConvention != nil {
 		t.Errorf("NamingConvention = %v, want unset (no discriminating directory names)", *rec.Structure.NamingConvention)
@@ -154,9 +146,6 @@ func TestExtractEmptyRepo(t *testing.T) {
 	rec, err := Extract(dir, "ws", "empty-repo")
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
-	}
-	if err := knowledge.Validate(rec); err != nil {
-		t.Fatalf("Validate: %v", err)
 	}
 
 	if rec.Formatting == nil {
@@ -204,9 +193,6 @@ func TestExtractMonorepoLayout(t *testing.T) {
 	rec, err := Extract(dir, "ws", "monorepo")
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
-	}
-	if err := knowledge.Validate(rec); err != nil {
-		t.Fatalf("Validate: %v", err)
 	}
 
 	if rec.Structure.Layout == nil || *rec.Structure.Layout != "monorepo" {

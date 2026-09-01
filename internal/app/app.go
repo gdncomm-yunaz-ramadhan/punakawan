@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 	"github.com/ygrip/punakawan/internal/contextrequest"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/jiraworkflow"
-	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/learning"
 	"github.com/ygrip/punakawan/internal/outbox"
 	"github.com/ygrip/punakawan/internal/plan"
@@ -26,7 +24,6 @@ import (
 	"github.com/ygrip/punakawan/internal/policy"
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
-	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
@@ -51,9 +48,6 @@ type App struct {
 	// May be nil if construction failed; every call site must guard nil.
 	RoleConfig *roleconfig.Resolver
 
-	knowledgeMu    sync.Mutex
-	knowledgeStore *knowledge.Store
-
 	storageMu sync.Mutex
 	storageDB *storage.DB
 
@@ -69,16 +63,12 @@ type App struct {
 	outboxMu sync.Mutex
 	outbox   *outbox.Store
 
-	searchIndexMu sync.Mutex
-	searchIndex   *search.Index
-
 	// closed is set by Close, under closedMu, so that a lazy-open call
-	// (OpenKnowledge, OpenSearchIndex) racing with or arriving after Close
-	// - e.g. a background goroutine a caller started but did not fully
-	// join before calling Close, per punokawan-q9r.6.1 - fails loudly
-	// instead of silently starting a brand new, untracked external
-	// process (Dolt's sql-server) that Close will never get a chance to
-	// stop.
+	// racing with or arriving after Close - e.g. a background goroutine a
+	// caller started but did not fully join before calling Close, per
+	// punokawan-q9r.6.1 - fails loudly instead of silently starting a
+	// brand new, untracked external process (Dolt's sql-server) that
+	// Close will never get a chance to stop.
 	closedMu sync.Mutex
 	closed   bool
 
@@ -259,39 +249,9 @@ func (a *App) isClosed() bool {
 	return a.closed
 }
 
-// OpenKnowledge lazily opens the durable knowledge store, memoizing the
-// result, scoped to this workspace's id within the shared storage kernel.
-// It is a thin scope over the one shared *storage.DB rather than a
-// per-project server, so it starts nothing: the deferral simply avoids
-// opening the kernel for commands that never touch durable knowledge.
-func (a *App) OpenKnowledge() (*knowledge.Store, error) {
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	a.knowledgeMu.Lock()
-	defer a.knowledgeMu.Unlock()
-
-	if a.knowledgeStore != nil {
-		return a.knowledgeStore, nil
-	}
-	// Re-check under knowledgeMu: Close acquires knowledgeMu too, so this
-	// closes the window between the isClosed check above and this lock
-	// being acquired.
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	db, err := a.OpenStorage(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	a.knowledgeStore = knowledge.New(db, a.Workspace.ID)
-	return a.knowledgeStore, nil
-}
-
 // OpenStorage lazily opens the shared SQLite storage kernel, memoizing the
 // result. This is one database shared by every local project checkout on
-// this machine, including the one OpenKnowledge opens through it; callers
-// scope their own rows by project id.
+// this machine; callers scope their own rows by project id.
 func (a *App) OpenStorage(ctx context.Context) (*storage.DB, error) {
 	if a.isClosed() {
 		return nil, errAppClosed
@@ -446,58 +406,9 @@ func (a *App) JiraWorkflow() (*jiraworkflow.Config, error) {
 	return cfg, nil
 }
 
-// OpenSearchIndex lazily opens the SQLite FTS5 search index rooted at
-// .punakawan/index/bm25 under the workspace (§10.2), memoizing the result.
-// Per §11.11 the index is disposable and always rebuildable from
-// OpenKnowledge's Store, so callers searching it should call search.Rebuild
-// first rather than assume it is already current.
-func (a *App) OpenSearchIndex() (*search.Index, error) {
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	a.searchIndexMu.Lock()
-	defer a.searchIndexMu.Unlock()
-
-	if a.searchIndex != nil {
-		return a.searchIndex, nil
-	}
-	if a.isClosed() {
-		return nil, errAppClosed
-	}
-	indexesDir, err := storage.IndexesDir()
-	if err != nil {
-		return nil, err
-	}
-	ix, err := search.OpenIndex(filepath.Join(indexesDir, a.Workspace.ID, "bm25"))
-	if err != nil {
-		return nil, err
-	}
-	a.searchIndex = ix
-	return ix, nil
-}
-
-// SearchKnowledge synchronizes the search index to the knowledge store and
-// runs req against it, holding searchIndexMu across both. search.Rebuild is a
-// read-modify-write over the shared index, so two concurrent search_knowledge
-// calls must not interleave a rebuild with each other's read (punokawan-hzp).
-// Rebuild is watermark-gated, so in steady state (no knowledge mutations
-// between searches) it is a cheap no-op and this lock is held only briefly
-// (punokawan-77q).
-func (a *App) SearchKnowledge(store *knowledge.Store, ix *search.Index, req search.Request) ([]search.Result, error) {
-	a.searchIndexMu.Lock()
-	defer a.searchIndexMu.Unlock()
-
-	if err := search.Rebuild(store, ix); err != nil {
-		return nil, err
-	}
-	return search.Search(store, ix, req)
-}
-
-// Close releases resources opened on demand (the shared storage kernel and
-// the BM25 search index, if they were ever opened) and shuts down any adapter
-// processes the AdapterRegistry has started. The knowledge store is only a
-// scope over the shared kernel, so it owns nothing to close - closing the
-// kernel (below) covers it; Close just drops the memoized reference.
+// Close releases resources opened on demand (the shared storage kernel, if
+// it was ever opened) and shuts down any adapter processes the
+// AdapterRegistry has started.
 func (a *App) Close() error {
 	a.closedMu.Lock()
 	a.closed = true
@@ -507,14 +418,6 @@ func (a *App) Close() error {
 	defer cancel()
 	adapterErr := a.AdapterRegistry.Close(ctx)
 
-	a.searchIndexMu.Lock()
-	var searchErr error
-	if a.searchIndex != nil {
-		searchErr = a.searchIndex.Close()
-		a.searchIndex = nil
-	}
-	a.searchIndexMu.Unlock()
-
 	a.storageMu.Lock()
 	var storageErr error
 	if a.storageDB != nil {
@@ -522,10 +425,6 @@ func (a *App) Close() error {
 		a.storageDB = nil
 	}
 	a.storageMu.Unlock()
-
-	a.knowledgeMu.Lock()
-	a.knowledgeStore = nil
-	a.knowledgeMu.Unlock()
 
 	a.learningMu.Lock()
 	a.learningStore = nil
@@ -541,9 +440,6 @@ func (a *App) Close() error {
 
 	if adapterErr != nil {
 		return adapterErr
-	}
-	if searchErr != nil {
-		return searchErr
 	}
 	return storageErr
 }

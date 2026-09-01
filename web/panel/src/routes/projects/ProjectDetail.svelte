@@ -11,7 +11,6 @@
   import ProjectWorkflows from "./ProjectWorkflows.svelte";
   import ProjectPlans from "./ProjectPlans.svelte";
   import ProjectHealth from "./ProjectHealth.svelte";
-  import ProjectKnowledge from "./ProjectKnowledge.svelte";
 
   interface Props {
     projectId: string;
@@ -28,7 +27,6 @@
   const activeTabs = new Set([
     "summary",
     "workflows",
-    "knowledge",
     "plans",
     "metadata",
     "settings",
@@ -37,7 +35,6 @@
     { id: "summary", label: "Summary", icon: "dashboard" as IconName },
     { id: "plans", label: "Plans", icon: "file" as IconName },
     { id: "workflows", label: "Workflows", icon: "git-branch" as IconName },
-    { id: "knowledge", label: "Knowledge", icon: "book" as IconName },
     { id: "metadata", label: "Metadata", icon: "database" as IconName },
     { id: "settings", label: "Settings", icon: "settings" as IconName },
   ];
@@ -89,7 +86,6 @@
     if (!p) return [];
     return [
       { label: "Repositories", value: p.repository_count, accent: "indigo", icon: "folder" },
-      { label: "Knowledge records", value: p.knowledge_count, accent: "terracotta", icon: "book" },
       { label: "Metadata entries", value: p.metadata_count, accent: "success", icon: "database" },
     ];
   }
@@ -137,10 +133,6 @@
   {:else if activeId === "workflows"}
     <div id="tabpanel-workflows" role="tabpanel" aria-labelledby="tab-workflows">
       <ProjectWorkflows {projectId} />
-    </div>
-  {:else if activeId === "knowledge"}
-    <div id="tabpanel-knowledge" role="tabpanel" aria-labelledby="tab-knowledge">
-      <ProjectKnowledge {projectId} />
     </div>
   {:else if activeId === "plans"}
     <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">

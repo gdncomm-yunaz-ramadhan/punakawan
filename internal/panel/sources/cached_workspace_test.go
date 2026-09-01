@@ -63,12 +63,12 @@ func (f *fakeWorkspaceReader) calls(id string) int {
 	return f.getCalls[id]
 }
 
-func summaryFixture(id string, knowledge int) contract.WorkspaceDetail {
+func summaryFixture(id string, repos int) contract.WorkspaceDetail {
 	return contract.WorkspaceDetail{WorkspaceSummary: contract.WorkspaceSummary{
-		ID:             id,
-		Availability:   protocol.PanelSourceHealthAvailabilityAvailable,
-		KnowledgeCount: knowledge,
-		LastActivityAt: time.Now().UTC(),
+		ID:              id,
+		Availability:    protocol.PanelSourceHealthAvailabilityAvailable,
+		RepositoryCount: repos,
+		LastActivityAt:  time.Now().UTC(),
 	}}
 }
 
@@ -104,7 +104,7 @@ func TestCachedWorkspaceReaderServesFromCache(t *testing.T) {
 	for _, s := range first {
 		byID[s.ID] = s
 	}
-	if byID["alpha"].KnowledgeCount != 42 {
+	if byID["alpha"].RepositoryCount != 42 {
 		t.Errorf("alpha counts not served from snapshot: %+v", byID["alpha"])
 	}
 	if byID["alpha"].DisplayName != "Alpha" {
@@ -197,8 +197,8 @@ func TestCachedWorkspaceReaderPersistsSnapshotAcrossRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restarted List: %v", err)
 	}
-	if len(out) != 1 || out[0].KnowledgeCount != 42 {
-		t.Fatalf("restarted List = %+v, want KnowledgeCount=42 served from the persisted snapshot", out)
+	if len(out) != 1 || out[0].RepositoryCount != 42 {
+		t.Fatalf("restarted List = %+v, want RepositoryCount=42 served from the persisted snapshot", out)
 	}
 	if got := inner.calls("alpha"); got != 1 {
 		t.Fatalf("alpha Get calls after restart's List = %d, want still 1 (served from disk, not recomputed)", got)
@@ -218,9 +218,9 @@ func TestCachedWorkspaceReaderRestartServesStalePersistedSnapshotWithoutBlocking
 	}
 
 	old := snapshot.ProjectSnapshot{
-		ProjectID:      "alpha",
-		UpdatedAt:      time.Now().UTC().Add(-time.Hour),
-		KnowledgeCount: 42,
+		ProjectID:       "alpha",
+		UpdatedAt:       time.Now().UTC().Add(-time.Hour),
+		RepositoryCount: 42,
 	}
 	data, err := json.Marshal(old)
 	if err != nil {
@@ -249,8 +249,8 @@ func TestCachedWorkspaceReaderRestartServesStalePersistedSnapshotWithoutBlocking
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(out) != 1 || out[0].KnowledgeCount != 42 {
-		t.Fatalf("List = %+v, want KnowledgeCount=42 served instantly from the persisted snapshot", out)
+	if len(out) != 1 || out[0].RepositoryCount != 42 {
+		t.Fatalf("List = %+v, want RepositoryCount=42 served instantly from the persisted snapshot", out)
 	}
 	if got := inner.calls("alpha"); got != 0 {
 		t.Fatalf("alpha Get calls right after List = %d, want 0 (persisted snapshot served without a live recompute)", got)
@@ -261,7 +261,7 @@ func TestCachedWorkspaceReaderRestartServesStalePersistedSnapshotWithoutBlocking
 	close(gate)
 	waitForHealth(t, func() bool {
 		out, err := c.List(ctx)
-		return err == nil && len(out) == 1 && out[0].KnowledgeCount == 99
+		return err == nil && len(out) == 1 && out[0].RepositoryCount == 99
 	})
 
 	// Drain any still-in-flight background refresh so its snapshot write

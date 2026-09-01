@@ -37,7 +37,6 @@ type ProjectSnapshot struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 	Availability       string    `json:"availability"`
 	RepositoryCount    int       `json:"repository_count"`
-	KnowledgeCount     int       `json:"knowledge_count"`
 	WorkflowCount      int       `json:"workflow_count"`
 	PlanCount          int       `json:"plan_count"`
 	ActiveRunCount     int       `json:"active_run_count"`

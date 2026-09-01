@@ -45,8 +45,8 @@ type Readers struct {
 
 // NewReaders builds Readers backed by internal/panel/sources'
 // implementations over a. reg is the global workspace registry
-// (WorkspaceReader and GlobalSearchReader use it to reach every
-// registered workspace, not just a's own).
+// (WorkspaceReader uses it to reach every registered workspace, not just
+// a's own).
 func NewReaders(a *app.App, reg *registry.Store) Readers {
 	// Bounded pool of loaded *app.App runtimes, seeded with the long-lived
 	// primary. Non-primary workspaces are Acquire'd and reused across requests
@@ -224,7 +224,6 @@ func (s *ProjectSource) summaryFromWorkspace(ws contract.WorkspaceSummary) contr
 		Primary:            ws.Primary,
 		Availability:       string(ws.Availability),
 		RepositoryCount:    ws.RepositoryCount,
-		KnowledgeCount:     ws.KnowledgeCount,
 		ActiveSessionCount: ws.ActiveSessionCount,
 		MetadataCount:      metadataCount,
 	}

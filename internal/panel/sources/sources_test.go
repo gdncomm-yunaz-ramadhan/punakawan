@@ -11,26 +11,15 @@ import (
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/evidence"
-	"github.com/ygrip/punakawan/internal/knowledge"
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/prreview"
-	"github.com/ygrip/punakawan/internal/search"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/testrun"
 	"github.com/ygrip/punakawan/internal/tools"
 	"github.com/ygrip/punakawan/internal/workflow"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
-
-func requireDolt(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("dolt"); err != nil {
-		t.Skip("dolt not installed")
-	}
-}
-
-func strPtr(s string) *string { return &s }
 
 func requireBd(t *testing.T) {
 	t.Helper()
@@ -53,8 +42,8 @@ func runGit(t *testing.T, dir string, args ...string) {
 // mirroring internal/mcpserver/server_test.go's newTestApp.
 func newTestApp(t *testing.T) *app.App {
 	t.Helper()
-	// Isolate the shared SQLite kernel to a per-test temp dir so OpenKnowledge/
-	// OpenTaskStore never touch this machine's real, shared database.
+	// Isolate the shared SQLite kernel to a per-test temp dir so OpenTaskStore
+	// never touches this machine's real, shared database.
 	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 
 	dir := t.TempDir()
@@ -420,260 +409,6 @@ func TestSessionSourceCountsReflectCanonicalTestFailuresAndRisks(t *testing.T) {
 	}
 	if got.WarningCount == nil || *got.WarningCount != 1 {
 		t.Fatalf("WarningCount = %v, want 1 (the blocker-severity finding)", got.WarningCount)
-	}
-}
-
-func TestKnowledgeSourceSearchGetRelations(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	ks := &KnowledgeSource{App: a}
-	ctx := context.Background()
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	rec := protocol.KnowledgeRecord{
-		Id:     "pkw:requirement/repo-a/refund-sla",
-		Type:   protocol.KnowledgeRecordTypeRequirement,
-		Status: "active",
-		Title:  "Refund SLA policy",
-		Source: protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
-		Extraction: protocol.KnowledgeRecordExtraction{
-			Method: protocol.KnowledgeRecordExtractionMethodModelAssisted,
-		},
-		Validity: protocol.KnowledgeRecordValidity{
-			State:      protocol.KnowledgeRecordValidityStateVerified,
-			VerifiedBy: []string{"test"},
-		},
-	}
-	if err := store.Put(rec); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-
-	got, err := ks.Get(ctx, a.Workspace.ID, rec.Id)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if got.Id != rec.Id {
-		t.Fatalf("Get.Id = %q, want %q", got.Id, rec.Id)
-	}
-
-	if _, err := ks.Relations(ctx, a.Workspace.ID, rec.Id); err != nil {
-		t.Fatalf("Relations: %v", err)
-	}
-
-	ix, err := a.OpenSearchIndex()
-	if err != nil {
-		t.Fatalf("OpenSearchIndex: %v", err)
-	}
-	if err := search.Rebuild(store, ix); err != nil {
-		t.Fatalf("search.Rebuild: %v", err)
-	}
-
-	results, err := ks.Search(ctx, a.Workspace.ID, search.Request{Query: "refund SLA"})
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected at least one search result")
-	}
-}
-
-// TestKnowledgeSourceSearchIndexesNewWritesWithoutManualRebuild guards
-// punokawan-obt: a record written to the store must be findable via
-// KnowledgeSource.Search immediately, with no explicit search.Rebuild call.
-// The panel used to query the raw index directly and returned nothing for a
-// never-indexed record; it now routes through App.SearchKnowledge, which
-// watermark-gated-rebuilds before querying. Note this test deliberately never
-// calls search.Rebuild itself - that omission is the whole point.
-func TestKnowledgeSourceSearchIndexesNewWritesWithoutManualRebuild(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	ks := &KnowledgeSource{App: a}
-	ctx := context.Background()
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	rec := protocol.KnowledgeRecord{
-		Id:     "pkw:requirement/repo-a/webhook-idempotency",
-		Type:   protocol.KnowledgeRecordTypeRequirement,
-		Status: "active",
-		Title:  "Webhook idempotency guarantee",
-		Source: protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
-		Extraction: protocol.KnowledgeRecordExtraction{
-			Method: protocol.KnowledgeRecordExtractionMethodModelAssisted,
-		},
-		Validity: protocol.KnowledgeRecordValidity{
-			State:      protocol.KnowledgeRecordValidityStateVerified,
-			VerifiedBy: []string{"test"},
-		},
-	}
-	if err := store.Put(rec); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-
-	results, err := ks.Search(ctx, a.Workspace.ID, search.Request{Query: "webhook idempotency"})
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected the just-written record to be searchable without a manual reindex (punokawan-obt)")
-	}
-	var found bool
-	for _, r := range results {
-		if r.Id == rec.Id {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("Search results %+v do not include the just-written record %q", results, rec.Id)
-	}
-}
-
-func TestKnowledgeSourceListFiltersAndHistory(t *testing.T) {
-	requireDolt(t)
-	a := newTestApp(t)
-	ks := &KnowledgeSource{App: a}
-	ctx := context.Background()
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-
-	verified := protocol.KnowledgeRecord{
-		Id:         "pkw:requirement/repo-a/refund-sla",
-		Type:       protocol.KnowledgeRecordTypeRequirement,
-		Status:     "active",
-		Title:      "Refund SLA policy",
-		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
-		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodModelAssisted},
-		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
-		Scope:      &protocol.KnowledgeRecordScope{Repository: strPtr("repo-a")},
-	}
-	if err := store.Put(verified); err != nil {
-		t.Fatalf("Put verified: %v", err)
-	}
-
-	stale := protocol.KnowledgeRecord{
-		Id:         "pkw:requirement/repo-b/checkout-flow",
-		Type:       protocol.KnowledgeRecordTypeRequirement,
-		Status:     "active",
-		Title:      "Checkout flow",
-		Source:     protocol.KnowledgeRecordSource{Provider: "jira", RetrievedAt: time.Now().UTC()},
-		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodModelAssisted},
-		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateStale},
-		Scope:      &protocol.KnowledgeRecordScope{Repository: strPtr("repo-b")},
-	}
-	if err := store.Put(stale); err != nil {
-		t.Fatalf("Put stale: %v", err)
-	}
-
-	all, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{})
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(all) != 2 {
-		t.Fatalf("List = %+v, want 2", all)
-	}
-
-	byRepo, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{Repository: "repo-a"})
-	if err != nil {
-		t.Fatalf("List by repository: %v", err)
-	}
-	if len(byRepo) != 1 || byRepo[0].Id != verified.Id {
-		t.Fatalf("List by repository=repo-a = %+v, want only %s", byRepo, verified.Id)
-	}
-
-	staleOnly, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{Stale: true})
-	if err != nil {
-		t.Fatalf("List stale=true: %v", err)
-	}
-	if len(staleOnly) != 1 || staleOnly[0].Id != stale.Id {
-		t.Fatalf("List stale=true = %+v, want only %s", staleOnly, stale.Id)
-	}
-
-	bySource, err := ks.List(ctx, a.Workspace.ID, contract.KnowledgeFilter{Source: "jira"})
-	if err != nil {
-		t.Fatalf("List by source: %v", err)
-	}
-	if len(bySource) != 1 || bySource[0].Id != stale.Id {
-		t.Fatalf("List source=jira = %+v, want only %s", bySource, stale.Id)
-	}
-
-	if err := store.Supersede(verified.Id, stale.Id); err != nil {
-		t.Fatalf("Supersede: %v", err)
-	}
-
-	history, err := ks.History(ctx, a.Workspace.ID, verified.Id)
-	if err != nil {
-		t.Fatalf("History: %v", err)
-	}
-	// Supersede's own implementation Puts the record back through the
-	// same path any other write takes (setting SupersededBy first), so it
-	// emits both a "put" and a "supersede" event - the coarseness
-	// documented on KnowledgeReader.History: a "put" alone cannot tell a
-	// create from a later update.
-	if len(history) != 3 {
-		t.Fatalf("History = %+v, want 3 events (create put, supersede's put, supersede)", history)
-	}
-	last := history[len(history)-1]
-	if last.Type != knowledge.EventTypeSupersede || last.SupersededBy != stale.Id {
-		t.Fatalf("last History entry = %+v, want a supersede event naming %s", last, stale.Id)
-	}
-
-	noHistory, err := ks.History(ctx, a.Workspace.ID, "pkw:requirement/repo-a/never-existed")
-	if err != nil {
-		t.Fatalf("History for unknown id: %v", err)
-	}
-	if len(noHistory) != 0 {
-		t.Fatalf("History for unknown id = %+v, want none", noHistory)
-	}
-}
-
-func TestGlobalSearchSourceFusesAcrossWorkspaces(t *testing.T) {
-	requireDolt(t)
-	requireBd(t)
-	a := newTestApp(t)
-
-	store, err := a.OpenKnowledge()
-	if err != nil {
-		t.Fatalf("OpenKnowledge: %v", err)
-	}
-	rec := protocol.KnowledgeRecord{
-		Id:         "pkw:requirement/repo-a/refund-sla",
-		Type:       protocol.KnowledgeRecordTypeRequirement,
-		Status:     "active",
-		Title:      "Refund SLA policy",
-		Source:     protocol.KnowledgeRecordSource{Provider: "manual", RetrievedAt: time.Now().UTC()},
-		Extraction: protocol.KnowledgeRecordExtraction{Method: protocol.KnowledgeRecordExtractionMethodModelAssisted},
-		Validity:   protocol.KnowledgeRecordValidity{State: protocol.KnowledgeRecordValidityStateVerified, VerifiedBy: []string{"test"}},
-	}
-	if err := store.Put(rec); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	ix, err := a.OpenSearchIndex()
-	if err != nil {
-		t.Fatalf("OpenSearchIndex: %v", err)
-	}
-	if err := search.Rebuild(store, ix); err != nil {
-		t.Fatalf("search.Rebuild: %v", err)
-	}
-
-	gs := &GlobalSearchSource{App: a, Registry: nil}
-	results, err := gs.Search(context.Background(), search.Request{Query: "refund SLA"})
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected at least one fused result")
-	}
-	if results[0].WorkspaceID != a.Workspace.ID {
-		t.Fatalf("results[0].WorkspaceID = %q, want %q", results[0].WorkspaceID, a.Workspace.ID)
 	}
 }
 
