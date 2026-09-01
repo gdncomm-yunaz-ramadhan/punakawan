@@ -1,0 +1,53 @@
+cmd/punakawan/setup_hooks.go
+  a1264f1ebebd2632 177,203-286
+scripts/install_test.sh
+  a1264f1ebebd2632 94-99
+cmd/punakawan/setup_hooks_test.go
+  a1264f1ebebd2632 23-38,201,228-267,272,313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "523302d336776773ea025f4f4b0853577951a2bf",
+  "prompts": {
+    "1c25e17b82f27ee2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0550e-b678-7850-9d15-7bbaf0e113df",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "a1264f1ebebd2632": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a809af2a-4594-4899-8957-d70f61f4e76c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 150,
+      "total_deletions": 2,
+      "accepted_lines": 150,
+      "overriden_lines": 0
+    }
+  }
+}
