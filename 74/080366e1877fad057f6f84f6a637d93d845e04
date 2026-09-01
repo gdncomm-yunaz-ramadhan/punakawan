@@ -1,0 +1,50 @@
+internal/panel/server/server_test.go
+  a1264f1ebebd2632 43-44
+internal/panel/deps.go
+  a1264f1ebebd2632 48-49
+internal/storage/migrations/0031_drop_knowledge.sql
+  a1264f1ebebd2632 1-8
+internal/panel/sources/cached_workspace.go
+  a1264f1ebebd2632 187
+internal/learning/store.go
+  a1264f1ebebd2632 126-128
+internal/panel/sources/workspace_source.go
+  a1264f1ebebd2632 215-221,223-226,254-255
+internal/panel/sources/sources_test.go
+  a1264f1ebebd2632 45-46
+web/panel/src/routes/projects/ProjectsList.svelte
+  a1264f1ebebd2632 207-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "74080366e1877fad057f6f84f6a637d93d845e04",
+  "prompts": {
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    },
+    "a1264f1ebebd2632": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a809af2a-4594-4899-8957-d70f61f4e76c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 196,
+      "total_deletions": 183,
+      "accepted_lines": 191,
+      "overriden_lines": 0
+    }
+  }
+}
