@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/mcpserver"
+	"github.com/ygrip/punakawan/internal/plan"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/telemetry"
 )
 
@@ -198,8 +201,8 @@ func TestIngestHookEventSessionStartBeginsAndDrainsSpool(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{
 		"session_id": "codex-thr-1", "cwd": worktree, "hook_event_name": "SessionStart", "model": "gpt-5-codex",
 	})
-	var stderr bytes.Buffer
-	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stderr)
+	var stdout, stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stdout, &stderr)
 
 	a, err := app.Load(worktree)
 	if err != nil {
@@ -231,8 +234,8 @@ func TestIngestHookEventPostToolUseSnapshotsUsage(t *testing.T) {
 		"session_id": "codex-thr-2", "cwd": worktree, "hook_event_name": "PostToolUse",
 		"transcript_path": transcript, "tool_name": "apply_patch", "tool_use_id": "call_1",
 	})
-	var stderr bytes.Buffer
-	ingestHookEvent(context.Background(), "codex", "PostToolUse", bytes.NewReader(payload), &stderr)
+	var stdout, stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "PostToolUse", bytes.NewReader(payload), &stdout, &stderr)
 
 	got := telemetryTotals(t, worktree)
 	if got.Counters.InputTokens != 10 || got.Counters.OutputTokens != 20 {
@@ -247,21 +250,120 @@ func TestIngestHookEventNoOpsWithoutSessionMarker(t *testing.T) {
 	dir := newSmokeWorkspace(t)
 	worktree := filepath.Join(dir, "repo-a")
 	payload, _ := json.Marshal(map[string]any{"session_id": "codex-thr-3", "cwd": worktree, "hook_event_name": "SessionStart"})
-	var stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	// Must not panic or block despite there being no punakawan session
 	// tracked at this worktree.
-	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stderr)
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stdout, &stderr)
 }
 
 func TestIngestHookEventNoOpsOnMalformedPayload(t *testing.T) {
-	var stderr bytes.Buffer
-	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader([]byte("not json")), &stderr)
+	var stdout, stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader([]byte("not json")), &stdout, &stderr)
 }
 
 func TestIngestHookEventRejectsUnsupportedClient(t *testing.T) {
-	var stderr bytes.Buffer
-	ingestHookEvent(context.Background(), "not-a-real-client", "SessionStart", bytes.NewReader([]byte(`{}`)), &stderr)
+	var stdout, stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "not-a-real-client", "SessionStart", bytes.NewReader([]byte(`{}`)), &stdout, &stderr)
 	if stderr.Len() == 0 {
 		t.Fatal("expected a logged warning for an unsupported --client value")
+	}
+}
+
+// TestIngestHookEventSessionStartSurfacesExistingPlanViaMarker covers the
+// delivery-tracked path: a session marker whose orchestration already has a
+// plan_id should surface a plan_get reminder on stdout.
+func TestIngestHookEventSessionStartSurfacesExistingPlanViaMarker(t *testing.T) {
+	worktree, _ := setUpSubagentUsageFixture(t)
+
+	a, err := app.Load(worktree)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	defer a.Close()
+	db, err := a.OpenStorage(context.Background())
+	if err != nil {
+		t.Fatalf("OpenStorage: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(worktree, mcpserver.SessionMarkerDir, mcpserver.SessionMarkerFile))
+	if err != nil {
+		t.Fatalf("read marker: %v", err)
+	}
+	var marker mcpserver.SessionMarker
+	if err := json.Unmarshal(data, &marker); err != nil {
+		t.Fatalf("decode marker: %v", err)
+	}
+
+	planStore := plan.NewStore(db)
+	saved, err := planStore.Save(context.Background(), plan.Plan{ID: plan.NewID(), Objective: "Ship the bounded-concurrency change"})
+	if err != nil {
+		t.Fatalf("plan Save: %v", err)
+	}
+
+	deliveryStore := delivery.NewStore(db)
+	orch, err := deliveryStore.GetOrchestration(context.Background(), marker.OrchestrationID)
+	if err != nil {
+		t.Fatalf("GetOrchestration: %v", err)
+	}
+	planID, planRevision := saved.ID, saved.Revision
+	if _, err := deliveryStore.UpdateOrchestrationDetails(context.Background(), "link-plan-"+delivery.NewID(), marker.OrchestrationID, orch.Revision, delivery.OrchestrationDetails{
+		PlanID: &planID, PlanRevision: &planRevision,
+	}); err != nil {
+		t.Fatalf("UpdateOrchestrationDetails: %v", err)
+	}
+
+	payload, _ := json.Marshal(map[string]any{"session_id": "codex-thr-plan-marker", "cwd": worktree, "hook_event_name": "SessionStart"})
+	var stdout, stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stdout, &stderr)
+
+	if !strings.Contains(stdout.String(), saved.ID) {
+		t.Fatalf("stdout = %q, want it to mention saved plan id %q", stdout.String(), saved.ID)
+	}
+	if !strings.Contains(stdout.String(), "additionalContext") {
+		t.Fatalf("stdout = %q, want hookSpecificOutput.additionalContext", stdout.String())
+	}
+}
+
+// TestIngestHookEventSessionStartSurfacesExistingPlanViaGitRemoteFallback
+// covers the ad-hoc path: a session with no punakawan session marker at all
+// (the common case for an interactive Claude Code session, per the finding
+// that motivated this feature) should still get the reminder, resolved via
+// the cwd's git origin remote matched against a registered project.
+func TestIngestHookEventSessionStartSurfacesExistingPlanViaGitRemoteFallback(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("PUNAKAWAN_DATA_DIR", dataDir)
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init", "-q", "-b", "main")
+	runGit(t, repoDir, "remote", "add", "origin", "git@github.com:acme/widgets.git")
+
+	dbPath, err := storage.DBPath()
+	if err != nil {
+		t.Fatalf("DBPath: %v", err)
+	}
+	db, err := storage.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	defer db.Close()
+
+	deliveryStore := delivery.NewStore(db)
+	proj, err := deliveryStore.UpsertProject(context.Background(), "upsert-"+delivery.NewID(), delivery.NewID(), "widgets", "https://github.com/acme/widgets.git", "main")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+
+	planStore := plan.NewStore(db)
+	saved, err := planStore.Save(context.Background(), plan.Plan{ID: plan.NewID(), Objective: "Add bulk export", ProjectIDs: []string{proj.Id}})
+	if err != nil {
+		t.Fatalf("plan Save: %v", err)
+	}
+
+	payload, _ := json.Marshal(map[string]any{"session_id": "codex-thr-plan-remote", "cwd": repoDir, "hook_event_name": "SessionStart"})
+	var stdout, stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "SessionStart", bytes.NewReader(payload), &stdout, &stderr)
+
+	if !strings.Contains(stdout.String(), saved.ID) {
+		t.Fatalf("stdout = %q, want it to mention saved plan id %q", stdout.String(), saved.ID)
 	}
 }

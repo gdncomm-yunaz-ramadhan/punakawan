@@ -704,8 +704,8 @@ func runHookProbe(ctx context.Context, client string) error {
 	if err != nil {
 		return err
 	}
-	var stderr strings.Builder
-	ingestHookEvent(ctx, client, "SessionStart", strings.NewReader(string(payload)), &stderr)
+	var stdout, stderr strings.Builder
+	ingestHookEvent(ctx, client, "SessionStart", strings.NewReader(string(payload)), &stdout, &stderr)
 
 	a, err := app.Load(tmp)
 	if err != nil {

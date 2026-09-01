@@ -7,13 +7,16 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/mcpserver"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/internal/telemetry/clienthooks"
@@ -188,7 +191,7 @@ func newHooksIngestCmd() *cobra.Command {
 			// Never fail: see recordSubagentUsage's own doc comment - a
 			// tracking hiccup must never block or fail the caller's actual
 			// agent workflow.
-			ingestHookEvent(cmd.Context(), client, event, cmd.InOrStdin(), cmd.ErrOrStderr())
+			ingestHookEvent(cmd.Context(), client, event, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -205,7 +208,7 @@ type cwdPayload struct {
 	Cwd string `json:"cwd"`
 }
 
-func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader, stderr io.Writer) {
+func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader, stdout, stderr io.Writer) {
 	logger := slog.New(slog.NewTextHandler(stderr, nil))
 	client = strings.TrimSpace(client)
 	event = strings.TrimSpace(event)
@@ -240,6 +243,17 @@ func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader,
 	var cwd cwdPayload
 	_ = json.Unmarshal(payload, &cwd)
 	markerDir, marker, err := findSessionMarker(cwd.Cwd)
+
+	// The plan reminder runs regardless of whether a delivery session
+	// marker was found: a marker only exists for a session started via
+	// start_delivery_session, but the plan-underutilization problem this
+	// exists to fix is most acute in an ad-hoc interactive session, which
+	// never has one. See emitPlanReminder's own doc comment for how it
+	// resolves a project without a marker.
+	if event == "SessionStart" {
+		emitPlanReminder(ctx, cwd.Cwd, marker, stdout, logger)
+	}
+
 	if err != nil {
 		logger.Info("hooks ingest: no punakawan delivery session tracked here", "cwd", cwd.Cwd, "reason", err)
 		return
@@ -351,4 +365,134 @@ func findSessionMarker(startDir string) (string, *mcpserver.SessionMarker, error
 // from markerDir's project-scoped workspace app.Load opens.
 func storageDataDir() (string, error) {
 	return storage.DataDir()
+}
+
+// emitPlanReminder writes a SessionStart hookSpecificOutput.additionalContext
+// JSON payload to stdout surfacing an existing saved plan for this project
+// (nudging plan_get) or, when none exists, a reminder to call plan_save once
+// one is produced. It resolves the project two ways: when marker is non-nil
+// (a delivery session tracked via start_delivery_session), directly from the
+// orchestration's own plan_id/project_ids; otherwise by matching cwd's git
+// "origin" remote against a registered project's repository_url, so an
+// ad-hoc interactive session - which never gets a session marker - still
+// gets the reminder. Every failure is silent (logged at Info, not Warn): a
+// tracking nudge must never look like an error to the calling agent.
+func emitPlanReminder(ctx context.Context, cwd string, marker *mcpserver.SessionMarker, stdout io.Writer, logger *slog.Logger) {
+	dbPath, err := storage.DBPath()
+	if err != nil {
+		logger.Info("hooks ingest: plan reminder: resolve db path", "error", err)
+		return
+	}
+	db, err := storage.Open(ctx, dbPath)
+	if err != nil {
+		logger.Info("hooks ingest: plan reminder: open storage kernel", "error", err)
+		return
+	}
+	defer db.Close()
+
+	planStore := plan.NewStore(db)
+	deliveryStore := delivery.NewStore(db)
+
+	var plans []plan.Plan
+	if marker != nil {
+		orch, err := deliveryStore.GetOrchestration(ctx, marker.OrchestrationID)
+		if err != nil {
+			logger.Info("hooks ingest: plan reminder: get orchestration", "error", err)
+			return
+		}
+		if orch.PlanId != nil && *orch.PlanId != "" {
+			p, err := planStore.Get(ctx, *orch.PlanId)
+			if err == nil {
+				plans = []plan.Plan{p}
+			}
+		}
+	} else {
+		projectID, err := resolveProjectIDFromGitRemote(ctx, cwd, deliveryStore)
+		if err != nil || projectID == "" {
+			return
+		}
+		plans, err = planStore.ListByProject(ctx, projectID)
+		if err != nil {
+			logger.Info("hooks ingest: plan reminder: list plans by project", "error", err)
+			return
+		}
+	}
+
+	// Silent when nothing is saved yet, for both paths: a delivery-tracked
+	// session with no plan_id is unremarkable this early (plan_id is set
+	// once Petruk saves one), and an ad-hoc session with no matching plan
+	// would just be noise on every unrelated project's session start.
+	if len(plans) == 0 {
+		return
+	}
+	p := plans[len(plans)-1]
+	objective := p.Objective
+	if len(objective) > 160 {
+		objective = objective[:160] + "..."
+	}
+	reminder := fmt.Sprintf(
+		"Punakawan: an existing plan is saved for this project (id %q, revision %d): %q. Call plan_get(id=%q) before re-deriving a plan from scratch.",
+		p.ID, p.Revision, objective, p.ID,
+	)
+
+	encoded, err := json.Marshal(map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":     "SessionStart",
+			"additionalContext": reminder,
+		},
+	})
+	if err != nil {
+		logger.Info("hooks ingest: plan reminder: encode additionalContext", "error", err)
+		return
+	}
+	fmt.Fprintln(stdout, string(encoded))
+}
+
+// resolveProjectIDFromGitRemote resolves cwd's git "origin" remote URL and
+// matches it against every registered project's repository_url, returning
+// the first match's id (or "" if there is no origin remote, or no
+// registered project matches it).
+func resolveProjectIDFromGitRemote(ctx context.Context, cwd string, deliveryStore *delivery.Store) (string, error) {
+	if strings.TrimSpace(cwd) == "" {
+		return "", nil
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", cwd, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return "", nil //nolint:nilerr // no origin remote (or not a git repo) is a normal, silent no-match, not a failure
+	}
+	remote := normalizeRepositoryURL(strings.TrimSpace(string(out)))
+	if remote == "" {
+		return "", nil
+	}
+
+	projects, err := deliveryStore.ListProjects(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, proj := range projects {
+		if normalizeRepositoryURL(proj.RepositoryUrl) == remote {
+			return proj.Id, nil
+		}
+	}
+	return "", nil
+}
+
+// normalizeRepositoryURL reduces a git remote URL to a bare, lowercase
+// "host/path" form so "git@github.com:acme/widgets.git",
+// "https://github.com/acme/widgets.git", and "https://github.com/acme/widgets"
+// all compare equal.
+func normalizeRepositoryURL(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	s = strings.TrimSuffix(s, ".git")
+	s = strings.TrimSuffix(s, "/")
+	if rest, ok := strings.CutPrefix(s, "git@"); ok {
+		s = strings.Replace(rest, ":", "/", 1)
+		return s
+	}
+	for _, prefix := range []string{"https://", "http://", "ssh://git@", "git://"} {
+		if rest, ok := strings.CutPrefix(s, prefix); ok {
+			return rest
+		}
+	}
+	return s
 }
