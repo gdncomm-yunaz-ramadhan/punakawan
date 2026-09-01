@@ -91,7 +91,12 @@ PY
   fi
 
   printf '\n==> lifecycle hook install and probe against the relocated install\n'
-  HOME="$fake_home" PUNAKAWAN_DATA_DIR="$data_dir" "$install_dir/punakawan" setup --hooks-only >/dev/null
+  # Run from $outside_dir, not the real repo checkout: ensureClaudeCodeHooks
+  # (setup.go) writes a project-level .claude/settings.json keyed off
+  # os.Getwd(), and this call's binary path lives under $reloc_root, which
+  # is rm -rf'd at the end of this function - leaving it pointed at
+  # $REPO_ROOT would durably register a dead hook entry there.
+  (cd "$outside_dir" && HOME="$fake_home" PUNAKAWAN_DATA_DIR="$data_dir" "$install_dir/punakawan" setup --hooks-only >/dev/null)
 
   local hook_doctor_output
   hook_doctor_output="$(cd "$outside_dir" && HOME="$fake_home" PUNAKAWAN_DATA_DIR="$data_dir" "$install_dir/punakawan" doctor --json || true)"

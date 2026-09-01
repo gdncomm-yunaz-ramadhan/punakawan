@@ -20,6 +20,22 @@ func readSettings(t *testing.T, path string) map[string]any {
 	return out
 }
 
+// writeStubBinary creates an empty file at path, standing in for the real,
+// already-installed punakawan binary these tests reference by path only.
+// pruneStaleIngestHookEntries treats a hooks-ingest entry whose command no
+// longer resolves on disk as stale, so a repeat-run/idempotency test needs
+// that path to actually exist, matching what's always true in production
+// (the binary is running, so os.Executable() can't return a missing path).
+func writeStubBinary(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write stub binary %s: %v", path, err)
+	}
+}
+
 func subagentStopCommands(t *testing.T, settings map[string]any) []string {
 	t.Helper()
 	var commands []string
@@ -182,6 +198,7 @@ func TestEnsureClaudeCodeHooksIsIdempotentAndPreservesUnrelatedHooks(t *testing.
 	}
 
 	binaryPath := filepath.Join(dir, "installed", "punakawan")
+	writeStubBinary(t, binaryPath)
 	if _, err := ensureClaudeCodeHooks(dir, binaryPath); err != nil {
 		t.Fatalf("first ensureClaudeCodeHooks: %v", err)
 	}
@@ -208,10 +225,51 @@ func TestEnsureClaudeCodeHooksIsIdempotentAndPreservesUnrelatedHooks(t *testing.
 	}
 }
 
+// TestEnsureClaudeCodeHooksPrunesStaleEntryFromDeletedBinary reproduces the
+// scripts/install_test.sh relocation-test regression: a hooks-ingest entry
+// left pointing at a binary that was later deleted (e.g. an ephemeral
+// relocation build cleaned up with rm -rf) must be pruned and replaced on
+// the next run, not accumulated forever alongside the current entry.
+func TestEnsureClaudeCodeHooksPrunesStaleEntryFromDeletedBinary(t *testing.T) {
+	dir := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	staleBinary := filepath.Join(t.TempDir(), "deleted", "punakawan")
+	seed := `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"` + staleBinary + `","args":["hooks","ingest","--client","claude-code","--event","SessionStart"]}]}]}}`
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(seed), 0o644); err != nil {
+		t.Fatalf("seed settings.json: %v", err)
+	}
+
+	binaryPath := filepath.Join(dir, "installed", "punakawan")
+	writeStubBinary(t, binaryPath)
+	if _, err := ensureClaudeCodeHooks(dir, binaryPath); err != nil {
+		t.Fatalf("ensureClaudeCodeHooks: %v", err)
+	}
+
+	settings := readSettings(t, filepath.Join(claudeDir, "settings.json"))
+	hooks, _ := settings["hooks"].(map[string]any)
+	groups, _ := hooks["SessionStart"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("SessionStart groups = %v, want exactly one after pruning the stale entry", groups)
+	}
+	group, _ := groups[0].(map[string]any)
+	entries, _ := group["hooks"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("SessionStart hooks = %v, want exactly one after pruning the stale entry", entries)
+	}
+	entry, _ := entries[0].(map[string]any)
+	if command, _ := entry["command"].(string); command != binaryPath {
+		t.Fatalf("SessionStart command = %q, want the current binary %q (stale entry not pruned)", command, binaryPath)
+	}
+}
+
 func TestEnsureCodexHooksInstallsEveryEventUsingTheInstalledBinary(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binaryPath := filepath.Join(home, "installed", "punakawan")
+	writeStubBinary(t, binaryPath)
 
 	changed, err := ensureCodexHooks(binaryPath)
 	if err != nil {
@@ -252,6 +310,7 @@ func TestEnsureUserLevelClaudeCodeHooksInstallsEveryEventUsingTheInstalledBinary
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binaryPath := filepath.Join(home, "installed", "punakawan")
+	writeStubBinary(t, binaryPath)
 
 	changed, err := ensureUserLevelClaudeCodeHooks(binaryPath)
 	if err != nil {

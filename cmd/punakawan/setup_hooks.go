@@ -174,7 +174,7 @@ func ensureIngestHooks(configPath, binaryPath, clientKind string, events []hookE
 		root["hooks"] = hooks
 	}
 
-	changed := false
+	changed := pruneStaleIngestHookEntries(hooks)
 	for _, spec := range events {
 		if hasIngestHookEntry(hooks, spec.EventName, binaryPath, clientKind) {
 			continue
@@ -198,6 +198,90 @@ func ensureIngestHooks(configPath, binaryPath, clientKind string, events []hookE
 		return false, fmt.Errorf("setup: write %s: %w", configPath, err)
 	}
 	return true, nil
+}
+
+// pruneStaleIngestHookEntries removes any punakawan hooks-ingest entry
+// from hooks whose command no longer exists on disk - e.g. a relocation
+// test's ephemeral binary path that was later rm -rf'd, leaving a
+// durable dangling entry that would otherwise ENOENT on every client
+// invocation forever after. Only entries recognizable as punakawan's own
+// (the "hooks ingest --client <x> --event <y>" args shape) are ever
+// considered; anything else - a different tool's hook, a hand-written
+// one - is left untouched even if its command also happens to be
+// missing. A group left with no entries is dropped entirely. Reports
+// whether hooks was modified.
+func pruneStaleIngestHookEntries(hooks map[string]any) bool {
+	changed := false
+	for eventName, raw := range hooks {
+		groups, ok := raw.([]any)
+		if !ok {
+			continue
+		}
+		var keptGroups []any
+		for _, g := range groups {
+			group, ok := g.(map[string]any)
+			if !ok {
+				keptGroups = append(keptGroups, g)
+				continue
+			}
+			entries, _ := group["hooks"].([]any)
+			var keptEntries []any
+			for _, e := range entries {
+				entry, ok := e.(map[string]any)
+				if !ok {
+					keptEntries = append(keptEntries, e)
+					continue
+				}
+				command, _ := entry["command"].(string)
+				if isIngestHookArgs(entry["args"]) && !ingestHookCommandExists(command) {
+					changed = true
+					continue
+				}
+				keptEntries = append(keptEntries, e)
+			}
+			if len(keptEntries) == 0 {
+				changed = true
+				continue
+			}
+			if len(keptEntries) != len(entries) {
+				group["hooks"] = keptEntries
+			}
+			keptGroups = append(keptGroups, group)
+		}
+		if len(keptGroups) != len(groups) {
+			hooks[eventName] = keptGroups
+		}
+	}
+	return changed
+}
+
+// isIngestHookArgs reports whether args has the exact shape
+// ensureIngestHooks/addIngestHookEntry produces: ["hooks", "ingest",
+// "--client", <any>, "--event", <any>] - i.e. this is recognizably one
+// of punakawan's own hook entries, not a different tool's.
+func isIngestHookArgs(raw any) bool {
+	args, ok := raw.([]any)
+	if !ok || len(args) != 6 {
+		return false
+	}
+	first, ok1 := args[0].(string)
+	second, ok2 := args[1].(string)
+	third, ok3 := args[2].(string)
+	fifth, ok5 := args[4].(string)
+	return ok1 && ok2 && ok3 && ok5 && first == "hooks" && second == "ingest" && third == "--client" && fifth == "--event"
+}
+
+// ingestHookCommandExists reports whether command still resolves to a
+// file on disk. An empty/unparseable command is treated as missing so a
+// malformed entry gets pruned rather than kept forever; command is
+// always an absolute path per addIngestHookEntry, so no PATH lookup is
+// needed.
+func ingestHookCommandExists(command string) bool {
+	if strings.TrimSpace(command) == "" {
+		return false
+	}
+	_, err := os.Stat(command)
+	return err == nil
 }
 
 func hasIngestHookEntry(hooks map[string]any, eventName, binaryPath, clientKind string) bool {
