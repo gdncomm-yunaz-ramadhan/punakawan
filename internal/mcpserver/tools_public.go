@@ -16,7 +16,7 @@ import (
 func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
 	addTool(server, reg, &mcp.Tool{Name: "list_adapter_operations", Description: "List live adapter operations and input schemas."}, listAdapterOperationsHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "call_adapter_operation", Description: "Invoke one declared adapter operation; use its discovered input schema."}, callAdapterOperationHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "upsert_project", Description: "Create or update a project's repository configuration."}, upsertProjectHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "upsert_project", Description: "Create or update a project's repository configuration. Also call this (same slug and repository_url, plus a metadata field) whenever you learn a static configuration fact about a registered project's repository - package manager, layout, naming convention, test framework, linters, formatters - so it survives this session; metadata merges field-by-field, it never overwrites what's already recorded."}, upsertProjectHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "list_projects", Description: "List registered projects and concise repository metadata."}, listProjectsHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "save_workflow", Description: "Create or update a reusable workflow definition."}, saveWorkflowDefinitionHandler(a, reg))
 	addTool(server, reg, &mcp.Tool{Name: "get_workflow", Description: "Read one reusable workflow definition."}, getWorkflowHandler(a))
@@ -51,6 +51,10 @@ type UpsertProjectInput struct {
 	Slug          string `json:"slug"`
 	RepositoryURL string `json:"repository_url"`
 	DefaultBranch string `json:"default_branch,omitempty"`
+	// Metadata is optional and merged field-by-field into whatever is
+	// already stored, not replaced wholesale: pass only the facts you
+	// actually know, e.g. {"package_manager": "pnpm"}.
+	Metadata *protocol.DeliveryProjectMetadata `json:"metadata,omitempty"`
 }
 
 type UpsertProjectOutput struct {
@@ -71,6 +75,12 @@ func upsertProjectHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		project, err := store.UpsertProject(ctx, delivery.NewID(), delivery.NewID(), in.Slug, in.RepositoryURL, strings.TrimSpace(in.DefaultBranch))
 		if err != nil {
 			return nil, UpsertProjectOutput{}, fmt.Errorf("mcpserver: upsert_project: %w", err)
+		}
+		if in.Metadata != nil {
+			project, err = store.MergeProjectMetadata(ctx, delivery.NewID(), project.Id, *in.Metadata)
+			if err != nil {
+				return nil, UpsertProjectOutput{}, fmt.Errorf("mcpserver: upsert_project: merge metadata: %w", err)
+			}
 		}
 		return nil, UpsertProjectOutput{Project: *project}, nil
 	}

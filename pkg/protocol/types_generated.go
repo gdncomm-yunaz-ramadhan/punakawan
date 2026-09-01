@@ -3423,6 +3423,14 @@ type DeliveryProject struct {
 	// Filesystem-safe ULID (Crockford base32, 26 chars).
 	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
+	// Static repository configuration facts (package manager, layout, naming
+	// convention, test framework, linters, formatters). Captured automatically when
+	// an agent's tool call touches a recognized config file (go.mod, package.json, a
+	// lockfile, .golangci.yml, etc.), or set explicitly via upsert_project. Each
+	// field is merged independently on write, never wholesale-replaced, so one
+	// detector's update never erases another's.
+	Metadata *DeliveryProjectMetadata `json:"metadata,omitempty,omitzero" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+
 	// RegisteredAt corresponds to the JSON schema field "registered_at".
 	RegisteredAt time.Time `json:"registered_at" yaml:"registered_at" mapstructure:"registered_at"`
 
@@ -3438,6 +3446,35 @@ type DeliveryProject struct {
 
 	// Status corresponds to the JSON schema field "status".
 	Status DeliveryProjectStatus `json:"status" yaml:"status" mapstructure:"status"`
+}
+
+// Static repository configuration facts (package manager, layout, naming
+// convention, test framework, linters, formatters). Captured automatically when an
+// agent's tool call touches a recognized config file (go.mod, package.json, a
+// lockfile, .golangci.yml, etc.), or set explicitly via upsert_project. Each field
+// is merged independently on write, never wholesale-replaced, so one detector's
+// update never erases another's.
+type DeliveryProjectMetadata struct {
+	// Editorconfig corresponds to the JSON schema field "editorconfig".
+	Editorconfig *bool `json:"editorconfig,omitempty,omitzero" yaml:"editorconfig,omitempty" mapstructure:"editorconfig,omitempty"`
+
+	// Formatters corresponds to the JSON schema field "formatters".
+	Formatters []string `json:"formatters,omitempty,omitzero" yaml:"formatters,omitempty" mapstructure:"formatters,omitempty"`
+
+	// Layout corresponds to the JSON schema field "layout".
+	Layout *string `json:"layout,omitempty,omitzero" yaml:"layout,omitempty" mapstructure:"layout,omitempty"`
+
+	// Linters corresponds to the JSON schema field "linters".
+	Linters []string `json:"linters,omitempty,omitzero" yaml:"linters,omitempty" mapstructure:"linters,omitempty"`
+
+	// NamingConvention corresponds to the JSON schema field "naming_convention".
+	NamingConvention *string `json:"naming_convention,omitempty,omitzero" yaml:"naming_convention,omitempty" mapstructure:"naming_convention,omitempty"`
+
+	// PackageManager corresponds to the JSON schema field "package_manager".
+	PackageManager *string `json:"package_manager,omitempty,omitzero" yaml:"package_manager,omitempty" mapstructure:"package_manager,omitempty"`
+
+	// TestFramework corresponds to the JSON schema field "test_framework".
+	TestFramework []string `json:"test_framework,omitempty,omitzero" yaml:"test_framework,omitempty" mapstructure:"test_framework,omitempty"`
 }
 
 type DeliveryProjectStatus string

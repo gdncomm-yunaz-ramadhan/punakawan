@@ -13,6 +13,20 @@
     "default_branch": { "type": "string" },
     "status": { "type": "string", "enum": ["active", "disabled"] },
     "registered_at": { "type": "string", "format": "date-time" },
-    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every update." }
+    "revision": { "type": "integer", "minimum": 0, "description": "Optimistic-concurrency counter; incremented on every update." },
+    "metadata": {
+      "type": "object",
+      "description": "Static repository configuration facts (package manager, layout, naming convention, test framework, linters, formatters). Captured automatically when an agent's tool call touches a recognized config file (go.mod, package.json, a lockfile, .golangci.yml, etc.), or set explicitly via upsert_project. Each field is merged independently on write, never wholesale-replaced, so one detector's update never erases another's.",
+      "additionalProperties": false,
+      "properties": {
+        "package_manager": { "type": "string" },
+        "layout": { "type": "string" },
+        "naming_convention": { "type": "string" },
+        "test_framework": { "type": "array", "items": { "type": "string" } },
+        "linters": { "type": "array", "items": { "type": "string" } },
+        "formatters": { "type": "array", "items": { "type": "string" } },
+        "editorconfig": { "type": "boolean" }
+      }
+    }
   }
 }

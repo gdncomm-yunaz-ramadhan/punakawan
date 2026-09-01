@@ -367,3 +367,54 @@ func TestIngestHookEventSessionStartSurfacesExistingPlanViaGitRemoteFallback(t *
 		t.Fatalf("stdout = %q, want it to mention saved plan id %q", stdout.String(), saved.ID)
 	}
 }
+
+// TestIngestHookEventPostToolUseCapturesProjectMetadata covers the
+// metadata-capture path: a PostToolUse event whose tool_input.file_path
+// names a static-config file (go.mod) should trigger convention.Extract
+// against cwd and merge the result into the matching registered project's
+// metadata, resolved the same marker-free git-remote-fallback way as the
+// SessionStart plan reminder.
+func TestIngestHookEventPostToolUseCapturesProjectMetadata(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("PUNAKAWAN_DATA_DIR", dataDir)
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init", "-q", "-b", "main")
+	runGit(t, repoDir, "remote", "add", "origin", "git@github.com:acme/widgets.git")
+	if err := os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module widgets\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	dbPath, err := storage.DBPath()
+	if err != nil {
+		t.Fatalf("DBPath: %v", err)
+	}
+	db, err := storage.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	defer db.Close()
+
+	deliveryStore := delivery.NewStore(db)
+	proj, err := deliveryStore.UpsertProject(context.Background(), "upsert-"+delivery.NewID(), delivery.NewID(), "widgets", "https://github.com/acme/widgets.git", "main")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"session_id":      "codex-thr-metadata",
+		"cwd":             repoDir,
+		"hook_event_name": "PostToolUse",
+		"tool_input":      map[string]any{"file_path": filepath.Join(repoDir, "go.mod")},
+	})
+	var stdout, stderr bytes.Buffer
+	ingestHookEvent(context.Background(), "codex", "PostToolUse", bytes.NewReader(payload), &stdout, &stderr)
+
+	updated, err := deliveryStore.GetProject(context.Background(), proj.Id)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if updated.Metadata == nil || updated.Metadata.PackageManager == nil || *updated.Metadata.PackageManager != "go modules" {
+		t.Fatalf("Metadata = %+v, want package_manager=\"go modules\"", updated.Metadata)
+	}
+}

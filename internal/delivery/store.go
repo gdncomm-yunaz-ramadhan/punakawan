@@ -133,17 +133,70 @@ func (s *Store) UpsertProject(ctx context.Context, idempotencyKey, id, slug, rep
 	return s.GetProjectBySlug(ctx, slug)
 }
 
+// MergeProjectMetadata merges partial into projectID's stored metadata,
+// field by field: only the fields partial actually sets (its zero-value
+// pointer/slice fields are omitted by its own JSON encoding) are written,
+// so a caller that only knows one fact - e.g. a PostToolUse hook that
+// detected just the package manager from go.mod - never clobbers a fact a
+// different call already recorded. Returns the project with its metadata
+// as stored after the merge.
+func (s *Store) MergeProjectMetadata(ctx context.Context, idempotencyKey, projectID string, partial protocol.DeliveryProjectMetadata) (*protocol.DeliveryProject, error) {
+	partialJSON, err := json.Marshal(partial)
+	if err != nil {
+		return nil, fmt.Errorf("delivery: encode metadata for project %s: %w", projectID, err)
+	}
+	var partialFields map[string]json.RawMessage
+	if err := json.Unmarshal(partialJSON, &partialFields); err != nil {
+		return nil, fmt.Errorf("delivery: decode metadata fields for project %s: %w", projectID, err)
+	}
+	if len(partialFields) == 0 {
+		return s.GetProject(ctx, projectID)
+	}
+
+	writeErr := s.db.Write(ctx, idempotencyKey, "merge project metadata "+projectID, func(tx *sql.Tx) error {
+		var existing sql.NullString
+		if err := tx.QueryRowContext(ctx, `SELECT metadata FROM delivery_projects WHERE id = ?`, projectID).Scan(&existing); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		merged := map[string]json.RawMessage{}
+		if existing.Valid && existing.String != "" {
+			if err := json.Unmarshal([]byte(existing.String), &merged); err != nil {
+				return fmt.Errorf("delivery: decode existing metadata for project %s: %w", projectID, err)
+			}
+		}
+		for k, v := range partialFields {
+			merged[k] = v
+		}
+		encoded, err := json.Marshal(merged)
+		if err != nil {
+			return fmt.Errorf("delivery: encode merged metadata for project %s: %w", projectID, err)
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE delivery_projects SET metadata = ?, revision = revision + 1 WHERE id = ?`, string(encoded), projectID)
+		return err
+	})
+	if writeErr != nil && !errors.Is(writeErr, storage.ErrDuplicateWrite) {
+		if errors.Is(writeErr, ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("delivery: merge project metadata %s: %w", projectID, writeErr)
+	}
+	return s.GetProject(ctx, projectID)
+}
+
 // GetProjectBySlug returns the project registered under slug.
 func (s *Store) GetProjectBySlug(ctx context.Context, slug string) (*protocol.DeliveryProject, error) {
 	row := s.db.Reader().QueryRowContext(ctx,
-		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects WHERE slug = ?`, slug)
+		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision, metadata FROM delivery_projects WHERE slug = ?`, slug)
 	return scanProject(row, slug)
 }
 
 // ListProjects returns every registered project ordered by slug.
 func (s *Store) ListProjects(ctx context.Context) ([]protocol.DeliveryProject, error) {
 	rows, err := s.db.Reader().QueryContext(ctx,
-		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects ORDER BY slug`)
+		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision, metadata FROM delivery_projects ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("delivery: list projects: %w", err)
 	}
@@ -165,7 +218,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]protocol.DeliveryProject, e
 // GetProject fails closed (ErrNotFound) for an unknown project id.
 func (s *Store) GetProject(ctx context.Context, id string) (*protocol.DeliveryProject, error) {
 	row := s.db.Reader().QueryRowContext(ctx,
-		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision FROM delivery_projects WHERE id = ?`, id)
+		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision, metadata FROM delivery_projects WHERE id = ?`, id)
 	return scanProject(row, id)
 }
 
@@ -176,7 +229,8 @@ type projectScanner interface {
 func scanProject(row projectScanner, identity string) (*protocol.DeliveryProject, error) {
 	var p protocol.DeliveryProject
 	var defaultBranch, registeredAt string
-	if err := row.Scan(&p.Id, &p.Slug, &p.RepositoryUrl, &defaultBranch, &p.Status, &registeredAt, &p.Revision); err != nil {
+	var metadata sql.NullString
+	if err := row.Scan(&p.Id, &p.Slug, &p.RepositoryUrl, &defaultBranch, &p.Status, &registeredAt, &p.Revision, &metadata); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -190,6 +244,13 @@ func scanProject(row projectScanner, identity string) (*protocol.DeliveryProject
 		return nil, fmt.Errorf("delivery: parse registered_at for project %s: %w", identity, err)
 	}
 	p.RegisteredAt = t
+	if metadata.Valid && metadata.String != "" {
+		var m protocol.DeliveryProjectMetadata
+		if err := json.Unmarshal([]byte(metadata.String), &m); err != nil {
+			return nil, fmt.Errorf("delivery: decode metadata for project %s: %w", identity, err)
+		}
+		p.Metadata = &m
+	}
 	return &p, nil
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ygrip/punakawan/internal/app"
+	"github.com/ygrip/punakawan/internal/convention"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/plan"
@@ -21,6 +22,7 @@ import (
 	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/internal/telemetry/clienthooks"
 	"github.com/ygrip/punakawan/internal/transcriptusage"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 func newHooksCmd() *cobra.Command {
@@ -223,6 +225,27 @@ func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader,
 		return
 	}
 
+	var cwd cwdPayload
+	_ = json.Unmarshal(payload, &cwd)
+	markerDir, marker, markerErr := findSessionMarker(cwd.Cwd)
+
+	// The plan reminder and metadata capture below run ahead of, and
+	// independent from, the telemetry mapping/spooling that makes up the
+	// rest of this function: a marker only exists for a session started
+	// via start_delivery_session, but the problems these exist to fix are
+	// most acute in an ad-hoc interactive session, which never has one and
+	// whose events (e.g. a PostToolUse with no transcript_path yet, or an
+	// unrecognized --client) the telemetry mapper below routinely maps to
+	// ActionIgnore or an error. See emitPlanReminder's and
+	// autoCaptureProjectMetadata's own doc comments for how each resolves
+	// a project without a marker.
+	if event == "SessionStart" {
+		emitPlanReminder(ctx, cwd.Cwd, marker, stdout, logger)
+	}
+	if event == "PostToolUse" {
+		autoCaptureProjectMetadata(ctx, payload, cwd.Cwd, marker, logger)
+	}
+
 	var mapped clienthooks.Mapped
 	switch client {
 	case clienthooks.ClientKindCodex:
@@ -240,22 +263,8 @@ func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader,
 		return
 	}
 
-	var cwd cwdPayload
-	_ = json.Unmarshal(payload, &cwd)
-	markerDir, marker, err := findSessionMarker(cwd.Cwd)
-
-	// The plan reminder runs regardless of whether a delivery session
-	// marker was found: a marker only exists for a session started via
-	// start_delivery_session, but the plan-underutilization problem this
-	// exists to fix is most acute in an ad-hoc interactive session, which
-	// never has one. See emitPlanReminder's own doc comment for how it
-	// resolves a project without a marker.
-	if event == "SessionStart" {
-		emitPlanReminder(ctx, cwd.Cwd, marker, stdout, logger)
-	}
-
-	if err != nil {
-		logger.Info("hooks ingest: no punakawan delivery session tracked here", "cwd", cwd.Cwd, "reason", err)
+	if markerErr != nil {
+		logger.Info("hooks ingest: no punakawan delivery session tracked here", "cwd", cwd.Cwd, "reason", markerErr)
 		return
 	}
 
@@ -495,4 +504,131 @@ func normalizeRepositoryURL(s string) string {
 		}
 	}
 	return s
+}
+
+// staticConfigFileNames names every filename convention.Extract's own
+// detectors key off of directly (not the glob-matched ones, which
+// isStaticConfigFile checks separately) - kept as its own list here
+// rather than exported from internal/convention so a hook-path change
+// never has to touch that package's detection logic itself.
+var staticConfigFileNames = map[string]bool{
+	"go.mod":              true,
+	"package.json":        true,
+	"pnpm-lock.yaml":      true,
+	"package-lock.json":   true,
+	"yarn.lock":           true,
+	"pnpm-workspace.yaml": true,
+	"Cargo.toml":          true,
+	"rustfmt.toml":        true,
+	".editorconfig":       true,
+	".golangci.yml":       true,
+	".golangci.yaml":      true,
+	".golangci.toml":      true,
+}
+
+// isStaticConfigFile reports whether name is a file convention.Extract's
+// detectors read, matching its own glob patterns
+// (.eslintrc*/eslint.config.*/.prettierrc*/prettier.config.*/.stylelintrc*)
+// by prefix in addition to the exact names in staticConfigFileNames.
+func isStaticConfigFile(name string) bool {
+	if staticConfigFileNames[name] {
+		return true
+	}
+	for _, prefix := range []string{".eslintrc", "eslint.config.", ".prettierrc", "prettier.config.", ".stylelintrc"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// autoCaptureProjectMetadata re-runs convention.Extract against cwd and
+// merges the result into the matching registered project's metadata
+// whenever a PostToolUse event's tool_input names a recognized
+// static-config file (go.mod, package.json, a lockfile, .golangci.yml,
+// etc.) - the static-configuration facts an agent's own file reads
+// already surface, given somewhere durable to land instead of nowhere.
+// It resolves the project the same two ways emitPlanReminder does (marker
+// first, then a git-remote match), is a complete no-op when cwd's project
+// isn't registered, and every failure is silent (Info, not Warn): this is
+// best-effort capture, never a blocking check.
+func autoCaptureProjectMetadata(ctx context.Context, payload []byte, cwd string, marker *mcpserver.SessionMarker, logger *slog.Logger) {
+	var tool struct {
+		ToolInput json.RawMessage `json:"tool_input"`
+	}
+	if err := json.Unmarshal(payload, &tool); err != nil || len(tool.ToolInput) == 0 {
+		return
+	}
+	var input struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.Unmarshal(tool.ToolInput, &input); err != nil || input.FilePath == "" {
+		return
+	}
+	if !isStaticConfigFile(filepath.Base(input.FilePath)) {
+		return
+	}
+
+	dbPath, err := storage.DBPath()
+	if err != nil {
+		logger.Info("hooks ingest: metadata capture: resolve db path", "error", err)
+		return
+	}
+	db, err := storage.Open(ctx, dbPath)
+	if err != nil {
+		logger.Info("hooks ingest: metadata capture: open storage kernel", "error", err)
+		return
+	}
+	defer db.Close()
+	deliveryStore := delivery.NewStore(db)
+
+	projectID, err := resolveProjectIDForMetadata(ctx, cwd, marker, deliveryStore)
+	if err != nil {
+		logger.Info("hooks ingest: metadata capture: resolve project", "error", err)
+		return
+	}
+	if projectID == "" {
+		return
+	}
+
+	rec, err := convention.Extract(cwd, projectID, projectID)
+	if err != nil {
+		logger.Info("hooks ingest: metadata capture: extract conventions", "error", err)
+		return
+	}
+	var metadata protocol.DeliveryProjectMetadata
+	if rec.Structure != nil {
+		metadata.PackageManager = rec.Structure.PackageManager
+		metadata.Layout = rec.Structure.Layout
+		metadata.NamingConvention = rec.Structure.NamingConvention
+		metadata.TestFramework = rec.Structure.TestFramework
+	}
+	if rec.Formatting != nil {
+		metadata.Linters = rec.Formatting.Linters
+		metadata.Formatters = rec.Formatting.Formatters
+		metadata.Editorconfig = rec.Formatting.Editorconfig
+	}
+
+	if _, err := deliveryStore.MergeProjectMetadata(ctx, delivery.NewID(), projectID, metadata); err != nil {
+		logger.Info("hooks ingest: metadata capture: merge project metadata", "error", err)
+	}
+}
+
+// resolveProjectIDForMetadata resolves cwd's registered project id: from
+// marker's orchestration when one is tracked (its first project_ids
+// entry), otherwise by matching cwd's git origin remote, the same
+// fallback emitPlanReminder uses for the same reason (an ad-hoc
+// interactive session never gets a marker).
+func resolveProjectIDForMetadata(ctx context.Context, cwd string, marker *mcpserver.SessionMarker, deliveryStore *delivery.Store) (string, error) {
+	if marker != nil {
+		orch, err := deliveryStore.GetOrchestration(ctx, marker.OrchestrationID)
+		if err != nil {
+			return "", err
+		}
+		if len(orch.ProjectIds) > 0 {
+			return orch.ProjectIds[0], nil
+		}
+		return "", nil
+	}
+	return resolveProjectIDFromGitRemote(ctx, cwd, deliveryStore)
 }
