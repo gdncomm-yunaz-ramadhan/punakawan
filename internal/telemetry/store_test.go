@@ -223,6 +223,127 @@ func TestIngestSnapshotWithKnownModelComputesRealCost(t *testing.T) {
 	}
 }
 
+// Claude Code reports locally generated messages under the pseudo-model
+// "<synthetic>". Treating it as an unpriceable model dragged the whole
+// snapshot - and every delivery containing one - to unknown cost.
+func TestIngestSnapshotIgnoresNonBillablePseudoModels(t *testing.T) {
+	store := newTelemetryStore(t)
+	catalog := NewCatalog([]ModelRate{{
+		Provider: "test", Model: "test-model", EffectiveAt: time.Unix(0, 0),
+		InputPerMillion: 1_000_000, OutputPerMillion: 2_000_000, Currency: "USD",
+	}})
+	priced := NewStore(store.db, WithCatalog(catalog))
+	s := mustBegin(t, priced, BeginRequest{DeliveryID: "d1", ClientKind: "claude-code", ExternalSessionID: "thr-1"})
+
+	projection := mustSnapshot(t, priced, SnapshotRequest{
+		SessionID: s.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{
+			{Model: "test-model", InputTokens: 2, OutputTokens: 3},
+			{Model: "<synthetic>", InputTokens: 900, OutputTokens: 900},
+		},
+	})
+	if projection.EstimatedCost == nil {
+		t.Fatal("estimated cost = nil, want the billable model still priced")
+	}
+	if !projection.EstimatedCost.FullyKnown {
+		t.Fatalf("estimated cost = %+v, want fully known", projection.EstimatedCost)
+	}
+	if got, want := projection.EstimatedCost.Amount, 8.0; got != want {
+		t.Fatalf("estimated cost amount = %v, want %v (the pseudo-model contributes nothing)", got, want)
+	}
+
+	// And the pseudo-model must not stand between the session and a
+	// complete telemetry status once it closes.
+	session, _, err := priced.Finalize(context.Background(), FinalizeRequest{SessionID: s.ID, StopID: "stop-1"})
+	if err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if session.TelemetryStatus != "complete" {
+		t.Fatalf("session telemetry status = %q, want complete", session.TelemetryStatus)
+	}
+}
+
+// A snapshot whose only usage is non-billable costs nothing and names no
+// currency; it must not take the currency slot from the priced snapshots
+// beside it and turn the delivery into a currency mismatch.
+func TestNonBillableOnlySnapshotDoesNotClaimTheDeliveryCurrency(t *testing.T) {
+	store := newTelemetryStore(t)
+	catalog := NewCatalog([]ModelRate{{
+		Provider: "test", Model: "test-model", EffectiveAt: time.Unix(0, 0),
+		InputPerMillion: 1_000_000, OutputPerMillion: 2_000_000, Currency: "USD",
+	}})
+	priced := NewStore(store.db, WithCatalog(catalog))
+	s := mustBegin(t, priced, BeginRequest{DeliveryID: "d1", ClientKind: "claude-code", ExternalSessionID: "thr-1"})
+
+	mustSnapshot(t, priced, SnapshotRequest{
+		SessionID: s.ID, SourceID: "sub-1", Sequence: 1,
+		ModelUsage: []ModelUsage{{Model: "<synthetic>", InputTokens: 10, OutputTokens: 10}},
+	})
+	projection := mustSnapshot(t, priced, SnapshotRequest{
+		SessionID: s.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{{Model: "test-model", InputTokens: 2, OutputTokens: 3}},
+	})
+	if projection.EstimatedCost == nil || !projection.EstimatedCost.FullyKnown {
+		t.Fatalf("estimated cost = %+v, want fully known", projection.EstimatedCost)
+	}
+	if got := projection.EstimatedCost.Currency; got != "USD" {
+		t.Fatalf("currency = %q, want USD", got)
+	}
+}
+
+// A finalize carrying no snapshot is how the delivery-completion sweep
+// closes a session nobody's own lifecycle hook closed. It used to preserve
+// whatever telemetry_status the session already had, and since
+// IngestSnapshot only ever writes "incomplete", that meant a fully priced
+// session closed by the sweep still reported its cost as not fully known.
+func TestFinalizeWithoutASnapshotStillRecomputesTelemetryStatus(t *testing.T) {
+	store := newTelemetryStore(t)
+	catalog := NewCatalog([]ModelRate{{
+		Provider: "test", Model: "test-model", EffectiveAt: time.Unix(0, 0),
+		InputPerMillion: 1_000_000, OutputPerMillion: 2_000_000, Currency: "USD",
+	}})
+	priced := NewStore(store.db, WithCatalog(catalog))
+	s := mustBegin(t, priced, BeginRequest{DeliveryID: "d1", ClientKind: "claude-code", ExternalSessionID: "thr-1"})
+
+	mustSnapshot(t, priced, SnapshotRequest{
+		SessionID: s.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{{Model: "test-model", InputTokens: 2, OutputTokens: 3}},
+	})
+
+	session, projection, err := priced.Finalize(context.Background(), FinalizeRequest{SessionID: s.ID, StopID: "stop-1", StopReason: "delivery_completed"})
+	if err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if session.TelemetryStatus != "complete" {
+		t.Fatalf("session telemetry status = %q, want complete", session.TelemetryStatus)
+	}
+	if projection.TelemetryStatus != "complete" {
+		t.Fatalf("delivery telemetry status = %q, want complete", projection.TelemetryStatus)
+	}
+	if projection.EstimatedCost == nil || !projection.EstimatedCost.FullyKnown {
+		t.Fatalf("estimated cost = %+v, want fully known", projection.EstimatedCost)
+	}
+}
+
+// The other direction still has to hold: one unpriceable snapshot keeps
+// the session incomplete no matter how it is closed.
+func TestFinalizeKeepsIncompleteWhenAnySnapshotWasUnpriced(t *testing.T) {
+	store := newTelemetryStore(t)
+	s := mustBegin(t, store, BeginRequest{DeliveryID: "d1", ClientKind: "codex", ExternalSessionID: "thr-1"})
+	mustSnapshot(t, store, SnapshotRequest{
+		SessionID: s.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{{Model: "some-future-model-nobody-prices-yet", InputTokens: 1}},
+	})
+
+	session, _, err := store.Finalize(context.Background(), FinalizeRequest{SessionID: s.ID, StopID: "stop-1"})
+	if err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if session.TelemetryStatus != "incomplete" {
+		t.Fatalf("session telemetry status = %q, want incomplete", session.TelemetryStatus)
+	}
+}
+
 func TestGetSnapshotReturnsNilForAnAbsentBaseline(t *testing.T) {
 	store := newTelemetryStore(t)
 	s := mustBegin(t, store, BeginRequest{DeliveryID: "d1", ClientKind: "codex", ExternalSessionID: "thr-1"})

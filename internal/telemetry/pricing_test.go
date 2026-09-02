@@ -55,7 +55,10 @@ func TestCatalogResolveIsCaseAndSpaceInsensitive(t *testing.T) {
 
 func TestInstalledCatalogResolvesSeededModels(t *testing.T) {
 	catalog := InstalledCatalog()
-	for _, model := range []string{"claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "gpt-4o", "gpt-4o-mini"} {
+	for _, model := range []string{
+		"claude-opus-5", "claude-opus-4-8", "claude-sonnet-5", "claude-sonnet-4-6", "claude-fable-5-1",
+		"claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "gpt-4o", "gpt-4o-mini",
+	} {
 		if _, ok := catalog.Resolve(model, time.Now()); !ok {
 			t.Errorf("installed catalog has no rate for seeded model %q", model)
 		}
@@ -77,5 +80,60 @@ func TestCatalogReplaceSwapsRatesWithoutAffectingAlreadyCapturedSnapshots(t *tes
 	rate, ok = catalog.Resolve("widget", time.Now())
 	if !ok || rate.InputPerMillion != 99 {
 		t.Fatalf("Resolve after Replace = %+v, %v, want the replaced rate", rate, ok)
+	}
+}
+
+// The delivery that prompted this ran entirely on claude-opus-5 and
+// recorded 6.3M tokens, but every snapshot priced unknown because the
+// catalog stopped at claude-opus-4-5 - so the whole delivery reported a
+// nil cost and a permanently incomplete telemetry status.
+func TestInstalledCatalogPricesTheModelsClientsActuallyReport(t *testing.T) {
+	catalog := InstalledCatalog()
+	for _, model := range []string{"claude-opus-5", "claude-sonnet-5"} {
+		rate, ok := catalog.Resolve(model, time.Now())
+		if !ok {
+			t.Fatalf("no rate for %q", model)
+		}
+		if rate.InputPerMillion <= 0 || rate.OutputPerMillion <= 0 || rate.Currency == "" {
+			t.Errorf("%q resolved to an unusable rate %+v", model, rate)
+		}
+	}
+}
+
+func TestCatalogResolveStripsDateSuffixAndProviderPrefix(t *testing.T) {
+	catalog := InstalledCatalog()
+	for _, model := range []string{
+		"claude-haiku-4-5-20251001",
+		"us.anthropic.claude-opus-5",
+		"anthropic/claude-sonnet-5",
+		"US.Anthropic.Claude-Opus-5-20260101",
+	} {
+		if _, ok := catalog.Resolve(model, time.Now()); !ok {
+			t.Errorf("Resolve(%q): expected the catalog to see through the prefix/date stamp", model)
+		}
+	}
+}
+
+func TestCatalogResolveStillRejectsAGenuinelyUnknownModel(t *testing.T) {
+	catalog := InstalledCatalog()
+	// Normalization must not be so eager that an unrecognised model
+	// silently borrows a neighbouring model's price.
+	for _, model := range []string{"claude-opus-99", "gpt-6", "claude-opus"} {
+		if rate, ok := catalog.Resolve(model, time.Now()); ok {
+			t.Errorf("Resolve(%q) unexpectedly matched %+v", model, rate)
+		}
+	}
+}
+
+func TestNonBillableModelRecognisesClientPseudoModels(t *testing.T) {
+	for _, name := range []string{"<synthetic>", "  <SYNTHETIC>  ", ""} {
+		if !NonBillableModel(name) {
+			t.Errorf("NonBillableModel(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"claude-opus-5", "gpt-4o"} {
+		if NonBillableModel(name) {
+			t.Errorf("NonBillableModel(%q) = true, want false", name)
+		}
 	}
 }

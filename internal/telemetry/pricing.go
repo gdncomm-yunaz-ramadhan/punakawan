@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -82,8 +83,40 @@ func (c *Catalog) Resolve(model string, at time.Time) (ModelRate, bool) {
 	return *best, true
 }
 
+// NonBillableModel reports whether name is a pseudo-model a client uses to
+// account for tokens no provider charges for. Claude Code writes
+// "<synthetic>" for locally generated messages; billing it as an unknown
+// model would mark every snapshot that contains one unpriced, which is how
+// a whole delivery's cost silently became nil.
+func NonBillableModel(name string) bool {
+	trimmed := normalizeModelName(name)
+	return trimmed == "" || (strings.HasPrefix(trimmed, "<") && strings.HasSuffix(trimmed, ">"))
+}
+
+// modelNamePrefixes are the routing prefixes a provider puts in front of an
+// otherwise ordinary model id. They carry no pricing information of their
+// own, so they are stripped before lookup rather than duplicated as extra
+// catalog keys.
+var modelNamePrefixes = []string{
+	"us.anthropic.", "eu.anthropic.", "apac.anthropic.", "anthropic.",
+	"anthropic/", "openai/",
+}
+
+// datedModelSuffix matches the -YYYYMMDD release stamp a provider appends
+// to a model id (claude-haiku-4-5-20251001). The stamp names a snapshot of
+// the same model at the same price, so it is stripped before lookup - the
+// alternative is a catalog that goes stale every time a model is re-cut.
+var datedModelSuffix = regexp.MustCompile(`-\d{8}$`)
+
 func normalizeModelName(model string) string {
-	return strings.ToLower(strings.TrimSpace(model))
+	name := strings.ToLower(strings.TrimSpace(model))
+	for _, prefix := range modelNamePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	return datedModelSuffix.ReplaceAllString(name, "")
 }
 
 func ptr(v float64) *float64 { return &v }
@@ -96,7 +129,63 @@ func ptr(v float64) *float64 { return &v }
 // accuracy, and prefer an explicitly observed provider price
 // (SnapshotRequest.ObservedCost) over this catalog whenever one is
 // available.
+//
+// Cache rates follow Anthropic's published multipliers where the pricing
+// page states them per-model: a 5-minute cache write costs 1.25x input and
+// a cache read 0.1x input.
 var installedRates = []ModelRate{
+	{
+		Provider: "anthropic", Model: "claude-opus-5",
+		EffectiveAt:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		InputPerMillion:      5.00,
+		OutputPerMillion:     25.00,
+		CacheWritePerMillion: ptr(6.25),
+		CacheReadPerMillion:  ptr(0.50),
+		Currency:             "USD",
+		SourceURL:            "https://docs.anthropic.com/en/docs/about-claude/pricing",
+	},
+	{
+		Provider: "anthropic", Model: "claude-opus-4-8",
+		EffectiveAt:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		InputPerMillion:      5.00,
+		OutputPerMillion:     25.00,
+		CacheWritePerMillion: ptr(6.25),
+		CacheReadPerMillion:  ptr(0.50),
+		Currency:             "USD",
+		SourceURL:            "https://docs.anthropic.com/en/docs/about-claude/pricing",
+	},
+	{
+		Provider: "anthropic", Model: "claude-sonnet-5",
+		EffectiveAt:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		InputPerMillion:      2.00,
+		OutputPerMillion:     10.00,
+		CacheWritePerMillion: ptr(2.50),
+		CacheReadPerMillion:  ptr(0.20),
+		Currency:             "USD",
+		SourceURL:            "https://docs.anthropic.com/en/docs/about-claude/pricing",
+	},
+	{
+		Provider: "anthropic", Model: "claude-sonnet-4-6",
+		EffectiveAt:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		InputPerMillion:      3.00,
+		OutputPerMillion:     15.00,
+		CacheWritePerMillion: ptr(3.75),
+		CacheReadPerMillion:  ptr(0.30),
+		Currency:             "USD",
+		SourceURL:            "https://docs.anthropic.com/en/docs/about-claude/pricing",
+	},
+	{
+		Provider: "anthropic", Model: "claude-fable-5-1",
+		EffectiveAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		InputPerMillion:  10.00,
+		OutputPerMillion: 50.00,
+		// Claude Fable 5.1 prices cache reads flat rather than as a
+		// multiple of input, so this one is not 0.1x.
+		CacheWritePerMillion: ptr(12.50),
+		CacheReadPerMillion:  ptr(0.25),
+		Currency:             "USD",
+		SourceURL:            "https://docs.anthropic.com/en/docs/about-claude/pricing",
+	},
 	{
 		Provider: "anthropic", Model: "claude-sonnet-4-5",
 		EffectiveAt:          time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),

@@ -264,6 +264,14 @@ func (s *Store) priceSnapshot(req SnapshotRequest, at time.Time) (modelUsageJSON
 	currency := ""
 	allKnown := true
 	for _, mu := range req.ModelUsage {
+		// A pseudo-model like "<synthetic>" is not something any provider
+		// bills for, so it contributes nothing and - crucially - does not
+		// make the snapshot unpriced. Recording it as an unknown model
+		// would take the whole delivery's cost down with it.
+		if NonBillableModel(mu.Model) {
+			entries = append(entries, pricingEntry{Model: mu.Model, Known: true})
+			continue
+		}
 		rate, ok := s.catalog.Resolve(mu.Model, at)
 		if !ok {
 			entries = append(entries, pricingEntry{Model: mu.Model, Known: false})
@@ -300,6 +308,34 @@ func (s *Store) priceSnapshot(req SnapshotRequest, at time.Time) (modelUsageJSON
 		return "", "", "", false, err
 	}
 	return string(modelUsageBytes), string(pricingBytes), string(costBytes), allKnown, nil
+}
+
+// allSnapshotsPriced reports whether every snapshot stored for sessionID
+// resolved a fully known cost. A session with no snapshots at all is
+// vacuously priced - there is no usage whose cost could be unknown.
+func allSnapshotsPriced(ctx context.Context, tx *sql.Tx, sessionID string) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT estimated_cost_json FROM agent_usage_snapshots WHERE session_id = ?`, sessionID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var costJSON sql.NullString
+		if err := rows.Scan(&costJSON); err != nil {
+			return false, err
+		}
+		if !costJSON.Valid {
+			return false, nil
+		}
+		var cost estimatedCost
+		if err := json.Unmarshal([]byte(costJSON.String), &cost); err != nil {
+			return false, fmt.Errorf("telemetry: decode estimated cost: %w", err)
+		}
+		if !cost.Known {
+			return false, nil
+		}
+	}
+	return true, rows.Err()
 }
 
 // IngestSnapshot applies one monotonic usage snapshot for req.SessionID's
@@ -389,7 +425,6 @@ func (s *Store) Finalize(ctx context.Context, req FinalizeRequest) (AgentSession
 			}
 			return err
 		}
-		complete := session.TelemetryStatus == "complete"
 		if req.Snapshot != nil {
 			snap := *req.Snapshot
 			snap.SessionID = sessionID
@@ -400,11 +435,10 @@ func (s *Store) Finalize(ctx context.Context, req FinalizeRequest) (AgentSession
 			if observedAt.IsZero() {
 				observedAt = stoppedAt
 			}
-			modelUsageJSON, pricingJSON, costJSON, snapComplete, err := s.priceSnapshot(snap, observedAt)
+			modelUsageJSON, pricingJSON, costJSON, _, err := s.priceSnapshot(snap, observedAt)
 			if err != nil {
 				return err
 			}
-			complete = snapComplete
 			if _, err := tx.ExecContext(ctx, upsertSnapshotSQL,
 				sessionID, strings.TrimSpace(snap.SourceID), snap.Sequence, snap.InputTokens, snap.OutputTokens, snap.CacheWriteTokens, snap.CacheReadTokens, snap.ToolCalls, snap.ElapsedMS,
 				modelUsageJSON, pricingJSON, costJSON, observedAt.Format(timeLayout),
@@ -416,6 +450,17 @@ func (s *Store) Finalize(ctx context.Context, req FinalizeRequest) (AgentSession
 			return ErrAlreadyFinalized
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO agent_session_stops (stop_id, session_id, stopped_at, stop_reason) VALUES (?, ?, ?, ?)`, stopID, sessionID, stoppedAt.Format(timeLayout), stopReason); err != nil {
+			return err
+		}
+		// Recompute from every snapshot this session ever stored, not
+		// from the final one alone. The session row only ever moved
+		// towards incomplete (IngestSnapshot has no upgrade branch), so
+		// reading it back here meant a session that hit one unpriceable
+		// snapshot could never report complete again - and a finalize
+		// carrying no snapshot at all, which is how the stray-session
+		// sweep closes a session, simply preserved that.
+		complete, err := allSnapshotsPriced(ctx, tx, sessionID)
+		if err != nil {
 			return err
 		}
 		telemetryStatus := "incomplete"
@@ -526,6 +571,13 @@ func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (U
 			continue
 		}
 		costKnownAny = true
+		// A snapshot whose only usage was non-billable is known to have
+		// cost nothing and names no currency. It must not claim the
+		// delivery's currency slot, or the first real priced snapshot
+		// after it reads as a currency mismatch.
+		if cost.Currency == "" && cost.Amount == 0 {
+			continue
+		}
 		if currency == "" {
 			currency = cost.Currency
 		} else if currency != cost.Currency {
