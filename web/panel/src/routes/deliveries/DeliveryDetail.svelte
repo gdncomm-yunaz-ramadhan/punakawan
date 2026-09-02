@@ -129,6 +129,7 @@
   const tabs: { id: string; label: string; icon: IconName }[] = [
     { id: "overview", label: "Overview", icon: "dashboard" },
     { id: "projects", label: "Projects", icon: "folder" },
+    { id: "plans", label: "Plans", icon: "file" },
     { id: "jira", label: "Jira", icon: "git-branch" },
     { id: "sessions", label: "Sessions", icon: "users" },
     { id: "activity", label: "Activity", icon: "activity" },
@@ -154,6 +155,60 @@
 
   function projectPlan(d: DeliveryDetail, projectId: string) {
     return (d.project_plans ?? []).find((p) => p.project_id === projectId);
+  }
+
+  // planRows merges the delivery's own cross-project plan with each
+  // project's detailed one into a single table. plan_detail has always
+  // been in the payload and was never read by anything, so the plan a
+  // delivery was actually started against was invisible here.
+  function planRows(d: DeliveryDetail) {
+    const rows: {
+      id: string;
+      scope: string;
+      objective: string;
+      status: string;
+      revision: string;
+      steps: number;
+      planId: string;
+      planRevision: number;
+      projectSlug: string;
+    }[] = [];
+    if (d.plan_detail) {
+      rows.push({
+        id: `delivery:${d.plan_detail.id}`,
+        scope: "Whole delivery",
+        objective: d.plan_detail.objective,
+        status: d.plan_detail.status || "Not recorded",
+        revision: `r${d.plan_detail.revision ?? 0}`,
+        steps: d.plan_detail.steps?.length ?? 0,
+        planId: d.plan_detail.id ?? "",
+        planRevision: d.plan_detail.revision ?? 0,
+        projectSlug: "",
+      });
+    }
+    for (const linked of d.project_plans ?? []) {
+      const revision = linked.plan.revision ?? 0;
+      rows.push({
+        id: `project:${linked.project_id}:${linked.plan.id}`,
+        scope: linked.project_slug || linked.project_id,
+        objective: linked.plan.objective,
+        status: linked.plan.status || "Not recorded",
+        // A delivery pointing at an older revision than the plan's head
+        // is the one thing a reader has to notice here, so it is said in
+        // the cell rather than left to be worked out.
+        revision: revision === linked.head_revision ? `r${revision}` : `r${revision} (head is r${linked.head_revision})`,
+        steps: linked.plan.steps?.length ?? 0,
+        planId: linked.plan.id ?? "",
+        planRevision: revision,
+        projectSlug: linked.project_slug || "",
+      });
+    }
+    return rows;
+  }
+
+  function openPlan(row: { projectSlug: string; planId: string; planRevision: number }) {
+    if (!row.projectSlug || !row.planId) return;
+    navigate(`/projects/${encodeURIComponent(row.projectSlug)}?plan=${encodeURIComponent(row.planId)}&revision=${row.planRevision}`);
   }
 </script>
 
@@ -202,8 +257,11 @@
             </button>
           {/snippet}
         </MetricCard>
+        <MetricCard size="small" columns={3} label="Tokens" value={(d.usage.input_tokens + d.usage.output_tokens).toLocaleString()} />
+        <MetricCard size="small" columns={3} label="Tool calls" value={d.usage.tool_calls.toLocaleString()} />
         <MetricCard size="small" columns={3} label="Total projects" value={(d.projects ?? []).length} />
-        <MetricCard size="small" columns={3} label="Total plans" value={(d.project_plans ?? []).length} />
+        <MetricCard size="small" columns={3} label="Total lanes" value={(d.lanes ?? []).length} />
+        <MetricCard size="small" columns={3} label="Total plans" value={planRows(d).length} />
         <MetricCard size="small" columns={3} label="Total sessions" value={(d.sessions ?? []).length} />
       </BentoGrid>
       {#if d.progress}
@@ -243,6 +301,46 @@
             })}
             rowAction={{ label: "Open", onSelect: (row) => navigate(`/projects/${encodeURIComponent(row.project)}`) }}
             emptyMessage="No projects linked to this delivery."
+          />
+        </TableCard>
+        <TableCard title="Lanes" size="full">
+          <DataTable
+            columns={[
+              { key: "task", label: "Task" },
+              { key: "project", label: "Project", sortable: true },
+              { key: "status", label: "Status", sortable: true },
+              { key: "blockedBy", label: "Blocked by" },
+              { key: "pullRequest", label: "Pull request" },
+            ]}
+            rows={(d.lanes ?? []).map((lane) => ({
+              id: lane.id,
+              task: lane.title || lane.parent_task_id || lane.id,
+              project: lane.project_slug || lane.project_id,
+              status: lane.status,
+              blockedBy: lane.blocked_by?.length ? lane.blocked_by.join(", ") : "Nothing",
+              pullRequest: lane.pull_request || "None yet",
+            }))}
+            emptyMessage="No lanes. This delivery has no executable work yet - start_delivery creates one lane per task in its projects block."
+          />
+        </TableCard>
+      </BentoGrid>
+    </div>
+  {:else if activeId === "plans"}
+    <div id="tabpanel-plans" role="tabpanel" aria-labelledby="tab-plans">
+      <h2>Plans</h2>
+      <BentoGrid>
+        <TableCard title="Plans" size="full">
+          <DataTable
+            columns={[
+              { key: "scope", label: "Scope", sortable: true },
+              { key: "objective", label: "Objective" },
+              { key: "status", label: "Status", sortable: true },
+              { key: "revision", label: "Revision" },
+              { key: "steps", label: "Steps", align: "right", sortable: true },
+            ]}
+            rows={planRows(d)}
+            rowAction={{ label: "Open", onSelect: (row) => openPlan(row) }}
+            emptyMessage="No plans linked to this delivery. Save one with plan_save and pass its id to start_delivery."
           />
         </TableCard>
       </BentoGrid>

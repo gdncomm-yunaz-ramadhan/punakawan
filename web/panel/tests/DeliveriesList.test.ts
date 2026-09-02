@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DeliveriesList from "../src/routes/deliveries/DeliveriesList.svelte";
 import { setCsrfToken } from "../src/lib/session";
@@ -76,7 +76,9 @@ describe("DeliveriesList", () => {
     const { container } = render(DeliveriesList);
 
     await waitFor(() => expect(screen.getByText("Migrate billing to v2")).toBeTruthy());
-    expect(screen.getByText("active", { exact: false })).toBeTruthy();
+    // Scoped to the card: the Active/Archived toggle above the list also
+    // carries the word.
+    expect(within(screen.getByRole("list", { name: "Deliveries" })).getByText("active")).toBeTruthy();
     expect(screen.getByText("PAY-1842")).toBeTruthy();
     expect(screen.getByText("proj-a")).toBeTruthy();
     expect(container.textContent).toContain("1,500");
@@ -184,6 +186,24 @@ describe("DeliveriesList", () => {
     });
   });
 
+  it("keeps cancelled and completed deliveries out of the active list", async () => {
+    installBackend([
+      summary("orc-1", { title: "Still running", status: "active" }),
+      summary("orc-2", { title: "Called off", status: "cancelled", cancellable: false }),
+      summary("orc-3", { title: "All done", status: "completed", cancellable: false }),
+    ]);
+
+    render(DeliveriesList);
+    await waitFor(() => expect(screen.getByText("Still running")).toBeTruthy());
+    expect(screen.queryByText("Called off")).toBeNull();
+    expect(screen.queryByText("All done")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Archived \(2\)/ }));
+    expect(screen.getByText("Called off")).toBeTruthy();
+    expect(screen.getByText("All done")).toBeTruthy();
+    expect(screen.queryByText("Still running")).toBeNull();
+  });
+
   it("filters and distinguishes an empty result from having no deliveries", async () => {
     installBackend([
       summary("orc-1", { title: "Migrate billing" }),
@@ -198,7 +218,8 @@ describe("DeliveriesList", () => {
     expect(screen.getByText("Refresh checkout")).toBeTruthy();
 
     await fireEvent.input(screen.getByLabelText("Search deliveries"), { target: { value: "zzzz" } });
-    await waitFor(() => expect(screen.getByText("No deliveries match your search")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("No active deliveries")).toBeTruthy());
+    expect(screen.getByText(/Nothing matches/)).toBeTruthy();
     expect(screen.queryByText("No deliveries yet")).toBeNull();
   });
 

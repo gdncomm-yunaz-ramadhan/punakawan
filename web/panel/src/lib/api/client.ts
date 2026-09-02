@@ -399,10 +399,13 @@ export function refreshHealth(id: string): Promise<HealthResponse> {
 // A delivery's list and detail rows are DeliverySummary/DeliveryDetail
 // (generated from protocol/deliverysummary.schema.json and
 // protocol/deliverydetail.schema.json into @punakawan/schema-types) -
-// the one live projection every delivery route returns. Neither type
-// carries scheduler-internal concepts (lanes, blocked counts, pending
-// questions, a lane-derived next action); this module only wraps the
-// HTTP calls, it declares no parallel type of its own.
+// the one live projection every delivery route returns. DeliveryDetail
+// names the delivery's lanes, since a reader who cannot see them cannot
+// tell a delivery that decomposed correctly from one that produced
+// nothing, but neither type carries any other scheduler-internal concept
+// (blocked counts, pending questions, a lane-derived next action); this
+// module only wraps the HTTP calls, it declares no parallel type of its
+// own.
 
 export interface ListDeliveriesResult {
   items: DeliverySummary[];

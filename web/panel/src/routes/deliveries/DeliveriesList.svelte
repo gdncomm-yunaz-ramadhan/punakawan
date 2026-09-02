@@ -14,6 +14,7 @@
     sortDeliveries,
     deliverySortOptions,
     isCancellableDelivery,
+    partitionByArchived,
     backoffDelay,
     type DeliverySortKey,
     type DeliveryListRow,
@@ -31,8 +32,11 @@
 
   let search = $state("");
   let sortKey: DeliverySortKey = $state("updated");
+  let showArchived = $state(false);
 
-  const visible = $derived(sortDeliveries(filterDeliveries(rows, search), sortKey));
+  const matching = $derived(sortDeliveries(filterDeliveries(rows, search), sortKey));
+  const partitioned = $derived(partitionByArchived(matching));
+  const visible = $derived(showArchived ? partitioned.archived : partitioned.live);
 
   let pendingCancelId: string | null = $state(null);
   const pendingCancel = $derived.by(() => rows.find((r) => r.summary.id === pendingCancelId) ?? null);
@@ -196,12 +200,27 @@
         {/each}
       </select>
     </div>
+    <div class="field">
+      <span id="delivery-scope-label">Show</span>
+      <div class="scope" role="group" aria-labelledby="delivery-scope-label">
+        <button type="button" class:selected={!showArchived} aria-pressed={!showArchived} onclick={() => (showArchived = false)}>
+          Active ({partitioned.live.length})
+        </button>
+        <button type="button" class:selected={showArchived} aria-pressed={showArchived} onclick={() => (showArchived = true)}>
+          Archived ({partitioned.archived.length})
+        </button>
+      </div>
+    </div>
   </div>
 
   {#if visible.length === 0}
     <EmptyStateCard
-      title="No deliveries match your search"
-      message={`Nothing matches “${search}”. Try a shorter search, or clear it to see all ${rows.length} deliveries.`}
+      title={showArchived ? "Nothing archived" : "No active deliveries"}
+      message={search
+        ? `Nothing matches “${search}” here. Try a shorter search, or look under ${showArchived ? "Active" : "Archived"}.`
+        : showArchived
+          ? "Cancelled and completed deliveries appear here."
+          : `Every delivery is cancelled or completed. ${partitioned.archived.length} of them are under Archived.`}
     />
   {:else}
     <ul class="deliveries" aria-label="Deliveries">
@@ -353,10 +372,38 @@
   .toolbar .field:first-child {
     flex: 1 1 16rem;
   }
-  .field label {
+  .field label,
+  .field > span {
     font-size: 0.78rem;
     font-weight: 650;
     color: var(--color-text-muted);
+  }
+  .scope {
+    display: inline-flex;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .scope button {
+    font: inherit;
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    border: 0;
+    padding: 0.45rem 0.75rem;
+    min-height: 38px;
+    cursor: pointer;
+  }
+  .scope button + button {
+    border-left: 1px solid var(--color-border);
+  }
+  .scope button.selected {
+    color: var(--color-text);
+    background: var(--color-surface-raised, var(--color-surface));
+    font-weight: 650;
+  }
+  .scope button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
   }
   .field input,
   .field select {

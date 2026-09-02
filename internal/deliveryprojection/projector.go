@@ -183,9 +183,27 @@ func (p *Projector) GetDetail(ctx context.Context, orchestrationID string) (*Del
 		Description:           view.Description,
 		OrchestrationRevision: view.Orchestration.Revision,
 		Activity:              []ActivityEntry{},
+		Lanes:                 []LaneRef{},
 	}
+	slugByProjectID := make(map[string]string, len(view.Projects))
 	for _, proj := range view.Projects {
 		detail.Projects = append(detail.Projects, ProjectRef{ID: proj.ProjectID, Slug: proj.ProjectSlug})
+		slugByProjectID[proj.ProjectID] = proj.ProjectSlug
+	}
+	for _, lane := range view.Lanes {
+		ref := LaneRef{
+			ID:           lane.LaneID,
+			ProjectID:    lane.ProjectID,
+			ProjectSlug:  slugByProjectID[lane.ProjectID],
+			ParentTaskID: lane.ParentTaskID,
+			Status:       string(lane.Status),
+			BlockedBy:    lane.BlockedBy,
+			PullRequest:  lane.PRURL,
+		}
+		if task, err := p.deliveries.GetParentTask(ctx, orchestrationID, lane.ParentTaskID); err == nil {
+			ref.Title = task.Title
+		}
+		detail.Lanes = append(detail.Lanes, ref)
 	}
 	if view.Orchestration.WorkflowDefinitionId != nil {
 		detail.Workflow = &WorkflowRef{ID: *view.Orchestration.WorkflowDefinitionId}

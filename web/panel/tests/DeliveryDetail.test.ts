@@ -64,19 +64,22 @@ describe("DeliveryDetail", () => {
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
     expect(screen.getByText("Move every billing caller onto the v2 pricing endpoint.")).toBeTruthy();
-    for (const tab of ["Overview", "Projects", "Jira", "Sessions", "Activity"]) {
+    for (const tab of ["Overview", "Projects", "Plans", "Jira", "Sessions", "Activity"]) {
       expect(screen.getByRole("tab", { name: tab })).toBeTruthy();
     }
-    expect(screen.queryByRole("tab", { name: "Plan" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "GitHub" })).toBeNull();
     expect(screen.getByText("Estimated cost")).toBeTruthy();
     expect(screen.queryByText("Source")).toBeNull();
-    expect(screen.queryByText("Tool calls")).toBeNull();
-    expect(screen.queryByText("Tokens")).toBeNull();
+    // Elapsed stays in the cost dialog; tokens and tool calls are on the
+    // overview, since a delivery recording none of either is exactly the
+    // failure a reader needs to see without opening anything.
     expect(screen.queryByText("Elapsed")).toBeNull();
 
     await fireEvent.click(screen.getByRole("tab", { name: "Projects" }));
     expect(screen.getByText("No projects linked to this delivery.")).toBeTruthy();
+    expect(screen.getByText(/No lanes\./)).toBeTruthy();
+    await fireEvent.click(screen.getByRole("tab", { name: "Plans" }));
+    expect(screen.getByText(/No plans linked to this delivery\./)).toBeTruthy();
     await fireEvent.click(screen.getByRole("tab", { name: "Jira" }));
     expect(screen.getByText("No Jira activity recorded for this delivery.")).toBeTruthy();
     await fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
@@ -129,18 +132,54 @@ describe("DeliveryDetail", () => {
     expect(metricValue("Total projects")).toBe("2");
     expect(metricValue("Total plans")).toBe("2");
     expect(metricValue("Total sessions")).toBe("3");
+    expect(metricValue("Tokens")).toBe("1,000");
+    expect(metricValue("Tool calls")).toBe("5");
   });
 
-  it("never renders lane/blocked/pending-question language anywhere on the page", async () => {
-    installBackend(detail());
+  it("shows the lanes a delivery decomposed into, and never the scheduler's other internals", async () => {
+    installBackend(
+      detail({
+        projects: [{ id: "billing", slug: "billing" }],
+        lanes: [
+          { id: "lane-1", project_id: "billing", project_slug: "billing", parent_task_id: "task-1", title: "Move the pricing call", status: "runnable", blocked_by: [] },
+        ],
+      }),
+    );
 
     const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
     await waitFor(() => expect(screen.getByRole("heading", { name: "Migrate billing to v2" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("tab", { name: "Projects" }));
 
+    expect(screen.getByText("Move the pricing call")).toBeTruthy();
+    expect(screen.getByText("runnable")).toBeTruthy();
+
+    // Lanes are the executable work a reader has to see. The scheduler's
+    // own bookkeeping is still not this page's business.
     const text = container.textContent?.toLowerCase() ?? "";
-    expect(text).not.toContain("lane");
-    expect(text).not.toContain("blocked");
     expect(text).not.toContain("pending question");
+    expect(text).not.toContain("next action");
+  });
+
+  it("shows the delivery plan and each project plan in one plans table", async () => {
+    installBackend(
+      detail({
+        projects: [{ id: "billing", slug: "billing" }],
+        plan_detail: { id: "plan-delivery", objective: "Ship v2 pricing", revision: 3, status: "approved", steps: [] },
+        project_plans: [
+          { project_id: "billing", project_slug: "billing", plan: { id: "plan-billing", objective: "Ship billing", revision: 1, status: "draft" }, head_revision: 4 },
+        ],
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("heading", { name: "Migrate billing to v2" });
+    await fireEvent.click(screen.getByRole("tab", { name: "Plans" }));
+
+    expect(screen.getByText("Ship v2 pricing")).toBeTruthy();
+    expect(screen.getByText("Whole delivery")).toBeTruthy();
+    expect(screen.getByText("Ship billing")).toBeTruthy();
+    // A delivery pinned behind its plan's head has to say so in the cell.
+    expect(screen.getByText("r1 (head is r4)")).toBeTruthy();
   });
 
   it("shows a Projects tab with each project's linked plan", async () => {

@@ -133,6 +133,21 @@ type DeliverySummary struct {
 	ProjectionRevision int `json:"projection_revision"`
 }
 
+// LaneRef is one unit of work opened in a project: the executable thing a
+// delivery is made of. The projection carries it because a reader
+// otherwise has no way to tell a delivery that decomposed correctly from
+// one that produced nothing - both look identical from projects alone.
+type LaneRef struct {
+	ID           string   `json:"id"`
+	ProjectID    string   `json:"project_id"`
+	ProjectSlug  string   `json:"project_slug,omitempty"`
+	ParentTaskID string   `json:"parent_task_id,omitempty"`
+	Title        string   `json:"title,omitempty"`
+	Status       string   `json:"status"`
+	BlockedBy    []string `json:"blocked_by,omitempty"`
+	PullRequest  string   `json:"pull_request,omitempty"`
+}
+
 // ProjectPlanDetail is one project's exact detailed plan link, plus the
 // plan lineage's current head revision so a caller can tell "this
 // delivery still points at the head" from "the plan moved on since".
@@ -247,6 +262,7 @@ type DeliveryDetail struct {
 	// and watch polling instead.
 	OrchestrationRevision int `json:"orchestration_revision"`
 
+	Lanes              []LaneRef                    `json:"lanes"`
 	PlanDetail         *plan.Plan                   `json:"plan_detail,omitempty"`
 	ProjectPlans       []ProjectPlanDetail          `json:"project_plans,omitempty"`
 	RequirementSources []protocol.RequirementSource `json:"requirement_sources,omitempty"`

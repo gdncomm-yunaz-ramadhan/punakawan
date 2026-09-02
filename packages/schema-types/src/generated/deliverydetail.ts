@@ -5,7 +5,7 @@
  */
 
 /**
- * One delivery's full panel-detail read model: every DeliverySummary field, plus the full plan, per-project plans, requirement sources, provider-specific detail, sessions, provider writes, and one merged activity timeline. Carries no scheduler-internal concepts (lanes, blocked counts, pending questions, a lane-derived next action, the deprecated plan_record_id).
+ * One delivery's full panel-detail read model: every DeliverySummary field, plus the full plan, per-project plans, the lanes the delivery decomposed into, requirement sources, provider-specific detail, sessions, provider writes, and one merged activity timeline. Lanes are named by id, project, status and blockers only - a reader with no lanes at all cannot otherwise tell a delivery that decomposed correctly from one that produced nothing - and no other scheduler-internal concept is carried (blocked counts, pending questions, a lane-derived next action, the deprecated plan_record_id).
  */
 export interface DeliveryDetail {
   id: string;
@@ -69,6 +69,16 @@ export interface DeliveryDetail {
     project_slug: string;
     plan: Plan1;
     head_revision: number;
+  }[];
+  lanes: {
+    id: string;
+    project_id: string;
+    project_slug?: string;
+    parent_task_id?: string;
+    title?: string;
+    status: string;
+    blocked_by?: string[];
+    pull_request?: string;
   }[];
   requirement_sources?: {
     id: string;

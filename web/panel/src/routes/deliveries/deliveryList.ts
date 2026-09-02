@@ -36,6 +36,26 @@ export function isCancellableDelivery(summary: DeliverySummary): boolean {
   return summary.cancellable;
 }
 
+// A cancelled or completed delivery is done with: it hands out no work and
+// needs no attention, but it used to sit in the same list as live ones,
+// which on a long-running instance is most of what a reader scrolls past.
+// Archived rows are still one click away rather than hidden - the point is
+// the default view, not concealment.
+const archivedStatuses = new Set(["cancelled", "completed"]);
+
+export function isArchivedDelivery(summary: DeliverySummary): boolean {
+  return archivedStatuses.has(summary.status);
+}
+
+export function partitionByArchived<T extends DeliveryListRow>(rows: T[]): { live: T[]; archived: T[] } {
+  const live: T[] = [];
+  const archived: T[] = [];
+  for (const row of rows) {
+    (isArchivedDelivery(row.summary) ? archived : live).push(row);
+  }
+  return { live, archived };
+}
+
 export function shortDeliveryId(id: string): string {
   return id.length > 10 ? `${id.slice(0, 10)}…` : id;
 }
