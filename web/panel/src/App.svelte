@@ -6,6 +6,7 @@
   import ProjectsList from "./routes/projects/ProjectsList.svelte";
   import ProjectDetail from "./routes/projects/ProjectDetail.svelte";
   import SystemPage from "./routes/system/SystemPage.svelte";
+  import ConnectorsPage from "./routes/connectors/ConnectorsPage.svelte";
   import DeliveriesList from "./routes/deliveries/DeliveriesList.svelte";
   import DeliveryDetail from "./routes/deliveries/DeliveryDetail.svelte";
 
@@ -33,6 +34,8 @@
     <ProjectsList />
   {:else if getPath() === "/projects"}
     <ProjectsList />
+  {:else if getPath() === "/connectors"}
+    <ConnectorsPage />
   {:else if getPath() === "/settings"}
     <SystemPage />
   {:else if getPath() === "/deliveries"}

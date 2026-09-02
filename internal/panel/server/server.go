@@ -22,7 +22,9 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/sources"
 	"github.com/ygrip/punakawan/internal/panel/timing"
 	"github.com/ygrip/punakawan/internal/plan"
+	"github.com/ygrip/punakawan/internal/providercreds"
 	"github.com/ygrip/punakawan/internal/workflowdef"
+	"github.com/ygrip/punakawan/internal/workspace"
 )
 
 // Options configures a Server, per §26's configuration keys this phase
@@ -160,6 +162,16 @@ func (s *Server) Start() error {
 		StartedAt:        s.startedAt,
 	}
 	mux.HandleFunc("GET /api/v1/system", api.SystemHandler(cfg, s.registry))
+
+	// Connectors reads configuration only - the adapters this host can
+	// start and the organisations whose credentials it holds - so opening
+	// the page spawns nothing and contacts no provider. Tokens are never
+	// part of the response.
+	var connectorCreds *providercreds.Store
+	if credsPath, err := workspace.GlobalCredentialsPath(); err == nil {
+		connectorCreds = providercreds.Open(credsPath)
+	}
+	mux.HandleFunc("GET /api/v1/connectors", api.ConnectorsHandler(s.app.AdapterRegistry.Specs, connectorCreds))
 
 	// Deliveries: served straight from the daemon's own delivery.Store and
 	// internal/deliveryprojection.Projector over its authenticated loopback

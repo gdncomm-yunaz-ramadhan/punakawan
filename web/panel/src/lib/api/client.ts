@@ -43,6 +43,45 @@ export function getSystem(): Promise<SystemInfo> {
   return getJSON<SystemInfo>("/system");
 }
 
+// --- Connectors -----------------------------------------------------------
+//
+// What this install is actually connected to: the adapters it can start,
+// and for each one the organisations whose credentials it holds. Read-only
+// and token-free by construction - see internal/panel/api's
+// ConnectorsHandler.
+
+export interface ConnectorOrganization {
+  id: string;
+  adapter_id: string;
+  base_url: string;
+  host: string;
+  account?: string;
+  default: boolean;
+  token_scoped: boolean;
+  added_at?: string;
+  last_verified_at?: string;
+}
+
+export interface ConnectorAdapter {
+  id: string;
+  label: string;
+  provider?: string;
+  command: string;
+  entrypoint?: string;
+  installed: boolean;
+  env_passthrough?: string[];
+  organizations: ConnectorOrganization[];
+}
+
+export interface Connectors {
+  credentials_path: string;
+  adapters: ConnectorAdapter[];
+}
+
+export function getConnectors(): Promise<Connectors> {
+  return getJSON<Connectors>("/connectors");
+}
+
 // --- Projects (Phase 2, plan §5) -----------------------------------------
 //
 // Projects are becoming the primary entity. A project's snapshot counts
