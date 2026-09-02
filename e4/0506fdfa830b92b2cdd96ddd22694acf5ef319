@@ -1,0 +1,27 @@
+web/panel/tests/DeliveriesList.test.ts
+  a97deff596c14d9f 192,204-210,216,218,221-237,239-246
+web/panel/src/routes/deliveries/deliveryList.ts
+  a97deff596c14d9f 39-46,48-67,70-76
+web/panel/src/routes/deliveries/DeliveriesList.svelte
+  a97deff596c14d9f 12,18,22,37-41,43-50,54,56-61,64-77,93,247-248,251,253-254,306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e40506fdfa830b92b2cdd96ddd22694acf5ef319",
+  "prompts": {
+    "a97deff596c14d9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a1e97913-4ae9-4a6e-9951-77d4563ed873",
+        "model": "claude-opus-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 122,
+      "total_deletions": 40,
+      "accepted_lines": 118,
+      "overriden_lines": 3
+    }
+  }
+}
