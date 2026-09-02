@@ -329,6 +329,17 @@ func GlobalEnvPath() (string, error) {
 	return filepath.Join(dir, ".env"), nil
 }
 
+// GlobalCredentialsPath returns the path to the host-owned, per-
+// organisation credential store: <data dir>/credentials.yaml, beside
+// config.yaml and the .env it supersedes.
+func GlobalCredentialsPath() (string, error) {
+	dir, err := storage.DataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "credentials.yaml"), nil
+}
+
 // LoadGlobalConfig reads the user-level config. A missing file is not an
 // error - it returns an empty GlobalConfig, since global config is
 // optional and every workspace must still function without one.

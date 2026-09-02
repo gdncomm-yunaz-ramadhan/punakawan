@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/ygrip/punakawan/internal/providercreds"
 	"github.com/ygrip/punakawan/internal/workspace"
 )
 
@@ -38,6 +39,11 @@ func newSetupCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&hooksOnly, "hooks-only", false, "install lifecycle telemetry hooks only, without touching credentials (used by the non-interactive installers)")
+	// One organisation at a time, named on the command line. Bare `setup`
+	// stays the whole-machine path; these are how a second Jira site or a
+	// second GitHub org gets added later without redoing any of it.
+	cmd.AddCommand(newSetupProviderCmd(providercreds.ProviderJira))
+	cmd.AddCommand(newSetupProviderCmd(providercreds.ProviderGitHub))
 	return cmd
 }
 
@@ -78,6 +84,10 @@ func runSetup(cmd *cobra.Command) error {
 			"variables or in %s) and rerun `punakawan setup`, then check `punakawan doctor --json`", strings.Join(failed, ", "), envPath)
 	}
 	fmt.Fprintln(out, "setup: complete; run `punakawan doctor` to verify everything end to end")
+	// The flat values above describe one site. Naming the per-organisation
+	// commands here is how someone with a second Jira site or GitHub org
+	// finds out that adding it does not mean redoing any of this.
+	fmt.Fprintln(out, "setup: add another organisation with `punakawan setup jira` or `punakawan setup github`")
 	return nil
 }
 
