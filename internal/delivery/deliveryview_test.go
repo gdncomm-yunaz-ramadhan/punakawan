@@ -45,8 +45,8 @@ func TestBuildDeliveryViewFreshOrchestrationWithUnresolvedInputsPromptsToResolve
 // TestBuildDeliveryViewPendingWithNoLanesPromptsToDecompose covers the
 // case right after start_delivery: a pending orchestration with no
 // unresolved inputs and no lanes yet must not fall through to "no
-// pending action" - it must point the caller at decomposing the
-// delivery via register_project/create_parent_task/create_lane.
+// pending action". It must name a tool that exists - for a long time it
+// named three that did not, leaving no recovery path at all.
 func TestBuildDeliveryViewPendingWithNoLanesPromptsToDecompose(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -56,8 +56,8 @@ func TestBuildDeliveryViewPendingWithNoLanesPromptsToDecompose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDeliveryView: %v", err)
 	}
-	if !strings.Contains(view.NextAction, "no lanes yet") || !strings.Contains(view.NextAction, "create_lane") {
-		t.Fatalf("NextAction = %q, want it to prompt decomposing the delivery via create_lane", view.NextAction)
+	if !strings.Contains(view.NextAction, "no lanes yet") || !strings.Contains(view.NextAction, "start_delivery") {
+		t.Fatalf("NextAction = %q, want it to prompt reconciling projects through start_delivery", view.NextAction)
 	}
 }
 

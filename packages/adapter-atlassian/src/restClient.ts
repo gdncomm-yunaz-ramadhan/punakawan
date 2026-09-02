@@ -185,6 +185,41 @@ export class AtlassianRestClient {
     return new URL(`${baseUrl}${normalizedPath}`);
   }
 
+  /**
+   * Jira Cloud does not answer 401 for a rejected credential on an issue
+   * read - it treats the caller as anonymous and answers 404, the same
+   * "issue does not exist or you do not have permission to see it" an
+   * unknown key gets, localized to the site's own language. Read at face
+   * value that says the issue is gone when in truth the token expired, so
+   * a not-found is checked once against an endpoint that does distinguish
+   * the two.
+   *
+   * The probe uses fetch directly rather than this.request, which would
+   * recurse straight back into this check, and its result is memoized so
+   * a burst of failures costs one extra request rather than one each.
+   */
+  private credentialsAcceptedPromise: Promise<boolean> | undefined;
+
+  private credentialsAccepted(): Promise<boolean> {
+    if (!this.credentialsAcceptedPromise) {
+      this.credentialsAcceptedPromise = (async () => {
+        try {
+          const url = await this.buildURL('jira', '/rest/api/3/myself');
+          const response = await this.fetchImpl(url, {
+            headers: { Accept: 'application/json', Authorization: buildAuthorizationHeader(this.config) },
+          });
+          // Only an auth-shaped answer is evidence about the credential.
+          // Any other failure - a missing endpoint, a server error - says
+          // nothing about it and must not be reported as one.
+          return response.status !== 401 && response.status !== 403;
+        } catch {
+          return true;
+        }
+      })();
+    }
+    return this.credentialsAcceptedPromise;
+  }
+
   private async request<T>(
     product: 'jira' | 'confluence',
     path: string,
@@ -226,6 +261,13 @@ export class AtlassianRestClient {
     }
 
     if (!response.ok) {
+      if (response.status === 404 && !(await this.credentialsAccepted())) {
+        throw new Error(
+          `Atlassian credentials rejected: ${this.config.host} answered HTTP ${response.status} for ${url.pathname}, and the ` +
+            `configured token is not accepted for the authenticated-user read either. The API token is expired, revoked, or ` +
+            `wrong for this account - the resource itself may well exist. Re-run \`punakawan setup\` with a fresh token.`,
+        );
+      }
       const authHint =
         response.status === 401 || response.status === 403
           ? ' Check the API token, account email, scoped-token mode, product scopes, and the account\'s Jira/Confluence permissions.'

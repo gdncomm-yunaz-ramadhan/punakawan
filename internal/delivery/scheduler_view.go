@@ -821,7 +821,7 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 		return fmt.Sprintf("resolve %d pending question(s) via answer_delivery_question: %s", len(refs), strings.Join(refs, ", "))
 	}
 	if len(lanes) == 0 {
-		return "no lanes yet — decompose the delivery via register_project, create_parent_task, and create_lane"
+		return "no lanes yet — call start_delivery again with the same source plus a projects[] block naming the repositories and their tasks; reconciliation is idempotent, so it adds to this delivery rather than starting another"
 	}
 
 	var blocked, active, accepted, failed int
