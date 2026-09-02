@@ -69,6 +69,10 @@ export interface DeliverySummary {
      * False whenever any contributing usage was priced against an unknown model rate - the totals are then a partial, never a fabricated, sum.
      */
     pricing_complete: boolean;
+    /**
+     * Model ids that could not be priced, sorted and deduplicated. pricing_complete says the sum is partial; this says which model to add to the catalog to make it whole.
+     */
+    unpriced_models?: string[];
   };
   updated_at: string;
   cancellable: boolean;

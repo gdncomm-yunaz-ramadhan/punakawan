@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -529,7 +530,7 @@ func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (U
 		       COALESCE(snap.input_tokens, 0), COALESCE(snap.output_tokens, 0),
 		       COALESCE(snap.cache_write_tokens, 0), COALESCE(snap.cache_read_tokens, 0),
 		       COALESCE(snap.tool_calls, 0), COALESCE(snap.elapsed_ms, 0),
-		       snap.estimated_cost_json
+		       snap.estimated_cost_json, snap.pricing_json
 		FROM agent_sessions sess
 		LEFT JOIN agent_usage_snapshots snap ON snap.session_id = sess.id
 		WHERE sess.orchestration_id = ?`, orchestrationID)
@@ -539,6 +540,7 @@ func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (U
 	defer rows.Close()
 
 	projection := UsageProjection{OrchestrationID: orchestrationID, TelemetryStatus: "complete"}
+	unpricedSeen := map[string]bool{}
 	var costKnownAny, costFullyKnown bool
 	costFullyKnown = true
 	var costTotal float64
@@ -546,9 +548,25 @@ func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (U
 	for rows.Next() {
 		var sessionTelemetryStatus string
 		var input, output, cacheWrite, cacheRead, toolCalls, elapsed int64
-		var costJSON sql.NullString
-		if err := rows.Scan(&sessionTelemetryStatus, &input, &output, &cacheWrite, &cacheRead, &toolCalls, &elapsed, &costJSON); err != nil {
+		var costJSON, pricingJSON sql.NullString
+		if err := rows.Scan(&sessionTelemetryStatus, &input, &output, &cacheWrite, &cacheRead, &toolCalls, &elapsed, &costJSON, &pricingJSON); err != nil {
 			return UsageProjection{}, fmt.Errorf("telemetry: totals by delivery: %w", err)
+		}
+		// Collect the model ids that failed to resolve. "Cost unknown"
+		// on its own gives a reader nothing to act on; the model name is
+		// the whole lead - it says which catalog entry is missing.
+		if pricingJSON.Valid {
+			var entries []pricingEntry
+			if err := json.Unmarshal([]byte(pricingJSON.String), &entries); err != nil {
+				return UsageProjection{}, fmt.Errorf("telemetry: decode pricing: %w", err)
+			}
+			for _, entry := range entries {
+				if entry.Known || unpricedSeen[entry.Model] {
+					continue
+				}
+				unpricedSeen[entry.Model] = true
+				projection.UnpricedModels = append(projection.UnpricedModels, entry.Model)
+			}
 		}
 		if sessionTelemetryStatus != "complete" {
 			projection.TelemetryStatus = "incomplete"
@@ -588,6 +606,7 @@ func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (U
 	if err := rows.Err(); err != nil {
 		return UsageProjection{}, fmt.Errorf("telemetry: totals by delivery: %w", err)
 	}
+	sort.Strings(projection.UnpricedModels)
 	projection.TotalTokens = projection.Counters.InputTokens + projection.Counters.OutputTokens + projection.Counters.CacheWriteTokens + projection.Counters.CacheReadTokens
 	if costKnownAny {
 		projection.EstimatedCost = &CostTotal{Amount: costTotal, Currency: currency, FullyKnown: costFullyKnown}

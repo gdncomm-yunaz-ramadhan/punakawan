@@ -54,6 +54,7 @@ export interface DeliveryDetail {
       [k: string]: number;
     };
     pricing_complete: boolean;
+    unpriced_models?: string[];
   };
   updated_at: string;
   cancellable: boolean;

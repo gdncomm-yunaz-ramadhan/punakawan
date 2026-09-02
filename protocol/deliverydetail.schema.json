@@ -203,6 +203,12 @@
         },
         "pricing_complete": {
           "type": "boolean"
+        },
+        "unpriced_models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

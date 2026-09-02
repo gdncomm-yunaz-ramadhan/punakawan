@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -359,6 +361,7 @@ func usageFromProjection(u telemetry.UsageProjection) Usage {
 		ElapsedMS:       u.Counters.ElapsedMS,
 		EstimatedCosts:  map[string]float64{},
 		PricingComplete: u.TelemetryStatus == "complete",
+		UnpricedModels:  u.UnpricedModels,
 	}
 	if u.EstimatedCost != nil {
 		out.EstimatedCosts[u.EstimatedCost.Currency] = u.EstimatedCost.Amount
@@ -524,7 +527,7 @@ SELECT sess.orchestration_id, sess.telemetry_status,
        COALESCE(snap.input_tokens, 0), COALESCE(snap.output_tokens, 0),
        COALESCE(snap.cache_write_tokens, 0), COALESCE(snap.cache_read_tokens, 0),
        COALESCE(snap.tool_calls, 0), COALESCE(snap.elapsed_ms, 0),
-       snap.estimated_cost_json
+       snap.estimated_cost_json, snap.pricing_json
 FROM agent_sessions sess
 LEFT JOIN agent_usage_snapshots snap ON snap.session_id = sess.id`)
 	if err != nil {
@@ -537,14 +540,34 @@ LEFT JOIN agent_usage_snapshots snap ON snap.session_id = sess.id`)
 		Currency string  `json:"currency,omitempty"`
 		Known    bool    `json:"known"`
 	}
+	type pricingJSON struct {
+		Model string `json:"model"`
+		Known bool   `json:"known"`
+	}
 	out := map[string]Usage{}
 	incomplete := map[string]bool{}
+	unpriced := map[string]map[string]bool{}
 	for rows.Next() {
 		var orchestrationID, telemetryStatus string
 		var input, output, cacheWrite, cacheRead, toolCalls, elapsed int64
-		var costRaw sql.NullString
-		if err := rows.Scan(&orchestrationID, &telemetryStatus, &input, &output, &cacheWrite, &cacheRead, &toolCalls, &elapsed, &costRaw); err != nil {
+		var costRaw, pricingRaw sql.NullString
+		if err := rows.Scan(&orchestrationID, &telemetryStatus, &input, &output, &cacheWrite, &cacheRead, &toolCalls, &elapsed, &costRaw, &pricingRaw); err != nil {
 			return nil, fmt.Errorf("deliveryprojection: scan usage: %w", err)
+		}
+		if pricingRaw.Valid {
+			var entries []pricingJSON
+			if err := json.Unmarshal([]byte(pricingRaw.String), &entries); err != nil {
+				return nil, fmt.Errorf("deliveryprojection: decode usage pricing: %w", err)
+			}
+			for _, entry := range entries {
+				if entry.Known {
+					continue
+				}
+				if unpriced[orchestrationID] == nil {
+					unpriced[orchestrationID] = map[string]bool{}
+				}
+				unpriced[orchestrationID][entry.Model] = true
+			}
 		}
 		u, ok := out[orchestrationID]
 		if !ok {
@@ -575,6 +598,11 @@ LEFT JOIN agent_usage_snapshots snap ON snap.session_id = sess.id`)
 	for id := range incomplete {
 		u := out[id]
 		u.PricingComplete = false
+		out[id] = u
+	}
+	for id, models := range unpriced {
+		u := out[id]
+		u.UnpricedModels = slices.Sorted(maps.Keys(models))
 		out[id] = u
 	}
 	return out, nil

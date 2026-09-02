@@ -104,6 +104,10 @@ type Usage struct {
 	// against an unknown model rate - the totals above are then a partial,
 	// never a fabricated, sum.
 	PricingComplete bool `json:"pricing_complete"`
+	// UnpricedModels names the model ids that could not be priced, sorted
+	// and deduplicated. PricingComplete says the sum is partial; this says
+	// which model to add to the catalog to make it whole.
+	UnpricedModels []string `json:"unpriced_models,omitempty"`
 }
 
 // DeliverySummary is the panel list page's one row: enough to render,

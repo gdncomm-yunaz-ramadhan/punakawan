@@ -93,7 +93,8 @@
           "description": "Currency to amount. More than one entry means the delivery's contributing sessions priced in more than one currency; empty when no contributing snapshot ever named a cost at all.",
           "additionalProperties": { "type": "number" }
         },
-        "pricing_complete": { "type": "boolean", "description": "False whenever any contributing usage was priced against an unknown model rate - the totals are then a partial, never a fabricated, sum." }
+        "pricing_complete": { "type": "boolean", "description": "False whenever any contributing usage was priced against an unknown model rate - the totals are then a partial, never a fabricated, sum." },
+        "unpriced_models": { "type": "array", "items": { "type": "string" }, "description": "Model ids that could not be priced, sorted and deduplicated. pricing_complete says the sum is partial; this says which model to add to the catalog to make it whole." }
       }
     },
     "updated_at": { "type": "string", "format": "date-time" },

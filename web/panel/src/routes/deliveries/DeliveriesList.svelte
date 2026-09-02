@@ -202,6 +202,16 @@
     return summary.usage.pricing_complete ? formatted : `${formatted} (partial)`;
   }
 
+  // The list has no room to name the model inline, so it goes in the
+  // tooltip - the card still says "partial", and hovering says why.
+  function costTitle(summary: DeliverySummary): string | undefined {
+    if (summary.usage.pricing_complete) return undefined;
+    const models = summary.usage.unpriced_models ?? [];
+    return models.length
+      ? `No catalog price for ${models.join(", ")}`
+      : "Some usage has unknown pricing";
+  }
+
   function sourceLabel(summary: DeliverySummary): string {
     if (!summary.source || summary.source.kind === "adhoc") return "Ad-hoc";
     return summary.source.key ?? "Jira";
@@ -284,7 +294,7 @@
                 <span><strong>{(s.usage.input_tokens + s.usage.output_tokens).toLocaleString()}</strong> tokens</span>
                 <span><strong>{s.usage.tool_calls.toLocaleString()}</strong> tool calls</span>
                 <span><strong>{formatDuration(s.usage.elapsed_ms)}</strong> elapsed</span>
-                <span><strong>{formatCost(s)}</strong> cost</span>
+                <span title={costTitle(s)}><strong>{formatCost(s)}</strong> cost</span>
               </span>
               <span class="updated">Updated {formatDate(s.updated_at)}</span>
             </button>

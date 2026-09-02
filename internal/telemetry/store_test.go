@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -69,8 +70,11 @@ func sameFinalizeOutcome(a, b finalizeOutcome) bool {
 		return false
 	}
 	pa, pb := a.Projection, b.Projection
-	pa.EstimatedCost, pb.EstimatedCost = nil, nil
-	if pa != pb {
+	if !slices.Equal(pa.UnpricedModels, pb.UnpricedModels) {
+		return false
+	}
+	if pa.OrchestrationID != pb.OrchestrationID || pa.Counters != pb.Counters ||
+		pa.TotalTokens != pb.TotalTokens || pa.TelemetryStatus != pb.TelemetryStatus {
 		return false
 	}
 	if (a.Projection.EstimatedCost == nil) != (b.Projection.EstimatedCost == nil) {
@@ -341,6 +345,52 @@ func TestFinalizeKeepsIncompleteWhenAnySnapshotWasUnpriced(t *testing.T) {
 	}
 	if session.TelemetryStatus != "incomplete" {
 		t.Fatalf("session telemetry status = %q, want incomplete", session.TelemetryStatus)
+	}
+}
+
+// "Cost unknown" alone gives a reader nothing to act on. The delivery
+// projection has to name the model whose price is missing.
+func TestTotalsByDeliveryNamesTheModelsItCouldNotPrice(t *testing.T) {
+	store := newTelemetryStore(t)
+	s := mustBegin(t, store, BeginRequest{DeliveryID: "d1", ClientKind: "claude-code", ExternalSessionID: "thr-1"})
+
+	mustSnapshot(t, store, SnapshotRequest{
+		SessionID: s.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{
+			{Model: "some-future-model", InputTokens: 1},
+			{Model: "<synthetic>", InputTokens: 1},
+		},
+	})
+	projection := mustSnapshot(t, store, SnapshotRequest{
+		SessionID: s.ID, SourceID: "sub-1", Sequence: 1,
+		ModelUsage: []ModelUsage{
+			{Model: "another-future-model", InputTokens: 1},
+			// Repeated across sources - it must be named once, not twice.
+			{Model: "some-future-model", InputTokens: 1},
+		},
+	})
+
+	want := []string{"another-future-model", "some-future-model"}
+	if !slices.Equal(projection.UnpricedModels, want) {
+		t.Fatalf("unpriced models = %v, want %v (deduplicated, sorted, no pseudo-model)", projection.UnpricedModels, want)
+	}
+}
+
+func TestTotalsByDeliveryNamesNoModelWhenEverythingPriced(t *testing.T) {
+	store := newTelemetryStore(t)
+	catalog := NewCatalog([]ModelRate{{
+		Provider: "test", Model: "test-model", EffectiveAt: time.Unix(0, 0),
+		InputPerMillion: 1, OutputPerMillion: 2, Currency: "USD",
+	}})
+	priced := NewStore(store.db, WithCatalog(catalog))
+	s := mustBegin(t, priced, BeginRequest{DeliveryID: "d1", ClientKind: "codex", ExternalSessionID: "thr-1"})
+
+	projection := mustSnapshot(t, priced, SnapshotRequest{
+		SessionID: s.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{{Model: "test-model", InputTokens: 1}},
+	})
+	if len(projection.UnpricedModels) != 0 {
+		t.Fatalf("unpriced models = %v, want none", projection.UnpricedModels)
 	}
 }
 

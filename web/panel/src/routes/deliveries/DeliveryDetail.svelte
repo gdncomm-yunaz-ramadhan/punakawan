@@ -110,13 +110,24 @@
     const ended = endedAt ? Date.parse(endedAt) : Date.now();
     return Number.isFinite(started) && Number.isFinite(ended) ? formatDuration(ended - started) : "Not recorded";
   }
-  function formatCosts(costs: Record<string, number>, pricingComplete: boolean): string {
-    const entries = Object.entries(costs ?? {});
-    if (entries.length === 0) return "No estimate";
+  // "Some usage has unknown pricing" on its own gives a reader nothing to
+  // do about it. Naming the model does: it is exactly the catalog entry
+  // that is missing.
+  function unpricedNote(usage: { pricing_complete: boolean; unpriced_models?: string[] }): string {
+    if (usage.pricing_complete) return "";
+    const models = usage.unpriced_models ?? [];
+    if (models.length === 0) return " (partial - some usage has unknown pricing)";
+    return ` (partial - no price for ${models.join(", ")})`;
+  }
+
+  function formatCosts(usage: { estimated_costs: Record<string, number>; pricing_complete: boolean; unpriced_models?: string[] }): string {
+    const entries = Object.entries(usage.estimated_costs ?? {});
+    const note = unpricedNote(usage);
+    if (entries.length === 0) return note ? `No estimate${note}` : "No estimate";
     const formatted = entries
       .map(([currency, amount]) => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount))
       .join(" · ");
-    return pricingComplete ? formatted : `${formatted} (partial - some usage has unknown pricing)`;
+    return `${formatted}${note}`;
   }
 
   const statusVariants: Record<string, BadgeVariant> = {
@@ -250,7 +261,7 @@
     <div id="tabpanel-overview" role="tabpanel" aria-labelledby="tab-overview" class="overview">
       <BentoGrid>
         {#if d.workflow}<MetricCard size="small" columns={3} label="Workflow" value={d.workflow.name || d.workflow.id} />{/if}
-        <MetricCard size="small" columns={3} label="Estimated cost" value={formatCosts(d.usage.estimated_costs, d.usage.pricing_complete)}>
+        <MetricCard size="small" columns={3} label="Estimated cost" value={formatCosts(d.usage)}>
           {#snippet cornerAction()}
             <button type="button" aria-label="Cost detail" onclick={() => (costDetailOpen = true)}>
               <Icon name="info" size={16} />
@@ -478,7 +489,7 @@
   <Dialog open={costDetailOpen} title="Estimated cost detail" onclose={() => (costDetailOpen = false)}>
     <dl class="breakdown">
       <dt>Tokens</dt><dd>{(detail.usage.input_tokens + detail.usage.output_tokens).toLocaleString()}</dd>
-      <dt>Estimated cost</dt><dd>{formatCosts(detail.usage.estimated_costs, detail.usage.pricing_complete)}</dd>
+      <dt>Estimated cost</dt><dd>{formatCosts(detail.usage)}</dd>
       <dt>Elapsed time</dt><dd>{formatDuration(detail.usage.elapsed_ms)}</dd>
       <dt>Tool calls</dt><dd>{detail.usage.tool_calls.toLocaleString()}</dd>
     </dl>

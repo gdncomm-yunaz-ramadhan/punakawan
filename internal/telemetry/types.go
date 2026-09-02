@@ -156,4 +156,13 @@ type UsageProjection struct {
 	// this delivery is itself complete (see AgentSession.TelemetryStatus).
 	// A delivery with no sessions at all reports complete vacuously.
 	TelemetryStatus string
+	// UnpricedModels names, sorted and deduplicated, every model id this
+	// delivery's snapshots reported that the pricing catalog could not
+	// resolve. It is the actionable half of an unknown cost: without it a
+	// reader knows only that cost is unknown, not which model to price.
+	// Tagged omitempty because this type is reflected into an MCP tool's
+	// output schema: an untagged nil slice serializes as null and fails
+	// the generated "array" validation on every delivery that has nothing
+	// to report.
+	UnpricedModels []string `json:"unpriced_models,omitempty"`
 }
