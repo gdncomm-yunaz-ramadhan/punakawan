@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ygrip/punakawan/internal/providercreds"
+	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/internal/telemetry/clienthooks"
 	"github.com/ygrip/punakawan/internal/workspace"
 )
@@ -24,6 +25,9 @@ func isolateDoctorEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	// runDoctor loads current model prices; without this it would reach
+	// the live feed over the network on every run of these tests.
+	t.Setenv(telemetry.RatesFeedURLOverrideEnv, telemetry.RatesFeedOff)
 }
 
 func TestDoctorReportsMissingWhenNothingIsConfigured(t *testing.T) {

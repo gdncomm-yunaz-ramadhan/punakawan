@@ -211,9 +211,10 @@ func runDoctor(ctx context.Context) doctorReport {
 	return report
 }
 
-// checkPricing reports unpriceable recorded usage and an undrained spool -
-// the two ways an installed, apparently healthy telemetry pipeline still
-// produces a delivery whose cost is unknown.
+// checkPricing reports where model prices came from, unpriceable recorded
+// usage, and an undrained spool - the ways an installed, apparently
+// healthy telemetry pipeline still produces a delivery whose cost is
+// unknown.
 func checkPricing(ctx context.Context) doctorOK {
 	path, err := storage.DBPath()
 	if err != nil {
@@ -227,9 +228,24 @@ func checkPricing(ctx context.Context) doctorOK {
 	}
 	defer db.Close()
 
+	// Load current prices before asking what is unpriceable, so this
+	// reports the catalog the next ingest will actually use rather than
+	// the compiled-in table. Doing it here also warms the cache for the
+	// hooks that run without anyone watching.
+	rates := primeModelRates(checkCtx, nil)
+
 	models, err := telemetry.NewStore(db).UnresolvedModels(checkCtx, 200)
 	if err != nil {
 		return doctorOK{OK: false, Detail: err.Error()}
+	}
+
+	// Where the rates came from is provenance, not a verdict: an offline
+	// machine falling back to the compiled-in table still prices every
+	// model punakawan shipped knowing about, so it belongs in the detail
+	// either way rather than failing the check on its own.
+	provenance := fmt.Sprintf("%d model rates from %s", rates.RateCount, rates.Origin)
+	if rates.Err != nil {
+		provenance += fmt.Sprintf(" (%v)", rates.Err)
 	}
 
 	var problems []string
@@ -242,9 +258,9 @@ func checkPricing(ctx context.Context) doctorOK {
 		}
 	}
 	if len(problems) > 0 {
-		return doctorOK{OK: false, Detail: strings.Join(problems, "; ")}
+		return doctorOK{OK: false, Detail: strings.Join(append(problems, provenance), "; ")}
 	}
-	return doctorOK{OK: true, Detail: "recent usage is fully priced"}
+	return doctorOK{OK: true, Detail: "recent usage is fully priced; " + provenance}
 }
 
 func currentDirOrEmpty() string {

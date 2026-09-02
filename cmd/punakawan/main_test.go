@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ygrip/punakawan/internal/telemetry"
 )
 
 func newSmokeWorkspace(t *testing.T) string {
@@ -17,6 +19,10 @@ func newSmokeWorkspace(t *testing.T) string {
 	// reportHookSetup); pointing HOME at a throwaway directory keeps every
 	// such test from touching this machine's real hook configuration.
 	t.Setenv("HOME", t.TempDir())
+	// A command that ingests usage primes the pricing catalog from the
+	// live rates feed; switching it off keeps the network out of these
+	// tests, which still price everything from the compiled-in table.
+	t.Setenv(telemetry.RatesFeedURLOverrideEnv, telemetry.RatesFeedOff)
 	dir := t.TempDir()
 	repoDir := filepath.Join(dir, "repo-a")
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {

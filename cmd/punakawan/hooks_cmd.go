@@ -140,6 +140,7 @@ func recordSubagentUsage(ctx context.Context, stdin io.Reader, stderr io.Writer)
 		logger.Warn("hooks record-usage: open storage kernel", "error", err)
 		return
 	}
+	primeModelRates(ctx, logger)
 	store := telemetry.NewStore(db)
 
 	// The pre-telemetry punakawan session id is the only stable identity
@@ -279,6 +280,7 @@ func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader,
 		logger.Warn("hooks ingest: open storage kernel", "error", err)
 		return
 	}
+	primeModelRates(ctx, logger)
 	store := telemetry.NewStore(db)
 
 	// Snapshot/Finalize name the external session, not yet a concrete

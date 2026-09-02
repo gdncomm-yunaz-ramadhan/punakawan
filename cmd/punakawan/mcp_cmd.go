@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -31,6 +32,8 @@ func newMCPServeCmd() *cobra.Command {
 				return err
 			}
 			defer a.Close()
+
+			primeModelRates(cmd.Context(), slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil)))
 
 			if httpAddr == "" {
 				return mcpserver.Serve(cmd.Context(), a)

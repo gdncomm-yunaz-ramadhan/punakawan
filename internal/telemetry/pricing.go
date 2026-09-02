@@ -10,8 +10,8 @@ import (
 
 // ModelRate is one model's per-token price as of EffectiveAt. A snapshot
 // stores the exact ModelRate it resolved at capture time (see
-// priceSnapshot), so a later Catalog.Replace (e.g. from a future
-// "punakawan pricing refresh" command) never retroactively changes an
+// priceSnapshot), so a later Catalog.Replace - RatesFeed.Prime installing
+// freshly fetched rates, say - never retroactively changes an
 // already-recorded snapshot's cost.
 type ModelRate struct {
 	Provider             string    `json:"provider"`
@@ -27,8 +27,8 @@ type ModelRate struct {
 
 // Catalog resolves a model name to its effective-dated rate. It is safe
 // for concurrent use: Resolve takes a read lock, Replace takes a write
-// lock, so a future "punakawan pricing refresh" command can swap the whole
-// rate set while requests are in flight.
+// lock, so RatesFeed.Prime can swap the whole rate set while requests are
+// in flight.
 type Catalog struct {
 	mu    sync.RWMutex
 	rates map[string][]ModelRate
@@ -42,10 +42,9 @@ func NewCatalog(rates []ModelRate) *Catalog {
 	return c
 }
 
-// Replace atomically swaps the catalog's whole rate set. It is the seam a
-// later "punakawan pricing refresh" command (not implemented yet - the
-// plan names it only as a future replacement path) would call after
-// fetching current rates from configured official provider sources.
+// Replace atomically swaps the catalog's whole rate set. RatesFeed.Prime
+// calls it after fetching current rates, which is how a model released
+// since this binary was built gets priced without a rebuild.
 func (c *Catalog) Replace(rates []ModelRate) {
 	grouped := make(map[string][]ModelRate, len(rates))
 	for _, r := range rates {
@@ -121,12 +120,16 @@ func normalizeModelName(model string) string {
 
 func ptr(v float64) *float64 { return &v }
 
-// installedRates is the catalog every new Store ships with by default
-// (see InstalledCatalog) until a future "punakawan pricing refresh"
-// command replaces it from configured official provider sources. These
-// figures are an installer-seeded default, not a live price feed: treat
-// them as illustrative starting rates, not a guarantee of current
-// accuracy, and prefer an explicitly observed provider price
+// installedRates is the offline fallback: the rates a process prices with
+// before, or instead of, RatesFeed.Prime fetching current ones. The feed
+// is authoritative for every model it names (see MergeRates), so these
+// figures matter only for a machine that cannot reach it and for a model
+// the feed does not carry.
+//
+// Being hand-maintained, this table drifts - claude-haiku-4-5 sat here at
+// $0.80/$4.00 against a published $1.00/$5.00, and claude-opus-4-5 at
+// $15/$75 against a published $5/$25, which is the whole reason the feed
+// exists. Prefer an explicitly observed provider price
 // (SnapshotRequest.ObservedCost) over this catalog whenever one is
 // available.
 //
@@ -199,20 +202,20 @@ var installedRates = []ModelRate{
 	{
 		Provider: "anthropic", Model: "claude-opus-4-5",
 		EffectiveAt:          time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
-		InputPerMillion:      15.00,
-		OutputPerMillion:     75.00,
-		CacheWritePerMillion: ptr(18.75),
-		CacheReadPerMillion:  ptr(1.50),
+		InputPerMillion:      5.00,
+		OutputPerMillion:     25.00,
+		CacheWritePerMillion: ptr(6.25),
+		CacheReadPerMillion:  ptr(0.50),
 		Currency:             "USD",
 		SourceURL:            "https://docs.anthropic.com/en/docs/about-claude/pricing",
 	},
 	{
 		Provider: "anthropic", Model: "claude-haiku-4-5",
 		EffectiveAt:          time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
-		InputPerMillion:      0.80,
-		OutputPerMillion:     4.00,
-		CacheWritePerMillion: ptr(1.00),
-		CacheReadPerMillion:  ptr(0.08),
+		InputPerMillion:      1.00,
+		OutputPerMillion:     5.00,
+		CacheWritePerMillion: ptr(1.25),
+		CacheReadPerMillion:  ptr(0.10),
 		Currency:             "USD",
 		SourceURL:            "https://docs.anthropic.com/en/docs/about-claude/pricing",
 	},
@@ -238,3 +241,15 @@ var installedRates = []ModelRate{
 
 // InstalledCatalog returns a fresh Catalog seeded with installedRates.
 func InstalledCatalog() *Catalog { return NewCatalog(installedRates) }
+
+// defaultCatalog is the process-wide catalog every Store resolves against
+// unless given its own with WithCatalog. It starts as the compiled-in
+// table and is replaced in place by RatesFeed.Prime, which is what lets a
+// composition root install fetched rates once without every Store
+// constructor - and so every test that builds one - reaching for the
+// network or this machine's config directory.
+var defaultCatalog = InstalledCatalog()
+
+// DefaultCatalog returns that shared catalog. Replace is safe to call on
+// it while requests are in flight.
+func DefaultCatalog() *Catalog { return defaultCatalog }

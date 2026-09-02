@@ -48,15 +48,15 @@ type Store struct {
 type Option func(*Store)
 
 // WithCatalog overrides the pricing catalog a Store resolves
-// SnapshotRequest.ModelUsage against. Without it, NewStore installs
-// InstalledCatalog().
+// SnapshotRequest.ModelUsage against. Without it, NewStore uses the
+// process-wide DefaultCatalog().
 func WithCatalog(c *Catalog) Option {
 	return func(s *Store) { s.catalog = c }
 }
 
 // NewStore wraps an opened storage kernel database.
 func NewStore(db *storage.DB, opts ...Option) *Store {
-	s := &Store{db: db, catalog: InstalledCatalog()}
+	s := &Store{db: db, catalog: DefaultCatalog()}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -615,8 +615,10 @@ func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (U
 }
 
 // UnresolvedModels names every model id recorded in the last limit
-// snapshots that the pricing catalog could not resolve, sorted and
-// deduplicated.
+// snapshots that the pricing catalog still cannot resolve, sorted and
+// deduplicated. A model that was unpriced when its snapshot was taken but
+// resolves now is left out: the price simply arrived later, and nothing
+// can or should retroactively re-cost that snapshot.
 //
 // It exists so `punakawan doctor` can say that an installed, apparently
 // healthy telemetry pipeline is producing usage nothing can price. The
@@ -627,6 +629,7 @@ func (s *Store) UnresolvedModels(ctx context.Context, limit int) ([]string, erro
 	if limit <= 0 {
 		limit = 200
 	}
+	now := time.Now().UTC()
 	rows, err := s.db.Reader().QueryContext(ctx, `SELECT pricing_json FROM agent_usage_snapshots ORDER BY observed_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry: list unresolved models: %w", err)
@@ -651,6 +654,20 @@ func (s *Store) UnresolvedModels(ctx context.Context, limit int) ([]string, erro
 				continue
 			}
 			seen[entry.Model] = true
+			// A model recorded as unpriced that the catalog can price
+			// today is a historical row, not something still going
+			// wrong - the price arrived after the snapshot did. Only a
+			// model that is still unpriceable is actionable, and
+			// reporting the rest would leave this check permanently red
+			// over rows nothing can retroactively fix. The delivery those
+			// rows belong to still reports its own cost as unknown, which
+			// is the truthful answer for that delivery.
+			if NonBillableModel(entry.Model) {
+				continue
+			}
+			if _, ok := s.catalog.Resolve(entry.Model, now); ok {
+				continue
+			}
 			out = append(out, entry.Model)
 		}
 	}

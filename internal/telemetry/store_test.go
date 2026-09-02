@@ -419,6 +419,24 @@ func TestUnresolvedModelsNamesWhatTheCatalogCannotPrice(t *testing.T) {
 	if !slices.Equal(models, want) {
 		t.Fatalf("unresolved = %v, want %v - the pseudo-model and the catalogued model must not appear", models, want)
 	}
+
+	// Once the rates feed teaches the catalog that model, the snapshot
+	// still records it as unpriced - nothing re-costs a captured
+	// snapshot - but there is no longer anything for an operator to fix,
+	// so this check must stop reporting it rather than staying red
+	// forever over rows from before the price arrived.
+	store.catalog = NewCatalog(append(slices.Clone(installedRates), ModelRate{
+		Provider: "anthropic", Model: "some-future-model",
+		EffectiveAt:     time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		InputPerMillion: 1, OutputPerMillion: 2, Currency: "USD",
+	}))
+	models, err = store.UnresolvedModels(context.Background(), 50)
+	if err != nil {
+		t.Fatalf("UnresolvedModels after the catalog learned the model: %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("unresolved = %v, want none once the catalog can price it", models)
+	}
 }
 
 func TestGetSnapshotReturnsNilForAnAbsentBaseline(t *testing.T) {
