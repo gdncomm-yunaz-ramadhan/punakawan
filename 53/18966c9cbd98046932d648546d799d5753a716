@@ -1,0 +1,27 @@
+internal/telemetry/ratesfeed_test.go
+  a97deff596c14d9f 1-260,285-302
+cmd/punakawan/pricing.go
+  a97deff596c14d9f 1-36
+internal/telemetry/ratesfeed.go
+  a97deff596c14d9f 1-8,10-14,17-124,135-138,142,147-191,202-259,261-349,352-361,363-364,366-369,379-439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "5318966c9cbd98046932d648546d799d5753a716",
+  "prompts": {
+    "a97deff596c14d9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a1e97913-4ae9-4a6e-9951-77d4563ed873",
+        "model": "claude-opus-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 714,
+      "total_deletions": 0,
+      "accepted_lines": 709,
+      "overriden_lines": 5
+    }
+  }
+}
