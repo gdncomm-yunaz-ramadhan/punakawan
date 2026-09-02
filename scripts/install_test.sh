@@ -46,15 +46,37 @@ run_relocation_test() {
     --exclude='.worktrees' --exclude='.claude' --exclude='.serena' --exclude='bin' \
     "$REPO_ROOT/" "$checkout_copy/"
 
-  # PUNAKAWAN_SKIP_HOOKS=1 keeps this step from touching this machine's
-  # real ~/.codex or ~/.claude - hook installation against an isolated
-  # $HOME is verified explicitly, separately, below. It deliberately does
-  # NOT also override HOME for this call: Go's module cache and pnpm's
-  # store both key off the real $HOME, and pointing them at a fresh one
-  # would force a full, slow re-populate instead of reusing what this
-  # machine already has cached.
+  # The whole install runs under a throwaway $HOME. The flags below
+  # relocate the install prefix and the data directory, but install.sh
+  # also reaches into $HOME for things they do not cover - the launchd
+  # LaunchAgent its panel restart consults, and the shell profile it
+  # appends a PATH line to - and a test must not rewrite either on the
+  # machine running it.
+  #
+  # Isolation costs no download time because the caches that would
+  # otherwise be re-populated from scratch are passed through explicitly:
+  # Go's module and build caches, and pnpm's content-addressable store.
+  # They are read from the real environment before $HOME changes, since
+  # that is what their defaults are derived from.
+  #
+  # PUNAKAWAN_SKIP_HOOKS=1 additionally keeps configure-agent.sh from
+  # writing client hook config even inside the fake $HOME; hook
+  # installation is verified explicitly, separately, below.
+  local real_gomodcache real_gocache real_gopath real_pnpm_store
+  real_gomodcache="$(go env GOMODCACHE)"
+  real_gocache="$(go env GOCACHE)"
+  real_gopath="$(go env GOPATH)"
+  real_pnpm_store="$(pnpm store path 2>/dev/null || true)"
+
   (
     cd "$checkout_copy"
+    export HOME="$fake_home"
+    export GOMODCACHE="$real_gomodcache"
+    export GOCACHE="$real_gocache"
+    export GOPATH="$real_gopath"
+    if [[ -n "$real_pnpm_store" ]]; then
+      export npm_config_store_dir="$real_pnpm_store"
+    fi
     PUNAKAWAN_DATA_DIR="$data_dir" \
     PUNAKAWAN_INSTALL_DIR="$install_dir" \
     PUNAKAWAN_CODEX_BIN="/nonexistent-codex-binary" \
@@ -62,6 +84,16 @@ run_relocation_test() {
     PUNAKAWAN_SKIP_HOOKS="1" \
       bash scripts/install.sh
   )
+
+  # Nothing the installer did may have landed outside the throwaway
+  # prefixes. A launchd agent is the one thing install.sh writes that no
+  # flag relocates, so it is asserted rather than trusted - including
+  # inside the fake $HOME, where a registration would mean the real one
+  # gets it too on a machine whose $HOME this test could not isolate.
+  if [[ -d "$fake_home/Library/LaunchAgents" ]] &&
+    find "$fake_home/Library/LaunchAgents" -name '*punakawan*' -print -quit | grep -q .; then
+    fail "relocation: install registered a launchd agent; a test must leave no service behind"
+  fi
 
   rm -rf "$checkout_copy"
 
