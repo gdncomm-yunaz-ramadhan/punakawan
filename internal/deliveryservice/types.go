@@ -103,9 +103,7 @@ func (in SourceIdentity) toDeliverySource() delivery.SourceIdentity {
 // RequirementDraft is one requirement source a caller already has content
 // for - the same shape delivery.SourceInput already normalizes, named
 // here so StartRequest does not depend on a caller having pre-classified
-// bare reference strings. Full reconciliation against it is Task 4's
-// Service.Reconcile; Task 3 only needs the type to exist so StartRequest
-// compiles.
+// bare reference strings.
 type RequirementDraft struct {
 	Provider   string
 	ExternalID string
@@ -114,19 +112,25 @@ type RequirementDraft struct {
 	Summary    string
 }
 
-// PlanDraft is the not-yet-saved content of one plan.Plan revision. Task 4's
-// reconcile.go turns this into an actual plan.Plan via SaveWithKey; Task 3
-// only needs the type to exist so StartRequest compiles.
+// PlanDraft is the not-yet-saved content of one plan.Plan revision, which
+// reconcile turns into an actual plan.Plan via SaveWithKey. It is the
+// content half of the pair: a caller that has already saved a plan names
+// it by id and revision instead (StartRequest.PlanID, ProjectDraft.PlanID).
 type PlanDraft struct {
 	Title   string
 	Content string
 }
 
 // ProjectDraft is one project a delivery should be reconciled onto, plus
-// the unit of work opened there. Task 4's reconcile.go performs the actual
+// the single unit of work opened there: reconcile performs the
 // UpsertProject/AttachProject/CreateParentTask/RouteParentTask/CreateLane
-// sequence from this; Task 3 only needs the type to exist so StartRequest
-// compiles.
+// sequence from it. A caller with several units of work in one repository
+// passes one draft per unit, all naming the same slug - the project writes
+// are keyed by slug and so collapse to one.
+//
+// Plan and PlanID are alternatives, not a pair: Plan carries content to
+// save, PlanID and PlanRevision name a revision that already exists. Both
+// end up linked to this project the same way.
 type ProjectDraft struct {
 	Slug          string
 	RepositoryURL string
@@ -134,6 +138,8 @@ type ProjectDraft struct {
 	TaskKey       string
 	Title         string
 	Plan          PlanDraft
+	PlanID        string
+	PlanRevision  int
 }
 
 // SessionStart is the durable agent session StartOrResolve opens once
@@ -160,21 +166,31 @@ type StartRequest struct {
 	Description          string
 	WorkflowDefinitionID string
 	Requirements         []RequirementDraft
-	HighLevelPlan        PlanDraft
-	Projects             []ProjectDraft
-	Session              SessionStart
-	ResumeToken          string
+	// PlanID and PlanRevision name an already-saved cross-project plan
+	// revision to record on the orchestration. HighLevelPlan is the
+	// content-carrying alternative, saved and linked by reconcile.
+	PlanID        string
+	PlanRevision  int
+	HighLevelPlan PlanDraft
+	Projects      []ProjectDraft
+	Session       SessionStart
+	ResumeToken   string
 }
 
-// ReconcileReport summarizes what one StartOrResolve call created, updated,
-// or left unchanged. It is a minimal placeholder in Task 3 - a real
-// StartOrResolve call always returns it empty - populated for real by
-// Task 4's Service.Reconcile, which this package does not implement yet.
+// ReconcileReport summarizes what one StartOrResolve call created,
+// updated, or left unchanged.
+//
+// Skipped is the half that matters when something looks wrong: every
+// place reconcile declines to create work - a task naming no requirement
+// source, a plan draft with no content - says so here instead of
+// continuing quietly, so a caller is never handed an empty delivery with
+// a success-shaped response and no explanation.
 type ReconcileReport struct {
 	Projects     []string `json:"projects"`
 	Requirements []string `json:"requirements"`
 	Plans        []string `json:"plans"`
 	RunnableWork []string `json:"runnable_work,omitempty"`
+	Skipped      []string `json:"skipped,omitempty"`
 }
 
 // StartResult is StartOrResolve's success output.

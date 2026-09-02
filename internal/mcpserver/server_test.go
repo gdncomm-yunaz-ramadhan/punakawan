@@ -176,7 +176,7 @@ func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]
 		t.Fatalf("CallTool(%s): %v", name, err)
 	}
 	if res.IsError {
-		t.Fatalf("CallTool(%s) returned an error result: %+v", name, res.Content)
+		t.Fatalf("CallTool(%s) returned an error result: %s", name, contentText(res.Content))
 	}
 	if len(res.Content) != 1 {
 		t.Fatalf("CallTool(%s) content blocks = %d, want JSON result", name, len(res.Content))
@@ -303,4 +303,19 @@ func checkSchema(v any, path string) []string {
 		return []string{path + "=" + strconv.FormatBool(b)}
 	}
 	return findBoolSchemaNodes(v, path)
+}
+
+// contentText renders a tool result's content blocks as the text a reader
+// can act on. Printing the blocks themselves yields pointer addresses,
+// which is the least useful thing a failing tool call can say.
+func contentText(blocks []mcp.Content) string {
+	parts := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if text, ok := block.(*mcp.TextContent); ok {
+			parts = append(parts, text.Text)
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%+v", block))
+	}
+	return strings.Join(parts, " | ")
 }

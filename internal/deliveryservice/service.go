@@ -98,6 +98,8 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 		Title:                strings.TrimSpace(req.Title),
 		Description:          strings.TrimSpace(req.Description),
 		WorkflowDefinitionID: req.WorkflowDefinitionID,
+		PlanID:               strings.TrimSpace(req.PlanID),
+		PlanRevision:         req.PlanRevision,
 	})
 	if err != nil {
 		return StartResult{}, nil, err

@@ -112,6 +112,9 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 			IdempotencyKey:       delivery.NewID(),
 			Source:               source,
 			WorkflowDefinitionID: def.ID,
+			// A run with no session records no usage at all, so one is
+			// always opened, named after the definition that started it.
+			Session: startDeliverySession(nil, &StartDeliverySessionStart{Participant: "workflow:" + def.ID}, a.Workspace.Root),
 		})
 		if err != nil {
 			return "", fmt.Errorf("start delivery for definition %q: %w", def.ID, err)

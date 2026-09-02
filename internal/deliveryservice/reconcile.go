@@ -30,6 +30,14 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 	orchestrationID := resolved.Execution.OrchestrationID
 	report := ReconcileReport{Projects: []string{}, Requirements: []string{}, Plans: []string{}, RunnableWork: []string{}}
 
+	if req.Source != nil && req.Source.Kind == SourceJira && s.hydrator == nil {
+		// Without a hydrator the delivery's own Jira parent is still
+		// captured by StartOrResolveExecution, but its subtasks are not,
+		// so any task keyed to a subtask will find nothing to group. Say
+		// so here rather than letting that surface later as an
+		// unexplained missing lane.
+		report.Skipped = append(report.Skipped, "jira hydration: no Jira hydrator configured, so subtasks of the parent issue were not captured")
+	}
 	if req.Source != nil && req.Source.Kind == SourceJira && s.hydrator != nil {
 		// Hydrate runs before StartOrResolve opens req.Session below, so no
 		// delivery session exists yet for this call to scope the hydration
@@ -87,22 +95,32 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 		}
 	}
 
+	// Several drafts may name the same repository - one per unit of work
+	// opened there - so the project-level writes run once for the first
+	// draft that mentions a slug and are skipped for its siblings. They are
+	// all idempotent anyway; the point is to keep the report from listing
+	// the same project and plan once per task.
+	reconciledSlugs := make(map[string]bool, len(req.Projects))
 	for _, draft := range req.Projects {
 		project, err := s.deliveries.UpsertProject(ctx, reconcileKey(orchestrationID, "project", draft.Slug), stableID("project", draft.Slug), draft.Slug, draft.RepositoryURL, draft.DefaultBranch)
 		if err != nil {
 			return report, fmt.Errorf("deliveryservice: upsert project %q: %w", draft.Slug, err)
 		}
-		report.Projects = append(report.Projects, project.Id)
+		firstDraftForSlug := !reconciledSlugs[draft.Slug]
+		reconciledSlugs[draft.Slug] = true
+		if firstDraftForSlug {
+			report.Projects = append(report.Projects, project.Id)
 
-		orch, err := s.deliveries.GetOrchestration(ctx, orchestrationID)
-		if err != nil {
-			return report, fmt.Errorf("deliveryservice: read orchestration before attach: %w", err)
-		}
-		if _, err := s.deliveries.AttachProject(ctx, reconcileKey(orchestrationID, "attach", project.Id), orchestrationID, orch.Revision, project.Id); err != nil {
-			return report, fmt.Errorf("deliveryservice: attach project %q: %w", draft.Slug, err)
+			orch, err := s.deliveries.GetOrchestration(ctx, orchestrationID)
+			if err != nil {
+				return report, fmt.Errorf("deliveryservice: read orchestration before attach: %w", err)
+			}
+			if _, err := s.deliveries.AttachProject(ctx, reconcileKey(orchestrationID, "attach", project.Id), orchestrationID, orch.Revision, project.Id); err != nil {
+				return report, fmt.Errorf("deliveryservice: attach project %q: %w", draft.Slug, err)
+			}
 		}
 
-		if strings.TrimSpace(draft.Plan.Title) != "" || strings.TrimSpace(draft.Plan.Content) != "" {
+		if firstDraftForSlug && (strings.TrimSpace(draft.Plan.Title) != "" || strings.TrimSpace(draft.Plan.Content) != "") {
 			projectPlan, err := s.plans.SaveWithKey(ctx, reconcileKey(orchestrationID, "plan", project.Id), draft.Plan.toPlan(stableID("project-plan", project.Id), project.Id))
 			if err != nil {
 				return report, fmt.Errorf("deliveryservice: save project plan for %q: %w", draft.Slug, err)
@@ -112,11 +130,24 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 			}
 			report.Plans = append(report.Plans, planRef(projectPlan))
 		}
+		if firstDraftForSlug && draft.PlanID != "" {
+			if err := s.deliveries.LinkProjectPlan(ctx, reconcileKey(orchestrationID, "link-plan-ref", project.Id), orchestrationID, project.Id, draft.PlanID, draft.PlanRevision); err != nil {
+				return report, fmt.Errorf("deliveryservice: link existing project plan for %q: %w", draft.Slug, err)
+			}
+			report.Plans = append(report.Plans, fmt.Sprintf("%s@%d", draft.PlanID, draft.PlanRevision))
+		}
 
 		sourceIDs := sourceIDsForTask(draft, sourceByIssueKey, sources)
 		if len(sourceIDs) == 0 {
-			// Nothing to group into a task/lane yet - a project can be
-			// registered and attached ahead of any routable work.
+			// A project can legitimately be registered and attached ahead
+			// of any routable work, so this is not an error - but it is
+			// the difference between a delivery with lanes and one
+			// without, so it is always reported rather than passed over.
+			if key := strings.TrimSpace(draft.TaskKey); key != "" {
+				report.Skipped = append(report.Skipped, fmt.Sprintf("project %q task %q: %q matches no captured requirement source, so no parent task or lane was created", draft.Slug, draft.Title, key))
+			} else {
+				report.Skipped = append(report.Skipped, fmt.Sprintf("project %q: registered and attached, but no task key was given so it has no lane", draft.Slug))
+			}
 			continue
 		}
 		title := strings.TrimSpace(draft.Title)

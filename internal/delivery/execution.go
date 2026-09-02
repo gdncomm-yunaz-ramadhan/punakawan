@@ -243,12 +243,26 @@ func (s *Store) StartSession(ctx context.Context, idempotencyKey, executionID, i
 		return err
 	})
 	if errors.Is(err, storage.ErrDuplicateWrite) {
+		// When the caller named no id this call minted one, and a
+		// duplicate key means the write that actually happened was an
+		// earlier call which minted its own - so that id names nothing.
+		// The execution's active session is what the caller is asking
+		// for; looking up the just-minted id would report not-found for a
+		// session that exists.
+		if reuseActive {
+			return s.getActiveSession(ctx, executionID)
+		}
 		return s.GetSession(ctx, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("delivery: start session: %w", err)
 	}
 	return &out, nil
+}
+
+// getActiveSession reads back the session currently open on executionID.
+func (s *Store) getActiveSession(ctx context.Context, executionID string) (*DeliverySession, error) {
+	return scanSession(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, orchestration_id, resumed_from_id, participant, worktree_path, provider, status, started_at, ended_at FROM delivery_sessions WHERE execution_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`, executionID))
 }
 
 func (s *Store) GetSession(ctx context.Context, id string) (*DeliverySession, error) {

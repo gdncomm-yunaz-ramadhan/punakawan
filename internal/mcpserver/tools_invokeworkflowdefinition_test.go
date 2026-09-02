@@ -157,7 +157,7 @@ func TestStartDeliveryRejectsUnknownWorkflowDefinitionId(t *testing.T) {
 	ctx := context.Background()
 
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "start_delivery", Arguments: map[string]any{
-		"references":             []string{"JIRA-1"},
+		"source":                 map[string]any{"kind": "jira", "tenant": "test-tenant", "key": "JIRA-1"},
 		"workflow_definition_id": "does-not-exist",
 	}})
 	if err != nil {
@@ -187,7 +187,7 @@ func TestStartDeliveryRejectsDisabledWorkflowDefinitionId(t *testing.T) {
 	})
 
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "start_delivery", Arguments: map[string]any{
-		"references":             []string{"JIRA-1"},
+		"source":                 map[string]any{"kind": "jira", "tenant": "test-tenant", "key": "JIRA-1"},
 		"workflow_definition_id": "disabled-delivery",
 	}})
 	if err != nil {
