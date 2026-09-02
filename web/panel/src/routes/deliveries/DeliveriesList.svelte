@@ -9,15 +9,17 @@
   import Icon from "../../lib/components/Icon.svelte";
   import Button from "../../lib/components/Button.svelte";
   import DeliveryCancelDialog from "./DeliveryCancelDialog.svelte";
+  import Tabs from "../../lib/components/Tabs.svelte";
   import {
     filterDeliveries,
     sortDeliveries,
     deliverySortOptions,
     isCancellableDelivery,
-    partitionByArchived,
+    partitionByScope,
     backoffDelay,
     type DeliverySortKey,
     type DeliveryListRow,
+    type DeliveryScope,
   } from "./deliveryList";
 
   const POLL_INTERVAL_MS = 10_000;
@@ -30,13 +32,49 @@
   // that would throw away scroll position and the search box's focus.
   let loaded = $state(false);
 
+  const scopes: DeliveryScope[] = ["active", "completed", "archived"];
+
+  function initialScope(): DeliveryScope {
+    if (typeof window === "undefined") return "active";
+    const requested = new URL(window.location.href).searchParams.get("tab");
+    return scopes.includes(requested as DeliveryScope) ? (requested as DeliveryScope) : "active";
+  }
+
+  function selectScope(id: string) {
+    scope = id as DeliveryScope;
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (scope === "active") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", scope);
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   let search = $state("");
   let sortKey: DeliverySortKey = $state("updated");
-  let showArchived = $state(false);
+  let scope: DeliveryScope = $state(initialScope());
+
+  // Partitioning reads the clock, so it has to re-run on its own or a
+  // delivery would only cross the Completed/Archived line on the next
+  // poll-driven rows change - which, for an instance nobody is starting
+  // deliveries on, never comes. The list already polls every 10s; this
+  // just ticks the boundary at the same cadence.
+  let now = $state(Date.now());
 
   const matching = $derived(sortDeliveries(filterDeliveries(rows, search), sortKey));
-  const partitioned = $derived(partitionByArchived(matching));
-  const visible = $derived(showArchived ? partitioned.archived : partitioned.live);
+  const partitioned = $derived(partitionByScope(matching, now));
+  const visible = $derived(partitioned[scope]);
+
+  const scopeTabs = $derived([
+    { id: "active", label: `Active (${partitioned.active.length})` },
+    { id: "completed", label: `Completed (${partitioned.completed.length})` },
+    { id: "archived", label: `Archived (${partitioned.archived.length})` },
+  ]);
+
+  const emptyStateCopy: Record<DeliveryScope, { title: string; message: string }> = {
+    active: { title: "No active deliveries", message: "A delivery appears here while it still has work to hand out." },
+    completed: { title: "Nothing completed recently", message: "A delivery that finishes appears here, then moves to Archived as it ages." },
+    archived: { title: "Nothing archived", message: "Cancelled deliveries, and completed ones old enough to have aged out, appear here." },
+  };
 
   let pendingCancelId: string | null = $state(null);
   const pendingCancel = $derived.by(() => rows.find((r) => r.summary.id === pendingCancelId) ?? null);
@@ -52,6 +90,7 @@
     try {
       const { items } = await listDeliveries();
       rows = items.map((summary): DeliveryListRow => ({ summary }));
+      now = Date.now();
       error = null;
       consecutiveFailures = 0;
     } catch (e) {
@@ -200,27 +239,19 @@
         {/each}
       </select>
     </div>
-    <div class="field">
-      <span id="delivery-scope-label">Show</span>
-      <div class="scope" role="group" aria-labelledby="delivery-scope-label">
-        <button type="button" class:selected={!showArchived} aria-pressed={!showArchived} onclick={() => (showArchived = false)}>
-          Active ({partitioned.live.length})
-        </button>
-        <button type="button" class:selected={showArchived} aria-pressed={showArchived} onclick={() => (showArchived = true)}>
-          Archived ({partitioned.archived.length})
-        </button>
-      </div>
-    </div>
   </div>
 
+  <div class="scope-tabs">
+    <Tabs tabs={scopeTabs} activeId={scope} onchange={selectScope} ariaLabel="Delivery scope" />
+  </div>
+
+  <div id={`tabpanel-${scope}`} role="tabpanel" aria-labelledby={`tab-${scope}`}>
   {#if visible.length === 0}
     <EmptyStateCard
-      title={showArchived ? "Nothing archived" : "No active deliveries"}
+      title={emptyStateCopy[scope].title}
       message={search
-        ? `Nothing matches “${search}” here. Try a shorter search, or look under ${showArchived ? "Active" : "Archived"}.`
-        : showArchived
-          ? "Cancelled and completed deliveries appear here."
-          : `Every delivery is cancelled or completed. ${partitioned.archived.length} of them are under Archived.`}
+        ? `Nothing matches “${search}” here. Try a shorter search, or look under the other tabs.`
+        : emptyStateCopy[scope].message}
     />
   {:else}
     <ul class="deliveries" aria-label="Deliveries">
@@ -272,6 +303,7 @@
       {/each}
     </ul>
   {/if}
+  </div>
 {/if}
 
 {#if pendingCancel}
@@ -372,38 +404,13 @@
   .toolbar .field:first-child {
     flex: 1 1 16rem;
   }
-  .field label,
-  .field > span {
+  .scope-tabs {
+    margin-bottom: 1rem;
+  }
+  .field label {
     font-size: 0.78rem;
     font-weight: 650;
     color: var(--color-text-muted);
-  }
-  .scope {
-    display: inline-flex;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .scope button {
-    font: inherit;
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-    border: 0;
-    padding: 0.45rem 0.75rem;
-    min-height: 38px;
-    cursor: pointer;
-  }
-  .scope button + button {
-    border-left: 1px solid var(--color-border);
-  }
-  .scope button.selected {
-    color: var(--color-text);
-    background: var(--color-surface-raised, var(--color-surface));
-    font-weight: 650;
-  }
-  .scope button:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: -2px;
   }
   .field input,
   .field select {

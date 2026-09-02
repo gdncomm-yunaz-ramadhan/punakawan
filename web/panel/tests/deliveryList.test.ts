@@ -5,6 +5,9 @@ import {
   deliverySortOptions,
   filterDeliveries,
   isCancellableDelivery,
+  deliveryScope,
+  partitionByScope,
+  ARCHIVE_AFTER_MS,
   shortDeliveryId,
   sortDeliveries,
   summarizeDeliveries,
@@ -251,5 +254,43 @@ describe("sortDeliveries", () => {
     for (const option of deliverySortOptions) {
       expect(sortDeliveries(rows, option.key)).toHaveLength(rows.length);
     }
+  });
+});
+
+describe("deliveryScope", () => {
+  const now = Date.parse("2026-09-02T00:00:00Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+
+  it("keeps a delivery that can still hand out work under active", () => {
+    expect(deliveryScope(summary({ status: "pending" }), now)).toBe("active");
+    expect(deliveryScope(summary({ status: "active" }), now)).toBe("active");
+  });
+
+  it("archives a cancelled delivery immediately, however recent", () => {
+    expect(deliveryScope(summary({ status: "cancelled", updated_at: ago(0) }), now)).toBe("archived");
+  });
+
+  it("moves a completed delivery from completed to archived as it ages past the cutoff", () => {
+    expect(deliveryScope(summary({ status: "completed", updated_at: ago(ARCHIVE_AFTER_MS - 1) }), now)).toBe("completed");
+    expect(deliveryScope(summary({ status: "completed", updated_at: ago(ARCHIVE_AFTER_MS) }), now)).toBe("completed");
+    expect(deliveryScope(summary({ status: "completed", updated_at: ago(ARCHIVE_AFTER_MS + 1) }), now)).toBe("archived");
+  });
+
+  it("treats an unreadable timestamp as recent rather than silently archiving it", () => {
+    expect(deliveryScope(summary({ status: "completed", updated_at: "not-a-date" }), now)).toBe("completed");
+  });
+
+  it("partitions every row into exactly one scope", () => {
+    const input = [
+      row({ id: "a", status: "active" }),
+      row({ id: "b", status: "completed", updated_at: ago(0) }),
+      row({ id: "c", status: "completed", updated_at: ago(ARCHIVE_AFTER_MS + 1) }),
+      row({ id: "d", status: "cancelled" }),
+    ];
+    const out = partitionByScope(input, now);
+    expect(out.active.map((r) => r.summary.id)).toEqual(["a"]);
+    expect(out.completed.map((r) => r.summary.id)).toEqual(["b"]);
+    expect(out.archived.map((r) => r.summary.id)).toEqual(["c", "d"]);
+    expect(out.active.length + out.completed.length + out.archived.length).toBe(input.length);
   });
 });

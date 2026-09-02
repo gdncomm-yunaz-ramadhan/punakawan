@@ -36,24 +36,44 @@ export function isCancellableDelivery(summary: DeliverySummary): boolean {
   return summary.cancellable;
 }
 
-// A cancelled or completed delivery is done with: it hands out no work and
-// needs no attention, but it used to sit in the same list as live ones,
-// which on a long-running instance is most of what a reader scrolls past.
-// Archived rows are still one click away rather than hidden - the point is
-// the default view, not concealment.
-const archivedStatuses = new Set(["cancelled", "completed"]);
+// A delivery that is done with hands out no work and needs no attention,
+// but it used to sit in the same list as live ones, which on a
+// long-running instance is most of what a reader scrolls past. Done-with
+// used to mean one bucket, "Archived", which filed a delivery that
+// finished successfully next to one that was abandoned. They are not the
+// same outcome and do not deserve the same shelf, so there are three
+// scopes. None of them hides anything - each is one click away.
+export const ARCHIVE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 
-export function isArchivedDelivery(summary: DeliverySummary): boolean {
-  return archivedStatuses.has(summary.status);
+export type DeliveryScope = "active" | "completed" | "archived";
+
+// parseTime mirrors sortDeliveries' NaN-safe parse: a timestamp the server
+// sent in a shape we cannot read must not decide a delivery's shelf, so it
+// reads as "no age known" rather than as epoch (which would archive it).
+function parseTime(value: string | undefined): number | null {
+  const ms = Date.parse(value ?? "");
+  return Number.isNaN(ms) ? null : ms;
 }
 
-export function partitionByArchived<T extends DeliveryListRow>(rows: T[]): { live: T[]; archived: T[] } {
-  const live: T[] = [];
-  const archived: T[] = [];
-  for (const row of rows) {
-    (isArchivedDelivery(row.summary) ? archived : live).push(row);
-  }
-  return { live, archived };
+// A cancelled delivery is archived the moment it is cancelled - there is no
+// span of time in which an abandoned run still wants reading. A completed
+// one stays under Completed while it is recent enough to still be the
+// answer to "what did we just ship", and ages out from there.
+export function deliveryScope(summary: DeliverySummary, now: number): DeliveryScope {
+  if (summary.status === "cancelled") return "archived";
+  if (summary.status !== "completed") return "active";
+  const updated = parseTime(summary.updated_at);
+  if (updated === null) return "completed";
+  return now - updated > ARCHIVE_AFTER_MS ? "archived" : "completed";
+}
+
+export function partitionByScope<T extends DeliveryListRow>(
+  rows: T[],
+  now: number,
+): Record<DeliveryScope, T[]> {
+  const out: Record<DeliveryScope, T[]> = { active: [], completed: [], archived: [] };
+  for (const row of rows) out[deliveryScope(row.summary, now)].push(row);
+  return out;
 }
 
 export function shortDeliveryId(id: string): string {

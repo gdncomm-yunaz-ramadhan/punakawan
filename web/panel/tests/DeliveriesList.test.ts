@@ -39,6 +39,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  // The tab tests write ?tab= into the url; leaving it set would decide
+  // the starting tab for whichever test renders next.
+  window.history.replaceState({}, "", "/deliveries");
 });
 
 // installBackend serves GET /api/v1/deliveries (the list), GET
@@ -186,22 +189,61 @@ describe("DeliveriesList", () => {
     });
   });
 
-  it("keeps cancelled and completed deliveries out of the active list", async () => {
+  it("separates running, recently completed, and archived deliveries into three tabs", async () => {
     installBackend([
       summary("orc-1", { title: "Still running", status: "active" }),
       summary("orc-2", { title: "Called off", status: "cancelled", cancellable: false }),
-      summary("orc-3", { title: "All done", status: "completed", cancellable: false }),
+      summary("orc-3", {
+        title: "All done",
+        status: "completed",
+        cancellable: false,
+        // Relative to now, so the test does not silently start failing
+        // once the fixed date it used to carry ages past the cutoff.
+        updated_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      }),
+      // Completed long enough ago to have aged out of Completed.
+      summary("orc-4", {
+        title: "Ancient history",
+        status: "completed",
+        cancellable: false,
+        updated_at: "2025-01-01T00:00:00Z",
+      }),
     ]);
 
     render(DeliveriesList);
     await waitFor(() => expect(screen.getByText("Still running")).toBeTruthy());
-    expect(screen.queryByText("Called off")).toBeNull();
     expect(screen.queryByText("All done")).toBeNull();
+    expect(screen.queryByText("Called off")).toBeNull();
 
-    await fireEvent.click(screen.getByRole("button", { name: /Archived \(2\)/ }));
-    expect(screen.getByText("Called off")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("tab", { name: /Completed \(1\)/ }));
     expect(screen.getByText("All done")).toBeTruthy();
     expect(screen.queryByText("Still running")).toBeNull();
+    expect(screen.queryByText("Ancient history")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Archived \(2\)/ }));
+    expect(screen.getByText("Called off")).toBeTruthy();
+    expect(screen.getByText("Ancient history")).toBeTruthy();
+    expect(screen.queryByText("All done")).toBeNull();
+  });
+
+  it("restores the tab named in the url and writes the selected one back", async () => {
+    window.history.replaceState({}, "", "/deliveries?tab=archived");
+    installBackend([
+      summary("orc-1", { title: "Still running", status: "active" }),
+      summary("orc-2", { title: "Called off", status: "cancelled", cancellable: false }),
+    ]);
+
+    render(DeliveriesList);
+    await waitFor(() => expect(screen.getByText("Called off")).toBeTruthy());
+    expect(screen.queryByText("Still running")).toBeNull();
+
+    // Active is the default scope, so it clears the parameter rather than
+    // leaving ?tab=active on every url a reader might copy.
+    await fireEvent.click(screen.getByRole("tab", { name: /Active \(1\)/ }));
+    expect(new URL(window.location.href).searchParams.get("tab")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Completed \(0\)/ }));
+    expect(new URL(window.location.href).searchParams.get("tab")).toBe("completed");
   });
 
   it("filters and distinguishes an empty result from having no deliveries", async () => {
