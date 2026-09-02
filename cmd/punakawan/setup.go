@@ -31,6 +31,7 @@ func newSetupCmd() *cobra.Command {
 			if hooksOnly {
 				reportHookSetup(cmd)
 				reportJiraWorkflowSetup(cmd)
+				reportAgentDocSetup(cmd)
 				return nil
 			}
 			return runSetup(cmd)
@@ -70,6 +71,7 @@ func runSetup(cmd *cobra.Command) error {
 
 	reportHookSetup(cmd)
 	reportJiraWorkflowSetup(cmd)
+	reportAgentDocSetup(cmd)
 
 	if len(failed) > 0 {
 		return fmt.Errorf("setup: could not verify credentials for: %s; set the missing/correct values (as real environment "+

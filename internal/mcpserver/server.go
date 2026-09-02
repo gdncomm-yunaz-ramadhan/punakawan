@@ -74,10 +74,33 @@ func ServeHTTP(ctx context.Context, a *app.App, addr string) error {
 // model", per the MCP spec). This is the one piece of guidance punakawan can
 // hand an agent automatically, regardless of which project repo it is
 // running in (unlike a CLAUDE.md, which would have to be copied into every
-// consuming project) - so it's the right place for the two things that
-// actually tripped up real usage: the expected tool call sequence and durable
-// retry behavior.
-const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. Work through Projects, Workflows, Plans, and Deliveries. Start or resume work with start_delivery, invoke_workflow, or get_delivery. When work is complete on an exact Jira task, record its measured task-bound interval with log_delivery_work before reporting the lane complete. Retry an unsynced interval with retry_worklog_sync rather than recording it again. Report provider-observed model usage with report_delivery_usage, including current unit price and price source whenever connected agent can obtain them; never ask humans to maintain price tables. To assess a Jira issue: resolve it, hydrate its parent and every subtask, reason over visible source, then record clarity and rationale. Propose parent Fibonacci story points from total subtask complexity and lower agent-assisted original estimates per subtask from expected execution time. Queue Jira writes as durable intents, then execute one by intent_id or all pending intents by execution_id. Cancel stale pending intents with cancel_jira_write_intent. Queueing story points discovers and caches field metadata by cloud, project, and issue type; use refresh_story_points_field after a Jira field change. For general provider access, use list_adapter_operations to discover live operation descriptions and input schemas, then call_adapter_operation with an exact declared operation. Runtime mechanics stay delegated to connected adapters. Punakawan does not reason itself; connected agent remains reasoning engine. Execute complete, authorized delivery work without asking for confirmation. Ask the user only when a required input is missing or contradictory, or when a material decision has multiple defensible outcomes. In those cases return needs_input with one precise question and, for a decision, finite options with impacts. Do not create approval requests or a pending-question queue.`
+// consuming project).
+//
+// It therefore leads with the call order and the prerequisites, which is
+// what actually tripped up real usage: an agent that knows every tool by
+// name but not that log_delivery_work needs a lane id from get_delivery
+// and a prior map_delivery_work_item will call them in an order that
+// cannot work, conclude the tooling is broken, and fall back to writing
+// Jira comments by hand. Naming a tool that does not exist has the same
+// effect, so every name below is checked against the registered surface
+// by TestServerInstructionsOnlyNameRealTools.
+const serverInstructionsBody = `Punakawan is a focused multi-project delivery orchestrator. It does not reason itself; the connected agent remains the reasoning engine.
+
+Delivery call order. Follow it in this sequence - each step depends on ids the previous one returns:
+1. plan_get to check for an already-saved plan before deriving one; plan_save as soon as a plan exists or changes.
+2. start_delivery with source (jira needs tenant and key, or use adhoc), a projects array naming each repository and its tasks, the plan id and revision if one is saved, and a session naming the participant and the worktree path. Projects are what create lanes; a session is what makes usage measurable. Passing neither leaves a delivery that can neither run nor be measured. The response carries orchestration_id, execution_id, requirement_sources, and the lanes just created; reconciliation.skipped names anything that could not be created and why. Calling it again for the same source reconciles newly discovered work onto the same delivery rather than starting a second one.
+3. map_delivery_work_item, once per lane, binding execution_id plus the lane's parent_task_id and a requirement_source_id to the exact Jira issue or subtask.
+4. log_delivery_work when work on that task is done, with the lane_id from get_delivery and a measured interval. It requires the mapping from step 3. Retry an unsynced interval with retry_worklog_sync rather than recording it again.
+5. ingest_delivery_usage_snapshot during the session and finalize_delivery_session at its end, reporting provider-observed usage with the current unit price and price source whenever they can be obtained; never ask humans to maintain price tables.
+6. complete_delivery, or cancel_delivery if the work is abandoned.
+
+get_delivery reads the current state, its next_action, and the ids the steps above need. invoke_workflow starts a delivery from a saved workflow definition instead of step 2.
+
+To assess a Jira issue: resolve it, hydrate its parent and every subtask, reason over visible source, then record clarity and rationale with assess_jira_delivery. Propose parent Fibonacci story points from total subtask complexity, and lower agent-assisted original estimates per subtask from expected execution time. Jira writes are queued as durable intents and executed by intent_id or by execution_id; cancel stale pending ones with cancel_jira_write_intent.
+
+For provider access beyond these tools, use list_adapter_operations to discover live operation descriptions and input schemas, then call_adapter_operation with an exact declared operation. Runtime mechanics stay delegated to connected adapters.
+
+Execute complete, authorized delivery work without asking for confirmation. Ask the user only when a required input is missing or contradictory, or when a material decision has multiple defensible outcomes. In those cases return needs_input with one precise question and, for a decision, finite options with impacts. Do not create approval requests or a pending-question queue.`
 
 // serverInstructionsRevision identifies serverInstructionsBody's exact
 // content: a client reconnecting after a punakawan upgrade can compare

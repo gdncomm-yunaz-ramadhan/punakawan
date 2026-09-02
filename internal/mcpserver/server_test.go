@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -162,6 +163,47 @@ func TestServerInstructionsExplainGenericAdapterBridge(t *testing.T) {
 	for _, tool := range []string{"list_adapter_operations", "call_adapter_operation"} {
 		if !strings.Contains(serverInstructions, tool) {
 			t.Errorf("server instructions do not explain %q", tool)
+		}
+	}
+}
+
+// TestServerInstructionsOnlyNameRealTools guards the failure mode that
+// makes the instructions worse than silence: they once told agents to
+// call refresh_story_points_field, which is not registered anywhere, and
+// an agent following instructions that cannot be followed concludes the
+// tooling is broken and stops using it.
+func TestServerInstructionsOnlyNameRealTools(t *testing.T) {
+	a := newTestApp(t)
+	registered := CapabilityRegistry(a)
+
+	// A bare snake_case word in the instructions is a tool name unless it
+	// is one of the field and argument names they also have to mention.
+	notATool := map[string]bool{
+		"orchestration_id": true, "execution_id": true, "parent_task_id": true,
+		"requirement_source_id": true, "requirement_sources": true, "lane_id": true,
+		"intent_id": true, "next_action": true, "needs_input": true,
+	}
+	for _, word := range regexp.MustCompile(`[a-z]+(?:_[a-z]+)+`).FindAllString(serverInstructions, -1) {
+		if notATool[word] || registered.Has(word) {
+			continue
+		}
+		t.Errorf("server instructions name %q, which is not a registered tool", word)
+	}
+}
+
+// TestServerInstructionsStateTheDeliveryCallOrder pins the guidance that
+// exists precisely because knowing every tool by name was not enough: an
+// agent has to be told which ids come from where, or it calls them in an
+// order that cannot work.
+func TestServerInstructionsStateTheDeliveryCallOrder(t *testing.T) {
+	for _, ordered := range []string{"plan_get", "start_delivery", "map_delivery_work_item", "log_delivery_work", "finalize_delivery_session", "complete_delivery"} {
+		if !strings.Contains(serverInstructions, ordered) {
+			t.Errorf("server instructions omit %q from the delivery call order", ordered)
+		}
+	}
+	for _, prerequisite := range []string{"lane_id", "execution_id", "requirement_source", "projects", "session"} {
+		if !strings.Contains(serverInstructions, prerequisite) {
+			t.Errorf("server instructions never mention %q, so a caller cannot tell where that input comes from", prerequisite)
 		}
 	}
 }

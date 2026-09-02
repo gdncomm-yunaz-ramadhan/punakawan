@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ygrip/punakawan/internal/agent"
 	"github.com/ygrip/punakawan/internal/capability"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // toolIndex embeds the capability registry so MCP registration and workflow
