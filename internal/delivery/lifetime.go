@@ -73,8 +73,26 @@ const caseColumns = `id, source_kind, source_provider, source_tenant, source_key
 // this lookup by tenant as well is what previously let the same issue key
 // open a second, parallel delivery whenever two callers named the tenant
 // differently. The tenant is still recorded on the case for provenance.
-func getActiveJiraLifetime(ctx context.Context, q rowQuerier, canonicalKey string) (*DeliveryLifetime, error) {
-	return scanCase(q.QueryRowContext(ctx, `SELECT `+caseColumns+` FROM delivery_cases WHERE source_kind = 'jira' AND source_provider = 'jira' AND source_key = ? AND status = 'active'`, canonicalKey))
+// getActiveJiraLifetime finds the active lifetime for one Jira issue at
+// one organisation. Two sites can issue the same key, so the organisation
+// is part of the identity.
+//
+// A lifetime carrying no organisation is still a match: it was started
+// before this host resolved one, and the organisation now naming it
+// adopts it (see StartOrResolveExecution) rather than opening a second
+// delivery beside it. An exact organisation match always wins over that
+// fallback.
+func getActiveJiraLifetime(ctx context.Context, q rowQuerier, canonicalKey, org string) (*DeliveryLifetime, error) {
+	const base = `SELECT ` + caseColumns + ` FROM delivery_cases WHERE source_kind = 'jira' AND source_provider = 'jira' AND source_key = ? AND status = 'active'`
+	if org == "" {
+		// No organisation resolved: this host distinguishes none, so any
+		// active lifetime for the issue is the one.
+		return scanCase(q.QueryRowContext(ctx, base+` ORDER BY CASE WHEN COALESCE(source_tenant, '') = '' THEN 0 ELSE 1 END, created_at DESC LIMIT 1`, canonicalKey))
+	}
+	return scanCase(q.QueryRowContext(ctx, base+`
+		  AND (source_tenant = ? OR COALESCE(source_tenant, '') = '')
+		ORDER BY CASE WHEN source_tenant = ? THEN 0 ELSE 1 END, created_at DESC
+		LIMIT 1`, canonicalKey, org, org))
 }
 
 func getLifetimeByID(ctx context.Context, q rowQuerier, id string) (*DeliveryLifetime, error) {
@@ -151,10 +169,19 @@ func (s *Store) StartOrResolveExecution(ctx context.Context, idempotencyKey stri
 		// create-a-new-lifetime branch further down.
 		lifetimeID := ""
 		if source.Kind == SourceKindJira {
-			existing, err := getActiveJiraLifetime(ctx, tx, canonicalKey)
+			existing, err := getActiveJiraLifetime(ctx, tx, canonicalKey, tenant)
 			switch {
 			case err == nil:
 				lifetimeID = existing.ID
+				if tenant != "" && existing.SourceTenant != tenant {
+					// A lifetime started before this host resolved an
+					// organisation is claimed by the first one that names it,
+					// so the issue keeps one delivery instead of gaining a
+					// second under the newly resolved name.
+					if _, err := tx.ExecContext(ctx, `UPDATE delivery_cases SET source_tenant = ?, updated_at = ? WHERE id = ?`, tenant, now.Format(timeLayout), existing.ID); err != nil {
+						return err
+					}
+				}
 			case errors.Is(err, ErrNotFound):
 				lifetimeID = ""
 			default:
@@ -272,7 +299,7 @@ func (s *Store) StartOrResolveExecution(ctx context.Context, idempotencyKey stri
 
 	var lifetime *DeliveryLifetime
 	if source.Kind == SourceKindJira {
-		lifetime, err = getActiveJiraLifetime(ctx, s.db.Reader(), canonicalKey)
+		lifetime, err = getActiveJiraLifetime(ctx, s.db.Reader(), canonicalKey, tenant)
 	} else {
 		lifetime, err = getLifetimeByID(ctx, s.db.Reader(), adhocLifetimeID)
 	}

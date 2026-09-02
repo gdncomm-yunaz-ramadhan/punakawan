@@ -164,3 +164,43 @@ func TestGetRefusesToGuessWhenAFileNamesNoDefault(t *testing.T) {
 		t.Fatalf("error = %v, want it to name the organisations to choose from", err)
 	}
 }
+
+func TestResolveOrgIDPicksTheDefaultAndRefusesAnUnknownName(t *testing.T) {
+	store := Open(filepath.Join(t.TempDir(), "credentials.yaml"))
+
+	// Nothing configured: this host distinguishes no organisations, so
+	// whatever a caller wrote stands.
+	if got, err := store.ResolveOrgID(ProviderJira, "whatever"); err != nil || got != "whatever" {
+		t.Fatalf("ResolveOrgID with nothing configured = (%q, %v), want it untouched", got, err)
+	}
+
+	for _, org := range []Org{
+		{ID: "gdncomm", Provider: ProviderJira, BaseURL: "https://gdncomm.atlassian.net", Token: "t1"},
+		{ID: "acme", Provider: ProviderJira, BaseURL: "https://acme.atlassian.net", Token: "t2"},
+	} {
+		if err := store.Put(org); err != nil {
+			t.Fatalf("seed %s: %v", org.ID, err)
+		}
+	}
+
+	// Blank resolves to the default, which is the first one configured.
+	if got, err := store.ResolveOrgID(ProviderJira, ""); err != nil || got != "gdncomm" {
+		t.Errorf("ResolveOrgID(\"\") = (%q, %v), want gdncomm", got, err)
+	}
+	// Spelling differences that are not real differences are folded, so
+	// they cannot become two deliveries for one issue.
+	if got, err := store.ResolveOrgID(ProviderJira, " ACME "); err != nil || got != "acme" {
+		t.Errorf("ResolveOrgID(\" ACME \") = (%q, %v), want acme", got, err)
+	}
+	// A name this host holds no credentials for is refused, and says what
+	// it does hold.
+	_, err := store.ResolveOrgID(ProviderJira, "gdn")
+	if err == nil {
+		t.Fatal("an organisation with no credentials should be refused, not silently accepted")
+	}
+	for _, want := range []string{"gdn", "gdncomm", "acme", "punakawan setup jira"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+}

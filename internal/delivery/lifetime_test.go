@@ -5,34 +5,70 @@ import (
 	"testing"
 )
 
-// TestJiraLifetimeIsOnePerIssueKeyRegardlessOfTenant pins the identity
-// rule a delivery's whole audit trail rests on: a Jira issue is one piece
-// of work. Resolving the same key through a differently-named adapter
-// instance used to open a second, parallel delivery, which then had its
-// own executions, sessions, worklogs and usage - none of it visible from
-// the first.
-func TestJiraLifetimeIsOnePerIssueKeyRegardlessOfTenant(t *testing.T) {
+// TestJiraLifetimeIsOnePerIssueKeyPerOrganisation pins the identity rule
+// a delivery's whole audit trail rests on: one Jira issue is one piece of
+// work. Two sites can issue the same key, so the organisation is part of
+// that identity - but an organisation is derived from the site URL rather
+// than typed, so it cannot be two spellings of the same place.
+func TestJiraLifetimeIsOnePerIssueKeyPerOrganisation(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	first, err := s.StartOrResolveExecution(ctx, "first", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "gdn", Key: "TRF-1"}, OrchestrationOptions{})
+	first, err := s.StartOrResolveExecution(ctx, "first", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "gdncomm", Key: "TRF-1"}, OrchestrationOptions{})
 	if err != nil {
 		t.Fatalf("StartOrResolveExecution: %v", err)
 	}
 
-	second, err := s.StartOrResolveExecution(ctx, "second", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "gdncomm", Key: "TRF-1"}, OrchestrationOptions{})
+	same, err := s.StartOrResolveExecution(ctx, "same", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "gdncomm", Key: "TRF-1"}, OrchestrationOptions{})
+	if err != nil {
+		t.Fatalf("StartOrResolveExecution: %v", err)
+	}
+	if same.Lifetime.ID != first.Lifetime.ID || same.CreatedLifetime || same.CreatedExecution {
+		t.Fatalf("re-starting the same issue at the same organisation created %+v, want the existing lifetime %s", same, first.Lifetime.ID)
+	}
+
+	// PAY-1 at one company is not PAY-1 at another, so the same key at a
+	// different organisation is different work.
+	other, err := s.StartOrResolveExecution(ctx, "other", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "acme", Key: "TRF-1"}, OrchestrationOptions{})
+	if err != nil {
+		t.Fatalf("StartOrResolveExecution: %v", err)
+	}
+	if other.Lifetime.ID == first.Lifetime.ID {
+		t.Fatal("a second organisation's identically-keyed issue collapsed into the first organisation's delivery")
+	}
+}
+
+// TestJiraLifetimeStartedWithoutAnOrganisationIsAdopted covers every
+// delivery that already exists: it was started before this host resolved
+// an organisation at all, and the first organisation to name it must
+// claim it rather than open a second delivery beside it.
+func TestJiraLifetimeStartedWithoutAnOrganisationIsAdopted(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	first, err := s.StartOrResolveExecution(ctx, "first", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Key: "TRF-3"}, OrchestrationOptions{})
 	if err != nil {
 		t.Fatalf("StartOrResolveExecution: %v", err)
 	}
 
-	if second.Lifetime.ID != first.Lifetime.ID {
-		t.Fatalf("a differently-named tenant opened lifetime %s for TRF-1, want the existing %s", second.Lifetime.ID, first.Lifetime.ID)
+	adopted, err := s.StartOrResolveExecution(ctx, "adopt", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "gdncomm", Key: "TRF-3"}, OrchestrationOptions{})
+	if err != nil {
+		t.Fatalf("StartOrResolveExecution: %v", err)
 	}
-	if second.Execution.OrchestrationID != first.Execution.OrchestrationID {
-		t.Fatalf("second call resolved to orchestration %s, want %s", second.Execution.OrchestrationID, first.Execution.OrchestrationID)
+	if adopted.Lifetime.ID != first.Lifetime.ID {
+		t.Fatalf("an organisation-less lifetime was duplicated as %s instead of adopted from %s", adopted.Lifetime.ID, first.Lifetime.ID)
 	}
-	if second.CreatedLifetime || second.CreatedExecution {
-		t.Fatalf("second call reported CreatedLifetime=%v CreatedExecution=%v, want it to have created nothing", second.CreatedLifetime, second.CreatedExecution)
+	if adopted.Lifetime.SourceTenant != "gdncomm" {
+		t.Errorf("adopted lifetime tenant = %q, want gdncomm", adopted.Lifetime.SourceTenant)
+	}
+	// Adopted once, it is that organisation's - a different one is now
+	// different work.
+	other, err := s.StartOrResolveExecution(ctx, "other", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "acme", Key: "TRF-3"}, OrchestrationOptions{})
+	if err != nil {
+		t.Fatalf("StartOrResolveExecution: %v", err)
+	}
+	if other.Lifetime.ID == first.Lifetime.ID {
+		t.Fatal("a second organisation reused the already-adopted lifetime")
 	}
 }
 

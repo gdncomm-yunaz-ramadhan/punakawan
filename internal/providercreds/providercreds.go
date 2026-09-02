@@ -443,3 +443,38 @@ func (s *Store) AdapterOrgEnv() adapters.OrgEnvResolver {
 		return nil, fmt.Errorf("%w: %s organisation %q; run `punakawan setup %s` to configure it", ErrNotFound, provider, org, provider)
 	}
 }
+
+// ResolveOrgID turns a caller-supplied organisation name into the exact
+// one this host holds credentials for. A blank name resolves to the
+// provider's default; a name that matches nothing configured is an error
+// naming what is.
+//
+// A host with no organisations configured for the provider is still
+// running on the flat environment values and distinguishes none, so the
+// name is returned untouched.
+func (s *Store) ResolveOrgID(provider Provider, name string) (string, error) {
+	configured, err := s.ListFor(provider)
+	if err != nil {
+		return "", err
+	}
+	if len(configured) == 0 {
+		return strings.TrimSpace(name), nil
+	}
+
+	wanted := NormalizeOrgID(name)
+	if wanted == "" {
+		for _, org := range configured {
+			if org.Default {
+				return org.ID, nil
+			}
+		}
+		return "", fmt.Errorf("name which %s organisation this work belongs to: %s", provider, strings.Join(orgIDs(configured), ", "))
+	}
+	for _, org := range configured {
+		if org.ID == wanted {
+			return org.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no %s credentials are configured for organisation %q; configured: %s (add one with `punakawan setup %s`)",
+		provider, wanted, strings.Join(orgIDs(configured), ", "), provider)
+}

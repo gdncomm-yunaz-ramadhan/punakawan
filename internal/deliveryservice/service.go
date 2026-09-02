@@ -35,6 +35,27 @@ type Service struct {
 	// caller with no agent registry configured keeps behaving exactly as
 	// it did before RoleVersion existed.
 	agents agent.AgentRegistry
+	// orgs is nil unless WithJiraOrgResolver is passed to New, in which
+	// case a Jira source's tenant is taken at face value - which is what
+	// a host that distinguishes no organisations wants.
+	orgs JiraOrgResolver
+}
+
+// JiraOrgResolver turns whatever a caller wrote in source.tenant into the
+// organisation this host actually knows by that name: blank resolves to
+// the default, a name resolves to its canonical spelling, and a name this
+// host has no credentials for is an error naming the ones it does.
+//
+// Putting the tenant through this before it reaches delivery identity is
+// what keeps "gdn" and "gdncomm" from becoming two deliveries for one
+// issue, while still letting two genuinely different sites hold the same
+// issue key.
+type JiraOrgResolver func(org string) (string, error)
+
+// WithJiraOrgResolver wires the organisation resolution StartOrResolve
+// applies to a Jira source before anything is written.
+func WithJiraOrgResolver(resolve JiraOrgResolver) Option {
+	return func(s *Service) { s.orgs = resolve }
 }
 
 // Option configures optional Service dependencies. Every existing New
@@ -83,7 +104,23 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 			MissingFields: []string{"source"},
 		}, nil
 	}
-	normalized, needsInput, err := NormalizeSource(*req.Source)
+	source := *req.Source
+	if source.Kind == SourceJira && s.orgs != nil {
+		org, err := s.orgs(source.Tenant)
+		if err != nil {
+			// A tenant this host holds no credentials for is the caller's
+			// to correct, not a server fault: answering with the question
+			// lets the agent retry with a name that exists instead of
+			// opening a delivery that could never write anything back.
+			return StartResult{}, &protocol.NeedUserInput{
+				Kind:          protocol.NeedUserInputKindMissingContext,
+				Question:      err.Error(),
+				MissingFields: []string{"source.tenant"},
+			}, nil
+		}
+		source.Tenant = org
+	}
+	normalized, needsInput, err := NormalizeSource(source)
 	if err != nil {
 		return StartResult{}, nil, err
 	}

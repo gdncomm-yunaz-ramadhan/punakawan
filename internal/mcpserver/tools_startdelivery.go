@@ -24,6 +24,8 @@ import (
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryservice"
 	"github.com/ygrip/punakawan/internal/jirahooks"
+	"github.com/ygrip/punakawan/internal/providercreds"
+	"github.com/ygrip/punakawan/internal/workspace"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -32,7 +34,7 @@ import (
 // lifetime reuse/continuation rules live in internal/deliveryservice.
 type StartDeliverySource struct {
 	Kind   string `json:"kind" jsonschema:"jira | adhoc"`
-	Tenant string `json:"tenant,omitempty" jsonschema:"required when kind is jira: a stable identity for the connected Jira adapter instance"`
+	Tenant string `json:"tenant,omitempty" jsonschema:"the Jira organisation this issue belongs to, as named by punakawan setup jira --list; omit it to use the default organisation"`
 	Key    string `json:"key,omitempty" jsonschema:"required when kind is jira: the exact issue key, e.g. ABC-123"`
 }
 
@@ -186,6 +188,7 @@ func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context
 			deliveryservice.WithTelemetryStore(ts),
 			deliveryservice.WithAgentRegistry(agentReg),
 			deliveryservice.WithJiraHydrator(jirahooks.NewLifecycle(store, a.AdapterRegistry, outboxStore)),
+			jiraOrgResolver(),
 		)
 
 		key := in.IdempotencyKey
@@ -496,4 +499,20 @@ func completeDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		}
 		return nil, DeliveryViewOutput{View: *view}, nil
 	}
+}
+
+// jiraOrgResolver resolves a Jira source's organisation against the
+// credentials this host actually holds, so the name that reaches delivery
+// identity is one exact configured organisation rather than whatever an
+// agent happened to type. A host with no organisations configured
+// resolves nothing and behaves exactly as it did before.
+func jiraOrgResolver() deliveryservice.Option {
+	credsPath, err := workspace.GlobalCredentialsPath()
+	if err != nil {
+		return func(*deliveryservice.Service) {}
+	}
+	store := providercreds.Open(credsPath)
+	return deliveryservice.WithJiraOrgResolver(func(org string) (string, error) {
+		return store.ResolveOrgID(providercreds.ProviderJira, org)
+	})
 }
