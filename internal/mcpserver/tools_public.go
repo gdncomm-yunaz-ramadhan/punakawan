@@ -20,7 +20,7 @@ func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex, agentRe
 	addTool(server, reg, &mcp.Tool{Name: "list_adapter_operations", Description: "List live adapter operations and input schemas.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, listAdapterOperationsHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "call_adapter_operation", Description: "Invoke one declared adapter operation; use its discovered input schema."}, callAdapterOperationHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "upsert_project", Description: "Create or update a project's repository configuration. Also call this (same slug and repository_url, plus a metadata field) whenever you learn a static configuration fact about a registered project's repository - package manager, layout, naming convention, test framework, linters, formatters - so it survives this session; metadata merges field-by-field, it never overwrites what's already recorded."}, upsertProjectHandler(a))
-	addTool(server, reg, &mcp.Tool{Name: "list_projects", Description: "List registered projects and concise repository metadata.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, listProjectsHandler(a))
+	addTool(server, reg, &mcp.Tool{Name: "list_projects", Description: "Find registered projects without dumping the registry. For normal work, run `git remote get-url origin` and pass it as repository_url. For deliberate multi-project work, pass explicit slugs or a bounded query. One selector is required.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, listProjectsHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "save_workflow", Description: "Create or update a reusable workflow definition."}, saveWorkflowDefinitionHandler(a, reg))
 	addTool(server, reg, &mcp.Tool{Name: "get_workflow", Description: "Read one reusable workflow definition.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, getWorkflowHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "list_workflows", Description: "List reusable workflow definitions.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, listWorkflowsHandler(a))
@@ -89,17 +89,90 @@ func upsertProjectHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 	}
 }
 
+const (
+	defaultProjectSearchLimit = 10
+	maxProjectSearchLimit     = 50
+	maxProjectSlugSelection   = 50
+)
+
+type ListProjectsInput struct {
+	// RepositoryURL is the current checkout's Git origin. It has exact,
+	// normalized matching semantics and returns zero or one project.
+	RepositoryURL string `json:"repository_url,omitempty"`
+	// Slugs deliberately selects one or more known projects for a
+	// cross-project delivery.
+	Slugs []string `json:"slugs,omitempty"`
+	// Query performs a bounded case-insensitive contains search over slug
+	// and repository URL when the caller does not know an exact slug.
+	Query string `json:"query,omitempty"`
+	// Limit applies only to Query; zero uses defaultProjectSearchLimit.
+	Limit int `json:"limit,omitempty"`
+}
+
 type ListProjectsOutput struct {
 	Projects []protocol.DeliveryProject `json:"projects"`
 }
 
-func listProjectsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, ListProjectsOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ListProjectsOutput, error) {
+func listProjectsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ListProjectsInput) (*mcp.CallToolResult, ListProjectsOutput, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in ListProjectsInput) (*mcp.CallToolResult, ListProjectsOutput, error) {
+		in.RepositoryURL = strings.TrimSpace(in.RepositoryURL)
+		in.Query = strings.TrimSpace(in.Query)
+		slugs := make([]string, 0, len(in.Slugs))
+		seenSlugs := make(map[string]struct{}, len(in.Slugs))
+		for _, slug := range in.Slugs {
+			slug = strings.TrimSpace(slug)
+			if slug == "" {
+				return nil, ListProjectsOutput{}, fmt.Errorf("mcpserver: list_projects: slugs cannot contain an empty value")
+			}
+			if _, seen := seenSlugs[slug]; seen {
+				continue
+			}
+			seenSlugs[slug] = struct{}{}
+			slugs = append(slugs, slug)
+		}
+		selectors := 0
+		if in.RepositoryURL != "" {
+			selectors++
+		}
+		if len(slugs) > 0 {
+			selectors++
+		}
+		if in.Query != "" {
+			selectors++
+		}
+		if selectors != 1 {
+			return nil, ListProjectsOutput{}, fmt.Errorf("mcpserver: list_projects: supply exactly one of repository_url, slugs, or query")
+		}
+		if len(slugs) > maxProjectSlugSelection {
+			return nil, ListProjectsOutput{}, fmt.Errorf("mcpserver: list_projects: at most %d slugs are allowed", maxProjectSlugSelection)
+		}
+		if in.Query == "" && in.Limit != 0 {
+			return nil, ListProjectsOutput{}, fmt.Errorf("mcpserver: list_projects: limit is only valid with query")
+		}
+
 		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, ListProjectsOutput{}, err
 		}
-		projects, err := store.ListProjects(ctx)
+		var projects []protocol.DeliveryProject
+		switch {
+		case in.RepositoryURL != "":
+			projects, err = store.FindProjectsByRepositoryURL(ctx, in.RepositoryURL)
+			if err == nil && len(projects) > 1 {
+				return nil, ListProjectsOutput{}, fmt.Errorf("mcpserver: list_projects: repository identity is ambiguous; use slugs")
+			}
+		case len(slugs) > 0:
+			projects, err = store.FindProjectsBySlugs(ctx, slugs)
+		default:
+			limit := in.Limit
+			if limit == 0 {
+				limit = defaultProjectSearchLimit
+			}
+			if limit < 1 || limit > maxProjectSearchLimit {
+				return nil, ListProjectsOutput{}, fmt.Errorf("mcpserver: list_projects: query limit must be between 1 and %d", maxProjectSearchLimit)
+			}
+			projects, err = store.SearchProjects(ctx, in.Query, limit)
+		}
 		if err != nil {
 			return nil, ListProjectsOutput{}, fmt.Errorf("mcpserver: list_projects: %w", err)
 		}

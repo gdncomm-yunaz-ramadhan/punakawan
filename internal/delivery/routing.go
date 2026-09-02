@@ -24,9 +24,9 @@ type RouteEvidence struct {
 // or ok=false if evidence is empty or matches zero or more than one
 // active project.
 func Resolve(evidence RouteEvidence, projects []*protocol.DeliveryProject) (projectID string, ok bool) {
-	if evidence.RepositoryURL != "" {
+	if identity := RepositoryIdentity(evidence.RepositoryURL); identity != "" {
 		if id, unique := matchOne(projects, func(p *protocol.DeliveryProject) bool {
-			return p.RepositoryUrl == evidence.RepositoryURL
+			return RepositoryIdentity(p.RepositoryUrl) == identity
 		}); unique {
 			return id, true
 		}

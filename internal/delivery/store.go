@@ -92,8 +92,8 @@ func (s *Store) RegisterProject(ctx context.Context, idempotencyKey, id, slug, r
 	now := time.Now().UTC()
 	err := s.db.Write(ctx, idempotencyKey, "register project "+slug, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx,
-			`INSERT INTO delivery_projects (id, slug, repository_url, default_branch, status, registered_at, revision) VALUES (?, ?, ?, ?, 'active', ?, 0)`,
-			id, slug, repositoryURL, defaultBranch, now.Format(timeLayout),
+			`INSERT INTO delivery_projects (id, slug, repository_url, repository_identity, default_branch, status, registered_at, revision) VALUES (?, ?, ?, ?, ?, 'active', ?, 0)`,
+			id, slug, repositoryURL, RepositoryIdentity(repositoryURL), defaultBranch, now.Format(timeLayout),
 		)
 		return err
 	})
@@ -113,14 +113,15 @@ func (s *Store) UpsertProject(ctx context.Context, idempotencyKey, id, slug, rep
 	now := time.Now().UTC()
 	err := s.db.Write(ctx, idempotencyKey, "upsert project "+slug, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO delivery_projects (id, slug, repository_url, default_branch, status, registered_at, revision)
-			VALUES (?, ?, ?, ?, 'active', ?, 0)
+			INSERT INTO delivery_projects (id, slug, repository_url, repository_identity, default_branch, status, registered_at, revision)
+			VALUES (?, ?, ?, ?, ?, 'active', ?, 0)
 			ON CONFLICT(slug) DO UPDATE SET
 				repository_url = excluded.repository_url,
+				repository_identity = excluded.repository_identity,
 				default_branch = excluded.default_branch,
 				status = 'active',
 				revision = delivery_projects.revision + 1`,
-			id, slug, repositoryURL, defaultBranch, now.Format(timeLayout),
+			id, slug, repositoryURL, RepositoryIdentity(repositoryURL), defaultBranch, now.Format(timeLayout),
 		)
 		return err
 	})
@@ -193,12 +194,62 @@ func (s *Store) GetProjectBySlug(ctx context.Context, slug string) (*protocol.De
 	return scanProject(row, slug)
 }
 
-// ListProjects returns every registered project ordered by slug.
-func (s *Store) ListProjects(ctx context.Context) ([]protocol.DeliveryProject, error) {
-	rows, err := s.db.Reader().QueryContext(ctx,
-		`SELECT id, slug, repository_url, default_branch, status, registered_at, revision, metadata FROM delivery_projects ORDER BY slug`)
+// FindProjectsByRepositoryURL returns at most two projects matching a Git
+// remote. Two rows are enough for callers to distinguish the normal zero/one
+// result from an ambiguous normalized identity without reading the registry.
+func (s *Store) FindProjectsByRepositoryURL(ctx context.Context, repositoryURL string) ([]protocol.DeliveryProject, error) {
+	identity := RepositoryIdentity(repositoryURL)
+	if identity == "" {
+		return []protocol.DeliveryProject{}, nil
+	}
+	variants := repositoryURLVariants(repositoryURL)
+	args := make([]any, 0, len(variants)+1)
+	args = append(args, identity)
+	for _, variant := range variants {
+		args = append(args, variant)
+	}
+	return s.queryProjects(ctx, `
+		SELECT id, slug, repository_url, default_branch, status, registered_at, revision, metadata
+		FROM delivery_projects
+		WHERE repository_identity = ? OR repository_url IN (`+sqlPlaceholders(len(variants))+`)
+		ORDER BY slug
+		LIMIT 2`, args...)
+}
+
+// FindProjectsBySlugs returns explicitly selected projects ordered by slug.
+func (s *Store) FindProjectsBySlugs(ctx context.Context, slugs []string) ([]protocol.DeliveryProject, error) {
+	if len(slugs) == 0 {
+		return []protocol.DeliveryProject{}, nil
+	}
+	args := make([]any, len(slugs))
+	for i, slug := range slugs {
+		args[i] = slug
+	}
+	return s.queryProjects(ctx, `
+		SELECT id, slug, repository_url, default_branch, status, registered_at, revision, metadata
+		FROM delivery_projects
+		WHERE slug IN (`+sqlPlaceholders(len(slugs))+`)
+		ORDER BY slug`, args...)
+}
+
+// SearchProjects finds explicitly requested project names or repository URLs.
+// limit is supplied by the MCP boundary and therefore always positive and
+// bounded before it reaches this store.
+func (s *Store) SearchProjects(ctx context.Context, query string, limit int) ([]protocol.DeliveryProject, error) {
+	pattern := "%" + escapeLike(query) + "%"
+	return s.queryProjects(ctx, `
+		SELECT id, slug, repository_url, default_branch, status, registered_at, revision, metadata
+		FROM delivery_projects
+		WHERE slug LIKE ? ESCAPE '\' COLLATE NOCASE
+		   OR repository_url LIKE ? ESCAPE '\' COLLATE NOCASE
+		ORDER BY slug
+		LIMIT ?`, pattern, pattern, limit)
+}
+
+func (s *Store) queryProjects(ctx context.Context, query string, args ...any) ([]protocol.DeliveryProject, error) {
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("delivery: list projects: %w", err)
+		return nil, fmt.Errorf("delivery: query projects: %w", err)
 	}
 	defer rows.Close()
 	projects := make([]protocol.DeliveryProject, 0)
@@ -210,9 +261,19 @@ func (s *Store) ListProjects(ctx context.Context) ([]protocol.DeliveryProject, e
 		projects = append(projects, *project)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("delivery: list projects: %w", err)
+		return nil, fmt.Errorf("delivery: query projects: %w", err)
 	}
 	return projects, nil
+}
+
+func sqlPlaceholders(count int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", count), ",")
+}
+
+func escapeLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	return strings.ReplaceAll(value, `_`, `\_`)
 }
 
 // GetProject fails closed (ErrNotFound) for an unknown project id.

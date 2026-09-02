@@ -457,10 +457,9 @@ func emitPlanReminder(ctx context.Context, cwd string, marker *mcpserver.Session
 	fmt.Fprintln(stdout, string(encoded))
 }
 
-// resolveProjectIDFromGitRemote resolves cwd's git "origin" remote URL and
-// matches it against every registered project's repository_url, returning
-// the first match's id (or "" if there is no origin remote, or no
-// registered project matches it).
+// resolveProjectIDFromGitRemote resolves cwd's git "origin" remote URL with
+// the registry's indexed repository-identity lookup. Zero or ambiguous
+// matches remain a silent no-match because a hook must never guess a project.
 func resolveProjectIDFromGitRemote(ctx context.Context, cwd string, deliveryStore *delivery.Store) (string, error) {
 	if strings.TrimSpace(cwd) == "" {
 		return "", nil
@@ -469,41 +468,19 @@ func resolveProjectIDFromGitRemote(ctx context.Context, cwd string, deliveryStor
 	if err != nil {
 		return "", nil //nolint:nilerr // no origin remote (or not a git repo) is a normal, silent no-match, not a failure
 	}
-	remote := normalizeRepositoryURL(strings.TrimSpace(string(out)))
+	remote := strings.TrimSpace(string(out))
 	if remote == "" {
 		return "", nil
 	}
 
-	projects, err := deliveryStore.ListProjects(ctx)
+	projects, err := deliveryStore.FindProjectsByRepositoryURL(ctx, remote)
 	if err != nil {
 		return "", err
 	}
-	for _, proj := range projects {
-		if normalizeRepositoryURL(proj.RepositoryUrl) == remote {
-			return proj.Id, nil
-		}
+	if len(projects) != 1 {
+		return "", nil
 	}
-	return "", nil
-}
-
-// normalizeRepositoryURL reduces a git remote URL to a bare, lowercase
-// "host/path" form so "git@github.com:acme/widgets.git",
-// "https://github.com/acme/widgets.git", and "https://github.com/acme/widgets"
-// all compare equal.
-func normalizeRepositoryURL(s string) string {
-	s = strings.TrimSpace(strings.ToLower(s))
-	s = strings.TrimSuffix(s, ".git")
-	s = strings.TrimSuffix(s, "/")
-	if rest, ok := strings.CutPrefix(s, "git@"); ok {
-		s = strings.Replace(rest, ":", "/", 1)
-		return s
-	}
-	for _, prefix := range []string{"https://", "http://", "ssh://git@", "git://"} {
-		if rest, ok := strings.CutPrefix(s, prefix); ok {
-			return rest
-		}
-	}
-	return s
+	return projects[0].Id, nil
 }
 
 // staticConfigFileNames names every filename convention.Extract's own

@@ -22,6 +22,12 @@ func TestExactBindingRoutesDeterministicallyAmbiguousDoesNot(t *testing.T) {
 		t.Fatalf("exact repository match = (%q, %v), want (%q, true)", id, ok, a.Id)
 	}
 
+	a.RepositoryUrl = "https://github.com/acme/checkout-platform.git"
+	id, ok = Resolve(RouteEvidence{RepositoryURL: "git@github.com:acme/checkout-platform.git"}, projects)
+	if !ok || id != a.Id {
+		t.Fatalf("equivalent SSH repository match = (%q, %v), want (%q, true)", id, ok, a.Id)
+	}
+
 	id, ok = Resolve(RouteEvidence{Slug: "billing-platform"}, projects)
 	if !ok || id != b.Id {
 		t.Fatalf("exact slug match = (%q, %v), want (%q, true)", id, ok, b.Id)
