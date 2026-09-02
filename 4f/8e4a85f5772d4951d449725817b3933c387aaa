@@ -1,0 +1,23 @@
+.gitignore
+  0ce2e23a8fd2fe91 16,27-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "4f8e4a85f5772d4951d449725817b3933c387aaa",
+  "prompts": {
+    "0ce2e23a8fd2fe91": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ad81d9d-0693-4b69-a801-a3151a190035",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 14,
+      "overriden_lines": 0
+    }
+  }
+}
