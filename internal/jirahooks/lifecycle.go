@@ -114,7 +114,7 @@ func (l *Lifecycle) Hydrate(ctx context.Context, executionID, sessionID, idempot
 	if err != nil {
 		return nil, fmt.Errorf("jirahooks: get delivery lifecycle: %w", err)
 	}
-	gate, err := l.registry.Gate(ctx, "atlassian")
+	gate, err := l.registry.Gate(ctx, jiraAdapterID(lifecycle.Case.SourceTenant))
 	if err != nil {
 		return nil, fmt.Errorf("jirahooks: open atlassian adapter: %w", err)
 	}
@@ -184,6 +184,10 @@ func (l *Lifecycle) RetryWorkLogSync(ctx context.Context, orchestrationID, workl
 	if entry.SyncStatus == "synced" {
 		return entry, nil
 	}
+	org, err := l.store.JiraOrgForDelivery(ctx, orchestrationID)
+	if err != nil {
+		return nil, fmt.Errorf("jirahooks: resolve delivery organisation: %w", err)
+	}
 	payload, err := json.Marshal(map[string]any{
 		"time_spent_seconds": entry.DurationSeconds,
 		"comment":            entry.Summary,
@@ -193,7 +197,7 @@ func (l *Lifecycle) RetryWorkLogSync(ctx context.Context, orchestrationID, workl
 		return nil, fmt.Errorf("jirahooks: encode worklog payload: %w", err)
 	}
 	resolved, err := providerwrite.ExecuteNow(ctx, l.outbox, l.registry, "jira-worklog-retry", outbox.Intent{
-		OrchestrationID: orchestrationID, AdapterID: "atlassian", Operation: "atlassian.addWorklog",
+		OrchestrationID: orchestrationID, AdapterID: jiraAdapterID(org), Operation: "atlassian.addWorklog",
 		TargetKey: entry.JiraIssueKey, PayloadJSON: string(payload),
 		OperationFingerprint: providerwrite.JiraWorklogFingerprint(entry.ID),
 	})
@@ -218,4 +222,12 @@ func formatTransitionCatalog(transitions []adapters.JiraTransition) string {
 		fmt.Fprintf(&out, "\n- %s (%s) -> %s", transition.Name, transition.ID, transition.ToStatusName)
 	}
 	return out.String()
+}
+
+// jiraAdapterID names the adapter process that speaks for one Jira
+// organisation. A delivery whose case names no organisation keeps using
+// the bare "atlassian" adapter, which is the host's single configured
+// site.
+func jiraAdapterID(org string) string {
+	return adapters.QualifyAdapterID("atlassian", org)
 }

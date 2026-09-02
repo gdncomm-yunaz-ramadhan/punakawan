@@ -495,6 +495,34 @@ func (s *Store) GetProjectionRevision(ctx context.Context, orchestrationID strin
 	return revision, nil
 }
 
+// JiraOrgForDelivery returns the organisation whose Jira site this
+// delivery's case lives on, or "" for a delivery whose source names none
+// - which is every delivery on a host with a single configured site,
+// every non-Jira delivery, and every delivery with no lifetime at all.
+// A missing lifetime is not an error here: "this delivery belongs to no
+// organisation" is a complete answer, and the caller's next step (route
+// the write through the host's single adapter) is the same either way.
+//
+// It is the one read a caller needs to route a Jira write to the right
+// site, so it stays a single row rather than going through
+// GetDeliveryLifecycle, which loads every session, checkpoint, usage
+// entry, and snapshot the delivery has.
+func (s *Store) JiraOrgForDelivery(ctx context.Context, orchestrationID string) (string, error) {
+	var org string
+	err := s.db.Reader().QueryRowContext(ctx, `
+		SELECT c.source_tenant
+		FROM delivery_executions e
+		JOIN delivery_cases c ON c.id = e.case_id
+		WHERE e.orchestration_id = ?`, orchestrationID).Scan(&org)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return org, nil
+}
+
 func (s *Store) GetDeliveryLifecycle(ctx context.Context, orchestrationID string) (*DeliveryLifecycle, error) {
 	exec, err := s.executionForOrchestration(ctx, orchestrationID)
 	if err != nil {

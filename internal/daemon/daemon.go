@@ -12,6 +12,7 @@ import (
 	"github.com/ygrip/punakawan/internal/jirahooks"
 	"github.com/ygrip/punakawan/internal/outbox"
 	"github.com/ygrip/punakawan/internal/procreg"
+	"github.com/ygrip/punakawan/internal/providercreds"
 	"github.com/ygrip/punakawan/internal/providerwrite"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/workspace"
@@ -148,6 +149,13 @@ func Run(ctx context.Context, host, port string, paths Paths) (*Daemon, error) {
 		specs[id] = adapters.AdapterSpec{Command: cfg.Command, Args: cfg.Args, EnvPassthrough: cfg.EnvPassthrough}
 	}
 	registry := adapters.NewRegistry(specs)
+	// The outbox worker pool below routes every queued write by the
+	// intent's own AdapterID, so a write queued against one organisation
+	// must still find that organisation's credentials here - long after
+	// the process that queued it exited.
+	if credsPath, err := workspace.GlobalCredentialsPath(); err == nil {
+		registry.SetOrgEnvResolver(providercreds.Open(credsPath).AdapterOrgEnv())
+	}
 
 	outboxStore := outbox.New(db)
 	observer := jirahooks.NewWorklogSyncObserver(deliveryStore)

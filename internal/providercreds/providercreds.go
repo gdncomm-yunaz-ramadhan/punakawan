@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/adapters"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -62,24 +64,67 @@ func ParseProvider(s string) (Provider, error) {
 // Every organisation gets its own, because an adapter process carries its
 // credentials in its environment and so can only ever speak for one.
 func (p Provider) AdapterID(org string) string {
-	base := "atlassian"
+	return adapters.QualifyAdapterID(p.AdapterProgram(), org)
+}
+
+// AdapterProgram is the adapter a provider's work runs through, with no
+// organisation attached. The Jira provider's adapter is named for
+// Atlassian, which is the vendor rather than the product.
+func (p Provider) AdapterProgram() string {
 	if p == ProviderGitHub {
-		base = "github"
+		return "github"
 	}
-	if org == "" {
-		return base
+	return "atlassian"
+}
+
+// ProviderForAdapterProgram reverses AdapterProgram.
+func ProviderForAdapterProgram(program string) (Provider, error) {
+	return ParseProvider(program)
+}
+
+// Env returns the NAME=value entries that point one adapter process at
+// this organisation. These are handed to the adapter directly rather than
+// forwarded from the ambient environment, so two organisations' processes
+// hold two different credentials at the same time.
+func (o Org) Env() []string {
+	switch o.Provider {
+	case ProviderGitHub:
+		env := []string{"GITHUB_TOKEN=" + o.Token}
+		if api := o.gitHubAPIBaseURL(); api != "" {
+			env = append(env, "GITHUB_API_URL="+api)
+		}
+		return env
+	default:
+		env := []string{
+			"ATLASSIAN_HOST=" + o.Host(),
+			"ATLASSIAN_API_TOKEN=" + o.Token,
+		}
+		if o.Email != "" {
+			env = append(env, "ATLASSIAN_EMAIL="+o.Email)
+		}
+		if o.TokenScoped {
+			env = append(env, "ATLASSIAN_API_TOKEN_SCOPED=true")
+		}
+		return env
 	}
-	return base + ":" + org
+}
+
+// gitHubAPIBaseURL is api.github.com for github.com and /api/v3 on an
+// enterprise install, which is where those deployments put it. It returns
+// "" for github.com itself so the adapter keeps its own default.
+func (o Org) gitHubAPIBaseURL() string {
+	host := o.Host()
+	if host == "" || host == "github.com" || host == "www.github.com" {
+		return ""
+	}
+	return "https://" + host + "/api/v3"
 }
 
 // SplitAdapterID reverses AdapterID. An id with no organisation suffix is
 // reported with an empty org, which is what every adapter id looked like
 // before this package existed.
 func SplitAdapterID(id string) (base, org string) {
-	if i := strings.Index(id, ":"); i >= 0 {
-		return id[:i], id[i+1:]
-	}
-	return id, ""
+	return adapters.SplitAdapterID(id)
 }
 
 // Org is one organisation's credentials for one provider.
@@ -360,4 +405,41 @@ func orgIDs(orgs []Org) []string {
 // organisation typed two ways is the same organisation.
 func NormalizeOrgID(id string) string {
 	return strings.ToLower(strings.TrimSpace(id))
+}
+
+// AdapterOrgEnv resolves an org-qualified adapter id to that
+// organisation's credentials. Wiring it into an adapters.Registry is what
+// makes "atlassian:gdncomm" spawn a process holding gdncomm's token and
+// nothing else.
+func (s *Store) AdapterOrgEnv() adapters.OrgEnvResolver {
+	return func(program, org string) ([]string, error) {
+		provider, err := ParseProvider(program)
+		if err != nil {
+			return nil, err
+		}
+		configured, err := s.Get(provider, org)
+		if err == nil {
+			return configured.Env(), nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		// A host that has configured no organisations at all for this
+		// provider is a single-site host still running on the flat
+		// environment values, and its deliveries name an organisation only
+		// because their Jira source always did. Returning no override
+		// leaves that host working exactly as it did. Once even one
+		// organisation is configured, an unknown one is a real
+		// misconfiguration and must not fall back to whichever credential
+		// happens to be ambient - that would send one organisation's
+		// writes through another's token.
+		existing, listErr := s.ListFor(provider)
+		if listErr != nil {
+			return nil, listErr
+		}
+		if len(existing) == 0 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%w: %s organisation %q; run `punakawan setup %s` to configure it", ErrNotFound, provider, org, provider)
+	}
 }

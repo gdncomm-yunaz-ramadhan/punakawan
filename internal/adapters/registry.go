@@ -51,6 +51,26 @@ type Registry struct {
 	mu      sync.Mutex
 	clients map[string]*Client
 	gates   map[string]*Gate
+	orgEnv  OrgEnvResolver
+}
+
+// OrgEnvResolver supplies the NAME=value entries that point one adapter
+// process at one organisation. It is how the Registry stays ignorant of
+// where credentials are stored: the host wires a resolver, the Registry
+// only knows that an org-qualified id needs one.
+type OrgEnvResolver func(base, org string) ([]string, error)
+
+// SetOrgEnvResolver installs the resolver Gate consults for an
+// org-qualified adapter id that has no spec of its own. Without one, such
+// an id runs on the program's own spec - the host has no per-organisation
+// credentials to choose between, so there is nothing to get wrong. Once a
+// resolver is installed it decides, and an organisation it knows nothing
+// about is an error rather than a silent fall back onto whichever
+// credential happens to be ambient.
+func (r *Registry) SetOrgEnvResolver(resolve OrgEnvResolver) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.orgEnv = resolve
 }
 
 // NewRegistry constructs a Registry for the given adapter specs.
@@ -95,9 +115,9 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 		delete(r.clients, adapterID)
 	}
 
-	spec, ok := r.specs[adapterID]
-	if !ok {
-		return nil, fmt.Errorf("adapters: unknown adapter id %q", adapterID)
+	spec, program, err := r.resolveSpec(adapterID)
+	if err != nil {
+		return nil, err
 	}
 
 	env := append(buildEnv(spec.EnvPassthrough), spec.Env...)
@@ -112,7 +132,7 @@ func (r *Registry) Gate(ctx context.Context, adapterID string) (*Gate, error) {
 		return nil, fmt.Errorf("adapters: fetch capabilities for %q: %w", adapterID, err)
 	}
 
-	if err := validateManifest(adapterID, manifest, spec); err != nil {
+	if err := validateManifest(program, manifest, spec); err != nil {
 		_ = client.Kill()
 		return nil, fmt.Errorf("adapters: invalid manifest from %q: %w", adapterID, err)
 	}
@@ -232,4 +252,62 @@ func (r *Registry) Close(ctx context.Context) error {
 		}
 	}
 	return firstErr
+}
+
+// resolveSpec returns the spec to spawn adapterID with, along with the
+// adapter program it runs - which is the id without any organisation
+// suffix, and therefore the id its manifest declares.
+//
+// An explicitly configured spec always wins, so a host that wants one
+// organisation on a different command or a different build can still say
+// so. Otherwise an org-qualified id is served by its program's own spec
+// with that organisation's credentials appended: those entries come last,
+// so they override anything the same names inherited from this process's
+// ambient environment.
+func (r *Registry) resolveSpec(adapterID string) (AdapterSpec, string, error) {
+	if spec, ok := r.specs[adapterID]; ok {
+		program, _ := SplitAdapterID(adapterID)
+		return spec, program, nil
+	}
+	program, org := SplitAdapterID(adapterID)
+	if org == "" {
+		return AdapterSpec{}, "", fmt.Errorf("adapters: unknown adapter id %q", adapterID)
+	}
+	spec, ok := r.specs[program]
+	if !ok {
+		return AdapterSpec{}, "", fmt.Errorf("adapters: unknown adapter id %q (no %q adapter is configured)", adapterID, program)
+	}
+	if r.orgEnv == nil {
+		// No per-organisation credentials exist on this host, so the
+		// program's own spec carries the only ones there are.
+		return spec, program, nil
+	}
+	env, err := r.orgEnv(program, org)
+	if err != nil {
+		return AdapterSpec{}, "", fmt.Errorf("adapters: credentials for %q: %w", adapterID, err)
+	}
+	if len(env) == 0 {
+		// The resolver knows of no organisations for this program, so the
+		// host is single-site and its spec already carries the only
+		// credentials there are.
+		return spec, program, nil
+	}
+	spec.Env = append(append([]string{}, spec.Env...), env...)
+	// Every injected name is also declared as passthrough so a manifest
+	// that names one of them as a required secret still validates: the
+	// host is supplying it, which is a stronger authorization than
+	// forwarding whatever the ambient environment happened to hold.
+	spec.EnvPassthrough = append(append([]string{}, spec.EnvPassthrough...), envNames(env)...)
+	return spec, program, nil
+}
+
+// envNames extracts the variable names from NAME=value entries.
+func envNames(env []string) []string {
+	names := make([]string, 0, len(env))
+	for _, entry := range env {
+		if name, _, ok := strings.Cut(entry, "="); ok {
+			names = append(names, name)
+		}
+	}
+	return names
 }

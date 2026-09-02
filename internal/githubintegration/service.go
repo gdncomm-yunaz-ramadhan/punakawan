@@ -17,9 +17,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/outbox"
+	"github.com/ygrip/punakawan/internal/providercreds"
 	"github.com/ygrip/punakawan/internal/providerwrite"
 )
 
@@ -72,7 +74,7 @@ func (e *ErrReviewProposalStale) Error() string {
 // know whether it saw the full picture should check that field rather
 // than assume it.
 func (s *Service) HydratePullRequest(ctx context.Context, runID, repository string, pullRequestNumber int) (map[string]any, error) {
-	gate, err := s.registry.Gate(ctx, "github")
+	gate, err := s.registry.Gate(ctx, gitHubAdapterID(repository))
 	if err != nil {
 		return nil, fmt.Errorf("githubintegration: open github adapter: %w", err)
 	}
@@ -146,7 +148,7 @@ func pageComplete(result map[string]any) bool {
 // current head SHA, the one read SubmitReview needs to detect a stale
 // proposal without paying for a full HydratePullRequest.
 func (s *Service) currentHeadSHA(ctx context.Context, runID, repository string, pullRequestNumber int) (string, error) {
-	gate, err := s.registry.Gate(ctx, "github")
+	gate, err := s.registry.Gate(ctx, gitHubAdapterID(repository))
 	if err != nil {
 		return "", fmt.Errorf("githubintegration: open github adapter: %w", err)
 	}
@@ -193,7 +195,7 @@ func (s *Service) CreatePullRequest(ctx context.Context, req CreatePullRequestRe
 		return 0, "", fmt.Errorf("githubintegration: encode github.createPullRequest payload for %s: %w", req.Repository, err)
 	}
 	resolved, err := providerwrite.ExecuteNow(ctx, s.outbox, s.registry, req.RunID, outbox.Intent{
-		AdapterID: "github", Operation: "github.createPullRequest", TargetKey: req.Repository,
+		AdapterID: gitHubAdapterID(req.Repository), Operation: "github.createPullRequest", TargetKey: req.Repository,
 		PayloadJSON:          string(payload),
 		OperationFingerprint: providerwrite.GitHubCreatePRFingerprint(req.Repository, req.HeadBranch, req.BaseBranch),
 	})
@@ -270,7 +272,7 @@ func (s *Service) SubmitReview(ctx context.Context, req SubmitReviewRequest) (ex
 		return "", fmt.Errorf("githubintegration: encode github pull request review payload: %w", err)
 	}
 	resolved, err := providerwrite.ExecuteNow(ctx, s.outbox, s.registry, req.RunID, outbox.Intent{
-		AdapterID: "github", Operation: "github.createPullRequestReview", TargetKey: req.Repository,
+		AdapterID: gitHubAdapterID(req.Repository), Operation: "github.createPullRequestReview", TargetKey: req.Repository,
 		PayloadJSON:          string(payload),
 		OperationFingerprint: providerwrite.GitHubReviewFingerprint(req.Repository, req.PullRequestNumber, req.HeadSHA, req.ReviewID),
 	})
@@ -288,4 +290,17 @@ func (s *Service) SubmitReview(ctx context.Context, req SubmitReviewRequest) (ex
 		return "", fmt.Errorf("githubintegration: github pull request review did not succeed: %s", reason)
 	}
 	return resolved.ExternalID, nil
+}
+
+// gitHubAdapterID names the adapter process that speaks for the
+// organisation a repository belongs to. A repository is always written
+// "owner/repo", so the owner is the organisation and no separate lookup
+// is needed. A repository given without an owner keeps using the bare
+// "github" adapter.
+func gitHubAdapterID(repository string) string {
+	owner, _, found := strings.Cut(strings.TrimSpace(repository), "/")
+	if !found {
+		return "github"
+	}
+	return adapters.QualifyAdapterID("github", providercreds.NormalizeOrgID(owner))
 }

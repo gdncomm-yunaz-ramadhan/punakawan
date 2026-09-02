@@ -127,6 +127,10 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 		return nil
 	}
 
+	org, err := h.store.JiraOrgForDelivery(ctx, event.DeliveryID)
+	if err != nil {
+		return fmt.Errorf("jirahooks: resolve organisation for delivery %s: %w", event.DeliveryID, err)
+	}
 	payload, err := json.Marshal(map[string]any{"comment_body": buildComment(event)})
 	if err != nil {
 		return fmt.Errorf("jirahooks: encode comment payload: %w", err)
@@ -141,7 +145,7 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 		eventKey += ":" + event.EntityID
 	}
 	if _, err := h.outbox.Enqueue(ctx, outbox.Intent{
-		OrchestrationID: event.DeliveryID, AdapterID: "atlassian", Operation: "atlassian.addJiraComment",
+		OrchestrationID: event.DeliveryID, AdapterID: jiraAdapterID(org), Operation: "atlassian.addJiraComment",
 		TargetKey: issueKey, PayloadJSON: string(payload),
 		OperationFingerprint: providerwrite.JiraCommentFingerprint(event.DeliveryID, eventKey, issueKey),
 	}); err != nil {

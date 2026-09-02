@@ -23,7 +23,7 @@ func (l *Lifecycle) ResolveStoryPointsField(ctx context.Context, executionID, id
 	if err != nil {
 		return nil, fmt.Errorf("jirahooks: get delivery lifecycle: %w", err)
 	}
-	gate, err := l.registry.Gate(ctx, "atlassian")
+	gate, err := l.registry.Gate(ctx, jiraAdapterID(lifecycle.Case.SourceTenant))
 	if err != nil {
 		return nil, fmt.Errorf("jirahooks: open atlassian adapter: %w", err)
 	}

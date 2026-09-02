@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/telemetry"
@@ -696,10 +697,15 @@ func transitionStatuses(w ProviderWrite) (from, to string) {
 	return payload.FromStatus, payload.ToStatus
 }
 
-func writeHealth(writes []ProviderWrite, adapter string) WriteHealth {
+// writeHealth rolls up every queued write for one adapter program. It
+// matches on the program rather than the exact adapter id so a delivery
+// routed through an organisation-qualified adapter ("atlassian:gdncomm")
+// still counts toward that provider's health, rather than silently
+// reporting zero writes.
+func writeHealth(writes []ProviderWrite, program string) WriteHealth {
 	var h WriteHealth
 	for _, w := range writes {
-		if w.Adapter != adapter {
+		if base, _ := adapters.SplitAdapterID(w.Adapter); base != program {
 			continue
 		}
 		switch w.Status {

@@ -22,6 +22,7 @@ import (
 	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/planexec"
 	"github.com/ygrip/punakawan/internal/policy"
+	"github.com/ygrip/punakawan/internal/providercreds"
 	"github.com/ygrip/punakawan/internal/prreview"
 	"github.com/ygrip/punakawan/internal/roleconfig"
 	"github.com/ygrip/punakawan/internal/storage"
@@ -200,6 +201,13 @@ func load(ws *workspace.Workspace) (*App, error) {
 	}
 
 	registry := adapters.NewRegistry(specs)
+	// An org-qualified adapter id ("atlassian:gdncomm") has no spec of its
+	// own; it is served by its program's spec plus that organisation's
+	// credentials, read here rather than inherited from this process's
+	// environment - which holds at most one organisation's.
+	if credsPath, err := workspace.GlobalCredentialsPath(); err == nil {
+		registry.SetOrgEnvResolver(providercreds.Open(credsPath).AdapterOrgEnv())
+	}
 	a.AdapterRegistry = registry
 	a.Worktrees = gitops.NewWorktreeManager(sup, pol)
 

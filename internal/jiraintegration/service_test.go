@@ -63,9 +63,15 @@ func testManifest() protocol.AdapterManifest {
 	}
 }
 
-type fakeGateResolver struct{ gate *adapters.Gate }
+type fakeGateResolver struct {
+	gate *adapters.Gate
+	// asked records every adapter id resolved, so a test can assert which
+	// organisation a write was routed to.
+	asked []string
+}
 
-func (f fakeGateResolver) Gate(ctx context.Context, adapterID string) (*adapters.Gate, error) {
+func (f *fakeGateResolver) Gate(ctx context.Context, adapterID string) (*adapters.Gate, error) {
+	f.asked = append(f.asked, adapterID)
 	return f.gate, nil
 }
 
@@ -83,7 +89,7 @@ func newTestService(t *testing.T, cfg *jiraworkflow.Config) (svc *Service, store
 	gate := adapters.NewGate("atlassian", testManifest(), fc)
 	store = delivery.NewStore(db)
 	ob = outbox.New(db)
-	svc = NewService(store, fakeGateResolver{gate: gate}, ob, cfg)
+	svc = NewService(store, &fakeGateResolver{gate: gate}, ob, cfg)
 	return svc, store, ob, fc
 }
 
@@ -504,5 +510,39 @@ func TestReconcileIntent_UnregisteredOperationIsUnknown(t *testing.T) {
 	}
 	if result.State != providerwrite.ReconcileUnknown {
 		t.Fatalf("state = %v, want ReconcileUnknown for an operation with no registered reconciler", result.State)
+	}
+}
+
+// TestWritesRouteToTheOrganisationTheDeliveryBelongsTo is the whole point
+// of per-organisation adapter ids: two Jira sites are two credentials, so
+// a write for one must never be handed to the process holding the
+// other's token.
+func TestWritesRouteToTheOrganisationTheDeliveryBelongsTo(t *testing.T) {
+	cfg := &jiraworkflow.Config{AutoLog: true, CommentEvents: []string{"delivery.started"}}
+	svc, store, ob, _ := newTestService(t, cfg)
+	ctx := context.Background()
+
+	resolved, err := store.StartOrResolveExecution(ctx, "start-1", delivery.SourceIdentity{
+		Kind: delivery.SourceKindJira, Provider: "jira", Tenant: "gdncomm", Key: "PAY-1",
+	}, delivery.OrchestrationOptions{})
+	if err != nil {
+		t.Fatalf("StartOrResolveExecution: %v", err)
+	}
+	deliveryID := resolved.Execution.OrchestrationID
+	captureJiraRequirement(t, store, deliveryID, "PAY-1")
+
+	if err := svc.OnDeliveryStarted(ctx, deliveryID); err != nil {
+		t.Fatalf("OnDeliveryStarted: %v", err)
+	}
+	drainOutbox(t, ob, svc.registry)
+
+	asked := svc.registry.(*fakeGateResolver).asked
+	if len(asked) == 0 {
+		t.Fatal("expected the queued Jira write to resolve an adapter")
+	}
+	for _, adapterID := range asked {
+		if adapterID != "atlassian:gdncomm" {
+			t.Errorf("write routed to %q, want atlassian:gdncomm", adapterID)
+		}
 	}
 }

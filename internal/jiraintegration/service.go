@@ -174,8 +174,12 @@ func (s *Service) OnWorkRecorded(ctx context.Context, worklogID string) error {
 	if err != nil {
 		return fmt.Errorf("jiraintegration: encode worklog payload: %w", err)
 	}
+	adapterID, err := s.adapterIDFor(ctx, entry.OrchestrationID)
+	if err != nil {
+		return err
+	}
 	if _, err := s.outbox.Enqueue(ctx, outbox.Intent{
-		OrchestrationID: entry.OrchestrationID, AdapterID: "atlassian", Operation: "atlassian.addWorklog",
+		OrchestrationID: entry.OrchestrationID, AdapterID: adapterID, Operation: "atlassian.addWorklog",
 		TargetKey: entry.JiraIssueKey, PayloadJSON: string(payload),
 		OperationFingerprint: providerwrite.JiraWorklogFingerprint(entry.ID),
 	}); err != nil {
@@ -241,8 +245,12 @@ func (s *Service) enqueueComment(ctx context.Context, deliveryID, issueKey, labe
 	if err != nil {
 		return fmt.Errorf("encode comment payload: %w", err)
 	}
+	adapterID, err := s.adapterIDFor(ctx, deliveryID)
+	if err != nil {
+		return err
+	}
 	if _, err := s.outbox.Enqueue(ctx, outbox.Intent{
-		OrchestrationID: deliveryID, AdapterID: "atlassian", Operation: "atlassian.addJiraComment",
+		OrchestrationID: deliveryID, AdapterID: adapterID, Operation: "atlassian.addJiraComment",
 		TargetKey: issueKey, PayloadJSON: string(payload),
 		OperationFingerprint: providerwrite.JiraCommentFingerprint(deliveryID, eventFingerprintKey, issueKey),
 	}); err != nil {
@@ -274,9 +282,13 @@ func buildComment(label string, orch *protocol.DeliveryOrchestration) string {
 // ErrTransitionNotConfigured; more than one match returns
 // *ErrTransitionAmbiguous.
 func (s *Service) enqueueTransition(ctx context.Context, deliveryID, issueKey, targetStatus string) error {
-	gate, err := s.registry.Gate(ctx, "atlassian")
+	adapterID, err := s.adapterIDFor(ctx, deliveryID)
 	if err != nil {
-		return fmt.Errorf("open atlassian adapter: %w", err)
+		return err
+	}
+	gate, err := s.registry.Gate(ctx, adapterID)
+	if err != nil {
+		return fmt.Errorf("open %s adapter: %w", adapterID, err)
 	}
 	fromStatus, err := currentJiraStatus(ctx, gate, deliveryID, issueKey)
 	if err != nil {
@@ -315,7 +327,7 @@ func (s *Service) enqueueTransition(ctx context.Context, deliveryID, issueKey, t
 		return fmt.Errorf("encode transition payload: %w", err)
 	}
 	if _, err := s.outbox.Enqueue(ctx, outbox.Intent{
-		OrchestrationID: deliveryID, AdapterID: "atlassian", Operation: "atlassian.transitionJiraIssue",
+		OrchestrationID: deliveryID, AdapterID: adapterID, Operation: "atlassian.transitionJiraIssue",
 		TargetKey: issueKey, PayloadJSON: string(payload),
 		OperationFingerprint: providerwrite.JiraTransitionFingerprint(deliveryID, issueKey, fromStatus, targetStatus),
 	}); err != nil {
@@ -339,4 +351,17 @@ func currentJiraStatus(ctx context.Context, gate *adapters.Gate, runID, issueKey
 		return "", fmt.Errorf("decode jira issue %s: %w", issueKey, err)
 	}
 	return result.Normalized.Status, nil
+}
+
+// adapterIDFor names the adapter process that speaks for the Jira
+// organisation this delivery's case lives on. It is resolved per write
+// rather than once at construction because one Service handles deliveries
+// across every configured organisation, and a write queued for one must
+// never execute against another.
+func (s *Service) adapterIDFor(ctx context.Context, deliveryID string) (string, error) {
+	org, err := s.store.JiraOrgForDelivery(ctx, deliveryID)
+	if err != nil {
+		return "", fmt.Errorf("resolve organisation for delivery %s: %w", deliveryID, err)
+	}
+	return adapters.QualifyAdapterID("atlassian", org), nil
 }
