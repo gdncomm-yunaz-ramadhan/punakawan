@@ -134,6 +134,15 @@ func TestResolveOrPromptReturnsEmptyWhenNothingAvailableAndNotInteractive(t *tes
 // command's whole design depends on. persistEnvValues' own round-trip
 // tests above cover the on-success persistence path.
 func TestSetupAtlassianCredentialsNeverLeaksTheTokenOnAFailedValidation(t *testing.T) {
+	// resolveOrPrompt reads this process's own environment before
+	// anything the caller passes, so on a machine that actually has
+	// Atlassian credentials exported this test would otherwise validate
+	// those real credentials against the real site - succeeding, and
+	// never exercising the failure path it exists to cover.
+	for _, name := range []string{"ATLASSIAN_HOST", "ATLASSIAN_API_TOKEN", "ATLASSIAN_EMAIL"} {
+		t.Setenv(name, "")
+	}
+
 	const secretToken = "sekret-should-never-be-printed"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/rest/api/3/myself" {
