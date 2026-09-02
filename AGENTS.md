@@ -94,3 +94,21 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+<!-- punakawan:begin -->
+## Punakawan delivery tracking
+
+Work in this repository is tracked as a Punakawan delivery. Do not track it
+by hand in Jira comments.
+
+- `plan_get` before planning, `plan_save` once a plan exists or changes.
+- `start_delivery` with the Jira source, a `projects` array naming this
+  repository and the tasks to open in it, and a `session`. Without projects
+  the delivery has no lanes and cannot run; without a session nothing
+  measures its tokens, cost, or tool calls. Call it again for the same
+  issue when more work turns up - it adds to that delivery rather than
+  starting another.
+- `map_delivery_work_item` for each lane, then `log_delivery_work` with the
+  lane id when that task's work is done.
+- `get_delivery` shows the current state and the ids the calls above need.
+<!-- punakawan:end -->
