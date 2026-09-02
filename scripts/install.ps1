@@ -505,27 +505,26 @@ Configure-McpClients -PunakawanPath $punakawan -EnvironmentPath $globalEnvironme
 
 Write-Host @"
 
-==> Installed.
+Punakawan is installed.
 
-Binary directory:   $InstallDir
-Global adapters:    $globalConfig
-Generic MCP config: $ConfigDir\mcp-config.json
-
-Next: connect your accounts. Each command asks for the site URL, works out
-the organisation from it, asks for a token, and checks the pair against the
-live site before saving anything.
+Next: connect your accounts. Each command asks for your site address, works
+out which organisation it is, asks for an access token, and checks the two
+against the live site before saving anything.
 
   punakawan setup jira        # e.g. https://your-team.atlassian.net
   punakawan setup github      # e.g. https://github.com/your-org
 
-Run either one again for a second organisation; both are kept, and delivery
-work names which one it belongs to. See what is configured with
-``punakawan setup jira --list``.
+Run either again to add a second organisation - both are kept.
 
 Then:
 
-  punakawan doctor            # check every credential and adapter end to end
-  punakawan panel             # dashboard, in the background; prints its address
-  punakawan panel logs        # what the panel has printed
-  punakawan mcp serve         # MCP over stdio, for a client you configure by hand
+  punakawan doctor            # check everything is connected
+  punakawan panel             # open the dashboard in your browser
+  punakawan panel logs        # see what the dashboard is doing
+
+Files live in:
+  $InstallDir
+  $ConfigDir
+
+Generic MCP config: $ConfigDir\mcp-config.json
 "@

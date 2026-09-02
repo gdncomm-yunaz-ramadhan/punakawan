@@ -68,6 +68,7 @@ run_relocation_test() {
   real_gopath="$(go env GOPATH)"
   real_pnpm_store="$(pnpm store path 2>/dev/null || true)"
 
+  local install_output_file="$reloc_root/install-output.log"
   (
     cd "$checkout_copy"
     export HOME="$fake_home"
@@ -83,7 +84,22 @@ run_relocation_test() {
     PUNAKAWAN_CLAUDE_BIN="/nonexistent-claude-binary" \
     PUNAKAWAN_SKIP_HOOKS="1" \
       bash scripts/install.sh
-  )
+  ) 2>&1 | tee "$install_output_file"
+  [[ "${PIPESTATUS[0]}" -eq 0 ]] || fail "relocation: install.sh failed"
+
+  # The default run reports progress, not build output: someone installing
+  # a tool cannot act on a compiler or package-manager transcript while it
+  # scrolls past, and it buries the few lines they can act on.
+  local install_output
+  install_output="$(cat "$install_output_file")"
+  assert_contains "$install_output" "[1/8]"
+  assert_contains "$install_output" "Punakawan is installed."
+  assert_contains "$install_output" "punakawan setup jira"
+  for noisy in "pnpm --filter" "go install ./cmd" "go mod download" "Progress: resolved"; do
+    if [[ "$install_output" == *"$noisy"* ]]; then
+      fail "relocation: a default install printed build output ($noisy); it belongs in the log, not the terminal"
+    fi
+  done
 
   # Nothing the installer did may have landed outside the throwaway
   # prefixes. A launchd agent is the one thing install.sh writes that no
@@ -234,8 +250,8 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   assert_contains "$mac_output" "pnpm --filter @punakawan/github-adapter build"
   assert_contains "$mac_output" "pnpm -r --if-present build"
   assert_contains "$mac_output" "go install ./cmd/punakawan ./cmd/punakawand"
-  assert_contains "$mac_output" "Configuring global adapters"
   assert_contains "$mac_output" "setup --hooks-only"
+  assert_contains "$mac_output" "punakawan setup jira"
   assert_contains "$mac_output" "punakawan panel"
   assert_contains "$mac_output" "$dry_run_data_dir/adapters/atlassian"
   assert_contains "$mac_output" "$dry_run_data_dir/adapters/github"

@@ -19,8 +19,16 @@ if [[ "$DRY_RUN" != "1" && ! -x "$PUNAKAWAN_BIN" ]]; then
   exit 2
 fi
 
+VERBOSE="${PUNAKAWAN_VERBOSE:-0}"
+
 log() {
   printf '\n==> %s\n' "$1"
+}
+
+# ok matches install.sh's indented per-step fact, so a run driven by the
+# installer reads as one sequence rather than two scripts taking turns.
+ok() {
+  printf '      %s %s\n' "${PUNAKAWAN_OK_GLYPH:-✓}" "$1"
 }
 
 warn() {
@@ -55,43 +63,47 @@ find_claude() {
 }
 
 manual_codex() {
-  printf 'Manual setup: codex mcp add punakawan -- %q mcp serve\n' "$LAUNCHER" >&2
+  printf '        If you use Codex, run: codex mcp add punakawan -- %q mcp serve\n' "$LAUNCHER" >&2
 }
 
 manual_claude() {
-  printf 'Manual setup: claude mcp add punakawan --scope user -- %q mcp serve\n' "$LAUNCHER" >&2
+  printf '        If you use Claude Code, run: claude mcp add punakawan --scope user -- %q mcp serve\n' "$LAUNCHER" >&2
 }
 
 register_codex() {
   local client="$1"
-  log "Registering Punakawan with Codex"
   if [[ "$DRY_RUN" == "1" ]]; then
     print_command "$client" mcp remove punakawan
     print_command "$client" mcp add punakawan -- "$LAUNCHER" mcp serve
     return
   fi
   "$client" mcp remove punakawan >/dev/null 2>&1 || true
-  if "$client" mcp add punakawan -- "$LAUNCHER" mcp serve; then
-    printf 'Codex configured. Restart Codex to load Punakawan.\n'
+  local output
+  if output="$("$client" mcp add punakawan -- "$LAUNCHER" mcp serve 2>&1)"; then
+    if [[ "$VERBOSE" == "1" ]]; then printf '%s\n' "$output"; fi
+    ok "Codex ready (restart Codex to load Punakawan)"
   else
-    warn "Codex registration failed. Punakawan remains installed."
+    printf '%s\n' "$output" >&2
+    warn "Could not register with Codex. Punakawan is still installed."
     manual_codex
   fi
 }
 
 register_claude() {
   local client="$1"
-  log "Registering Punakawan with Claude Code"
   if [[ "$DRY_RUN" == "1" ]]; then
     print_command "$client" mcp remove punakawan --scope user
     print_command "$client" mcp add punakawan --scope user -- "$LAUNCHER" mcp serve
     return
   fi
   "$client" mcp remove punakawan --scope user >/dev/null 2>&1 || true
-  if "$client" mcp add punakawan --scope user -- "$LAUNCHER" mcp serve; then
-    printf 'Claude Code configured. Restart Claude Code to load Punakawan.\n'
+  local output
+  if output="$("$client" mcp add punakawan --scope user -- "$LAUNCHER" mcp serve 2>&1)"; then
+    if [[ "$VERBOSE" == "1" ]]; then printf '%s\n' "$output"; fi
+    ok "Claude Code ready (restart it to load Punakawan)"
   else
-    warn "Claude Code registration failed. Punakawan remains installed."
+    printf '%s\n' "$output" >&2
+    warn "Could not register with Claude Code. Punakawan is still installed."
     manual_claude
   fi
 }
@@ -108,7 +120,7 @@ write_generic_config() {
   local escaped_bin
   escaped_bin="$(json_escape "$LAUNCHER")"
   if [[ "$DRY_RUN" == "1" ]]; then
-    log "Generic MCP config: $path"
+    print_command "write" "$path"
     return
   fi
   mkdir -p "$CONFIG_DIR"
@@ -123,13 +135,15 @@ write_generic_config() {
 }
 JSON
   chmod 600 "$path"
-  log "Wrote generic MCP config: $path"
+  if [[ "$VERBOSE" == "1" ]]; then
+    ok "config for other MCP clients: $path"
+  fi
 }
 
 write_launcher() {
   LAUNCHER="$CONFIG_DIR/run-mcp.sh"
   if [[ "$DRY_RUN" == "1" ]]; then
-    log "MCP launcher: $LAUNCHER"
+    print_command "write" "$LAUNCHER"
     return
   fi
   mkdir -p "$CONFIG_DIR"
@@ -142,7 +156,9 @@ write_launcher() {
     printf 'exec %q "$@"\n' "$PUNAKAWAN_BIN"
   } >"$LAUNCHER"
   chmod 700 "$LAUNCHER"
-  log "Wrote MCP launcher: $LAUNCHER"
+  if [[ "$VERBOSE" == "1" ]]; then
+    ok "launcher: $LAUNCHER"
+  fi
 }
 
 write_launcher
@@ -152,14 +168,14 @@ claude_bin="$(find_claude || true)"
 if [[ -n "$codex_bin" ]]; then
   register_codex "$codex_bin"
 else
-  warn "Codex not detected; skipping automatic registration."
+  ok "Codex not detected, skipped"
   manual_codex
 fi
 
 if [[ -n "$claude_bin" ]]; then
   register_claude "$claude_bin"
 else
-  warn "Claude Code not detected; skipping automatic registration."
+  ok "Claude Code not detected, skipped"
   manual_claude
 fi
 
@@ -172,11 +188,17 @@ fi
 # verifies hook installation separately against an isolated $HOME instead
 # of ever touching this machine's real one from an ordinary install run.
 if [[ "${PUNAKAWAN_SKIP_HOOKS:-0}" != "1" ]]; then
-  log "Configuring Codex and Claude Code lifecycle telemetry hooks"
   if [[ "$DRY_RUN" == "1" ]]; then
     print_command "$LAUNCHER" setup --hooks-only
   else
-    "$LAUNCHER" setup --hooks-only || warn "Could not configure lifecycle telemetry hooks; delivery usage tracking will be incomplete until this is retried (run \`punakawan setup\` or check \`punakawan doctor\`)."
+    hooks_output=""
+    if hooks_output="$("$LAUNCHER" setup --hooks-only 2>&1)"; then
+      if [[ "$VERBOSE" == "1" ]]; then printf '%s\n' "$hooks_output"; fi
+      ok "usage tracking wired into both tools"
+    else
+      printf '%s\n' "$hooks_output" >&2
+      warn "Could not set up usage tracking; token and cost figures will be incomplete. Retry with: punakawan setup"
+    fi
   fi
 fi
 
