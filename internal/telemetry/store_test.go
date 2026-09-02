@@ -394,6 +394,33 @@ func TestTotalsByDeliveryNamesNoModelWhenEverythingPriced(t *testing.T) {
 	}
 }
 
+// doctor's existing hook check reported "complete" throughout the whole
+// period in which every snapshot was priced unknown - it only proves
+// events arrive. This is the query that says the arriving usage cannot be
+// priced, and which model to add.
+func TestUnresolvedModelsNamesWhatTheCatalogCannotPrice(t *testing.T) {
+	store := newTelemetryStore(t)
+	s := mustBegin(t, store, BeginRequest{DeliveryID: "d1", ClientKind: "claude-code", ExternalSessionID: "thr-1"})
+
+	mustSnapshot(t, store, SnapshotRequest{
+		SessionID: s.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{
+			{Model: "some-future-model", InputTokens: 1},
+			{Model: "<synthetic>", InputTokens: 1},
+			{Model: "claude-opus-5", InputTokens: 1},
+		},
+	})
+
+	models, err := store.UnresolvedModels(context.Background(), 50)
+	if err != nil {
+		t.Fatalf("UnresolvedModels: %v", err)
+	}
+	want := []string{"some-future-model"}
+	if !slices.Equal(models, want) {
+		t.Fatalf("unresolved = %v, want %v - the pseudo-model and the catalogued model must not appear", models, want)
+	}
+}
+
 func TestGetSnapshotReturnsNilForAnAbsentBaseline(t *testing.T) {
 	store := newTelemetryStore(t)
 	s := mustBegin(t, store, BeginRequest{DeliveryID: "d1", ClientKind: "codex", ExternalSessionID: "thr-1"})

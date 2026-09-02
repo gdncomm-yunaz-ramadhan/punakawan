@@ -335,6 +335,17 @@ func ingestHookEvent(ctx context.Context, client, event string, stdin io.Reader,
 	if err := telemetry.RemoveSpoolFile(filepath.Join(spoolDir, rec.EventID+".json")); err != nil {
 		logger.Warn("hooks ingest: remove spooled file after successful ingestion", "event_id", rec.EventID, "error", err)
 	}
+	// This record ingested, so the store is reachable right now - the
+	// moment to clear anything an earlier hook had to leave behind. Until
+	// this, DrainSpool had no caller at all, so "left in the spool for
+	// the next drain pass" meant left in the spool: a deferred ingest was
+	// never retried and its tokens never reached any delivery. Hooks fire
+	// constantly, so draining here needs no scheduler of its own.
+	if drained, err := telemetry.DrainSpool(ctx, dataDir, store); err != nil {
+		logger.Warn("hooks ingest: drain spool backlog", "drained", drained, "error", err)
+	} else if drained > 0 {
+		logger.Info("hooks ingest: drained spool backlog", "drained", drained)
+	}
 }
 
 // findSessionMarker walks upward from startDir (falling back to the

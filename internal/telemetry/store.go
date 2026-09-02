@@ -613,3 +613,50 @@ func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (U
 	}
 	return projection, nil
 }
+
+// UnresolvedModels names every model id recorded in the last limit
+// snapshots that the pricing catalog could not resolve, sorted and
+// deduplicated.
+//
+// It exists so `punakawan doctor` can say that an installed, apparently
+// healthy telemetry pipeline is producing usage nothing can price. The
+// existing hook check verifies that events reach the spool and the
+// database, and reported "complete" throughout the entire period in
+// which every snapshot was priced unknown.
+func (s *Store) UnresolvedModels(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := s.db.Reader().QueryContext(ctx, `SELECT pricing_json FROM agent_usage_snapshots ORDER BY observed_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: list unresolved models: %w", err)
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	var out []string
+	for rows.Next() {
+		var pricingJSON sql.NullString
+		if err := rows.Scan(&pricingJSON); err != nil {
+			return nil, fmt.Errorf("telemetry: list unresolved models: %w", err)
+		}
+		if !pricingJSON.Valid {
+			continue
+		}
+		var entries []pricingEntry
+		if err := json.Unmarshal([]byte(pricingJSON.String), &entries); err != nil {
+			return nil, fmt.Errorf("telemetry: decode pricing: %w", err)
+		}
+		for _, entry := range entries {
+			if entry.Known || seen[entry.Model] {
+				continue
+			}
+			seen[entry.Model] = true
+			out = append(out, entry.Model)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("telemetry: list unresolved models: %w", err)
+	}
+	sort.Strings(out)
+	return out, nil
+}

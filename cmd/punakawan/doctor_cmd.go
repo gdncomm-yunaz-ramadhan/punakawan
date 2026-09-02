@@ -70,6 +70,11 @@ type doctorReport struct {
 	Telemetry       map[string]string              `json:"telemetry"`
 	PanelAssets     doctorOK                       `json:"panel_assets"`
 	WorkflowStorage doctorOK                       `json:"workflow_storage"`
+	// Pricing reports whether recent recorded usage could actually be
+	// priced. The hook checks above only prove events arrive; they said
+	// "complete" throughout the entire period in which every snapshot was
+	// priced unknown because the catalog did not know the model.
+	Pricing doctorOK `json:"pricing"`
 }
 
 func newDoctorCmd() *cobra.Command {
@@ -113,7 +118,7 @@ func newDoctorCmd() *cobra.Command {
 // permanently fail doctor merely because trust for a hook has not yet been
 // granted by the client.
 func (r doctorReport) allOK() bool {
-	if !r.Storage.OK || !r.Daemon.OK || !r.PanelAssets.OK || !r.WorkflowStorage.OK {
+	if !r.Storage.OK || !r.Daemon.OK || !r.PanelAssets.OK || !r.WorkflowStorage.OK || !r.Pricing.OK {
 		return false
 	}
 	for _, a := range r.Adapters {
@@ -153,6 +158,7 @@ func printDoctorReport(out interface{ Write([]byte) (int, error) }, r doctorRepo
 			line("telemetry %-12s %s", id, status)
 		}
 	}
+	line("pricing          %-4s %s", statusWord(r.Pricing.OK), r.Pricing.Detail)
 	line("panel_assets     %-4s %s", statusWord(r.PanelAssets.OK), r.PanelAssets.Detail)
 	line("workflow_storage %-4s %s", statusWord(r.WorkflowStorage.OK), r.WorkflowStorage.Detail)
 }
@@ -200,8 +206,45 @@ func runDoctor(ctx context.Context) doctorReport {
 
 	report.Telemetry[clienthooks.ClientKindCodex] = checkHookTelemetry(ctx, clienthooks.ClientKindCodex)
 	report.Telemetry[clienthooks.ClientKindClaudeCode] = checkHookTelemetry(ctx, clienthooks.ClientKindClaudeCode)
+	report.Pricing = checkPricing(ctx)
 
 	return report
+}
+
+// checkPricing reports unpriceable recorded usage and an undrained spool -
+// the two ways an installed, apparently healthy telemetry pipeline still
+// produces a delivery whose cost is unknown.
+func checkPricing(ctx context.Context) doctorOK {
+	path, err := storage.DBPath()
+	if err != nil {
+		return doctorOK{OK: false, Detail: err.Error()}
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, doctorCheckTimeout)
+	defer cancel()
+	db, err := storage.Open(checkCtx, path)
+	if err != nil {
+		return doctorOK{OK: false, Detail: err.Error()}
+	}
+	defer db.Close()
+
+	models, err := telemetry.NewStore(db).UnresolvedModels(checkCtx, 200)
+	if err != nil {
+		return doctorOK{OK: false, Detail: err.Error()}
+	}
+
+	var problems []string
+	if len(models) > 0 {
+		problems = append(problems, "no catalog price for "+strings.Join(models, ", "))
+	}
+	if dataDir, err := storage.DataDir(); err == nil {
+		if pending, err := telemetry.PendingSpoolFiles(dataDir); err == nil && len(pending) > 0 {
+			problems = append(problems, fmt.Sprintf("%d usage event(s) still spooled and unapplied", len(pending)))
+		}
+	}
+	if len(problems) > 0 {
+		return doctorOK{OK: false, Detail: strings.Join(problems, "; ")}
+	}
+	return doctorOK{OK: true, Detail: "recent usage is fully priced"}
 }
 
 func currentDirOrEmpty() string {
