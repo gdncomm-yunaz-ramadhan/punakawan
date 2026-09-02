@@ -1,0 +1,84 @@
+prompts/bagong/prompt.md
+  0ce2e23a8fd2fe91 39
+prompts/semar/agent.yaml
+  0ce2e23a8fd2fe91 1-13
+internal/agent/schema.go
+  0ce2e23a8fd2fe91 1-51
+prompts/prompts.go
+  0ce2e23a8fd2fe91 10
+internal/mcpserver/tools_public.go
+  0ce2e23a8fd2fe91 10,17-19
+internal/mcpserver/tools_role_test.go
+  0ce2e23a8fd2fe91 1-71
+internal/storage/migrations/0033_agent_session_role_version.sql
+  0ce2e23a8fd2fe91 1-7
+internal/telemetry/types.go
+  0ce2e23a8fd2fe91 27-34,58-63
+internal/agent/spec.go
+  0ce2e23a8fd2fe91 1-87
+internal/deliveryservice/roleversion_test.go
+  0ce2e23a8fd2fe91 1-92
+internal/agent/validate.go
+  0ce2e23a8fd2fe91 1-75
+prompts/gareng/agent.yaml
+  0ce2e23a8fd2fe91 1-13
+internal/mcpserver/tools_role.go
+  0ce2e23a8fd2fe91 1-71
+internal/mcpserver/server.go
+  0ce2e23a8fd2fe91 14,19,77-80,82,84-95,110-118
+internal/mcpserver/capability_registry_test.go
+  0ce2e23a8fd2fe91 9
+internal/mcpserver/server_test.go
+  0ce2e23a8fd2fe91 123
+internal/telemetry/store.go
+  0ce2e23a8fd2fe91 65,75,133,137-138
+internal/deliveryservice/service.go
+  0ce2e23a8fd2fe91 9,33-37,57-64,156-161,165
+prompts/petruk/agent.yaml
+  0ce2e23a8fd2fe91 1-13
+internal/agent/validate_test.go
+  0ce2e23a8fd2fe91 1-85
+internal/agent/manifests_test.go
+  0ce2e23a8fd2fe91 1-62
+protocol/embed.go
+  0ce2e23a8fd2fe91 1-17
+internal/agent/registry_test.go
+  0ce2e23a8fd2fe91 1-131
+prompts/bagong/agent.yaml
+  0ce2e23a8fd2fe91 1-13
+internal/agent/registry.go
+  0ce2e23a8fd2fe91 1-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8757d6382c68047dce563a9aa17e2fa436fcb72a",
+  "prompts": {
+    "0ce2e23a8fd2fe91": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ad81d9d-0693-4b69-a801-a3151a190035",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 1078,
+      "total_deletions": 61,
+      "accepted_lines": 1044,
+      "overriden_lines": 0
+    },
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    }
+  }
+}
