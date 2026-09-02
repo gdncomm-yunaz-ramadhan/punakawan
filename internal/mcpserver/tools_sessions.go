@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -24,6 +25,12 @@ type StartDeliverySessionInput struct {
 type DeliverySessionOutput struct {
 	Session delivery.DeliverySession `json:"session"`
 	View    delivery.DeliveryView    `json:"view"`
+	// TelemetrySessionID is the id ingest_delivery_usage_snapshot and
+	// finalize_delivery_session take - a different id than Session.ID,
+	// which names the delivery session. This tool used not to begin a
+	// telemetry session at all, so an agent that started here had no way
+	// to report usage even though it was told to.
+	TelemetrySessionID string `json:"telemetry_session_id,omitempty"`
 }
 
 func startDeliverySessionHandler(a *app.App, reg *toolIndex) func(context.Context, *mcp.CallToolRequest, StartDeliverySessionInput) (*mcp.CallToolResult, DeliverySessionOutput, error) {
@@ -56,8 +63,41 @@ func startDeliverySessionHandler(a *app.App, reg *toolIndex) func(context.Contex
 		if err != nil {
 			return nil, DeliverySessionOutput{}, err
 		}
-		return nil, DeliverySessionOutput{Session: *session, View: *view}, nil
+		out := DeliverySessionOutput{Session: *session, View: *view}
+		out.TelemetrySessionID = beginTelemetryFor(ctx, a, session, in.Provider)
+		return nil, out, nil
 	}
+}
+
+// beginTelemetryFor opens the agent_sessions row whose id the two usage
+// tools require, mirroring deliveryservice's own beginTelemetrySession.
+// A telemetry hiccup never fails starting the session itself - tracking is
+// additive and secondary - so this returns an empty id rather than an
+// error, exactly as the service path does.
+func beginTelemetryFor(ctx context.Context, a *app.App, session *delivery.DeliverySession, provider string) string {
+	ts, err := OpenTelemetryStore(ctx, a)
+	if err != nil {
+		slog.Warn("mcpserver: open telemetry store for session", "session_id", session.ID, "error", err)
+		return ""
+	}
+	clientKind := strings.TrimSpace(provider)
+	if clientKind == "" {
+		clientKind = "unspecified"
+	}
+	begun, err := ts.Begin(ctx, telemetry.BeginRequest{
+		DeliveryID: session.OrchestrationID, ExecutionID: session.ExecutionID,
+		ClientKind: clientKind,
+		// The delivery session's own id is unique, so it stands in as the
+		// external identity when no client-native one is known - the same
+		// choice deliveryservice makes, and for the same reason.
+		ExternalSessionID: session.ID,
+		Participant:       session.Participant, Provider: provider, WorktreePath: session.WorktreePath,
+	})
+	if err != nil {
+		slog.Warn("mcpserver: begin telemetry session", "session_id", session.ID, "error", err)
+		return ""
+	}
+	return begun.ID
 }
 
 type CheckpointDeliverySessionInput struct {

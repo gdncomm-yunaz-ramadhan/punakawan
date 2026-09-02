@@ -135,6 +135,12 @@ type StartDeliveryResultDelivery struct {
 // start_delivery reports for the session it opened.
 type StartDeliveryResultSession struct {
 	ID string `json:"id"`
+	// TelemetryID is the id ingest_delivery_usage_snapshot and
+	// finalize_delivery_session take. It is a different id than ID, which
+	// names the delivery session - and it used to be discarded here, so
+	// the two usage tools the server instructions tell an agent to call
+	// asked for an id no call ever returned.
+	TelemetryID string `json:"telemetry_session_id,omitempty"`
 }
 
 // StartDeliveryOutput is start_delivery's output: the delivery's identity
@@ -251,6 +257,9 @@ func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context
 		}
 		if result.Session != nil {
 			out.Session = &StartDeliveryResultSession{ID: result.Session.ID}
+			if result.TelemetrySession != nil {
+				out.Session.TelemetryID = result.TelemetrySession.ID
+			}
 			// The marker is how a lifecycle hook, which has no MCP session
 			// of its own, finds the delivery that owns the checkout it is
 			// running in. Without it the session exists but every token,

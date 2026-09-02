@@ -322,3 +322,42 @@ func TestCompleteDeliveryRefusesAnUnfinishedDeliveryUntilAcknowledged(t *testing
 		t.Fatal("expected the waived gaps to be recorded in the delivery's own timeline")
 	}
 }
+
+// The server instructions tell an agent to report usage with
+// ingest_delivery_usage_snapshot and finalize_delivery_session, both of
+// which take a telemetry session id. No call returned one, so the
+// instruction was unfollowable and every delivery's cost depended
+// entirely on the lifecycle hooks.
+func TestStartDeliveryReturnsTheSessionIdTheUsageToolsRequire(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+	ctx := context.Background()
+
+	var started StartDeliveryOutput
+	callTool(t, cs, "start_delivery", map[string]any{
+		"source":  jiraSource("PAY-99"),
+		"session": map[string]any{"participant": "semar"},
+	}, &started)
+
+	if started.Session == nil || started.Session.TelemetryID == "" {
+		t.Fatalf("session = %+v, want a telemetry session id", started.Session)
+	}
+
+	ts, err := OpenTelemetryStore(ctx, a)
+	if err != nil {
+		t.Fatalf("OpenTelemetryStore: %v", err)
+	}
+	if _, err := ts.GetSession(ctx, started.Session.TelemetryID); err != nil {
+		t.Fatalf("GetSession(%q): %v - the returned id must name a real session", started.Session.TelemetryID, err)
+	}
+
+	// And it must actually be usable as that session_id.
+	var ingested map[string]any
+	callTool(t, cs, "ingest_delivery_usage_snapshot", map[string]any{
+		"session_id": started.Session.TelemetryID,
+		"sequence":   1,
+		"model_usage": []map[string]any{
+			{"model": "claude-opus-5", "input_tokens": 100, "output_tokens": 50},
+		},
+	}, &ingested)
+}
