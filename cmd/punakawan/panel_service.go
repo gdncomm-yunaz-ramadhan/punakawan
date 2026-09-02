@@ -89,13 +89,16 @@ type panelServiceSpec struct {
 	StderrPath    string
 }
 
-// programArguments is the exact argv the service runs. Browser opening
-// is forced off: a job that starts at login must not hijack the
-// session by launching a browser window nobody asked for.
+// programArguments is the exact argv the service runs. It stays in the
+// foreground because the service manager is the supervisor here - a job
+// that daemonized itself would exit immediately and be restarted forever.
+// Browser opening is forced off: a job that starts at login must not
+// hijack the session by launching a browser window nobody asked for.
 func (s panelServiceSpec) programArguments() []string {
 	return []string{
 		s.BinaryPath,
 		"panel",
+		"--foreground",
 		"--host", s.Host,
 		"--port", s.Port,
 		"--workspace", s.WorkspacePath,

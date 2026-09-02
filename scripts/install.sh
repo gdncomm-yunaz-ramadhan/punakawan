@@ -59,8 +59,23 @@ ADAPTERS_DIR="$CONFIG_DIR/adapters"
 ATLASSIAN_ADAPTER_ENTRY="$ADAPTERS_DIR/atlassian/dist/run.js"
 GITHUB_ADAPTER_ENTRY="$ADAPTERS_DIR/github/dist/run.js"
 
+# Installation is a long sequence of slow steps, so each one announces
+# itself with its position: a person watching knows how much is left, and
+# a person reading a failure knows exactly which step failed.
+TOTAL_STEPS=8
+STEP=0
+
+step() {
+  STEP=$((STEP + 1))
+  printf '\n==> [%d/%d] %s\n' "$STEP" "$TOTAL_STEPS" "$1"
+}
+
 log() {
   printf '\n==> %s\n' "$1"
+}
+
+ok() {
+  printf '    OK %s\n' "$1"
 }
 
 warn() {
@@ -164,7 +179,7 @@ deploy_adapter() {
 }
 
 configure_global_adapters() {
-  log "Configuring global adapters"
+  step "Configuring global adapters"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     deploy_adapter "@punakawan/adapter-atlassian" atlassian
     deploy_adapter "@punakawan/github-adapter" github
@@ -220,12 +235,53 @@ configure_global_environment() {
 # isolated, throwaway prefix on a machine that may already be running a
 # real one).
 stop_stale_daemon() {
-  log "Stopping any already-running Punakawan daemon so it is not left serving a stale build"
+  step "Stopping any already-running Punakawan daemon so it is not left serving a stale build"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     print_command "$INSTALL_DIR/punakawan" daemon stop
     return
   fi
   "$INSTALL_DIR/punakawan" daemon stop >/dev/null
+}
+
+# restart_panel brings the panel back onto the build this run just
+# installed. A panel started before the install keeps executing the old
+# binary's inode forever - the same staleness stop_stale_daemon exists to
+# prevent for the daemon - so a running one is stopped and started again,
+# and a registered login service is reinstalled so its recorded argv
+# matches this version's.
+restart_panel() {
+  step "Restarting the panel onto the new build"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    print_command "$INSTALL_DIR/punakawan" panel stop
+    print_command "$INSTALL_DIR/punakawan" panel --open-browser=false
+    return
+  fi
+
+  local service_was_registered=0
+  if "$INSTALL_DIR/punakawan" panel service status 2>/dev/null | grep -Eq '^registered:[[:space:]]*yes'; then
+    service_was_registered=1
+  fi
+  local panel_was_running=0
+  if "$INSTALL_DIR/punakawan" panel status 2>/dev/null | grep -Eq '^running:[[:space:]]*yes'; then
+    panel_was_running=1
+  fi
+
+  if [[ "$service_was_registered" -eq 1 ]]; then
+    "$INSTALL_DIR/punakawan" panel service install >/dev/null
+    ok "reinstalled the login service on the new build"
+    return
+  fi
+
+  if [[ "$panel_was_running" -eq 1 ]]; then
+    "$INSTALL_DIR/punakawan" panel stop >/dev/null || true
+    if "$INSTALL_DIR/punakawan" panel --open-browser=false >/dev/null; then
+      ok "panel restarted"
+    else
+      warn "Could not restart the panel; start it yourself with \`punakawan panel\`."
+    fi
+  else
+    ok "no panel was running; start one with \`punakawan panel\`"
+  fi
 }
 
 manual_install() {
@@ -268,6 +324,7 @@ install_with_brew() {
   return 1
 }
 
+step "Checking prerequisites (go, node, pnpm)"
 prerequisite_failure=0
 install_with_brew go go 'brew install go' 'https://go.dev/doc/install' || prerequisite_failure=1
 install_with_brew node node 'brew install node' 'https://nodejs.org/en/download' || prerequisite_failure=1
@@ -277,7 +334,7 @@ if [[ "$prerequisite_failure" -ne 0 ]]; then
   exit 1
 fi
 
-log "Building Punakawan with embedded panel assets"
+step "Building Punakawan with embedded panel assets"
 cd "$REPO_ROOT"
 run go mod download
 run pnpm install --frozen-lockfile
@@ -290,7 +347,7 @@ run pnpm --filter @punakawan/adapter-atlassian build
 run pnpm --filter @punakawan/github-adapter build
 run pnpm -r --if-present build
 
-log "Installing punakawan and punakawand"
+step "Installing punakawan and punakawand"
 run mkdir -p "$INSTALL_DIR"
 run env "GOBIN=$INSTALL_DIR" go install ./cmd/punakawan ./cmd/punakawand
 
@@ -323,7 +380,7 @@ if [[ "$INSTALL_DIR_OVERRIDDEN" -eq 0 && ":$PATH:" != *":$INSTALL_DIR:"* ]]; the
   fi
 fi
 
-log "Verifying installation"
+step "Verifying installation"
 if [[ "$DRY_RUN" -eq 1 ]]; then
   print_command "$INSTALL_DIR/punakawan" --help
 else
@@ -338,16 +395,34 @@ else
   "$INSTALL_DIR/punakawan" --help >/dev/null
 fi
 
-log "Auto-configuring detected MCP clients"
+step "Auto-configuring detected MCP clients"
 PUNAKAWAN_DRY_RUN="$DRY_RUN" bash "$SCRIPT_DIR/configure-agent.sh" "$INSTALL_DIR/punakawan" "$CONFIG_DIR" "$GLOBAL_ENV"
+
+restart_panel
 
 cat <<EOF
 
-==> Done.
-Binary directory: $INSTALL_DIR
+==> Installed.
+
+Binary directory:   $INSTALL_DIR
+Global adapters:    $GLOBAL_CONFIG
 Generic MCP config: $CONFIG_DIR/mcp-config.json
-Credentials: $GLOBAL_ENV
-Global adapters: $GLOBAL_CONFIG
-Panel: punakawan panel --workspace /absolute/path/to/project
-MCP: punakawan mcp serve
+
+Next: connect your accounts. Each command asks for the site URL, works out
+the organisation from it, asks for a token, and checks the pair against the
+live site before saving anything.
+
+  punakawan setup jira        # e.g. https://your-team.atlassian.net
+  punakawan setup github      # e.g. https://github.com/your-org
+
+Run either one again for a second organisation; both are kept, and delivery
+work names which one it belongs to. See what is configured with
+\`punakawan setup jira --list\`.
+
+Then:
+
+  punakawan doctor            # check every credential and adapter end to end
+  punakawan panel             # dashboard, in the background; prints its address
+  punakawan panel logs        # what the panel has printed
+  punakawan mcp serve         # MCP over stdio, for a client you configure by hand
 EOF

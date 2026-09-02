@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -40,6 +41,7 @@ func (f *panelServeFlags) register(cmd *cobra.Command) {
 func newPanelCmd() *cobra.Command {
 	var serve panelServeFlags
 	var openBrowser bool
+	var foreground bool
 
 	cmd := &cobra.Command{
 		Use:   "panel",
@@ -47,13 +49,20 @@ func newPanelCmd() *cobra.Command {
 		Long: "Start the Punakawan Panel, a local web dashboard served from this binary. " +
 			"It binds to loopback only, auto-registers the current workspace, and protects " +
 			"mutations with an authenticated session.\n\n" +
-			"This command runs in the foreground and stops when its terminal goes away. To keep the " +
-			"panel available without a terminal - started at login and restarted if it crashes - " +
-			"register it as a background service instead:\n\n" +
+			"The panel starts in the background and this command returns as soon as it is " +
+			"answering, printing the address and opening it in your browser. Read what it has " +
+			"printed with `punakawan panel logs`, and stop it with `punakawan panel stop`.\n\n" +
+			"Use --foreground to run the server in this terminal instead, which is what the " +
+			"background service and any external supervisor do.\n\n" +
+			"To have the panel start at login and be restarted if it crashes, register it with the " +
+			"operating system instead:\n\n" +
 			"  punakawan panel service install\n" +
 			"  punakawan panel service status\n\n" +
 			"See `punakawan panel service --help` for the full set of subcommands.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !foreground {
+				return runPanelDetached(cmd, serve, openBrowser)
+			}
 			host, port, workspacePath := serve.host, serve.port, serve.workspacePath
 			dir := workspacePath
 			if dir == "" {
@@ -118,8 +127,126 @@ func newPanelCmd() *cobra.Command {
 
 	serve.register(cmd)
 	cmd.Flags().BoolVar(&openBrowser, "open-browser", true, "open the panel in the default browser on startup")
+	cmd.Flags().BoolVar(&foreground, "foreground", false, "run the server in this terminal instead of starting it in the background")
 	cmd.AddCommand(newPanelServiceCmd())
+	cmd.AddCommand(newPanelLogsCmd())
+	cmd.AddCommand(newPanelStopCmd())
+	cmd.AddCommand(newPanelStatusCmd())
 	return cmd
+}
+
+// runPanelDetached is the default `punakawan panel`: leave a panel
+// running, say where it is, and give the terminal back.
+func runPanelDetached(cmd *cobra.Command, serve panelServeFlags, openBrowser bool) error {
+	out := cmd.OutOrStdout()
+
+	// Something already on the port is the honest signal that a panel is
+	// up, whoever owns it - this session's, the login service's, or one
+	// started from another checkout. Starting a second would only fail to
+	// bind, so point at the one that exists.
+	if addressAnswers(serve.host, serve.port) {
+		address := "http://" + net.JoinHostPort(serve.host, serve.port)
+		fmt.Fprintf(out, "Punakawan Panel already running at %s\n", address)
+		if openBrowser {
+			openInBrowser(address)
+		}
+		return nil
+	}
+
+	record, err := startPanelDetached(serve)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Punakawan Panel running at %s\n", record.address())
+	fmt.Fprintf(out, "  workspace: %s\n", record.Workspace)
+	fmt.Fprintf(out, "  logs:      punakawan panel logs\n")
+	fmt.Fprintf(out, "  stop:      punakawan panel stop\n")
+	if openBrowser {
+		openInBrowser(record.address())
+	}
+	return nil
+}
+
+func newPanelLogsCmd() *cobra.Command {
+	var follow bool
+	var lines int
+	cmd := &cobra.Command{
+		Use:   "logs",
+		Short: "Show what the background panel has printed",
+		Long: "Show the background panel's output. The log is appended to across restarts, so a " +
+			"panel that failed to start still has its reason here.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, err := panelLogPath()
+			if err != nil {
+				return err
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					fmt.Fprintln(cmd.OutOrStdout(), "No panel log yet. Start one with `punakawan panel`.")
+					return nil
+				}
+				return fmt.Errorf("panel logs: read %s: %w", path, err)
+			}
+			tail := tailLines(string(data), lines)
+			if tail != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), tail)
+			}
+			if !follow {
+				return nil
+			}
+			return followPanelLog(cmd.OutOrStdout(), int64(len(data)))
+		},
+	}
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep streaming new output until interrupted")
+	cmd.Flags().IntVarP(&lines, "lines", "n", 200, "how many trailing lines to show")
+	return cmd
+}
+
+func newPanelStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the background panel started by `punakawan panel`",
+		Long: "Stop the background panel this command started. It does not stop the login service - " +
+			"use `punakawan panel service stop` for that.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			record, wasRunning, err := stopPanel(10 * time.Second)
+			if err != nil {
+				return err
+			}
+			if !wasRunning {
+				fmt.Fprintln(cmd.OutOrStdout(), "No background panel is running.")
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Stopped the panel at %s (pid %d)\n", record.address(), record.PID)
+			return nil
+		},
+	}
+}
+
+func newPanelStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Report whether a background panel is running, and where",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			record, running, err := readPanelRecord()
+			if err != nil {
+				return err
+			}
+			if !running {
+				fmt.Fprintln(out, "running:   no")
+				fmt.Fprintln(out, "Start one with `punakawan panel`.")
+				return nil
+			}
+			fmt.Fprintf(out, "running:   yes (pid %d)\n", record.PID)
+			fmt.Fprintf(out, "address:   %s\n", record.address())
+			fmt.Fprintf(out, "workspace: %s\n", record.Workspace)
+			fmt.Fprintf(out, "started:   %s\n", record.StartedAt.Local().Format(time.RFC3339))
+			fmt.Fprintf(out, "log:       %s\n", record.LogPath)
+			return nil
+		},
+	}
 }
 
 // openInBrowser best-effort opens url in the OS default browser. Failure
