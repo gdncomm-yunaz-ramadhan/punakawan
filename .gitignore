@@ -13,6 +13,7 @@
 node_modules/
 packages/*/dist/
 packages/*/dist-test/
+.pnpm-store/
 
 # Claude Code runtime state
 .claude/
@@ -22,5 +23,19 @@ packages/*/dist-test/
 
 # Agent-local implementation plans and specifications
 docs/superpowers/
+
+# OS / editor
+.DS_Store
+
+# Serena MCP tool's project-local config/cache
+.serena/
+
+# Local build output
+/bin/
+/punakawan
+
+# Git worktrees created by agents (registered separately by git worktree,
+# not something to delete via this file - purely for git status cleanliness)
+.worktrees/
 
 affiliate-platform-delivery-feedback-2026-08-07.md
