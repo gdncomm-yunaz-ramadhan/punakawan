@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/providercreds"
 	"github.com/ygrip/punakawan/internal/telemetry/clienthooks"
 	"github.com/ygrip/punakawan/internal/workspace"
 )
@@ -98,13 +99,38 @@ func TestResolveCredentialEnvFallsBackToGlobalEnvFile(t *testing.T) {
 		t.Fatalf("write global env file: %v", err)
 	}
 
-	env := resolveCredentialEnv([]string{"GITHUB_TOKEN"})
+	env := resolveCredentialEnv(providercreds.ProviderGitHub, []string{"GITHUB_TOKEN"})
 	if env["GITHUB_TOKEN"] != "from-file-token" {
 		t.Fatalf("resolveCredentialEnv = %v, want the value from the durable global env file", env)
 	}
 }
 
-func TestResolveCredentialEnvPrefersProcessEnvOverFile(t *testing.T) {
+func TestResolveCredentialEnvUsesDefaultSetupCredentialBeforeLegacyEnvFile(t *testing.T) {
+	isolateDoctorEnv(t)
+	credentialsPath, err := workspace.GlobalCredentialsPath()
+	if err != nil {
+		t.Fatalf("GlobalCredentialsPath: %v", err)
+	}
+	if err := providercreds.Open(credentialsPath).Put(providercreds.Org{
+		ID: "acme", Provider: providercreds.ProviderGitHub, BaseURL: "https://github.com/acme", Token: "setup-token",
+	}); err != nil {
+		t.Fatalf("save setup credential: %v", err)
+	}
+	envPath, err := workspace.GlobalEnvPath()
+	if err != nil {
+		t.Fatalf("GlobalEnvPath: %v", err)
+	}
+	if err := os.WriteFile(envPath, []byte("GITHUB_TOKEN=legacy-env-token\n"), 0o600); err != nil {
+		t.Fatalf("write legacy env: %v", err)
+	}
+
+	env := resolveCredentialEnv(providercreds.ProviderGitHub, []string{"GITHUB_TOKEN"})
+	if env["GITHUB_TOKEN"] != "setup-token" {
+		t.Fatalf("resolveCredentialEnv = %v, want setup-managed credential", env)
+	}
+}
+
+func TestResolveCredentialEnvPrefersProcessEnvOverSetupAndFile(t *testing.T) {
 	isolateDoctorEnv(t)
 	path, err := workspace.GlobalEnvPath()
 	if err != nil {
@@ -116,9 +142,18 @@ func TestResolveCredentialEnvPrefersProcessEnvOverFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("GITHUB_TOKEN=stale-file-token\n"), 0o600); err != nil {
 		t.Fatalf("write global env file: %v", err)
 	}
+	credentialsPath, err := workspace.GlobalCredentialsPath()
+	if err != nil {
+		t.Fatalf("GlobalCredentialsPath: %v", err)
+	}
+	if err := providercreds.Open(credentialsPath).Put(providercreds.Org{
+		ID: "acme", Provider: providercreds.ProviderGitHub, BaseURL: "https://github.com/acme", Token: "setup-token",
+	}); err != nil {
+		t.Fatalf("save setup credential: %v", err)
+	}
 	t.Setenv("GITHUB_TOKEN", "live-process-token")
 
-	env := resolveCredentialEnv([]string{"GITHUB_TOKEN"})
+	env := resolveCredentialEnv(providercreds.ProviderGitHub, []string{"GITHUB_TOKEN"})
 	if env["GITHUB_TOKEN"] != "live-process-token" {
 		t.Fatalf("resolveCredentialEnv = %v, want the live process value to win", env)
 	}

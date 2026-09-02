@@ -19,6 +19,7 @@ import (
 	"github.com/ygrip/punakawan/internal/daemon"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel/assets"
+	"github.com/ygrip/punakawan/internal/providercreds"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/internal/telemetry/clienthooks"
@@ -324,7 +325,7 @@ func checkAdapter(ctx context.Context, adapterID string, cfg workspace.AdapterCo
 		}
 	}
 
-	env := resolveCredentialEnv(cfg.EnvPassthrough)
+	env := resolveCredentialEnv(adapterProvider(adapterID), cfg.EnvPassthrough)
 	credentials, connectivity := check(ctx, env)
 	report.Credentials = credentials
 	report.Connectivity = connectivity
@@ -364,17 +365,21 @@ func checkAdapterHandshake(ctx context.Context, adapterID string, cfg workspace.
 	return doctorStatusOK
 }
 
-// resolveCredentialEnv resolves each named variable from this process's
-// own environment, falling back to the durable global credential file
-// (workspace.GlobalEnvPath) - the same source the MCP/adapter launcher
-// scripts source before exec'ing, so this reports what an adapter process
-// launched the normal way would actually see, not just what happens to be
-// exported in the caller's own shell.
-func resolveCredentialEnv(names []string) map[string]string {
+// resolveCredentialEnv resolves each named variable from process environment,
+// then the default organisation in the durable credential store, then the
+// legacy global .env file. That order matches an operator's explicit process
+// override while making `punakawan setup github` and `punakawan doctor` use
+// the same source without copying tokens into two files.
+func resolveCredentialEnv(provider providercreds.Provider, names []string) map[string]string {
 	fileValues := readGlobalEnvFileBestEffort()
+	storeValues := readDefaultProviderEnvBestEffort(provider)
 	out := make(map[string]string, len(names))
 	for _, name := range names {
 		if v, ok := os.LookupEnv(name); ok && v != "" {
+			out[name] = v
+			continue
+		}
+		if v, ok := storeValues[name]; ok && v != "" {
 			out[name] = v
 			continue
 		}
@@ -383,6 +388,36 @@ func resolveCredentialEnv(names []string) map[string]string {
 		}
 	}
 	return out
+}
+
+func adapterProvider(adapterID string) providercreds.Provider {
+	provider, err := providercreds.ProviderForAdapterProgram(adapterID)
+	if err != nil {
+		return ""
+	}
+	return provider
+}
+
+func readDefaultProviderEnvBestEffort(provider providercreds.Provider) map[string]string {
+	if provider == "" {
+		return nil
+	}
+	path, err := workspace.GlobalCredentialsPath()
+	if err != nil {
+		return nil
+	}
+	org, err := providercreds.Open(path).Get(provider, "")
+	if err != nil {
+		return nil
+	}
+	values := make(map[string]string)
+	for _, entry := range org.Env() {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok {
+			values[name] = value
+		}
+	}
+	return values
 }
 
 func readGlobalEnvFileBestEffort() map[string]string {
