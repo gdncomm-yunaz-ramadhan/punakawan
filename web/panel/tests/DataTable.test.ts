@@ -50,6 +50,37 @@ describe("DataTable", () => {
     expect(document.querySelectorAll("tbody tr")).toHaveLength(5);
   });
 
+  // Every production call site passes rows and columns and nothing else.
+  // Under the old fully-controlled component that meant Next called an
+  // undefined handler and the page never moved - on all eight delivery
+  // tables at once - while this suite stayed green against the wired
+  // harness above.
+  it("paginates when the parent wires no page state at all", async () => {
+    render(DataTableHarness, { props: { rows: makeRows(15), pageSize: 10, forceWidth: 1024, unwired: true } });
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(5);
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    expect(screen.getByText("Task 11")).toBeTruthy();
+  });
+
+  // The delivery detail long-polls and replaces its whole row array, so a
+  // page that was in range can point past the end. Unclamped, the slice is
+  // empty and the table renders a header over nothing.
+  it("clamps the page when the row set shrinks under it", async () => {
+    const view = render(DataTableHarness, {
+      props: { rows: makeRows(15), pageSize: 10, forceWidth: 1024, unwired: true },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+
+    await view.rerender({ rows: makeRows(3), pageSize: 10, forceWidth: 1024, unwired: true });
+    expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(3);
+  });
+
   it("renders MobileDataList instead of a <table> under the mobile breakpoint", () => {
     render(DataTableHarness, { props: { rows: makeRows(3), forceWidth: 375 } });
     expect(document.querySelector("table")).toBeNull();

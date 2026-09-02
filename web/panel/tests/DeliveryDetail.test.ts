@@ -296,6 +296,32 @@ describe("DeliveryDetail", () => {
     expect(within(panel).getByText("Transitioned to In Progress")).toBeTruthy();
   });
 
+  // No DeliveryDetail table was ever rendered with more than one page, so
+  // eight dead Next buttons shipped unnoticed.
+  it("pages through an activity timeline longer than one page", async () => {
+    installBackend(
+      detail({
+        activity: Array.from({ length: 12 }, (_, i) => ({
+          kind: "jira",
+          summary: `Activity ${i + 1}`,
+          occurred_at: `2026-08-10T02:${String(i).padStart(2, "0")}:00Z`,
+        })),
+      }),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("tab", { name: "Activity" });
+    await fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
+    const panel = screen.getByRole("tabpanel", { name: "Activity" });
+
+    expect(within(panel).getByText("Activity 1")).toBeTruthy();
+    expect(within(panel).queryByText("Activity 11")).toBeNull();
+
+    await fireEvent.click(within(panel).getByRole("button", { name: "Next" }));
+    expect(within(panel).getByText("Activity 11")).toBeTruthy();
+    expect(within(panel).queryByText("Activity 1")).toBeNull();
+  });
+
   it("confirms a cancel, saying what it does and does not undo, using a freshly fetched revision", async () => {
     const posted: { url: string; body: unknown }[] = [];
     (fetch as unknown as FetchMock).mockImplementation(async (url: string, init?: RequestInit) => {

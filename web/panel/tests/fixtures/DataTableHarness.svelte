@@ -19,6 +19,13 @@
     error?: string | null;
     density?: Density;
     withAction?: boolean;
+    /**
+     * Render DataTable the way every production call site does - rows and
+     * columns only, no page/onPageChange. The wired branch below is what
+     * the original pagination test exercised, which is why an unwired
+     * Next button could stay broken with the suite green.
+     */
+    unwired?: boolean;
   }
   let {
     rows,
@@ -29,6 +36,7 @@
     error = null,
     density = "comfortable",
     withAction = false,
+    unwired = false,
   }: Props = $props();
 
   const columns: Column<Row>[] = [
@@ -48,6 +56,9 @@
     : undefined;
 </script>
 
+{#if unwired}
+  <DataTable {columns} {rows} {selectable} {density} {loading} {error} {forceWidth} {pageSize} />
+{:else}
 <DataTable
   {columns}
   {rows}
@@ -66,6 +77,7 @@
   onSelectionChange={(ids) => (lastSelectionIds = ids)}
   rowAction={rowAction}
 />
+{/if}
 
 <p data-testid="current-page">{page}</p>
 {#if lastSelected}

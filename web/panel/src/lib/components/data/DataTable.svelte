@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts" generics="T extends { id: string | number }">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { getCellValue, type Column, type RowAction, type SortDirection } from "./types";
   import Pagination from "./Pagination.svelte";
   import MobileDataList from "./MobileDataList.svelte";
@@ -13,7 +13,9 @@
     rows: T[];
     selectable?: boolean;
     density?: Density;
+    /** Initial page when uncontrolled; the authoritative page when onPageChange is supplied. */
     page?: number;
+    /** Initial page size when uncontrolled; authoritative when onPageSizeChange is supplied. */
     pageSize?: number;
     onPageChange?: (page: number) => void;
     onPageSizeChange?: (pageSize: number) => void;
@@ -60,6 +62,20 @@
   let sortKey: string | null = $state(null);
   let sortDirection: SortDirection = $state("asc");
 
+  // Paging is uncontrolled unless the parent supplies the matching
+  // callback. It used to be controlled unconditionally, which meant every
+  // call site that passed rows and nothing else - all of them - had a Next
+  // button that called an undefined handler and a page pinned at 1. A
+  // table that is handed rows should page through them; a parent that
+  // wants to own the page still can, by passing one.
+  // untrack because these seed from the props deliberately: in the
+  // uncontrolled case the prop is an initial value, not a binding.
+  let uncontrolledPage = $state(untrack(() => page));
+  let uncontrolledPageSize = $state(untrack(() => pageSize));
+  const pageControlled = $derived(onPageChange !== undefined);
+  const pageSizeControlled = $derived(onPageSizeChange !== undefined);
+  const effectivePageSize = $derived(pageSizeControlled ? pageSize : uncontrolledPageSize);
+
   const isMobile = $derived((forceWidth ?? observedWidth ?? Infinity) < mobileBreakpoint);
   const visibleColumns = $derived(columns.filter((c) => !hiddenColumnKeys.has(c.key)));
 
@@ -84,8 +100,16 @@
     return copy;
   });
 
-  const totalPages = $derived(Math.max(Math.ceil(sortedRows.length / pageSize), 1));
-  const pagedRows = $derived(sortedRows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize));
+  const totalPages = $derived(Math.max(Math.ceil(sortedRows.length / effectivePageSize), 1));
+  // Clamped, because the row array is replaced wholesale on every poll: a
+  // page that was in range a moment ago can point past the end, and an
+  // unclamped slice renders a header over an empty body with no message.
+  const effectivePage = $derived(
+    Math.min(Math.max(pageControlled ? page : uncontrolledPage, 1), totalPages),
+  );
+  const pagedRows = $derived(
+    sortedRows.slice((effectivePage - 1) * effectivePageSize, effectivePage * effectivePageSize),
+  );
 
   function toggleSort(column: Column<T>) {
     if (!column.sortable) return;
@@ -128,7 +152,18 @@
   }
 
   function handlePageChange(next: number) {
+    if (!pageControlled) uncontrolledPage = next;
     onPageChange?.(next);
+  }
+
+  function handlePageSizeChange(next: number) {
+    if (!pageSizeControlled) {
+      uncontrolledPageSize = next;
+      // A smaller page size can leave the current page past the end;
+      // effectivePage clamps it, but resetting is what a reader expects.
+      uncontrolledPage = 1;
+    }
+    onPageSizeChange?.(next);
   }
 
   onMount(() => {
@@ -261,7 +296,13 @@
 
   {#if !loading && !error && sortedRows.length > 0}
     <div class="pagination-row">
-      <Pagination currentPage={page} {totalPages} {pageSize} onPageChange={handlePageChange} {onPageSizeChange} />
+      <Pagination
+        currentPage={effectivePage}
+        {totalPages}
+        pageSize={effectivePageSize}
+        onPageChange={handlePageChange}
+        onPageSizeChange={handlePageSizeChange}
+      />
     </div>
   {/if}
 </div>
