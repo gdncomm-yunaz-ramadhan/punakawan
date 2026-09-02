@@ -1,0 +1,25 @@
+internal/delivery/readiness.go
+  a97deff596c14d9f 1-3,8-10,12,14-126,128-202,236
+internal/delivery/readiness_test.go
+  a97deff596c14d9f 1-181,183-185,187-189,193-201,204-206,208-212,232-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "22a05aaa751ce44a6bbdb9574d8dee9f48f64744",
+  "prompts": {
+    "a97deff596c14d9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a1e97913-4ae9-4a6e-9951-77d4563ed873",
+        "model": "claude-opus-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 411,
+      "total_deletions": 0,
+      "accepted_lines": 402,
+      "overriden_lines": 9
+    }
+  }
+}
