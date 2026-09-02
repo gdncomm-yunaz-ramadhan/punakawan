@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -262,5 +263,52 @@ func TestReconcileIsIdempotentOnExactRetry(t *testing.T) {
 	}
 	if !strings.EqualFold(strings.Join(first.Reconciliation.Plans, ","), strings.Join(second.Reconciliation.Plans, ",")) {
 		t.Fatalf("retry Plans = %v, want identical to first call %v (no needless revision bump)", second.Reconciliation.Plans, first.Reconciliation.Plans)
+	}
+}
+
+// TestReconcileNamesRequirementsNoTaskCovers is the exact shape that went
+// unnoticed: a Jira parent whose subtask was hydrated as a requirement
+// source, returned in requirement_sources, and then left with no task and
+// no lane - with an empty reconciliation.skipped, because the mapping
+// only ever ran task-to-source and nothing looked the other way.
+func TestReconcileNamesRequirementsNoTaskCovers(t *testing.T) {
+	svc, jira := newServiceWithJira(t)
+	jira.Issue("ABC-123").WithSubtasks("ABC-124")
+
+	// The caller names no reference, so its one task covers the parent
+	// key and the subtask is covered by nothing.
+	result := mustStart(t, svc, StartRequest{
+		IdempotencyKey: "start-uncovered",
+		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
+		Projects: []ProjectDraft{{
+			Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout",
+			Title: "the parent's own work", TaskKey: "ABC-123",
+		}},
+	})
+
+	if len(result.Reconciliation.Skipped) != 0 {
+		t.Fatalf("Skipped = %v, want none - the task itself reconciled fine", result.Reconciliation.Skipped)
+	}
+	want := []string{"ABC-124"}
+	if !slices.Equal(result.Reconciliation.UncoveredRequirements, want) {
+		t.Fatalf("UncoveredRequirements = %v, want %v", result.Reconciliation.UncoveredRequirements, want)
+	}
+}
+
+func TestReconcileNamesNothingUncoveredWhenEveryRequirementHasATask(t *testing.T) {
+	svc, jira := newServiceWithJira(t)
+	jira.Issue("ABC-123").WithSubtasks("ABC-124")
+
+	result := mustStart(t, svc, StartRequest{
+		IdempotencyKey: "start-covered",
+		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
+		Projects: []ProjectDraft{
+			{Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout", Title: "parent work", TaskKey: "ABC-123"},
+			{Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout", Title: "subtask work", TaskKey: "ABC-124"},
+		},
+	})
+
+	if len(result.Reconciliation.UncoveredRequirements) != 0 {
+		t.Fatalf("UncoveredRequirements = %v, want none", result.Reconciliation.UncoveredRequirements)
 	}
 }

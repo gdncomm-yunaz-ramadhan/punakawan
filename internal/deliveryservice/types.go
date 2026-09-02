@@ -191,6 +191,14 @@ type ReconcileReport struct {
 	Plans        []string `json:"plans"`
 	RunnableWork []string `json:"runnable_work,omitempty"`
 	Skipped      []string `json:"skipped,omitempty"`
+	// UncoveredRequirements names every requirement source this delivery
+	// captured that no task covers, so nothing was opened to do it.
+	// Reconciliation maps in one direction only - task to source - so
+	// without this pass a captured Jira subtask that no task referenced
+	// was reported in requirement_sources and then silently left with no
+	// lane, which is exactly how one went unnoticed through a whole
+	// delivery.
+	UncoveredRequirements []string `json:"uncovered_requirements,omitempty"`
 }
 
 // StartResult is StartOrResolve's success output.

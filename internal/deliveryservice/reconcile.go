@@ -10,6 +10,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/ygrip/punakawan/internal/delivery"
@@ -187,7 +189,50 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 			report.RunnableWork = append(report.RunnableWork, lane.Id)
 		}
 	}
+
+	report.UncoveredRequirements = uncoveredRequirements(ctx, s, orchestrationID, sources)
 	return report, nil
+}
+
+// uncoveredRequirements is the inverse of the task-to-source mapping
+// above: it walks the captured sources and names the ones no parent task
+// covers. The commonest shape is a Jira parent whose subtasks were
+// hydrated as requirement sources while the caller's tasks[] named only
+// the parent - which is legitimate when the parent is the unit of work,
+// and a real omission when it is not. Either way the caller should be
+// told, and the readiness check decides what it means at completion.
+//
+// A read failure here is not allowed to fail the reconciliation that has
+// already succeeded: a missing warning is a far smaller harm than losing
+// a delivery that was correctly created.
+func uncoveredRequirements(ctx context.Context, s *Service, orchestrationID string, sources []*protocol.RequirementSource) []string {
+	if len(sources) == 0 {
+		return nil
+	}
+	tasks, _, err := s.deliveries.ListGraph(ctx, orchestrationID)
+	if err != nil {
+		slog.Warn("deliveryservice: list parent tasks for coverage check", "orchestration_id", orchestrationID, "error", err)
+		return nil
+	}
+	covered := map[string]bool{}
+	for _, task := range tasks {
+		for _, id := range task.SourceIds {
+			covered[id] = true
+		}
+	}
+	var out []string
+	for _, src := range sources {
+		if src == nil || covered[src.Id] {
+			continue
+		}
+		label := src.CanonicalKey
+		if src.ExternalId != nil && strings.TrimSpace(*src.ExternalId) != "" {
+			label = strings.TrimSpace(*src.ExternalId)
+		}
+		out = append(out, label)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // toPlan turns a not-yet-saved PlanDraft into an actual plan.Plan ready
