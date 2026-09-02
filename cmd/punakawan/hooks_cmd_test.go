@@ -37,9 +37,9 @@ func setUpSubagentUsageFixture(t *testing.T) (worktree string, sessionID string)
 		t.Fatalf("OpenDeliveryStore: %v", err)
 	}
 
-	resolved, err := store.ResolveJiraDelivery(ctx, "resolve-"+delivery.NewID(), "PAY-1", delivery.ResolveJiraDeliveryOptions{})
+	resolved, err := store.StartOrResolveExecution(ctx, "resolve-"+delivery.NewID(), delivery.SourceIdentity{Kind: delivery.SourceKindJira, Provider: "jira", Tenant: "test-tenant", Key: "PAY-1"}, delivery.OrchestrationOptions{})
 	if err != nil {
-		t.Fatalf("ResolveJiraDelivery: %v", err)
+		t.Fatalf("StartOrResolveExecution: %v", err)
 	}
 
 	worktree = filepath.Join(dir, "repo-a")

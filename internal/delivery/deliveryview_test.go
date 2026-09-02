@@ -535,9 +535,9 @@ func TestDeliveryViewIncludesCapturedJiraSnapshotAsActivity(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	resolved, err := s.ResolveJiraDelivery(ctx, "resolve-jira-activity", "TRF-19272", ResolveJiraDeliveryOptions{})
+	resolved, err := s.StartOrResolveExecution(ctx, "resolve-jira-activity", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "test-tenant", Key: "TRF-19272"}, OrchestrationOptions{})
 	if err != nil {
-		t.Fatalf("ResolveJiraDelivery: %v", err)
+		t.Fatalf("StartOrResolveExecution: %v", err)
 	}
 	view, err := s.BuildDeliveryView(ctx, resolved.Execution.OrchestrationID)
 	if err != nil {

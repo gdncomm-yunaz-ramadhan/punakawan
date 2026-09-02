@@ -32,16 +32,16 @@ func TestRetryWorkLogSyncReplaysExistingLedgerEntry(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	store := delivery.NewStore(db)
 	ob := outbox.New(db)
-	resolved, err := store.ResolveJiraDelivery(ctx, "resolve", "TRF-19272", delivery.ResolveJiraDeliveryOptions{})
+	resolved, err := store.StartOrResolveExecution(ctx, "resolve", delivery.SourceIdentity{Kind: delivery.SourceKindJira, Provider: "jira", Tenant: "test-tenant", Key: "TRF-19272"}, delivery.OrchestrationOptions{})
 	if err != nil {
-		t.Fatalf("ResolveJiraDelivery: %v", err)
+		t.Fatalf("StartOrResolveExecution: %v", err)
 	}
 	worklogID := "worklog-retry"
 	if _, err := db.Reader().ExecContext(ctx, `
 		INSERT INTO delivery_worklogs
 			(id, orchestration_id, case_id, execution_id, lane_id, parent_task_id, session_id, jira_issue_key, started_at, duration_seconds, summary, created_at)
 		VALUES (?, ?, ?, ?, 'lane-1', '', 'session-1', 'TRF-19272', ?, 900, 'Recovery', ?)
-	`, worklogID, resolved.Execution.OrchestrationID, resolved.Case.ID, resolved.Execution.ID, time.Now().UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	`, worklogID, resolved.Execution.OrchestrationID, resolved.Lifetime.ID, resolved.Execution.ID, time.Now().UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatalf("insert worklog: %v", err)
 	}
 	caller := &fakeAdapterCaller{responses: map[string]string{"atlassian.addWorklog": `{"ok":true,"worklogId":"jira-worklog-1"}`}, failOps: map[string]bool{}}

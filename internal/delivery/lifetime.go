@@ -48,47 +48,6 @@ type DeliveryLifetime struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-// ResolveJiraDeliveryOptions is ResolveJiraDelivery's compatibility input,
-// mirroring OrchestrationOptions plus the initial Jira snapshot fields.
-type ResolveJiraDeliveryOptions struct {
-	Title                string
-	Description          string
-	WorkflowDefinitionID string
-	SnapshotTitle        string
-	SnapshotBody         string
-	PlanID               string
-	PlanRevision         int
-}
-
-// ResolvedJiraDelivery is ResolveJiraDelivery's compatibility output.
-type ResolvedJiraDelivery struct {
-	Case      *DeliveryLifetime  `json:"case"`
-	Execution *DeliveryExecution `json:"execution"`
-	Created   bool               `json:"created"`
-}
-
-// ResolveJiraDelivery resolves the exact normalized Jira key to one lifetime
-// case in the single, global (tenant-less) namespace every caller of this
-// method has always shared. It is a thin compatibility wrapper over
-// StartOrResolveExecution kept for existing single-tenant Jira callers;
-// new code should call StartOrResolveExecution (or deliveryservice.Service)
-// directly with an explicit tenant.
-func (s *Store) ResolveJiraDelivery(ctx context.Context, idempotencyKey, jiraIssueKey string, opts ResolveJiraDeliveryOptions) (*ResolvedJiraDelivery, error) {
-	_, issueKey, err := canonicalJiraSource(jiraIssueKey)
-	if err != nil {
-		return nil, err
-	}
-	resolved, err := s.StartOrResolveExecution(ctx, idempotencyKey, SourceIdentity{Kind: SourceKindJira, Provider: "jira", Key: issueKey}, OrchestrationOptions{
-		Title: opts.Title, Description: opts.Description, WorkflowDefinitionID: opts.WorkflowDefinitionID,
-		SnapshotTitle: opts.SnapshotTitle, SnapshotBody: opts.SnapshotBody,
-		PlanID: opts.PlanID, PlanRevision: opts.PlanRevision,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("delivery: resolve Jira delivery: %w", err)
-	}
-	return &ResolvedJiraDelivery{Case: resolved.Lifetime, Execution: resolved.Execution, Created: resolved.CreatedExecution}, nil
-}
-
 // ResolvedExecution is StartOrResolveExecution's result: the exact lifetime
 // and execution the call resolved to, plus which of the two (if any) it
 // actually created.
@@ -107,8 +66,14 @@ type rowQuerier interface {
 
 const caseColumns = `id, source_kind, source_provider, source_tenant, source_key, jira_issue_key, status, created_at, updated_at`
 
-func getActiveJiraLifetime(ctx context.Context, q rowQuerier, tenant, canonicalKey string) (*DeliveryLifetime, error) {
-	return scanCase(q.QueryRowContext(ctx, `SELECT `+caseColumns+` FROM delivery_cases WHERE source_kind = 'jira' AND source_provider = 'jira' AND source_tenant = ? AND source_key = ? AND status = 'active'`, tenant, canonicalKey))
+// getActiveJiraLifetime finds the open lifetime for a Jira key. It
+// deliberately ignores the tenant: a Jira issue is one piece of work no
+// matter which adapter instance a caller reached it through, and keying
+// this lookup by tenant as well is what previously let the same issue key
+// open a second, parallel delivery whenever two callers named the tenant
+// differently. The tenant is still recorded on the case for provenance.
+func getActiveJiraLifetime(ctx context.Context, q rowQuerier, canonicalKey string) (*DeliveryLifetime, error) {
+	return scanCase(q.QueryRowContext(ctx, `SELECT `+caseColumns+` FROM delivery_cases WHERE source_kind = 'jira' AND source_provider = 'jira' AND source_key = ? AND status = 'active'`, canonicalKey))
 }
 
 func getLifetimeByID(ctx context.Context, q rowQuerier, id string) (*DeliveryLifetime, error) {
@@ -185,7 +150,7 @@ func (s *Store) StartOrResolveExecution(ctx context.Context, idempotencyKey stri
 		// create-a-new-lifetime branch further down.
 		lifetimeID := ""
 		if source.Kind == SourceKindJira {
-			existing, err := getActiveJiraLifetime(ctx, tx, tenant, canonicalKey)
+			existing, err := getActiveJiraLifetime(ctx, tx, canonicalKey)
 			switch {
 			case err == nil:
 				lifetimeID = existing.ID
@@ -306,7 +271,7 @@ func (s *Store) StartOrResolveExecution(ctx context.Context, idempotencyKey stri
 
 	var lifetime *DeliveryLifetime
 	if source.Kind == SourceKindJira {
-		lifetime, err = getActiveJiraLifetime(ctx, s.db.Reader(), tenant, canonicalKey)
+		lifetime, err = getActiveJiraLifetime(ctx, s.db.Reader(), canonicalKey)
 	} else {
 		lifetime, err = getLifetimeByID(ctx, s.db.Reader(), adhocLifetimeID)
 	}
@@ -328,8 +293,7 @@ func canonicalJiraSource(issueKey string) (string, string, error) {
 	return "jira:" + key, key, nil
 }
 
-// GetDeliveryCaseByJira returns the exact global (tenant-less) lifetime for
-// jiraIssueKey - its active lifetime if one exists, otherwise its most
+// GetDeliveryCaseByJira returns the lifetime for jiraIssueKey - its active lifetime if one exists, otherwise its most
 // recently created (typically cancelled) one.
 func (s *Store) GetDeliveryCaseByJira(ctx context.Context, jiraIssueKey string) (*DeliveryLifetime, error) {
 	key, _, err := canonicalJiraSource(jiraIssueKey)
