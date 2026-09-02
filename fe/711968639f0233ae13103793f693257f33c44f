@@ -1,0 +1,58 @@
+internal/capability/registry.go
+  0ce2e23a8fd2fe91 47-53
+internal/mcpserver/tools.go
+  0ce2e23a8fd2fe91 4-5,12-17,19-33,35-36
+internal/mcpserver/tools_invokeworkflowdefinition.go
+  0ce2e23a8fd2fe91 12,31,42,52-55,61,92,107-111
+internal/mcpserver/tools_startdelivery.go
+  0ce2e23a8fd2fe91 18,157,165,234,239-243
+cmd/punakawan/mcp_cmd.go
+  0ce2e23a8fd2fe91 5-6,24-25,35-38,41-51,53
+internal/mcpserver/server_http_test.go
+  0ce2e23a8fd2fe91 1-89
+internal/mcpserver/toolindex.go
+  0ce2e23a8fd2fe91 3-5,7-10,13-27,30-31,46-115
+internal/panel/server/server.go
+  0ce2e23a8fd2fe91 12,207-215,228,238
+internal/mcpserver/tools_public.go
+  0ce2e23a8fd2fe91 18-20,23,25-27,29-31,34,41,44
+internal/mcpserver/tools_sessions.go
+  0ce2e23a8fd2fe91 29-30,44-54,179-180,191-192,197-198
+internal/mcpserver/toolindex_test.go
+  0ce2e23a8fd2fe91 1-184
+internal/mcpserver/server.go
+  0ce2e23a8fd2fe91 15,27-29,38-69,119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "fe711968639f0233ae13103793f693257f33c44f",
+  "prompts": {
+    "0ce2e23a8fd2fe91": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ad81d9d-0693-4b69-a801-a3151a190035",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 617,
+      "total_deletions": 115,
+      "accepted_lines": 545,
+      "overriden_lines": 0
+    },
+    "5a444a210ef755c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04259-55bc-7da3-a94a-7c925a38a0ed",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4095,
+      "overriden_lines": 0
+    }
+  }
+}
