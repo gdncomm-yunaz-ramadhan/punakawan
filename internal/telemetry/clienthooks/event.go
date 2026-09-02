@@ -1,6 +1,9 @@
 package clienthooks
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"path/filepath"
 	"strings"
 
 	"github.com/ygrip/punakawan/internal/telemetry"
@@ -10,13 +13,34 @@ import (
 // (as opposed to a named subagent's) is recorded under.
 const mainSourceID = "main"
 
-// sourceIDFor returns agentID as the snapshot source id when a lifecycle
-// event fired inside a subagent, or mainSourceID for the top-level turn.
-func sourceIDFor(agentID string) string {
-	if strings.TrimSpace(agentID) == "" {
+// sourceIDForTranscript keys a snapshot by the transcript it summarizes.
+//
+// The source id used to be the client's agent id, on the assumption that
+// a subagent event summarized the subagent's own transcript. It does not:
+// every branch here summarizes whatever path the hook payload carried,
+// and a client that passes the session transcript to a subagent event -
+// which Claude Code does - then stored the whole session's totals a
+// second time under a different source id. Since totals are summed across
+// sources, one session with two tool-use agent ids reported three times
+// its real usage.
+//
+// Keying by the transcript makes the id follow the thing being counted:
+// every event over one file collapses onto one row, and a genuinely
+// separate subagent transcript (Codex supplies one) still earns its own.
+// The session's own transcript keeps the name "main" - Claude Code names
+// it after the session - so existing rows stay addressable.
+func sourceIDForTranscript(externalSessionID, path string) string {
+	clean := strings.TrimSpace(path)
+	if clean == "" {
 		return mainSourceID
 	}
-	return strings.TrimSpace(agentID)
+	clean = filepath.Clean(clean)
+	base := strings.TrimSuffix(filepath.Base(clean), filepath.Ext(clean))
+	if session := strings.TrimSpace(externalSessionID); session != "" && strings.EqualFold(base, session) {
+		return mainSourceID
+	}
+	sum := sha256.Sum256([]byte(clean))
+	return "t" + hex.EncodeToString(sum[:8])
 }
 
 // stopIDFor derives a deterministic Finalize stop id from a session's own

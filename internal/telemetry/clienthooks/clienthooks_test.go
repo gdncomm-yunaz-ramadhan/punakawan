@@ -1,6 +1,7 @@
 package clienthooks
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,17 +9,31 @@ import (
 )
 
 // loadFixture reads testdata/name, substituting {{TRANSCRIPT}} and
-// {{AGENT_TRANSCRIPT}} with the absolute paths of this package's own
-// versioned transcript fixtures.
+// {{AGENT_TRANSCRIPT}} with absolute transcript paths.
+//
+// The main transcript is materialized under the fixture's own session id,
+// because that is how both clients name a session's transcript and how
+// sourceIDForTranscript recognizes it as the session's own. The subagent
+// transcript keeps its own name, so it reads as the separate file it is.
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
-	main, err := filepath.Abs(filepath.Join("testdata", "transcript_main.v1.jsonl"))
+	var payload struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("decode fixture %s: %v", name, err)
+	}
+	body, err := os.ReadFile(filepath.Join("testdata", "transcript_main.v1.jsonl"))
 	if err != nil {
-		t.Fatalf("resolve main transcript fixture: %v", err)
+		t.Fatalf("read main transcript fixture: %v", err)
+	}
+	main := filepath.Join(t.TempDir(), payload.SessionID+".jsonl")
+	if err := os.WriteFile(main, body, 0o600); err != nil {
+		t.Fatalf("write main transcript fixture: %v", err)
 	}
 	agent, err := filepath.Abs(filepath.Join("testdata", "transcript_subagent.v1.jsonl"))
 	if err != nil {
@@ -28,6 +43,17 @@ func loadFixture(t *testing.T, name string) []byte {
 	text = strings.ReplaceAll(text, "{{TRANSCRIPT}}", main)
 	text = strings.ReplaceAll(text, "{{AGENT_TRANSCRIPT}}", agent)
 	return []byte(text)
+}
+
+// subagentSourceID is what a snapshot over the subagent transcript
+// fixture must be keyed by.
+func subagentSourceID(t *testing.T, sessionID string) string {
+	t.Helper()
+	agent, err := filepath.Abs(filepath.Join("testdata", "transcript_subagent.v1.jsonl"))
+	if err != nil {
+		t.Fatalf("resolve subagent transcript fixture: %v", err)
+	}
+	return sourceIDForTranscript(sessionID, agent)
 }
 
 func TestParseClaudeEventSessionStartBegins(t *testing.T) {
@@ -74,19 +100,17 @@ func TestParseClaudeEventPostToolUseFailureAlsoSnapshots(t *testing.T) {
 	}
 }
 
-func TestParseClaudeEventSubagentStartEstablishesSource(t *testing.T) {
+// A subagent start used to write a zero-usage placeholder row keyed by
+// the agent id. With sources keyed by transcript there is nothing to
+// place-hold, and the row was only ever a source that could not gain
+// usage of its own.
+func TestParseClaudeEventSubagentStartRecordsNothing(t *testing.T) {
 	mapped, err := ParseClaudeEvent("SubagentStart", loadFixture(t, "claude_subagent_start.v1.json"))
 	if err != nil {
 		t.Fatalf("ParseClaudeEvent: %v", err)
 	}
-	if mapped.Action != ActionSnapshot || mapped.Snapshot == nil {
-		t.Fatalf("mapped = %+v, want ActionSnapshot", mapped)
-	}
-	if mapped.Snapshot.SourceID != "agent-1" {
-		t.Fatalf("source id = %q, want agent-1", mapped.Snapshot.SourceID)
-	}
-	if mapped.Snapshot.Sequence != 0 {
-		t.Fatalf("sequence = %d, want 0 at subagent start", mapped.Snapshot.Sequence)
+	if mapped.Action != ActionIgnore {
+		t.Fatalf("mapped = %+v, want ActionIgnore", mapped)
 	}
 }
 
@@ -98,11 +122,53 @@ func TestParseClaudeEventSubagentStopSummarizesItsOwnTranscript(t *testing.T) {
 	if mapped.Action != ActionSnapshot || mapped.Snapshot == nil {
 		t.Fatalf("mapped = %+v, want ActionSnapshot", mapped)
 	}
-	if mapped.Snapshot.SourceID != "agent-1" {
-		t.Fatalf("source id = %q, want agent-1", mapped.Snapshot.SourceID)
+	if want := subagentSourceID(t, "claude-sess-1"); mapped.Snapshot.SourceID != want {
+		t.Fatalf("source id = %q, want the subagent transcript's own key %q", mapped.Snapshot.SourceID, want)
+	}
+	if mapped.Snapshot.SourceID == mainSourceID {
+		t.Fatal("a separate subagent transcript must not land on the session's own source")
 	}
 	if mapped.Snapshot.InputTokens != 7 || mapped.Snapshot.OutputTokens != 3 {
 		t.Fatalf("snapshot = %+v, want the subagent transcript fixture's totals (input=7 output=3)", mapped.Snapshot)
+	}
+}
+
+// The delivery that prompted this reported 2.3x its real usage: a
+// PostToolUse carrying an agent id and a SessionEnd carrying none both
+// summarized the same session transcript, and were stored under
+// different source ids that the totals then added together.
+func TestClaudeEventsOverOneTranscriptShareOneSource(t *testing.T) {
+	postToolUse, err := ParseClaudeEvent("PostToolUse", loadFixture(t, "claude_post_tool_use.v1.json"))
+	if err != nil {
+		t.Fatalf("ParseClaudeEvent PostToolUse: %v", err)
+	}
+	stop, err := ParseClaudeEvent("Stop", loadFixture(t, "claude_stop.v1.json"))
+	if err != nil {
+		t.Fatalf("ParseClaudeEvent Stop: %v", err)
+	}
+	if postToolUse.Snapshot.SourceID != stop.Snapshot.SourceID {
+		t.Fatalf("source ids %q and %q differ over the same session transcript - their totals would be summed",
+			postToolUse.Snapshot.SourceID, stop.Snapshot.SourceID)
+	}
+	if postToolUse.Snapshot.SourceID != mainSourceID {
+		t.Fatalf("source id = %q, want %q for a session's own transcript", postToolUse.Snapshot.SourceID, mainSourceID)
+	}
+}
+
+func TestSourceIDForTranscriptIsStablePerPathAndDistinctAcrossPaths(t *testing.T) {
+	const session = "sess-1"
+	a := sourceIDForTranscript(session, "/tmp/agents/agent-a.jsonl")
+	if a != sourceIDForTranscript(session, "/tmp/agents/./agent-a.jsonl") {
+		t.Fatal("the same transcript reached by two spellings must key one source")
+	}
+	if a == sourceIDForTranscript(session, "/tmp/agents/agent-b.jsonl") {
+		t.Fatal("two transcripts must key two sources")
+	}
+	if a == mainSourceID {
+		t.Fatal("a transcript that is not the session's own must not claim the main source")
+	}
+	if got := sourceIDForTranscript(session, ""); got != mainSourceID {
+		t.Fatalf("source id with no transcript = %q, want %q", got, mainSourceID)
 	}
 }
 
@@ -191,13 +257,13 @@ func TestParseCodexEventPostToolUseSnapshotsCumulativeUsage(t *testing.T) {
 	}
 }
 
-func TestParseCodexEventSubagentStartEstablishesSource(t *testing.T) {
+func TestParseCodexEventSubagentStartRecordsNothing(t *testing.T) {
 	mapped, err := ParseCodexEvent("SubagentStart", loadFixture(t, "codex_subagent_start.v1.json"))
 	if err != nil {
 		t.Fatalf("ParseCodexEvent: %v", err)
 	}
-	if mapped.Action != ActionSnapshot || mapped.Snapshot.SourceID != "agent-1" || mapped.Snapshot.Sequence != 0 {
-		t.Fatalf("mapped = %+v, want a zero-sequence agent-1 snapshot", mapped)
+	if mapped.Action != ActionIgnore {
+		t.Fatalf("mapped = %+v, want ActionIgnore", mapped)
 	}
 }
 
@@ -206,8 +272,8 @@ func TestParseCodexEventSubagentStopUsesAgentTranscriptPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCodexEvent: %v", err)
 	}
-	if mapped.Action != ActionSnapshot || mapped.Snapshot.SourceID != "agent-1" {
-		t.Fatalf("mapped = %+v, want an agent-1 snapshot", mapped)
+	if want := subagentSourceID(t, "codex-thr-1"); mapped.Action != ActionSnapshot || mapped.Snapshot.SourceID != want {
+		t.Fatalf("mapped = %+v, want a snapshot keyed by the agent transcript %q", mapped, want)
 	}
 	if mapped.Snapshot.InputTokens != 7 || mapped.Snapshot.OutputTokens != 3 {
 		t.Fatalf("snapshot = %+v, want the subagent transcript fixture's totals (input=7 output=3), not the parent's", mapped.Snapshot)

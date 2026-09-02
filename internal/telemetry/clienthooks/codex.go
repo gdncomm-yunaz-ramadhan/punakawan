@@ -79,15 +79,15 @@ func ParseCodexEvent(eventName string, payload []byte) (Mapped, error) {
 		if err != nil {
 			return Mapped{}, fmt.Errorf("clienthooks: summarize transcript for codex %s: %w", eventName, err)
 		}
-		snap := snapshotFromTranscript("", sourceIDFor(p.AgentID), summary, now)
+		snap := snapshotFromTranscript("", sourceIDForTranscript(sessionID, p.TranscriptPath), summary, now)
 		return Mapped{Action: ActionSnapshot, ExternalSessionID: sessionID, Snapshot: &snap}, nil
 
 	case "SubagentStart":
-		if strings.TrimSpace(p.AgentID) == "" {
-			return ignoredFor(sessionID), nil
-		}
-		snap := telemetry.SnapshotRequest{SourceID: sourceIDFor(p.AgentID), Sequence: 0, ObservedAt: now}
-		return Mapped{Action: ActionSnapshot, ExternalSessionID: sessionID, Snapshot: &snap}, nil
+		// This used to write a zero-usage placeholder row keyed by the
+		// agent id, so a subagent was visible before its first real usage.
+		// With sources keyed by transcript there is nothing to place-hold:
+		// the subagent's usage lands on whichever transcript reports it.
+		return ignoredFor(sessionID), nil
 
 	case "SubagentStop":
 		transcriptPath := strings.TrimSpace(p.AgentTranscriptPath)
@@ -101,7 +101,7 @@ func ParseCodexEvent(eventName string, payload []byte) (Mapped, error) {
 		if err != nil {
 			return Mapped{}, fmt.Errorf("clienthooks: summarize transcript for codex %s: %w", eventName, err)
 		}
-		snap := snapshotFromTranscript("", sourceIDFor(p.AgentID), summary, now)
+		snap := snapshotFromTranscript("", sourceIDForTranscript(sessionID, transcriptPath), summary, now)
 		return Mapped{Action: ActionSnapshot, ExternalSessionID: sessionID, Snapshot: &snap}, nil
 
 	case "Stop":
@@ -112,7 +112,7 @@ func ParseCodexEvent(eventName string, payload []byte) (Mapped, error) {
 		if err != nil {
 			return Mapped{}, fmt.Errorf("clienthooks: summarize transcript for codex %s: %w", eventName, err)
 		}
-		snap := snapshotFromTranscript("", mainSourceID, summary, now)
+		snap := snapshotFromTranscript("", sourceIDForTranscript(sessionID, p.TranscriptPath), summary, now)
 		return Mapped{Action: ActionSnapshot, ExternalSessionID: sessionID, Snapshot: &snap}, nil
 
 	case "SessionEnd":
@@ -125,7 +125,7 @@ func ParseCodexEvent(eventName string, payload []byte) (Mapped, error) {
 			if err != nil {
 				return Mapped{}, fmt.Errorf("clienthooks: summarize transcript for codex %s: %w", eventName, err)
 			}
-			snap := snapshotFromTranscript("", mainSourceID, summary, now)
+			snap := snapshotFromTranscript("", sourceIDForTranscript(sessionID, p.TranscriptPath), summary, now)
 			snapshot = &snap
 		}
 		reason := strings.TrimSpace(p.Reason)
