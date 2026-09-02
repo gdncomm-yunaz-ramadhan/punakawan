@@ -6,7 +6,7 @@ instructions: semar/prompt.md
 output_schema: final_plan
 tools:
   read_only: false
-  allowed: [plan_get, plan_save, get_delivery, start_delivery, start_delivery_session, checkpoint_delivery_session, report_delivery_progress, answer_delivery_question, complete_delivery, get_workflow, invoke_workflow, list_workflows]
+  allowed: [plan_get, plan_save, get_delivery, start_delivery, start_delivery_session, checkpoint_delivery_session, report_delivery_progress, answer_delivery_question, map_delivery_work_item, log_delivery_work, retry_worklog_sync, complete_delivery_lane, ingest_delivery_usage_snapshot, finalize_delivery_session, complete_delivery, get_workflow, invoke_workflow, list_workflows]
 execution:
   can_mutate: true
   requires_evidence: true
