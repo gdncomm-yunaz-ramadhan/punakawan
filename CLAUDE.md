@@ -84,5 +84,15 @@ by hand in Jira comments.
   starting another.
 - `map_delivery_work_item` for each lane, then `log_delivery_work` with the
   lane id when that task's work is done.
-- `get_delivery` shows the current state and the ids the calls above need.
+- `complete_delivery_lane` to close that lane, saying what you verified and
+  whether it was accepted or failed. Nothing else moves a lane out of
+  runnable: skip this and the lane stays open with every verification
+  dimension pending.
+- `complete_delivery` at the end. It is refused while the delivery still
+  has gaps - open lanes, unreported verification, requirements no lane
+  covers, unsynced worklogs, unpriceable usage. Close them rather than
+  passing `acknowledge_gaps`, which is for a gap you genuinely cannot
+  close and records it as waived.
+- `get_delivery` shows the current state, its readiness, and the ids the
+  calls above need.
 <!-- punakawan:end -->

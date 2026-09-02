@@ -182,6 +182,8 @@ func TestServerInstructionsOnlyNameRealTools(t *testing.T) {
 		"orchestration_id": true, "execution_id": true, "parent_task_id": true,
 		"requirement_source_id": true, "requirement_sources": true, "lane_id": true,
 		"intent_id": true, "next_action": true, "needs_input": true,
+		"telemetry_session_id": true, "acknowledge_gaps": true,
+		"uncovered_requirements": true,
 	}
 	for _, word := range regexp.MustCompile(`[a-z]+(?:_[a-z]+)+`).FindAllString(serverInstructions, -1) {
 		if notATool[word] || registered.Has(word) {
@@ -196,7 +198,7 @@ func TestServerInstructionsOnlyNameRealTools(t *testing.T) {
 // agent has to be told which ids come from where, or it calls them in an
 // order that cannot work.
 func TestServerInstructionsStateTheDeliveryCallOrder(t *testing.T) {
-	for _, ordered := range []string{"plan_get", "start_delivery", "map_delivery_work_item", "log_delivery_work", "finalize_delivery_session", "complete_delivery"} {
+	for _, ordered := range []string{"plan_get", "start_delivery", "map_delivery_work_item", "log_delivery_work", "complete_delivery_lane", "finalize_delivery_session", "complete_delivery"} {
 		if !strings.Contains(serverInstructions, ordered) {
 			t.Errorf("server instructions omit %q from the delivery call order", ordered)
 		}
