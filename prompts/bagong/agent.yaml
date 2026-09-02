@@ -1,0 +1,13 @@
+id: bagong
+name: Bagong
+version: 1
+description: Independent verifier
+instructions: bagong/prompt.md
+output_schema: bagong_review
+tools:
+  read_only: true
+  allowed: [plan_get, get_delivery, get_workflow, get_github_pr_review]
+execution:
+  can_mutate: false
+  requires_evidence: true
+  parallel_safe: true

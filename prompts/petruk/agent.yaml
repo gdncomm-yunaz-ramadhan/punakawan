@@ -1,0 +1,13 @@
+id: petruk
+name: Petruk
+version: 1
+description: Solution planner
+instructions: petruk/prompt.md
+output_schema: petruk_plan
+tools:
+  read_only: false
+  allowed: [plan_get, plan_save, get_delivery, get_workflow, list_workflows]
+execution:
+  can_mutate: true
+  requires_evidence: true
+  parallel_safe: true

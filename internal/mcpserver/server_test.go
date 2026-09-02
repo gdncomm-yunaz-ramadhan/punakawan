@@ -120,6 +120,7 @@ func TestToolListIsFocusedPublicSurface(t *testing.T) {
 
 	names := listToolNames(t, cs)
 	want := map[string]bool{
+		"role_list": true, "role_get": true,
 		"list_adapter_operations": true, "call_adapter_operation": true,
 		"upsert_project": true, "list_projects": true,
 		"save_workflow": true, "get_workflow": true, "list_workflows": true, "invoke_workflow": true,

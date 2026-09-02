@@ -24,9 +24,14 @@ type AgentSession struct {
 	ClientKind        string
 	ExternalSessionID string
 	Participant       string
-	Provider          string
-	Model             string
-	WorktreePath      string
+	// RoleVersion is the internal/agent.RoleSpec.Version this session's
+	// Participant resolved to at Begin time (empty when Participant did
+	// not name one of the four known roles - best-effort enrichment, not
+	// a required input).
+	RoleVersion  string
+	Provider     string
+	Model        string
+	WorktreePath string
 	// Status is active, closed (Finalize ran), or abandoned (reserved for a
 	// future reconciliation pass; nothing in this package sets it yet).
 	Status string
@@ -50,9 +55,12 @@ type BeginRequest struct {
 	ClientKind        string
 	ExternalSessionID string
 	Participant       string
-	Provider          string
-	Model             string
-	WorktreePath      string
+	// RoleVersion is passed through to the created AgentSession's own
+	// RoleVersion field verbatim - see AgentSession.RoleVersion.
+	RoleVersion  string
+	Provider     string
+	Model        string
+	WorktreePath string
 }
 
 // ModelUsage is one model's token usage as observed at snapshot capture

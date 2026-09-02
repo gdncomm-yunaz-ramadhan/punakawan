@@ -7,13 +7,16 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ygrip/punakawan/internal/agent"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/workflowdef"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
-func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex) {
+func registerPublicTools(server *mcp.Server, a *app.App, reg *toolIndex, agentReg agent.AgentRegistry) {
+	addTool(server, reg, &mcp.Tool{Name: "role_list", Description: "List Punakawan's declared roles (id, name, description, version)."}, roleListHandler(agentReg))
+	addTool(server, reg, &mcp.Tool{Name: "role_get", Description: "Fetch one role's full declaration: resolved instructions, output schema, tool policy, and execution policy."}, roleGetHandler(agentReg))
 	addTool(server, reg, &mcp.Tool{Name: "list_adapter_operations", Description: "List live adapter operations and input schemas."}, listAdapterOperationsHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "call_adapter_operation", Description: "Invoke one declared adapter operation; use its discovered input schema."}, callAdapterOperationHandler(a))
 	addTool(server, reg, &mcp.Tool{Name: "upsert_project", Description: "Create or update a project's repository configuration. Also call this (same slug and repository_url, plus a metadata field) whenever you learn a static configuration fact about a registered project's repository - package manager, layout, naming convention, test framework, linters, formatters - so it survives this session; metadata merges field-by-field, it never overwrites what's already recorded."}, upsertProjectHandler(a))

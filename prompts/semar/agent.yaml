@@ -1,0 +1,13 @@
+id: semar
+name: Semar
+version: 1
+description: Orchestrator
+instructions: semar/prompt.md
+output_schema: final_plan
+tools:
+  read_only: false
+  allowed: [plan_get, plan_save, get_delivery, start_delivery, start_delivery_session, checkpoint_delivery_session, report_delivery_progress, answer_delivery_question, complete_delivery, get_workflow, invoke_workflow, list_workflows]
+execution:
+  can_mutate: true
+  requires_evidence: true
+  parallel_safe: false

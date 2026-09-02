@@ -11,10 +11,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ygrip/punakawan/internal/agent"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/capability"
 )
@@ -72,8 +74,25 @@ func assembleServer(a *app.App) (*mcp.Server, *toolIndex, error) {
 	if err := registerPrompts(server, a); err != nil {
 		return nil, nil, err
 	}
+	agentReg, err := agent.NewRegistry()
+	if err != nil {
+		return nil, nil, fmt.Errorf("mcpserver: load agent role registry: %w", err)
+	}
 	idx := newToolIndex()
-	registerPublicTools(server, a, idx)
+	registerPublicTools(server, a, idx, agentReg)
+
+	// Validate every role manifest's output_schema and tool policy against
+	// the real schema/capability surfaces now that registerPublicTools has
+	// populated idx with every registered tool name - a manifest
+	// referencing a tool or output schema that doesn't exist is a startup
+	// error, not something to discover at request time.
+	schemaChecker, err := agent.NewKnowledgeSchemaChecker()
+	if err != nil {
+		return nil, nil, fmt.Errorf("mcpserver: load knowledge schema checker: %w", err)
+	}
+	if err := agent.Validate(agentReg.List(), schemaChecker, idx); err != nil {
+		return nil, nil, fmt.Errorf("mcpserver: validate agent roles: %w", err)
+	}
 
 	server.AddReceivingMiddleware(sanitizeToolListSchemas)
 
@@ -88,7 +107,15 @@ func assembleServer(a *app.App) (*mcp.Server, *toolIndex, error) {
 func CapabilityRegistry(a *app.App) *capability.Registry {
 	idx := newToolIndex()
 	server := mcp.NewServer(&mcp.Implementation{Name: "punakawan", Version: "0.1.0"}, nil)
-	registerPublicTools(server, a, idx)
+	agentReg, err := agent.NewRegistry()
+	if err != nil {
+		// The 4 role manifests are embedded in the binary and validated by
+		// internal/agent's own tests; a failure here means a corrupted
+		// build, not a runtime condition this cheap enumeration helper is
+		// expected to recover from.
+		panic(fmt.Errorf("mcpserver: load agent role registry: %w", err))
+	}
+	registerPublicTools(server, a, idx, agentReg)
 	return idx.Registry
 }
 

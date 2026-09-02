@@ -36,17 +36,7 @@ Do not block on subjective style or speculative perfection.
 
 ## Output
 
-Return `bagong_review` matching `protocol/knowledge.schema.json`.
-
-Required top-level fields:
-
-`verdict`, `requirement_coverage`, `blocking_findings`, `findings`,
-`test_gaps`, `security_findings`, `compatibility_findings`,
-`uncertainties`, `honest_summary`.
-
-Each entry in `blocking_findings` and `findings` must contain:
-
-`severity`, `location`, `why`, `failure_scenario`, `correction`.
+Return `bagong_review` matching `protocol/knowledge.schema.json`. Required fields and per-finding shape (severity/location/why/failure_scenario/correction) are defined there — do not restate them here.
 
 Rules:
 

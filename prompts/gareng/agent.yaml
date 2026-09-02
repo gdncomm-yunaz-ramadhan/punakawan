@@ -1,0 +1,13 @@
+id: gareng
+name: Gareng
+version: 1
+description: Feasibility and risk reviewer
+instructions: gareng/prompt.md
+output_schema: gareng_review
+tools:
+  read_only: true
+  allowed: [plan_get, get_delivery, get_workflow, list_projects]
+execution:
+  can_mutate: false
+  requires_evidence: true
+  parallel_safe: true

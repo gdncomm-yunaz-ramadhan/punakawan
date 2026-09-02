@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/ygrip/punakawan/internal/agent"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/telemetry"
@@ -29,6 +30,11 @@ type Service struct {
 	// store configured keeps behaving exactly as it did before telemetry
 	// existed.
 	telemetry *telemetry.Store
+	// agents is nil unless WithAgentRegistry is passed to New, in which
+	// case a begun telemetry session's RoleVersion stays empty - a
+	// caller with no agent registry configured keeps behaving exactly as
+	// it did before RoleVersion existed.
+	agents agent.AgentRegistry
 }
 
 // Option configures optional Service dependencies. Every existing New
@@ -46,6 +52,14 @@ func WithJiraHydrator(h JiraHydrator) Option {
 // a delivery session.
 func WithTelemetryStore(store *telemetry.Store) Option {
 	return func(s *Service) { s.telemetry = store }
+}
+
+// WithAgentRegistry wires the internal/agent role registry a begun
+// telemetry session resolves its Participant against, so
+// AgentSession.RoleVersion is populated whenever the participant names one
+// of the four known roles.
+func WithAgentRegistry(reg agent.AgentRegistry) Option {
+	return func(s *Service) { s.agents = reg }
 }
 
 // New wires a Service over the already-open delivery and plan stores.
@@ -139,10 +153,16 @@ func (s *Service) beginTelemetrySession(ctx context.Context, resolved *delivery.
 		// sessions semantics.
 		externalID = opened.ID
 	}
+	roleVersion := ""
+	if s.agents != nil {
+		if spec, err := s.agents.Get(sessionStart.Participant); err == nil {
+			roleVersion = spec.Version
+		}
+	}
 	session, err := s.telemetry.Begin(ctx, telemetry.BeginRequest{
 		DeliveryID: resolved.Execution.OrchestrationID, ExecutionID: resolved.Execution.ID,
 		ClientKind: clientKind, ExternalSessionID: externalID,
-		Participant: sessionStart.Participant, Provider: sessionStart.Provider, WorktreePath: sessionStart.WorktreePath,
+		Participant: sessionStart.Participant, RoleVersion: roleVersion, Provider: sessionStart.Provider, WorktreePath: sessionStart.WorktreePath,
 	})
 	if err != nil {
 		slog.Warn("deliveryservice: begin telemetry session", "orchestration_id", resolved.Execution.OrchestrationID, "error", err)

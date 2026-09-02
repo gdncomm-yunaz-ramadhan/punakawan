@@ -62,7 +62,7 @@ func NewStore(db *storage.DB, opts ...Option) *Store {
 	return s
 }
 
-const selectSessionColumns = `id, orchestration_id, execution_id, client_kind, external_session_id, participant, provider, model, worktree_path, status, telemetry_status, started_at, stopped_at, stop_reason`
+const selectSessionColumns = `id, orchestration_id, execution_id, client_kind, external_session_id, participant, role_version, provider, model, worktree_path, status, telemetry_status, started_at, stopped_at, stop_reason`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -72,7 +72,7 @@ func scanSession(row rowScanner) (*AgentSession, error) {
 	var s AgentSession
 	var startedAt string
 	var stoppedAt sql.NullString
-	if err := row.Scan(&s.ID, &s.OrchestrationID, &s.ExecutionID, &s.ClientKind, &s.ExternalSessionID, &s.Participant, &s.Provider, &s.Model, &s.WorktreePath, &s.Status, &s.TelemetryStatus, &startedAt, &stoppedAt, &s.StopReason); err != nil {
+	if err := row.Scan(&s.ID, &s.OrchestrationID, &s.ExecutionID, &s.ClientKind, &s.ExternalSessionID, &s.Participant, &s.RoleVersion, &s.Provider, &s.Model, &s.WorktreePath, &s.Status, &s.TelemetryStatus, &startedAt, &stoppedAt, &s.StopReason); err != nil {
 		return nil, err
 	}
 	started, err := time.Parse(timeLayout, startedAt)
@@ -130,12 +130,12 @@ func (s *Store) Begin(ctx context.Context, req BeginRequest) (AgentSession, erro
 		out = AgentSession{
 			ID: id, OrchestrationID: deliveryID, ExecutionID: executionID,
 			ClientKind: clientKind, ExternalSessionID: externalID,
-			Participant: strings.TrimSpace(req.Participant), Provider: strings.TrimSpace(req.Provider),
+			Participant: strings.TrimSpace(req.Participant), RoleVersion: strings.TrimSpace(req.RoleVersion), Provider: strings.TrimSpace(req.Provider),
 			Model: strings.TrimSpace(req.Model), WorktreePath: strings.TrimSpace(req.WorktreePath),
 			Status: "active", TelemetryStatus: "incomplete", StartedAt: now,
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO agent_sessions (id, orchestration_id, execution_id, client_kind, external_session_id, participant, provider, model, worktree_path, status, telemetry_status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			out.ID, out.OrchestrationID, out.ExecutionID, out.ClientKind, out.ExternalSessionID, out.Participant, out.Provider, out.Model, out.WorktreePath, out.Status, out.TelemetryStatus, now.Format(timeLayout))
+		_, err = tx.ExecContext(ctx, `INSERT INTO agent_sessions (id, orchestration_id, execution_id, client_kind, external_session_id, participant, role_version, provider, model, worktree_path, status, telemetry_status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			out.ID, out.OrchestrationID, out.ExecutionID, out.ClientKind, out.ExternalSessionID, out.Participant, out.RoleVersion, out.Provider, out.Model, out.WorktreePath, out.Status, out.TelemetryStatus, now.Format(timeLayout))
 		return err
 	})
 	if err != nil {
