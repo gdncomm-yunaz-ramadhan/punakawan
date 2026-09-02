@@ -26,8 +26,8 @@ type DeliverySessionOutput struct {
 	View    delivery.DeliveryView    `json:"view"`
 }
 
-func startDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartDeliverySessionInput) (*mcp.CallToolResult, DeliverySessionOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in StartDeliverySessionInput) (*mcp.CallToolResult, DeliverySessionOutput, error) {
+func startDeliverySessionHandler(a *app.App, reg *toolIndex) func(context.Context, *mcp.CallToolRequest, StartDeliverySessionInput) (*mcp.CallToolResult, DeliverySessionOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in StartDeliverySessionInput) (*mcp.CallToolResult, DeliverySessionOutput, error) {
 		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
 			return nil, DeliverySessionOutput{}, err
@@ -41,6 +41,17 @@ func startDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallTool
 			return nil, DeliverySessionOutput{}, fmt.Errorf("mcpserver: start delivery session: %w", err)
 		}
 		writeSessionMarker(session)
+		// Bind this MCP connection to in.Participant's role, if it names one
+		// of the four known roles, so subsequent tool calls on the same
+		// connection are checked against that role's ToolPolicy (see
+		// toolindex.go). A participant that isn't a known role, or no reg
+		// configured, just means no binding - never an error, since
+		// Participant has always been free-form.
+		if reg != nil && reg.agents != nil && req != nil {
+			if spec, err := reg.agents.Get(in.Participant); err == nil {
+				reg.bindRole(req.Session, spec.ID)
+			}
+		}
 		view, err := store.BuildDeliveryView(ctx, session.OrchestrationID)
 		if err != nil {
 			return nil, DeliverySessionOutput{}, err
@@ -165,8 +176,8 @@ type FinalizeDeliverySessionInput struct {
 	Snapshot   *IngestDeliveryUsageSnapshotInput `json:"snapshot,omitempty" jsonschema:"applied atomically as this session's final usage snapshot"`
 }
 
-func finalizeDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, FinalizeDeliverySessionInput) (*mcp.CallToolResult, DeliveryUsageProjectionOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in FinalizeDeliverySessionInput) (*mcp.CallToolResult, DeliveryUsageProjectionOutput, error) {
+func finalizeDeliverySessionHandler(a *app.App, reg *toolIndex) func(context.Context, *mcp.CallToolRequest, FinalizeDeliverySessionInput) (*mcp.CallToolResult, DeliveryUsageProjectionOutput, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in FinalizeDeliverySessionInput) (*mcp.CallToolResult, DeliveryUsageProjectionOutput, error) {
 		tstore, err := OpenTelemetryStore(ctx, a)
 		if err != nil {
 			return nil, DeliveryUsageProjectionOutput{}, err
@@ -177,11 +188,14 @@ func finalizeDeliverySessionHandler(a *app.App) func(context.Context, *mcp.CallT
 		}
 		var snapshot *telemetry.SnapshotRequest
 		if in.Snapshot != nil {
-			req := in.Snapshot.toSnapshotRequest(in.SessionID)
-			snapshot = &req
+			snapReq := in.Snapshot.toSnapshotRequest(in.SessionID)
+			snapshot = &snapReq
 		}
 		if _, _, err := tstore.Finalize(ctx, telemetry.FinalizeRequest{SessionID: in.SessionID, StopID: stopID, StopReason: in.StopReason, Snapshot: snapshot}); err != nil {
 			return nil, DeliveryUsageProjectionOutput{}, fmt.Errorf("mcpserver: finalize delivery session: %w", err)
+		}
+		if reg != nil && req != nil {
+			reg.unbindRole(req.Session)
 		}
 		return telemetrySessionResult(ctx, a, tstore, in.SessionID)
 	}

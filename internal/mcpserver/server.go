@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,13 +24,49 @@ import (
 
 // Serve starts Punakawan's MCP server over stdio and blocks until the
 // connected client disconnects, per §28.4 ("Exposed as `punakawan mcp
-// serve` (stdio transport)").
+// serve` (stdio transport)"). This remains the default: a harness that
+// spawns punakawan as a local subprocess (Codex, Claude Code) needs
+// nothing else.
 func Serve(ctx context.Context, a *app.App) error {
 	server, err := newServer(a)
 	if err != nil {
 		return err
 	}
 	return server.Run(ctx, &mcp.StdioTransport{})
+}
+
+// ServeHTTP starts the same public server over Streamable HTTP (the
+// MCP-spec-recommended network transport, superseding plain SSE) bound to
+// addr, and blocks until ctx is cancelled. This is the harness-reachability
+// gap stdio alone leaves: any client that isn't spawning punakawan as a
+// local subprocess - one that only speaks to a network-reachable MCP
+// endpoint - has no way to connect otherwise, regardless of which model
+// provider it is.
+//
+// This adds a real network listener with no authentication layer of its
+// own in this slice - callers binding addr to anything beyond loopback are
+// responsible for putting a reverse proxy or auth layer in front of it;
+// see the punakawan mcp serve --http flag's own help text.
+func ServeHTTP(ctx context.Context, a *app.App, addr string) error {
+	server, err := newServer(a)
+	if err != nil {
+		return err
+	}
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	httpServer := &http.Server{Addr: addr, Handler: handler}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- httpServer.ListenAndServe() }()
+
+	select {
+	case <-ctx.Done():
+		return httpServer.Shutdown(context.Background())
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("mcpserver: serve http: %w", err)
+		}
+		return nil
+	}
 }
 
 // serverInstructions is surfaced to every connecting MCP client as part of
@@ -79,6 +116,7 @@ func assembleServer(a *app.App) (*mcp.Server, *toolIndex, error) {
 		return nil, nil, fmt.Errorf("mcpserver: load agent role registry: %w", err)
 	}
 	idx := newToolIndex()
+	idx.agents = agentReg
 	registerPublicTools(server, a, idx, agentReg)
 
 	// Validate every role manifest's output_schema and tool policy against

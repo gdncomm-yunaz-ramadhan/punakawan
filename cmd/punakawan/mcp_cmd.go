@@ -2,6 +2,8 @@ package main
 
 import (
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -19,7 +21,8 @@ func newMCPCmd() *cobra.Command {
 }
 
 func newMCPServeCmd() *cobra.Command {
-	return &cobra.Command{
+	var httpAddr string
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve Punakawan's focused project/workflow/plan/delivery tools over stdio",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -29,9 +32,25 @@ func newMCPServeCmd() *cobra.Command {
 			}
 			defer a.Close()
 
-			return mcpserver.Serve(cmd.Context(), a)
+			if httpAddr == "" {
+				return mcpserver.Serve(cmd.Context(), a)
+			}
+			return mcpserver.ServeHTTP(cmd.Context(), a, normalizeHTTPAddr(httpAddr))
 		},
 	}
+	cmd.Flags().StringVar(&httpAddr, "http", "", "serve over Streamable HTTP at this address instead of stdio (e.g. 127.0.0.1:7777, or a bare port to bind loopback-only); this slice adds no authentication layer, so binding beyond loopback without a reverse proxy/auth in front is your own risk to accept")
+	return cmd
+}
+
+// normalizeHTTPAddr defaults --http to loopback-only when the caller
+// supplied a bare port (e.g. "7777"): every other form (already carrying a
+// host, or an empty host as in ":7777" - an explicit choice to bind every
+// interface) is passed through unchanged.
+func normalizeHTTPAddr(addr string) string {
+	if _, err := strconv.Atoi(strings.TrimSpace(addr)); err == nil {
+		return "127.0.0.1:" + strings.TrimSpace(addr)
+	}
+	return addr
 }
 
 // loadAppOptional is loadApp, except that starting outside any project is

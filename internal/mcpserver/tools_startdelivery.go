@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ygrip/punakawan/internal/agent"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryservice"
@@ -153,7 +154,7 @@ type StartDeliveryOutput struct {
 	Decomposition []StartDeliveryProjectResult `json:"decomposition,omitempty"`
 }
 
-func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
+func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context.Context, *mcp.CallToolRequest, StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
 		store, err := OpenDeliveryStore(ctx, a)
 		if err != nil {
@@ -161,7 +162,7 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 		}
 
 		if in.Source != nil && strings.TrimSpace(in.Source.Kind) != "" {
-			return startDeliveryFromSource(ctx, a, store, in)
+			return startDeliveryFromSource(ctx, a, store, agentReg, in)
 		}
 
 		// A lone, exact Jira reference has a stronger identity than a
@@ -230,12 +231,16 @@ func startDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 // shape the improvement plan's Public result semantics describes.
 // Reconciliation (projects/requirements/plans) is Task 4's job - not yet
 // implemented - so it is always reported empty here.
-func startDeliveryFromSource(ctx context.Context, a *app.App, store *delivery.Store, in StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
+func startDeliveryFromSource(ctx context.Context, a *app.App, store *delivery.Store, agentReg agent.AgentRegistry, in StartDeliveryInput) (*mcp.CallToolResult, StartDeliveryOutput, error) {
 	plans, err := a.OpenPlan()
 	if err != nil {
 		return nil, StartDeliveryOutput{}, err
 	}
-	svc := deliveryservice.New(store, plans)
+	ts, err := OpenTelemetryStore(ctx, a)
+	if err != nil {
+		return nil, StartDeliveryOutput{}, err
+	}
+	svc := deliveryservice.New(store, plans, deliveryservice.WithTelemetryStore(ts), deliveryservice.WithAgentRegistry(agentReg))
 
 	key := in.IdempotencyKey
 	if key == "" {

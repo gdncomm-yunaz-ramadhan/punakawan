@@ -44,6 +44,13 @@ type Descriptor struct {
 	Name   string
 	Source Source
 	Intent string
+	// Mutates reports whether this capability is expected to change
+	// persisted state. For an MCP tool it is derived from the tool's own
+	// standard MCP annotation (mcp.Tool.Annotations.ReadOnlyHint) at
+	// registration time - conservative by default: no annotation means
+	// Mutates is true. A role whose ToolPolicy.ReadOnly is set may not call
+	// a tool with Mutates true (internal/mcpserver's live enforcement).
+	Mutates bool
 }
 
 // Registry is a concurrency-safe set of capability descriptors keyed by name.

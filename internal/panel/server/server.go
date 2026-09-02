@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/agent"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/daemon"
 	"github.com/ygrip/punakawan/internal/delivery"
@@ -203,6 +204,15 @@ func (s *Server) Start() error {
 	// operations are contributed to the registry when adapters load (a later
 	// phase); MCP tool names are the source that had actually drifted.
 	caps := workflowdef.NewCapabilitySet(mcpserver.CapabilityRegistry(s.app).Names(), nil)
+	// agentReg is nil on error rather than failing panel startup - it only
+	// enables RoleVersion enrichment on the resulting telemetry session
+	// (see mcpserver.CreateWorkflowRun's doc comment), never gates whether a
+	// workflow can run.
+	agentReg, err := agent.NewRegistry()
+	if err != nil {
+		s.logger.Warn("panel: load agent role registry, RoleVersion enrichment disabled for panel-triggered runs", "error", err)
+		agentReg = nil
+	}
 	// Invoke validates enabled + capabilities in workflowdef, then this
 	// RunCreator resolves the right *app.App for root (the primary project's
 	// long-lived one, or a non-primary project's Acquire'd from the runtime
@@ -215,7 +225,7 @@ func (s *Server) Start() error {
 	newInvoker := func(projectID, root string) workflowdef.Invoker {
 		return workflowdef.NewInvoker(caps, func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
 			if root == s.app.Workspace.Root {
-				return mcpserver.CreateWorkflowRun(s.app)(ctx, def, inputs)
+				return mcpserver.CreateWorkflowRun(s.app, agentReg)(ctx, def, inputs)
 			}
 			if s.readers.Runtime == nil {
 				return "", fmt.Errorf("workflow invocation for non-primary project %q is unavailable: no runtime pool", projectID)
@@ -225,7 +235,7 @@ func (s *Server) Start() error {
 				return "", fmt.Errorf("acquire project %q for workflow invocation: %w", projectID, err)
 			}
 			defer release()
-			return mcpserver.CreateWorkflowRun(rt.App)(ctx, def, inputs)
+			return mcpserver.CreateWorkflowRun(rt.App, agentReg)(ctx, def, inputs)
 		})
 	}
 	wf := api.NewWorkflowDefHandlers(s.resolveRoot, caps, newInvoker)

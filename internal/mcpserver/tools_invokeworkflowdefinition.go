@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ygrip/punakawan/internal/agent"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryservice"
@@ -27,7 +28,7 @@ type InvokeWorkflowDefinitionOutput struct {
 	RunId string `json:"run_id"`
 }
 
-func invokeWorkflowDefinitionHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, InvokeWorkflowDefinitionInput) (*mcp.CallToolResult, InvokeWorkflowDefinitionOutput, error) {
+func invokeWorkflowDefinitionHandler(a *app.App, agentReg agent.AgentRegistry) func(context.Context, *mcp.CallToolRequest, InvokeWorkflowDefinitionInput) (*mcp.CallToolResult, InvokeWorkflowDefinitionOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in InvokeWorkflowDefinitionInput) (*mcp.CallToolResult, InvokeWorkflowDefinitionOutput, error) {
 		defStore, err := workflowdef.Open(a.Workspace.Root)
 		if err != nil {
@@ -38,7 +39,7 @@ func invokeWorkflowDefinitionHandler(a *app.App) func(context.Context, *mcp.Call
 			return nil, InvokeWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: invoke_workflow: %w", err)
 		}
 		caps := workflowdef.NewCapabilitySet(CapabilityRegistry(a).Names(), nil)
-		invoker := workflowdef.NewInvoker(caps, CreateWorkflowRun(a))
+		invoker := workflowdef.NewInvoker(caps, CreateWorkflowRun(a, agentReg))
 		runID, err := invoker.Invoke(ctx, def, in.Inputs)
 		if err != nil {
 			return nil, InvokeWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: invoke_workflow: %w", err)
@@ -48,14 +49,16 @@ func invokeWorkflowDefinitionHandler(a *app.App) func(context.Context, *mcp.Call
 }
 
 // CreateWorkflowRun is shared by MCP and panel invocation. It implements the
-// single Workflow -> Plan -> Delivery path.
-func CreateWorkflowRun(a *app.App) workflowdef.RunCreator {
+// single Workflow -> Plan -> Delivery path. agentReg may be nil (no
+// RoleVersion enrichment on the resulting telemetry session); pass
+// agent.NewRegistry()'s result where available.
+func CreateWorkflowRun(a *app.App, agentReg agent.AgentRegistry) workflowdef.RunCreator {
 	return func(ctx context.Context, def workflowdef.Definition, inputs map[string]any) (string, error) {
 		planID, planRevision, err := instantiatePlan(ctx, a, def)
 		if err != nil {
 			return "", err
 		}
-		return createDeliveryRun(ctx, a, def, inputs, planID, planRevision)
+		return createDeliveryRun(ctx, a, def, inputs, planID, planRevision, agentReg)
 	}
 }
 
@@ -86,7 +89,7 @@ func instantiatePlan(ctx context.Context, a *app.App, def workflowdef.Definition
 // fetchable-via-get_delivery id, not a legacy workflow run id. No title
 // is passed: a definition's inputs carry only references, so the run
 // gets the same derived title get_delivery would show for it anyway.
-func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any, planID string, planRevision int) (string, error) {
+func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definition, inputs map[string]any, planID string, planRevision int, agentReg agent.AgentRegistry) (string, error) {
 	store, err := OpenDeliveryStore(ctx, a)
 	if err != nil {
 		return "", err
@@ -101,7 +104,11 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 		if err != nil {
 			return "", err
 		}
-		result, needsInput, err := deliveryservice.New(store, plans).StartOrResolve(ctx, deliveryservice.StartRequest{
+		ts, err := OpenTelemetryStore(ctx, a)
+		if err != nil {
+			return "", err
+		}
+		result, needsInput, err := deliveryservice.New(store, plans, deliveryservice.WithTelemetryStore(ts), deliveryservice.WithAgentRegistry(agentReg)).StartOrResolve(ctx, deliveryservice.StartRequest{
 			IdempotencyKey:       delivery.NewID(),
 			Source:               source,
 			WorkflowDefinitionID: def.ID,
