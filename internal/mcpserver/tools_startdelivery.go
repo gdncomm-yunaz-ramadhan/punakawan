@@ -477,7 +477,11 @@ func cancelDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
-		if _, err := store.CancelOrchestration(ctx, delivery.NewID(), in.OrchestrationId, in.ExpectedRevision); err != nil {
+		svc, err := terminalDeliveryService(ctx, a, store)
+		if err != nil {
+			return nil, DeliveryViewOutput{}, err
+		}
+		if _, err := svc.Cancel(ctx, delivery.NewID(), in.OrchestrationId, in.ExpectedRevision); err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: cancel orchestration: %w", err)
 		}
 		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
@@ -486,6 +490,25 @@ func cancelDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 		}
 		return nil, DeliveryViewOutput{View: *view}, nil
 	}
+}
+
+// terminalDeliveryService builds the service the two terminal tools go
+// through. They used to call store.CompleteOrchestration/CancelOrchestration
+// directly, which skipped the only code that closes a telemetry session
+// the client's own lifecycle hook never closed - so a finished delivery
+// could keep a session open, and its usage never settled. It needs no
+// hydrator or agent registry: neither terminal path captures requirements
+// or resolves a role.
+func terminalDeliveryService(ctx context.Context, a *app.App, store *delivery.Store) (*deliveryservice.Service, error) {
+	plans, err := a.OpenPlan()
+	if err != nil {
+		return nil, err
+	}
+	ts, err := OpenTelemetryStore(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return deliveryservice.New(store, plans, deliveryservice.WithTelemetryStore(ts)), nil
 }
 
 // CompleteDeliveryInput is complete_delivery's input.
@@ -515,7 +538,11 @@ func completeDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 			return nil, DeliveryViewOutput{Readiness: &readiness}, fmt.Errorf(
 				"mcpserver: this delivery is not finished: %s. Close each gap, or pass acknowledge_gaps to complete anyway and record them as waived", readiness.Summary())
 		}
-		if _, err := store.CompleteOrchestration(ctx, delivery.NewID(), in.OrchestrationId, in.ExpectedRevision); err != nil {
+		svc, err := terminalDeliveryService(ctx, a, store)
+		if err != nil {
+			return nil, DeliveryViewOutput{}, err
+		}
+		if _, err := svc.Complete(ctx, delivery.NewID(), in.OrchestrationId, in.ExpectedRevision); err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: complete orchestration: %w", err)
 		}
 		if !readiness.Ready {

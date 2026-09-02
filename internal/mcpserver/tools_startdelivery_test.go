@@ -292,6 +292,22 @@ func TestCompleteDeliveryRefusesAnUnfinishedDeliveryUntilAcknowledged(t *testing
 		t.Fatalf("readiness = %+v, want the waived gaps reported back", completed.Readiness)
 	}
 
+	// The telemetry session start_delivery opened must be closed by
+	// completion. It was not, because the tool called the store directly
+	// and skipped the only code that closes a session the client's own
+	// lifecycle hook never did.
+	ts, err := OpenTelemetryStore(ctx, a)
+	if err != nil {
+		t.Fatalf("OpenTelemetryStore: %v", err)
+	}
+	open, err := ts.ListActiveByOrchestration(ctx, started.OrchestrationId)
+	if err != nil {
+		t.Fatalf("ListActiveByOrchestration: %v", err)
+	}
+	if len(open) != 0 {
+		t.Fatalf("%d telemetry session(s) still active after completion, want none", len(open))
+	}
+
 	// Acknowledging a gap must not erase it - otherwise the delivery
 	// reads as cleanly complete and the whole point of the check is lost.
 	var after DeliveryViewOutput
