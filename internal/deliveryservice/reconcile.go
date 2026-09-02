@@ -47,7 +47,12 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 		// CaptureJiraSnapshot's session-scope check with ErrScopeMismatch.
 		sources, err := s.hydrator.Hydrate(ctx, resolved.Execution.ID, "", req.IdempotencyKey+":hydrate")
 		if err != nil {
-			return report, fmt.Errorf("deliveryservice: hydrate jira source: %w", err)
+			// The delivery's own parent issue is already captured by the
+			// time this runs; hydration only adds its subtasks. An
+			// unreachable or misconfigured Jira should therefore cost the
+			// subtasks and be said out loud, not lose a delivery whose
+			// projects and lanes this call is about to create.
+			report.Skipped = append(report.Skipped, fmt.Sprintf("jira hydration: %v", err))
 		}
 		for _, src := range sources {
 			report.Requirements = append(report.Requirements, src.IssueKey)

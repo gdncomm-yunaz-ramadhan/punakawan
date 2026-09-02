@@ -168,6 +168,11 @@ func Default() *Config {
 // is returned so a workspace without an explicit config file still behaves
 // safely (no skipping, no clarification detection, no invented hour
 // conversion) rather than failing to start.
+//
+// Note that "safely" includes AutoLog=false, which switches off every
+// automatic Jira update. `punakawan setup` therefore writes this file for
+// a workspace that has none, so the absent-file case is a deliberate
+// opt-out rather than the accident it used to be.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

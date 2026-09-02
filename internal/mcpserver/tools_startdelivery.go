@@ -23,6 +23,7 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryservice"
+	"github.com/ygrip/punakawan/internal/jirahooks"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -172,7 +173,20 @@ func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context
 		if err != nil {
 			return nil, StartDeliveryOutput{}, err
 		}
-		svc := deliveryservice.New(store, plans, deliveryservice.WithTelemetryStore(ts), deliveryservice.WithAgentRegistry(agentReg))
+		outboxStore, err := a.OpenOutbox()
+		if err != nil {
+			return nil, StartDeliveryOutput{}, err
+		}
+		// Without a hydrator a Jira delivery captures only its parent
+		// issue, so no subtask is ever a requirement source and no task
+		// can be keyed to one. Hydration failure is reported as a skip
+		// rather than failing the call, so an unreachable Jira costs the
+		// subtasks and nothing else.
+		svc := deliveryservice.New(store, plans,
+			deliveryservice.WithTelemetryStore(ts),
+			deliveryservice.WithAgentRegistry(agentReg),
+			deliveryservice.WithJiraHydrator(jirahooks.NewLifecycle(store, a.AdapterRegistry, outboxStore)),
+		)
 
 		key := in.IdempotencyKey
 		if key == "" {

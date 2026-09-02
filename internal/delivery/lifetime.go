@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -281,6 +282,16 @@ func (s *Store) StartOrResolveExecution(ctx context.Context, idempotencyKey stri
 	execution, err := s.GetExecutionByCase(ctx, lifetime.ID)
 	if err != nil {
 		return nil, err
+	}
+	if createdExecution {
+		// Dispatched only when this call actually opened an execution,
+		// never on a resolve or a duplicate-key retry, for the same reason
+		// CreateOrchestrationWithOptions guards its own dispatch: a
+		// delivery announces that it started exactly once. Without this
+		// the whole Jira write-back path - the opening comment, the
+		// status transition - never ran for any delivery started from a
+		// source, because nothing ever told the hooks it had begun.
+		s.dispatchOrchestrationEvent(ctx, execution.OrchestrationID, "", deliveryhooks.EventDeliveryStarted, "delivery started", nil)
 	}
 	return &ResolvedExecution{Lifetime: lifetime, Execution: execution, CreatedLifetime: createdLifetime, CreatedExecution: createdExecution}, nil
 }
