@@ -15,7 +15,7 @@ import (
 )
 
 // readyPollInterval and startTimeout bound how long EnsureRunning waits
-// for a freshly spawned daemon to answer /healthz before giving up.
+// for a freshly spawned daemon to answer authenticated /readyz.
 const (
 	readyPollInterval = 100 * time.Millisecond
 	startTimeout      = 10 * time.Second
@@ -51,6 +51,22 @@ func Discover(paths Paths) (*Client, error) {
 	}
 	return &Client{
 		addr:      strings.TrimSpace(string(addr)),
+		token:     strings.TrimSpace(string(token)),
+		http:      &http.Client{Timeout: 5 * time.Second},
+		watchHTTP: &http.Client{},
+	}, nil
+}
+
+// discoverDefault builds a client for the canonical daemon address when its
+// port file has gone missing. Callers must still prove readiness before
+// treating this client as a running daemon.
+func discoverDefault(paths Paths, addr string) (*Client, error) {
+	token, err := os.ReadFile(paths.TokenPath)
+	if err != nil {
+		return nil, fmt.Errorf("daemon: read token file %s: %w", paths.TokenPath, err)
+	}
+	return &Client{
+		addr:      addr,
 		token:     strings.TrimSpace(string(token)),
 		http:      &http.Client{Timeout: 5 * time.Second},
 		watchHTTP: &http.Client{},
@@ -93,10 +109,27 @@ func (c *Client) get(ctx context.Context, path string, authed bool) error {
 // issue's notes, since it cannot be verified end-to-end for every
 // platform from a single development machine.
 func EnsureRunning(ctx context.Context, paths Paths) (*Client, error) {
+	return ensureRunning(ctx, paths, "127.0.0.1:"+DefaultPort)
+}
+
+func ensureRunning(ctx context.Context, paths Paths, defaultAddr string) (*Client, error) {
 	if running, _, err := Status(paths.LockPath); err != nil {
 		return nil, err
 	} else if running {
 		return waitForHealthy(ctx, paths)
+	}
+
+	// A previous daemon can survive external removal of its lock and port
+	// files. Before starting a second process that would contend for the
+	// fixed loopback port, authenticate the canonical address and restore
+	// discovery for the live daemon.
+	if client, err := discoverDefault(paths, defaultAddr); err == nil {
+		if err := client.Ready(ctx); err == nil {
+			if err := os.WriteFile(paths.PortPath, []byte(client.addr), 0o600); err != nil {
+				return nil, fmt.Errorf("daemon: restore bound address: %w", err)
+			}
+			return client, nil
+		}
 	}
 
 	exe, err := daemonExecutable()
@@ -117,7 +150,7 @@ func waitForHealthy(ctx context.Context, paths Paths) (*Client, error) {
 	for {
 		client, err := Discover(paths)
 		if err == nil {
-			if lastErr = client.Healthy(ctx); lastErr == nil {
+			if lastErr = client.Ready(ctx); lastErr == nil {
 				return client, nil
 			}
 		} else {

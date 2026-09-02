@@ -139,6 +139,7 @@ func Run(ctx context.Context, host, port string, paths Paths) (*Daemon, error) {
 	// internal/app.Load does for a single-repo CLI invocation.
 	global, err := workspace.LoadGlobalConfig()
 	if err != nil {
+		os.Remove(paths.PortPath)
 		transport.Shutdown(ctx)
 		db.Close()
 		lock.Release()
