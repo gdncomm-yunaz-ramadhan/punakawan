@@ -820,11 +820,23 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 		}
 		return fmt.Sprintf("resolve %d pending question(s) via answer_delivery_question: %s", len(refs), strings.Join(refs, ", "))
 	}
+	// A terminal orchestration has no next action, whatever its lanes
+	// look like. Without this a completed delivery whose lane never
+	// closed reported "actively in progress; delivery is progressing" -
+	// the reverse of the truth, and on exactly the delivery where the
+	// open lane most needed pointing out.
+	switch orch.Status {
+	case protocol.DeliveryOrchestrationStatusCompleted:
+		return "delivery completed"
+	case protocol.DeliveryOrchestrationStatusCancelled:
+		return "delivery cancelled"
+	}
 	if len(lanes) == 0 {
 		return "no lanes yet — call start_delivery again with the same source plus a projects[] block naming the repositories and their tasks; reconciliation is idempotent, so it adds to this delivery rather than starting another"
 	}
 
 	var blocked, active, accepted, failed int
+	var activeIDs []string
 	for _, l := range lanes {
 		if len(l.BlockedBy) > 0 {
 			blocked++
@@ -832,6 +844,7 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 		switch l.Status {
 		case protocol.DeliveryLaneStatusRunnable, protocol.DeliveryLaneStatusLeased, protocol.DeliveryLaneStatusRunning:
 			active++
+			activeIDs = append(activeIDs, l.LaneID)
 		case protocol.DeliveryLaneStatusAccepted:
 			accepted++
 		case protocol.DeliveryLaneStatusFailed:
@@ -842,7 +855,7 @@ func computeNextAction(orch *protocol.DeliveryOrchestration, lanes []LaneSummary
 		return fmt.Sprintf("waiting on %d blocked lane(s); no action needed, they unblock automatically when their dependency completes", blocked)
 	}
 	if active > 0 {
-		return fmt.Sprintf("%d lane(s) actively in progress; delivery is progressing", active)
+		return fmt.Sprintf("%d lane(s) still open; close each with complete_delivery_lane when its work is done: %s", active, strings.Join(activeIDs, ", "))
 	}
 	if len(lanes) > 0 && accepted == len(lanes) {
 		return "delivery complete"

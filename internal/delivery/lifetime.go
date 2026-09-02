@@ -281,7 +281,14 @@ func (s *Store) StartOrResolveExecution(ctx context.Context, idempotencyKey stri
 		if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_projection_versions (orchestration_id, revision, updated_at) VALUES (?, 1, ?)`, orchestrationID, now.Format(timeLayout)); err != nil {
 			return err
 		}
-		if source.Kind == SourceKindJira {
+		// Only when the caller actually supplied content. No caller on
+		// the start path ever sets SnapshotTitle/SnapshotBody, so this
+		// used to insert a version 1 whose title was the bare issue key
+		// and whose body was empty - immediately superseded by the real
+		// version 2 that hydration writes microseconds later. A reader
+		// then saw two snapshots for one capture, the first of them
+		// carrying nothing.
+		if source.Kind == SourceKindJira && (strings.TrimSpace(opts.SnapshotTitle) != "" || strings.TrimSpace(opts.SnapshotBody) != "") {
 			var snapshotVersion int
 			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) + 1 FROM jira_source_snapshots WHERE case_id = ?`, lifetimeID).Scan(&snapshotVersion); err != nil {
 				return err

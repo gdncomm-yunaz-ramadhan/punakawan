@@ -535,7 +535,12 @@ func TestDeliveryViewIncludesCapturedJiraSnapshotAsActivity(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	resolved, err := s.StartOrResolveExecution(ctx, "resolve-jira-activity", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "test-tenant", Key: "TRF-19272"}, OrchestrationOptions{})
+	// Snapshot content has to be supplied: a start that carries none
+	// writes no snapshot at all, rather than an empty placeholder version
+	// that hydration immediately supersedes.
+	resolved, err := s.StartOrResolveExecution(ctx, "resolve-jira-activity", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "test-tenant", Key: "TRF-19272"}, OrchestrationOptions{
+		SnapshotTitle: "Bump the reactor version", SnapshotBody: "as captured at start",
+	})
 	if err != nil {
 		t.Fatalf("StartOrResolveExecution: %v", err)
 	}
@@ -549,6 +554,27 @@ func TestDeliveryViewIncludesCapturedJiraSnapshotAsActivity(t *testing.T) {
 	activity := view.JiraActivity[0]
 	if activity.EventType != "source.snapshot_captured" || activity.IssueKey != "TRF-19272" {
 		t.Fatalf("JiraActivity[0] = %+v, want captured TRF-19272 source", activity)
+	}
+}
+
+// A start that carries no snapshot content used to write a version 1
+// whose title was the bare issue key and whose body was empty, which
+// hydration then superseded microseconds later - so every Jira delivery
+// carried a first snapshot saying nothing.
+func TestStartWithNoSnapshotContentWritesNoPlaceholderSnapshot(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	resolved, err := s.StartOrResolveExecution(ctx, "resolve-no-snapshot", SourceIdentity{Kind: SourceKindJira, Provider: "jira", Tenant: "test-tenant", Key: "TRF-19273"}, OrchestrationOptions{})
+	if err != nil {
+		t.Fatalf("StartOrResolveExecution: %v", err)
+	}
+	lifecycle, err := s.GetDeliveryLifecycle(ctx, resolved.Execution.OrchestrationID)
+	if err != nil {
+		t.Fatalf("GetDeliveryLifecycle: %v", err)
+	}
+	if len(lifecycle.Snapshots) != 0 {
+		t.Fatalf("snapshots = %+v, want none until something has real content to capture", lifecycle.Snapshots)
 	}
 }
 

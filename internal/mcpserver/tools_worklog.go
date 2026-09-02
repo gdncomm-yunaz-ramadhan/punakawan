@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -59,6 +60,19 @@ func logDeliveryWorkHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 			in.JiraIssueKey, in.StartedAt, in.DurationSeconds, in.Summary)
 		if err != nil {
 			return nil, LogDeliveryWorkOutput{}, fmt.Errorf("mcpserver: record delivery work: %w", err)
+		}
+		// Recording work against an issue is the clearest possible touch
+		// of it. TouchJiraWorkItem had no caller anywhere, so touch_count
+		// was structurally always 0 and first/last_touched_at always
+		// empty - a projected field that could never say anything. It
+		// never fails the worklog it accompanies: the measured work is
+		// already durably recorded by this point, and losing a counter is
+		// a far smaller harm than reporting a recorded interval as an
+		// error.
+		if entry.ExecutionID != "" {
+			if _, err := store.TouchJiraWorkItem(ctx, "touch:"+entry.ID, entry.ExecutionID, entry.SessionID, entry.JiraIssueKey, entry.CreatedAt); err != nil {
+				slog.Warn("mcpserver: touch jira work item", "worklog_id", entry.ID, "jira_issue_key", entry.JiraIssueKey, "error", err)
+			}
 		}
 		view, err := store.BuildDeliveryView(ctx, in.OrchestrationID)
 		if err != nil {

@@ -88,12 +88,17 @@ type ProgressReport struct {
 }
 
 type DeliveryLifecycle struct {
-	Case                DeliveryLifetime      `json:"case"`
-	Execution           DeliveryExecution     `json:"execution"`
-	Sessions            []DeliverySession     `json:"sessions"`
-	Checkpoints         []SessionCheckpoint   `json:"checkpoints"`
+	Case        DeliveryLifetime    `json:"case"`
+	Execution   DeliveryExecution   `json:"execution"`
+	Sessions    []DeliverySession   `json:"sessions"`
+	Checkpoints []SessionCheckpoint `json:"checkpoints"`
+	// Usage, KnownCostByCurrency and UnknownPriced read the legacy
+	// delivery_usage_ledger, which nothing writes any more (see
+	// report_delivery_usage's deprecation): they stay readable so a
+	// delivery recorded before the move still reports what it recorded,
+	// and are empty for every delivery since. A current delivery's real
+	// tokens and cost are on DeliveryView.Telemetry.
 	Usage               []UsageEntry          `json:"usage"`
-	Budgets             []DeliveryBudget      `json:"budgets"`
 	Snapshots           []JiraSourceSnapshot  `json:"jira_snapshots"`
 	Assessments         []JiraAssessment      `json:"jira_assessments"`
 	WorkItems           []JiraWorkItemMapping `json:"jira_work_items"`
@@ -532,7 +537,7 @@ func (s *Store) GetDeliveryLifecycle(ctx context.Context, orchestrationID string
 	if err != nil {
 		return nil, err
 	}
-	out := &DeliveryLifecycle{Case: *caseRecord, Execution: *exec, Sessions: []DeliverySession{}, Checkpoints: []SessionCheckpoint{}, Usage: []UsageEntry{}, Budgets: []DeliveryBudget{}, Snapshots: []JiraSourceSnapshot{}, Assessments: []JiraAssessment{}, WorkItems: []JiraWorkItemMapping{}, WriteIntents: []JiraWriteIntent{}, Progress: []ProgressReport{}, KnownCostByCurrency: map[string]float64{}}
+	out := &DeliveryLifecycle{Case: *caseRecord, Execution: *exec, Sessions: []DeliverySession{}, Checkpoints: []SessionCheckpoint{}, Usage: []UsageEntry{}, Snapshots: []JiraSourceSnapshot{}, Assessments: []JiraAssessment{}, WorkItems: []JiraWorkItemMapping{}, WriteIntents: []JiraWriteIntent{}, Progress: []ProgressReport{}, KnownCostByCurrency: map[string]float64{}}
 	if out.Sessions, err = listSessions(ctx, s.db.Reader(), exec.ID); err != nil {
 		return nil, err
 	}
@@ -540,9 +545,6 @@ func (s *Store) GetDeliveryLifecycle(ctx context.Context, orchestrationID string
 		return nil, err
 	}
 	if out.Usage, err = listUsage(ctx, s.db.Reader(), exec.ID); err != nil {
-		return nil, err
-	}
-	if out.Budgets, err = listBudgets(ctx, s.db.Reader(), exec.ID); err != nil {
 		return nil, err
 	}
 	if out.Snapshots, err = listSnapshots(ctx, s.db.Reader(), exec.CaseID); err != nil {

@@ -75,4 +75,19 @@ func TestJiraDeliveryCanBindAndLogWork(t *testing.T) {
 	if len(got.View.RequirementSources) != 1 || got.View.RequirementSources[0].Id != started.RequirementSources[0].Id {
 		t.Fatalf("get_delivery requirement_sources = %+v, want the captured source", got.View.RequirementSources)
 	}
+
+	// Recording work against an issue counts as touching it. Nothing had
+	// ever called TouchJiraWorkItem, so touch_count was structurally
+	// always 0 and first/last_touched_at always empty - a projected field
+	// that could not say anything.
+	if got.View.Lifecycle == nil || len(got.View.Lifecycle.WorkItems) != 1 {
+		t.Fatalf("lifecycle work items = %+v, want the one bound mapping", got.View.Lifecycle)
+	}
+	item := got.View.Lifecycle.WorkItems[0]
+	if item.TouchCount != 1 {
+		t.Fatalf("touch_count = %d, want 1 after logging work against %s", item.TouchCount, item.JiraIssueKey)
+	}
+	if item.LastTouchedAt == nil || item.FirstTouchedAt == nil {
+		t.Fatalf("work item = %+v, want first/last touched timestamps recorded", item)
+	}
 }
