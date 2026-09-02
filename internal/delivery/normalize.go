@@ -21,11 +21,10 @@ type SourceInput struct {
 	Title      string
 	Summary    string
 	ParentKey  string // Jira/GitHub parent issue key/number, if this is a subtask
-	// Tenant scopes a jira source to one connected adapter instance, so
-	// the same issue key from two different Jira sites is never treated
-	// as the same requirement source. Left empty (every pre-existing
-	// caller of this type), a jira canonical key keeps its original
-	// tenant-less "jira:<KEY>" shape exactly as before.
+	// Tenant names the connected adapter instance this source was
+	// reached through. It is provenance only: it is recorded but never
+	// enters a canonical key, so the same issue key is the same
+	// requirement source however it was fetched.
 	Tenant string
 }
 
@@ -40,9 +39,13 @@ func CanonicalKey(in SourceInput) (string, error) {
 		if !jiraKeyPattern.MatchString(key) {
 			return "", fmt.Errorf("delivery: jira source requires a valid external_id (issue key)")
 		}
-		if tenant := strings.TrimSpace(in.Tenant); tenant != "" {
-			return "jira:" + tenant + ":" + key, nil
-		}
+		// The tenant is deliberately not part of the key. A Jira issue is
+		// one piece of work no matter which adapter instance reached it,
+		// which is the same rule delivery lifetimes resolve by; including
+		// it here made a source captured under a named tenant fail to
+		// match the very delivery that captured it, which is what left
+		// map_delivery_work_item - and so every worklog behind it -
+		// permanently unable to bind.
 		return "jira:" + key, nil
 	case "confluence":
 		if in.ExternalID == "" {

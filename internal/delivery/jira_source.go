@@ -183,11 +183,7 @@ func (s *Store) MapWorkItemToJiraTask(ctx context.Context, idempotencyKey, execu
 		if err != nil {
 			return err
 		}
-		var tenant string
-		if err := tx.QueryRowContext(ctx, `SELECT source_tenant FROM delivery_cases WHERE id = ?`, exec.CaseID).Scan(&tenant); err != nil {
-			return err
-		}
-		expectedKey, err := CanonicalKey(SourceInput{Provider: "jira", ExternalID: issueKey, Tenant: tenant})
+		expectedKey, err := CanonicalKey(SourceInput{Provider: "jira", ExternalID: issueKey})
 		if err != nil {
 			return err
 		}

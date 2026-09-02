@@ -169,15 +169,20 @@ type DeliveryView struct {
 	PlanRevision int    `json:"plan_revision,omitempty"`
 	SessionID    string `json:"session_id,omitempty"`
 
-	Projects         []ProjectSummary `json:"projects"`
-	Lanes            []LaneSummary    `json:"lanes"`
-	Blockers         []BlockerSummary `json:"blockers"`
-	PendingQuestions []string         `json:"pending_questions"`
-	NextAction       string           `json:"next_action"`
-	Timeline         []AuditEvent     `json:"timeline"`
-	JiraActivity     []JiraActivity   `json:"jira_activity"`
-	WorkLogs         []WorkLogEntry   `json:"worklogs"`
-	WorkLogSeconds   int              `json:"worklog_seconds"`
+	Projects []ProjectSummary `json:"projects"`
+	Lanes    []LaneSummary    `json:"lanes"`
+	// RequirementSources are the sources this delivery captured, reported
+	// because map_delivery_work_item requires a source id and no other
+	// read had one to give: a caller resuming a delivery it did not start
+	// could not bind a work item at all, and so could not log work either.
+	RequirementSources []*protocol.RequirementSource `json:"requirement_sources"`
+	Blockers           []BlockerSummary              `json:"blockers"`
+	PendingQuestions   []string                      `json:"pending_questions"`
+	NextAction         string                        `json:"next_action"`
+	Timeline           []AuditEvent                  `json:"timeline"`
+	JiraActivity       []JiraActivity                `json:"jira_activity"`
+	WorkLogs           []WorkLogEntry                `json:"worklogs"`
+	WorkLogSeconds     int                           `json:"worklog_seconds"`
 	// ProjectPlans are the detailed plans a delivery explicitly uses in
 	// each touched project. The delivery's own PlanID/PlanRevision remains
 	// the high-level plan, because it may intentionally span all projects.
@@ -259,6 +264,7 @@ func (s *Store) buildDeliveryView(ctx context.Context, orchestrationID string, s
 	view := &DeliveryView{
 		Orchestration:        orch,
 		Title:                orchestrationTitle(orch, sortedRequirementSources(sourceMap)),
+		RequirementSources:   sortedRequirementSources(sourceMap),
 		Projects:             []ProjectSummary{},
 		Lanes:                []LaneSummary{},
 		Blockers:             []BlockerSummary{},
