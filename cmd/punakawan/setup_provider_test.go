@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -140,4 +142,76 @@ func containsString(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func TestGitHubAccountIsReadBackFromTheProviderRatherThanAsked(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/user" || r.Header.Get("Authorization") != "Bearer good-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"login":"octo-bot","name":"Octo Bot"}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	account, err := gitHubAccount(ctx, "good-token", server.URL)
+	if err != nil {
+		t.Fatalf("gitHubAccount: %v", err)
+	}
+	if account != "octo-bot" {
+		t.Errorf("account = %q, want octo-bot", account)
+	}
+	if _, err := gitHubAccount(ctx, "wrong-token", server.URL); err == nil {
+		t.Error("an unauthorized token should fail rather than report an empty account")
+	}
+}
+
+func TestAnUnreadableProbeBodyLeavesTheAccountUnknownNotUnverified(t *testing.T) {
+	// A body this host cannot read must leave the account unknown, never
+	// the credential unverified - the status code already proved it works.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	account, err := gitHubAccount(ctx, "any-token", server.URL)
+	if err != nil {
+		t.Fatalf("an unreadable body should not fail verification: %v", err)
+	}
+	if account != "" {
+		t.Errorf("account = %q, want it unknown", account)
+	}
+}
+
+func TestSetupProviderListingShowsWhoEachCredentialIs(t *testing.T) {
+	store := isolatedCredentials(t)
+	if err := store.Put(providercreds.Org{
+		ID: "widgets", Provider: providercreds.ProviderGitHub,
+		BaseURL: "https://github.com/widgets", Token: "gh", Account: "octo-bot",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	out, err := runSetupProvider(t, providercreds.ProviderGitHub, "--list")
+	if err != nil {
+		t.Fatalf("--list: %v", err)
+	}
+	if !strings.Contains(out, "ACCOUNT") || !strings.Contains(out, "octo-bot") {
+		t.Errorf("listing should name the account each credential authenticates as, got:\n%s", out)
+	}
+
+	// The account survives a round trip through the file, so a later
+	// `--list` or panel read does not have to re-contact the provider.
+	saved, err := store.Get(providercreds.ProviderGitHub, "widgets")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if saved.Account != "octo-bot" {
+		t.Errorf("stored account = %q, want octo-bot", saved.Account)
+	}
 }

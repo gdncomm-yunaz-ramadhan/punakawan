@@ -136,7 +136,12 @@ type Org struct {
 	BaseURL string `yaml:"base_url"`
 	// Email is required by Jira Cloud's Basic auth and unused elsewhere.
 	Email string `yaml:"email,omitempty"`
-	Token string `yaml:"token"`
+	// Account is who the provider says this credential is, read back from
+	// it during verification rather than asked for. GitHub identifies an
+	// account by its token alone, so there is nothing to type and nothing
+	// to get wrong; the answer is only ever as true as the credential.
+	Account string `yaml:"account,omitempty"`
+	Token   string `yaml:"token"`
 	// TokenScoped selects Atlassian's API gateway over the site URL.
 	TokenScoped bool `yaml:"token_scoped,omitempty"`
 	// Default marks the organisation used when a caller names none. The

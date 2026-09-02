@@ -152,9 +152,16 @@ func connectorAdapter(program string, spec adapters.AdapterSpec, orgs []Connecto
 }
 
 func connectorOrganization(org providercreds.Org, adapterID string) ConnectorOrganization {
+	// The account the provider itself named wins over the one typed
+	// during setup: for GitHub only the former exists, and for Jira it is
+	// the one the credential actually authenticates as.
+	account := strings.TrimSpace(org.Account)
+	if account == "" {
+		account = strings.TrimSpace(org.Email)
+	}
 	out := ConnectorOrganization{
 		ID: org.ID, AdapterID: adapterID, BaseURL: org.BaseURL, Host: org.Host(),
-		Account: strings.TrimSpace(org.Email), Default: org.Default, TokenScoped: org.TokenScoped,
+		Account: account, Default: org.Default, TokenScoped: org.TokenScoped,
 	}
 	if !org.AddedAt.IsZero() {
 		added := org.AddedAt

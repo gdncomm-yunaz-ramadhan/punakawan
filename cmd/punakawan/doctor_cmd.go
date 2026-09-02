@@ -521,6 +521,14 @@ func sanitizeConnectivityError(err error) string {
 // spawning the adapter process itself - a plain, direct HTTP round trip is
 // enough to prove the credential is valid and reachable.
 func checkAtlassianConnectivity(ctx context.Context, host, token, email string, scoped bool) error {
+	_, err := atlassianAccount(ctx, host, token, email, scoped)
+	return err
+}
+
+// atlassianAccount performs that same read and returns the account it
+// answers for, so a stored credential can say whose it is without anyone
+// typing it twice.
+func atlassianAccount(ctx context.Context, host, token, email string, scoped bool) (string, error) {
 	authHeader := "Bearer " + token
 	if email != "" {
 		authHeader = "Basic " + basicAuthValue(email, token)
@@ -530,27 +538,39 @@ func checkAtlassianConnectivity(ctx context.Context, host, token, email string, 
 	if scoped {
 		cloudID, err := resolveAtlassianCloudID(ctx, host)
 		if err != nil {
-			return err
+			return "", err
 		}
 		url = "https://api.atlassian.com/ex/jira/" + cloudID + "/rest/api/3/myself"
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("atlassian site/user metadata request returned HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("atlassian site/user metadata request returned HTTP %d", resp.StatusCode)
 	}
-	return nil
+	var body struct {
+		EmailAddress string `json:"emailAddress"`
+		DisplayName  string `json:"displayName"`
+	}
+	// See gitHubAccount: an unparseable body leaves the account unknown,
+	// never the credential unverified.
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", nil
+	}
+	if account := strings.TrimSpace(body.EmailAddress); account != "" {
+		return account, nil
+	}
+	return strings.TrimSpace(body.DisplayName), nil
 }
 
 func resolveAtlassianCloudID(ctx context.Context, host string) (string, error) {
@@ -584,22 +604,41 @@ func basicAuthValue(email, token string) string {
 
 // checkGitHubConnectivity performs an authenticated GET /user request.
 func checkGitHubConnectivity(ctx context.Context, token, apiBaseURL string) error {
+	_, err := gitHubAccount(ctx, token, apiBaseURL)
+	return err
+}
+
+// gitHubAccount performs that same request and returns the account it
+// answers for. The token is what identifies a GitHub account, so the
+// account is read back from the provider rather than asked for - an
+// answer nobody can mistype, and the only one that is actually true of
+// the credential being stored.
+func gitHubAccount(ctx context.Context, token, apiBaseURL string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(apiBaseURL, "/")+"/user", nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("github GET /user returned HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("github GET /user returned HTTP %d", resp.StatusCode)
 	}
-	return nil
+	var body struct {
+		Login string `json:"login"`
+	}
+	// A body this host cannot parse does not make a verified credential
+	// unverified: the status code already proved it works, so the account
+	// is simply unknown.
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", nil
+	}
+	return strings.TrimSpace(body.Login), nil
 }
 
 // checkHookTelemetry reports one of complete/incomplete/missing for

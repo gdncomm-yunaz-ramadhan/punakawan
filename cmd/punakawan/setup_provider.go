@@ -139,11 +139,19 @@ func runProviderSetup(cmd *cobra.Command, provider providercreds.Provider, store
 	fmt.Fprintf(out, "  Verifying against %s ...\n", org.Host())
 	ctx, cancel := context.WithTimeout(cmd.Context(), doctorCheckTimeout)
 	defer cancel()
-	if err := verifyProviderOrg(ctx, org); err != nil {
+	account, err := verifyProviderOrg(ctx, org)
+	if err != nil {
 		return fmt.Errorf("setup %s: %w\n\nNothing was saved. Create a fresh token at %s and run this again.", provider, err, tokenURL(provider, baseURL))
 	}
-	fmt.Fprintf(out, "%s Credentials accepted\n", okGlyph)
+	if account != "" {
+		// Saying who the credential turned out to be is how someone
+		// notices they pasted a personal token where a bot's was meant.
+		fmt.Fprintf(out, "%s Connected as %s\n", okGlyph, account)
+	} else {
+		fmt.Fprintf(out, "%s Credentials accepted\n", okGlyph)
+	}
 
+	org.Account = account
 	org.LastVerifiedAt = time.Now().UTC()
 	if err := store.Put(org); err != nil {
 		return err
@@ -162,15 +170,17 @@ func runProviderSetup(cmd *cobra.Command, provider providercreds.Provider, store
 
 // verifyProviderOrg performs the same authenticated read `punakawan
 // doctor` uses, so "verify while configuring" and "check it later" can
-// never disagree about whether a credential works.
-func verifyProviderOrg(ctx context.Context, org providercreds.Org) error {
+// never disagree about whether a credential works. It returns the account
+// the provider says the credential belongs to, which may be empty when
+// the provider named none.
+func verifyProviderOrg(ctx context.Context, org providercreds.Org) (string, error) {
 	switch org.Provider {
 	case providercreds.ProviderJira:
-		return checkAtlassianConnectivity(ctx, org.Host(), org.Token, org.Email, org.TokenScoped)
+		return atlassianAccount(ctx, org.Host(), org.Token, org.Email, org.TokenScoped)
 	case providercreds.ProviderGitHub:
-		return checkGitHubConnectivity(ctx, org.Token, gitHubAPIBaseURL(org))
+		return gitHubAccount(ctx, org.Token, gitHubAPIBaseURL(org))
 	default:
-		return fmt.Errorf("setup: unknown provider %q", org.Provider)
+		return "", fmt.Errorf("setup: unknown provider %q", org.Provider)
 	}
 }
 
@@ -194,7 +204,7 @@ func listProviderOrgs(out io.Writer, store *providercreds.Store, provider provid
 		return nil
 	}
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "ORGANISATION\tURL\tDEFAULT\tLAST VERIFIED")
+	fmt.Fprintln(w, "ORGANISATION\tURL\tACCOUNT\tDEFAULT\tLAST VERIFIED")
 	for _, org := range orgs {
 		def := ""
 		if org.Default {
@@ -204,7 +214,14 @@ func listProviderOrgs(out io.Writer, store *providercreds.Store, provider provid
 		if !org.LastVerifiedAt.IsZero() {
 			verified = org.LastVerifiedAt.Local().Format(time.RFC3339)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", org.ID, org.BaseURL, def, verified)
+		account := org.Account
+		if account == "" {
+			account = org.Email
+		}
+		if account == "" {
+			account = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", org.ID, org.BaseURL, account, def, verified)
 	}
 	return w.Flush()
 }

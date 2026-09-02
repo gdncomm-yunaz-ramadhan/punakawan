@@ -28,7 +28,7 @@ func TestConnectorsReportsEveryAdapterAndItsOrganisations(t *testing.T) {
 	for _, org := range []providercreds.Org{
 		{ID: "gdncomm", Provider: providercreds.ProviderJira, BaseURL: "https://gdncomm.atlassian.net", Email: "someone@example.test", Token: "secret-jira-token", LastVerifiedAt: time.Now().UTC()},
 		{ID: "acme", Provider: providercreds.ProviderJira, BaseURL: "https://acme.atlassian.net", Email: "other@example.test", Token: "another-secret"},
-		{ID: "widgets", Provider: providercreds.ProviderGitHub, BaseURL: "https://github.com/widgets", Token: "gh-secret"},
+		{ID: "widgets", Provider: providercreds.ProviderGitHub, BaseURL: "https://github.com/widgets", Token: "gh-secret", Account: "octo-bot"},
 	} {
 		if err := store.Put(org); err != nil {
 			t.Fatalf("seed %s: %v", org.ID, err)
@@ -101,6 +101,11 @@ func TestConnectorsReportsEveryAdapterAndItsOrganisations(t *testing.T) {
 	}
 	if gh.Installed || len(gh.Organizations) != 1 {
 		t.Errorf("github = %+v, want not installed with one organisation", gh)
+	}
+	// GitHub has no email to type, so the account can only be the one the
+	// provider itself named during verification.
+	if gh.Organizations[0].Account != "octo-bot" {
+		t.Errorf("github account = %q, want the verified octo-bot", gh.Organizations[0].Account)
 	}
 }
 
