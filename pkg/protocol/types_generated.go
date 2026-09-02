@@ -2899,6 +2899,7 @@ const DeliveryEventTypeLeaseRejected DeliveryEventType = "lease.rejected"
 const DeliveryEventTypeLeaseTimedOut DeliveryEventType = "lease.timed_out"
 const DeliveryEventTypeOrchestrationCancelled DeliveryEventType = "orchestration.cancelled"
 const DeliveryEventTypeOrchestrationCompleted DeliveryEventType = "orchestration.completed"
+const DeliveryEventTypeOrchestrationCompletedWithGaps DeliveryEventType = "orchestration.completed_with_gaps"
 const DeliveryEventTypeOrchestrationCreated DeliveryEventType = "orchestration.created"
 const DeliveryEventTypeOrchestrationDetailsUpdated DeliveryEventType = "orchestration.details_updated"
 const DeliveryEventTypeProjectAttached DeliveryEventType = "project.attached"
@@ -2912,6 +2913,7 @@ var enumValues_DeliveryEventType = []interface{}{
 	"orchestration.created",
 	"orchestration.cancelled",
 	"orchestration.completed",
+	"orchestration.completed_with_gaps",
 	"orchestration.details_updated",
 	"project.attached",
 	"project.detached",

@@ -101,6 +101,11 @@ func reduceOrchestration(id string, events []protocol.DeliveryEvent) (*protocol.
 			o.Status = protocol.DeliveryOrchestrationStatusCancelled
 		case protocol.DeliveryEventTypeOrchestrationCompleted:
 			o.Status = protocol.DeliveryOrchestrationStatusCompleted
+		case protocol.DeliveryEventTypeOrchestrationCompletedWithGaps:
+			// Purely a record of what completing this delivery skipped -
+			// it always follows the orchestration.completed it annotates,
+			// and changes nothing about the orchestration itself.
+			continue
 		default:
 			return nil, fmt.Errorf("delivery: unknown orchestration event type %q", ev.Type)
 		}

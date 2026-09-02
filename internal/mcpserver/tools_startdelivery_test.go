@@ -243,3 +243,66 @@ func TestGetDeliveryAnswerRoutingAndCancel(t *testing.T) {
 		t.Fatalf("Orchestration.Status = %s, want cancelled", cancelled.View.Orchestration.Status)
 	}
 }
+
+// TestCompleteDeliveryRefusesAnUnfinishedDeliveryUntilAcknowledged drives
+// the readiness gate over the real MCP wire. The delivery that prompted it
+// was completed with an open lane, entirely pending verification, and
+// unknown cost, and every call succeeded without a word.
+func TestCompleteDeliveryRefusesAnUnfinishedDeliveryUntilAcknowledged(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+	ctx := context.Background()
+
+	var started StartDeliveryOutput
+	callTool(t, cs, "start_delivery", map[string]any{
+		"source": jiraSource("PAY-77"),
+		"projects": []map[string]any{{
+			"slug": "gate-target", "repository_url": "https://example.test/gate-target.git",
+			"tasks": []map[string]any{{"title": "do the work"}},
+		}},
+	}, &started)
+
+	var got DeliveryViewOutput
+	callTool(t, cs, "get_delivery", map[string]any{"orchestration_id": started.OrchestrationId}, &got)
+	if got.Readiness == nil || got.Readiness.Ready {
+		t.Fatalf("get_delivery readiness = %+v, want it to report this delivery's gaps", got.Readiness)
+	}
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "complete_delivery", Arguments: map[string]any{
+		"orchestration_id":  started.OrchestrationId,
+		"expected_revision": got.View.Orchestration.Revision,
+	}})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected complete_delivery to refuse a delivery whose lane never closed")
+	}
+
+	var completed DeliveryViewOutput
+	callTool(t, cs, "complete_delivery", map[string]any{
+		"orchestration_id":  started.OrchestrationId,
+		"expected_revision": got.View.Orchestration.Revision,
+		"acknowledge_gaps":  true,
+	}, &completed)
+	if completed.View.Orchestration.Status != protocol.DeliveryOrchestrationStatusCompleted {
+		t.Fatalf("status = %q, want completed once the gaps were acknowledged", completed.View.Orchestration.Status)
+	}
+	if completed.Readiness == nil || completed.Readiness.Ready {
+		t.Fatalf("readiness = %+v, want the waived gaps reported back", completed.Readiness)
+	}
+
+	// Acknowledging a gap must not erase it - otherwise the delivery
+	// reads as cleanly complete and the whole point of the check is lost.
+	var after DeliveryViewOutput
+	callTool(t, cs, "get_delivery", map[string]any{"orchestration_id": started.OrchestrationId}, &after)
+	var waived bool
+	for _, ev := range after.View.Timeline {
+		if ev.Type == protocol.DeliveryEventTypeOrchestrationCompletedWithGaps {
+			waived = true
+		}
+	}
+	if !waived {
+		t.Fatal("expected the waived gaps to be recorded in the delivery's own timeline")
+	}
+}

@@ -15,6 +15,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -371,6 +372,14 @@ type GetDeliveryInput struct {
 // file that returns the orchestration's refreshed state after a call.
 type DeliveryViewOutput struct {
 	View delivery.DeliveryView `json:"view"`
+	// Readiness names every way this delivery is not yet finished -
+	// lanes that never closed, verification nobody reported on,
+	// requirements no lane covers, worklogs that never reached their
+	// provider, open sessions, unpriced usage. get_delivery always
+	// reports it; complete_delivery reports it only when it had gaps,
+	// either as the reason it refused or as the record of what was
+	// waived.
+	Readiness *delivery.Readiness `json:"readiness,omitempty"`
 }
 
 func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, GetDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
@@ -383,7 +392,8 @@ func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, 
 		if err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
-		return nil, DeliveryViewOutput{View: *view}, nil
+		readiness := delivery.AssessCompletionReadiness(view)
+		return nil, DeliveryViewOutput{View: *view, Readiness: &readiness}, nil
 	}
 }
 
@@ -482,6 +492,12 @@ func cancelDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolReques
 type CompleteDeliveryInput struct {
 	OrchestrationId  string `json:"orchestration_id"`
 	ExpectedRevision int    `json:"expected_revision" jsonschema:"the orchestration's current revision from get_delivery, so completing an already-superseded view is never silently accepted"`
+	// AcknowledgeGaps is the deliberate override for finishing a delivery
+	// that is not actually finished. Without it, completion is refused
+	// and the gaps are returned; with it, completion proceeds and each
+	// waived gap is recorded on the delivery, so what was skipped stays
+	// in the audit trail rather than disappearing.
+	AcknowledgeGaps bool `json:"acknowledge_gaps,omitempty" jsonschema:"complete anyway despite the reported gaps, recording each one as waived. Fix the gaps instead wherever you can - this is for a gap you genuinely cannot close, not for getting past the check"`
 }
 
 func completeDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, CompleteDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
@@ -490,14 +506,37 @@ func completeDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
+		before, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
+		if err != nil {
+			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
+		}
+		readiness := delivery.AssessCompletionReadiness(before)
+		if !readiness.Ready && !in.AcknowledgeGaps {
+			return nil, DeliveryViewOutput{Readiness: &readiness}, fmt.Errorf(
+				"mcpserver: this delivery is not finished: %s. Close each gap, or pass acknowledge_gaps to complete anyway and record them as waived", readiness.Summary())
+		}
 		if _, err := store.CompleteOrchestration(ctx, delivery.NewID(), in.OrchestrationId, in.ExpectedRevision); err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: complete orchestration: %w", err)
+		}
+		if !readiness.Ready {
+			// Recorded after the completion it accompanies, and never
+			// allowed to fail it: the delivery is already durably
+			// complete by this point, and losing the waiver record is a
+			// smaller harm than reporting a completion that happened as
+			// an error.
+			if err := store.RecordWaivedGaps(ctx, delivery.NewID(), in.OrchestrationId, readiness.Gaps); err != nil {
+				slog.Warn("mcpserver: record waived completion gaps", "orchestration_id", in.OrchestrationId, "error", err)
+			}
 		}
 		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
 		if err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
-		return nil, DeliveryViewOutput{View: *view}, nil
+		out := DeliveryViewOutput{View: *view}
+		if !readiness.Ready {
+			out.Readiness = &readiness
+		}
+		return nil, out, nil
 	}
 }
 
