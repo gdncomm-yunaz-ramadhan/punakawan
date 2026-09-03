@@ -12,6 +12,7 @@ import {
   getPullRequestChecks,
   getPullRequestFiles,
   getRepository,
+  searchRepositories,
   getReviewThread,
   listPullRequestComments,
   listPullRequestReviews,
@@ -58,6 +59,11 @@ export function createHandlers(options?: { fetchImpl?: typeof fetch; env?: NodeJ
           const { repository } = rest as { repository: string };
           if (!repository) throw new Error('github.getRepository requires "repository"');
           return getRepository(getClient(), { repository }, signal);
+        }
+        case 'github.searchRepositories': {
+          const { name, owners, limit } = rest as { name: string; owners?: string[]; limit?: number };
+          if (!name) throw new Error('github.searchRepositories requires "name"');
+          return searchRepositories(getClient(), { name, owners, limit }, signal);
         }
         case 'github.getPullRequest': {
           const { repository, pullRequestNumber } = rest as { repository: string; pullRequestNumber: number };

@@ -8,6 +8,7 @@ import {
   normalizePullRequest,
   normalizePullRequestFile,
   normalizeRepositoryAccess,
+  normalizeRepositoryMatch,
   normalizeReview,
   normalizeReviewComment,
   type NormalizedReviewThread,
@@ -33,6 +34,50 @@ function splitRepo(repository: string): { owner: string; repo: string } {
     throw new Error(`repository must be in "owner/repo" form, got ${JSON.stringify(repository)}`);
   }
   return { owner, repo };
+}
+
+export interface SearchRepositoriesParams {
+  /** The bare repository name to look for, e.g. "widgets". */
+  name: string;
+  /** Owners to scope the search to. Omitted searches everything the credential can see. */
+  owners?: string[];
+  limit?: number;
+}
+
+const REPOSITORY_SEARCH_DEFAULT_LIMIT = 10;
+const REPOSITORY_SEARCH_MAX_LIMIT = 50;
+
+/**
+ * Finds repositories by name, optionally scoped to owners.
+ *
+ * This exists so a repository named without an owner can be resolved to
+ * exactly one, instead of the caller guessing an owner and getting a 404
+ * that says nothing about where the repository actually is. GitHub's
+ * "user:" qualifier matches repositories owned by a personal account or
+ * an organisation alike, which is required here: the owner a credential
+ * speaks for is routinely a personal account.
+ *
+ * Results are deliberately not paged past the limit. A name matching two
+ * hundred repositories is an ambiguity to put to a human, not a list to
+ * walk - total says how much was matched so the caller can say so.
+ */
+export async function searchRepositories(client: GitHubRestClient, params: SearchRepositoriesParams, signal?: AbortSignal) {
+  const name = params.name.trim();
+  if (!name) {
+    throw new Error('searchRepositories requires a non-empty "name"');
+  }
+  const limit = Math.min(REPOSITORY_SEARCH_MAX_LIMIT, Math.max(1, params.limit ?? REPOSITORY_SEARCH_DEFAULT_LIMIT));
+  const owners = (params.owners ?? []).map((owner) => owner.trim()).filter(Boolean);
+  const q = [`${name} in:name`, ...owners.map((owner) => `user:${owner}`)].join(' ');
+
+  const raw = await client.request<Record<string, unknown>>('/search/repositories', {
+    query: { q, per_page: limit },
+    signal,
+  });
+  const items = Array.isArray(raw.data.items) ? raw.data.items : [];
+  const total = typeof raw.data.total_count === 'number' ? raw.data.total_count : items.length;
+  const repositories = items.map((item) => normalizeRepositoryMatch(asRecord(item)));
+  return { normalized: { repositories, total, complete: repositories.length >= total } };
 }
 
 export interface GetPullRequestParams extends RepoRef {

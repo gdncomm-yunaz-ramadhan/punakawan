@@ -40,6 +40,19 @@ export const manifest: AdapterManifest = {
         properties: { repository: { type: 'string' } },
       },
     },
+    'github.searchRepositories': {
+      side_effect: false,
+      description: 'Find repositories by name, optionally scoped to the owners this credential speaks for, so a repository named without an owner resolves to exactly one.',
+      input_schema: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+          owners: { type: 'array', items: { type: 'string' } },
+          limit: { type: 'number' },
+        },
+      },
+    },
     'github.getPullRequest': {
       side_effect: false,
       description: 'Fetch one pull request\'s current metadata, including its labels and requested reviewers.',

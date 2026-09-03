@@ -71,6 +71,13 @@ export const FIXTURE_REPOSITORY = {
   permissions: { admin: false, maintain: false, push: true, pull: true, triage: false },
 };
 
+/** Repositories the fake's search endpoint matches over. Two share a name under different owners, which is the ambiguity a caller has to resolve. */
+export const FIXTURE_SEARCHABLE_REPOSITORIES = [
+  { full_name: 'acme/widgets', name: 'widgets', private: true, archived: false, default_branch: 'main' },
+  { full_name: 'personal-account/widgets', name: 'widgets', private: false, archived: false, default_branch: 'trunk' },
+  { full_name: 'acme/gadgets', name: 'gadgets', private: false, archived: false, default_branch: 'main' },
+];
+
 /** A repository slug the fake REST server 404s for, simulating a private repo the configured credential cannot see. */
 export const INACCESSIBLE_REPO = 'acme/no-access';
 
@@ -191,6 +198,18 @@ export function createFakeGitHubRest(): FakeGitHubRest {
       const threadId = typeof variables.threadId === 'string' ? variables.threadId : '';
       resolvedThreadIds.push(threadId);
       return json({ data: { resolveReviewThread: { thread: { id: threadId, isResolved: true } } } });
+    }
+
+    if (url.pathname === '/search/repositories' && method === 'GET') {
+      const q = url.searchParams.get('q') ?? '';
+      const owners = [...q.matchAll(/user:([^\s]+)/g)].map((m) => m[1]);
+      const name = q.replace(/\s*in:name/, '').replace(/\s*user:[^\s]+/g, '').trim();
+      const items = FIXTURE_SEARCHABLE_REPOSITORIES.filter((repo) => {
+        const [owner, repoName] = repo.full_name.split('/');
+        return repoName.includes(name) && (owners.length === 0 || owners.includes(owner));
+      });
+      const perPage = Number(url.searchParams.get('per_page') ?? '10');
+      return json({ total_count: items.length, items: items.slice(0, perPage) });
     }
 
     const repoMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)$/);

@@ -43,6 +43,7 @@ describe('manifest', () => {
       'github.getRepository', 'github.getPullRequest', 'github.getPullRequestFiles', 'github.getPullRequestChecks',
       'github.getCommitStatus', 'github.listPullRequestComments', 'github.listUnresolvedReviewThreads',
       'github.listPullRequestReviews', 'github.findPullRequest', 'github.getReviewThread',
+      'github.searchRepositories',
     ];
     for (const op of readOps) {
       assert.equal(manifest.operations[op]?.side_effect, false, `${op} should be side_effect: false`);
@@ -54,6 +55,43 @@ describe('manifest', () => {
       assert.ok(typeof metadata.description === 'string' && metadata.description.length > 0, `${op} should declare a description`);
       assert.equal(metadata.input_schema.type, 'object', `${op} should declare an object input_schema`);
     }
+  });
+});
+
+describe('github.searchRepositories', () => {
+  test('scopes the query to the owners it was given and reports what it did not show', async () => {
+    const { handlers, rest } = fakeHandlers();
+
+    const result = (await handlers.execute!(
+      { op: 'github.searchRepositories', name: 'widgets', owners: ['acme'] },
+      new AbortController().signal,
+    )) as { normalized: { repositories: Array<{ repository: string; defaultBranch: string | null }>; total: number; complete: boolean } };
+
+    assert.deepEqual(result.normalized.repositories.map((r) => r.repository), ['acme/widgets']);
+    assert.equal(result.normalized.repositories[0]?.defaultBranch, 'main');
+    const search = rest.requests.find((r) => r.path === '/search/repositories');
+    assert.ok(search, 'expected the search endpoint to be called');
+  });
+
+  test('returns every owner a name matches, which is the ambiguity a caller has to resolve', async () => {
+    const { handlers } = fakeHandlers();
+
+    const result = (await handlers.execute!(
+      { op: 'github.searchRepositories', name: 'widgets' },
+      new AbortController().signal,
+    )) as { normalized: { repositories: Array<{ repository: string }>; total: number; complete: boolean } };
+
+    assert.deepEqual(result.normalized.repositories.map((r) => r.repository), ['acme/widgets', 'personal-account/widgets']);
+    assert.equal(result.normalized.total, 2);
+    assert.equal(result.normalized.complete, true);
+  });
+
+  test('refuses a blank name rather than searching for everything', async () => {
+    const { handlers } = fakeHandlers();
+    await assert.rejects(
+      handlers.execute!({ op: 'github.searchRepositories', name: '  ' }, new AbortController().signal),
+      /non-empty "name"/,
+    );
   });
 });
 

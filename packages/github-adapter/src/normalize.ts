@@ -212,6 +212,35 @@ export interface NormalizedRepositoryAccess {
   defaultBranch: string | null;
 }
 
+export interface NormalizedRepositoryMatch {
+  /** "owner/repo", exactly the form every other operation takes. */
+  repository: string;
+  owner: string;
+  name: string;
+  private: boolean | null;
+  archived: boolean | null;
+  defaultBranch: string | null;
+}
+
+/**
+ * Normalizes one repository-search result. The full name is what a caller
+ * has to hand back to act on it, so it is what this leads with; owner and
+ * name are split out only so a caller can label a choice without parsing
+ * the slug again.
+ */
+export function normalizeRepositoryMatch(payload: Record<string, unknown>): NormalizedRepositoryMatch {
+  const fullName = asString(payload.full_name) ?? '';
+  const [owner, name] = fullName.split('/');
+  return {
+    repository: fullName,
+    owner: owner ?? '',
+    name: name ?? asString(payload.name) ?? '',
+    private: asBoolean(payload.private) ?? null,
+    archived: asBoolean(payload.archived) ?? null,
+    defaultBranch: asString(payload.default_branch) ?? null,
+  };
+}
+
 export function normalizeRepositoryAccess(payload: Record<string, unknown>): NormalizedRepositoryAccess {
   const permissions = asRecord(payload.permissions);
   return {
