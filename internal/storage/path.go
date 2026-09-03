@@ -59,22 +59,6 @@ func AdapterTrustFilePath() (string, error) {
 	return filepath.Join(dir, adapterTrustFileName), nil
 }
 
-// WorktreesDir returns the central directory execution worktrees are
-// created under, creating it if absent. Worktrees are runtime state, not
-// part of a managed repository, so they live here rather than inside any
-// repo's own working tree.
-func WorktreesDir() (string, error) {
-	dir, err := DataDir()
-	if err != nil {
-		return "", err
-	}
-	worktreesDir := filepath.Join(dir, "worktrees")
-	if err := os.MkdirAll(worktreesDir, 0o700); err != nil {
-		return "", fmt.Errorf("storage: create worktrees dir %s: %w", worktreesDir, err)
-	}
-	return worktreesDir, nil
-}
-
 // CheckoutsDir returns the directory clones punakawan makes on a
 // caller's behalf live under, creating it if absent.
 //

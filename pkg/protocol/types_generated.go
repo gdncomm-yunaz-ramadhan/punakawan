@@ -3486,6 +3486,42 @@ type DeliveryProjectMetadata struct {
 
 	// TestFramework corresponds to the JSON schema field "test_framework".
 	TestFramework []string `json:"test_framework,omitempty,omitzero" yaml:"test_framework,omitempty" mapstructure:"test_framework,omitempty"`
+
+	// Where this project's delivery work happens: in a git worktree punakawan cuts
+	// per lane, or in the checkout itself. Answered once, by whoever the delivery
+	// asked, and reused for every later delivery in this project - punakawan never
+	// modifies somebody's working tree without having been told it may.
+	WorktreeMode *DeliveryProjectMetadataWorktreeMode `json:"worktree_mode,omitempty,omitzero" yaml:"worktree_mode,omitempty" mapstructure:"worktree_mode,omitempty"`
+}
+
+type DeliveryProjectMetadataWorktreeMode string
+
+const DeliveryProjectMetadataWorktreeModeMainCheckout DeliveryProjectMetadataWorktreeMode = "main_checkout"
+const DeliveryProjectMetadataWorktreeModeWorktree DeliveryProjectMetadataWorktreeMode = "worktree"
+
+var enumValues_DeliveryProjectMetadataWorktreeMode = []interface{}{
+	"worktree",
+	"main_checkout",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *DeliveryProjectMetadataWorktreeMode) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_DeliveryProjectMetadataWorktreeMode {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DeliveryProjectMetadataWorktreeMode, v)
+	}
+	*j = DeliveryProjectMetadataWorktreeMode(v)
+	return nil
 }
 
 type DeliveryProjectStatus string

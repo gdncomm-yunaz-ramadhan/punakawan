@@ -292,7 +292,11 @@ func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context
 		}
 
 		out := StartDeliveryOutput{
-			Status:             "started",
+			Status: "started",
+			// The delivery is started either way: this question is about
+			// where its lanes should be worked, which is answerable after
+			// the fact and never a reason to withhold the delivery.
+			NeedsInput:         result.Reconciliation.NeedsInput,
 			Delivery:           &StartDeliveryResultDelivery{ID: orchestrationID, ProjectionRevision: revision},
 			Reconciliation:     &result.Reconciliation,
 			OrchestrationId:    orchestrationID,
@@ -436,6 +440,10 @@ type DeliveryViewOutput struct {
 	// either as the reason it refused or as the record of what was
 	// waived.
 	Readiness *delivery.Readiness `json:"readiness,omitempty"`
+	// Worktrees names the lane worktrees an answer just created, so the
+	// caller knows which directory each lane's work belongs in without
+	// reading them back off the view.
+	Worktrees []string `json:"worktrees,omitempty"`
 }
 
 func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, GetDeliveryInput) (*mcp.CallToolResult, DeliveryViewOutput, error) {
@@ -469,6 +477,12 @@ func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, 
 //     Supply reference and expected_revision as well when the routing
 //     question is one of the pending ones, so answering it also clears
 //     it.
+//   - Worktree case: start_delivery asked where a project's lanes should
+//     be worked. Set reference (the worktree:<project-id> pending
+//     question) plus worktree_mode; this records the answer for every
+//     later delivery in that project and, for worktree, cuts one per
+//     open lane - cloning the repository first if this machine has no
+//     copy of it.
 //   - Requirement-clarity case: the question was raised by starting the
 //     delivery with clarity needs_clarification. Set reference (the
 //     clarity:<ISSUE-KEY> pending question) plus clarity and
@@ -487,6 +501,9 @@ type AnswerDeliveryQuestionInput struct {
 	Title      string `json:"title,omitempty" jsonschema:"resolved-requirement case: human-readable title"`
 	Summary    string `json:"summary,omitempty" jsonschema:"resolved-requirement case: short summary; freetext requires title or summary"`
 
+	LocalPath    string `json:"local_path,omitempty" jsonschema:"worktree case: absolute path of this project's checkout, when punakawan has not found it and should not clone one"`
+	WorktreeMode string `json:"worktree_mode,omitempty" jsonschema:"worktree case: worktree | main_checkout - whether this project's lanes each get their own git worktree, or share the checkout itself"`
+
 	Clarity          string `json:"clarity,omitempty" jsonschema:"requirement-clarity case: clear | needs_clarification - what the requirement now says, after the answer"`
 	ClarityRationale string `json:"clarity_rationale,omitempty" jsonschema:"requirement-clarity case: why. Required when clarity is needs_clarification: it is posted on the issue as the question still to answer"`
 
@@ -500,8 +517,15 @@ func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallTo
 		if err != nil {
 			return nil, DeliveryViewOutput{}, err
 		}
+		var worktrees []string
 
 		switch {
+		case in.WorktreeMode != "":
+			created, err := answerWorktreeMode(ctx, store, in)
+			if err != nil {
+				return nil, DeliveryViewOutput{}, err
+			}
+			worktrees = created
 		case in.Clarity != "":
 			if err := answerRequirementClarity(ctx, store, in); err != nil {
 				return nil, DeliveryViewOutput{}, err
@@ -534,8 +558,49 @@ func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallTo
 		if err != nil {
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
-		return nil, DeliveryViewOutput{View: *view}, nil
+		return nil, DeliveryViewOutput{View: *view, Worktrees: worktrees}, nil
 	}
+}
+
+// answerWorktreeMode records where this project's work happens and, when
+// the answer is a worktree, cuts one per open lane.
+//
+// Nothing had ever answered this before: the worktree machinery existed
+// with no caller, so every lane was worked in whatever directory the
+// agent already stood in. The answer is remembered on the project, so
+// this is asked once and never again for that repository.
+func answerWorktreeMode(ctx context.Context, store *delivery.Store, in AnswerDeliveryQuestionInput) ([]string, error) {
+	if !delivery.IsWorktreeQuestion(in.Reference) {
+		return nil, fmt.Errorf("mcpserver: answer_delivery_question: reference %q is not a worktree question - pass the worktree:<project-id> reference from get_delivery's pending_questions", in.Reference)
+	}
+	mode := protocol.DeliveryProjectMetadataWorktreeMode(strings.TrimSpace(in.WorktreeMode))
+	switch mode {
+	case protocol.DeliveryProjectMetadataWorktreeModeWorktree, protocol.DeliveryProjectMetadataWorktreeModeMainCheckout:
+	default:
+		return nil, fmt.Errorf("mcpserver: answer_delivery_question: worktree_mode is %q or %q, got %q",
+			protocol.DeliveryProjectMetadataWorktreeModeWorktree, protocol.DeliveryProjectMetadataWorktreeModeMainCheckout, in.WorktreeMode)
+	}
+
+	projectID := delivery.WorktreeQuestionProjectID(in.Reference)
+	if err := store.RememberProjectWorktreeMode(ctx, delivery.NewID(), projectID, mode); err != nil {
+		return nil, fmt.Errorf("mcpserver: record worktree mode: %w", err)
+	}
+
+	var created []string
+	if mode == protocol.DeliveryProjectMetadataWorktreeModeWorktree {
+		made, problems, err := store.ProvisionLaneWorktrees(ctx, in.OrchestrationId, projectID, delivery.CheckoutHints{LocalPath: in.LocalPath})
+		if err != nil {
+			return nil, fmt.Errorf("mcpserver: create worktrees: %w", err)
+		}
+		if len(made) == 0 && len(problems) > 0 {
+			return nil, fmt.Errorf("mcpserver: create worktrees: %s", strings.Join(problems, "; "))
+		}
+		created = made
+	}
+	if err := store.ResolvePendingInput(ctx, delivery.NewID(), in.OrchestrationId, in.Reference); err != nil {
+		return nil, fmt.Errorf("mcpserver: resolve input: %w", err)
+	}
+	return created, nil
 }
 
 // CancelDeliveryInput is cancel_delivery's input. reason is accepted

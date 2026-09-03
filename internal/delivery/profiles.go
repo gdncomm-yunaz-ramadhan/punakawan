@@ -162,8 +162,8 @@ func nullableInt(v int) interface{} {
 // this - it was a field with no writer - which is why a delivery could
 // only ever work against the directory its MCP server happened to be
 // started in.
-func (s *Store) RememberProjectCheckout(ctx context.Context, idempotencyKey, projectID, localPath, canonicalRemote, baseBranch string) error {
-	in := ProfileInput{LocalPath: localPath, CanonicalRemote: canonicalRemote, BaseBranch: baseBranch}
+func (s *Store) RememberProjectCheckout(ctx context.Context, idempotencyKey, projectID, localPath, remoteName, baseBranch string) error {
+	in := ProfileInput{LocalPath: localPath, CanonicalRemote: remoteName, BaseBranch: baseBranch}
 	id := stableProfileID(projectID)
 	existing, err := s.GetDeliveryProfile(ctx, projectID)
 	switch {
@@ -171,8 +171,8 @@ func (s *Store) RememberProjectCheckout(ctx context.Context, idempotencyKey, pro
 		id = existing.Id
 		in = profileInputFrom(existing)
 		in.LocalPath = localPath
-		if canonicalRemote != "" {
-			in.CanonicalRemote = canonicalRemote
+		if remoteName != "" {
+			in.CanonicalRemote = remoteName
 		}
 		if in.BaseBranch == "" {
 			in.BaseBranch = baseBranch

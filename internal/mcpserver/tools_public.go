@@ -93,7 +93,7 @@ func upsertProjectHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 			if branch == "" && project.DefaultBranch != nil {
 				branch = *project.DefaultBranch
 			}
-			if err := store.RememberProjectCheckout(ctx, delivery.NewID(), project.Id, localPath, in.RepositoryURL, branch); err != nil {
+			if err := store.RememberProjectCheckout(ctx, delivery.NewID(), project.Id, localPath, "origin", branch); err != nil {
 				return nil, UpsertProjectOutput{}, fmt.Errorf("mcpserver: upsert_project: record local path: %w", err)
 			}
 		}

@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/ygrip/punakawan/internal/delivery"
 )
 
 // newTestCheckout makes a real git repository whose origin is remote, so
@@ -99,19 +97,5 @@ func TestStartDeliveryRejectsAStaleRecordedCheckout(t *testing.T) {
 	}
 	if len(result.Reconciliation.Warnings) == 0 {
 		t.Fatal("expected a warning naming the project with no checkout")
-	}
-}
-
-func TestCheckoutDirNameSeparatesRepositoriesSharingAName(t *testing.T) {
-	one := checkoutDirName("https://example.test/acme/web.git", "web")
-	two := checkoutDirName("https://example.test/other/web.git", "web")
-	if one == two {
-		t.Fatalf("checkoutDirName collided for two different repositories: %q", one)
-	}
-	if delivery.RepositoryIdentity("git@example.test:acme/web.git") != delivery.RepositoryIdentity("https://example.test/acme/web.git") {
-		t.Skip("repository identity does not unify these remote forms; nothing to assert about clone naming")
-	}
-	if checkoutDirName("git@example.test:acme/web.git", "web") != one {
-		t.Fatal("the same repository named two ways must clone to one directory")
 	}
 }

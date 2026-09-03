@@ -39,5 +39,9 @@ export interface DeliveryProject {
      * The configured GitHub organisation whose credential reaches this repository, remembered the first time it was resolved. A repository owner is not always an organisation id - a credential holds an account of whatever name its token belongs to - so this records which credential was proven to work rather than deriving it again. It is a local routing fact and never a credential.
      */
     github_org?: string;
+    /**
+     * Where this project's delivery work happens: in a git worktree punakawan cuts per lane, or in the checkout itself. Answered once, by whoever the delivery asked, and reused for every later delivery in this project - punakawan never modifies somebody's working tree without having been told it may.
+     */
+    worktree_mode?: "worktree" | "main_checkout";
   };
 }

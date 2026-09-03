@@ -152,7 +152,11 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 			// the same tree. A project nobody can locate does not stop
 			// the delivery: its lanes are still real work somebody can do
 			// by hand, and the reason is reported rather than raised.
-			switch path, cloned, err := s.resolveProjectCheckout(ctx, project, draft, req.WorkspaceRoot, false); {
+			switch path, cloned, err := s.deliveries.ResolveProjectCheckout(ctx, project, delivery.CheckoutHints{
+				LocalPath:     draft.LocalPath,
+				WorkspaceRoot: req.WorkspaceRoot,
+				DefaultBranch: draft.DefaultBranch,
+			}); {
 			case err != nil:
 				report.Warnings = append(report.Warnings, fmt.Sprintf("project %q: %v - pass its local_path, start a delivery from inside the checkout once, or let punakawan clone it when the lane is given a worktree", draft.Slug, err))
 			case cloned:
@@ -231,6 +235,10 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 		if lane.Status == protocol.DeliveryLaneStatusRunnable {
 			report.RunnableWork = append(report.RunnableWork, lane.Id)
 		}
+	}
+
+	if err := s.provisionWorktrees(ctx, req, orchestrationID, lanes, &report); err != nil {
+		return report, err
 	}
 
 	report.UncoveredRequirements = uncoveredRequirements(ctx, s, orchestrationID, sources)
@@ -391,4 +399,74 @@ func stableID(kind, identity string) string {
 // colliding on the same key.
 func reconcileKey(orchestrationID, kind, identity string) string {
 	return "reconcile:" + orchestrationID + ":" + kind + ":" + identity
+}
+
+// provisionWorktrees gives each project's lanes somewhere to work, or
+// asks where that should be.
+//
+// A delivery used to leave every lane pointing at nothing, so an agent
+// worked in whatever tree it was already standing in - which for a
+// multi-project delivery is not even the right repository, and for any
+// delivery is somebody's own working copy. The worktree machinery to do
+// this properly existed and had no caller.
+//
+// The question is asked once per project and the answer remembered, so
+// this is a prompt the first time and silent afterwards.
+func (s *Service) provisionWorktrees(ctx context.Context, req StartRequest, orchestrationID string, lanes []*protocol.DeliveryLane, report *ReconcileReport) error {
+	laneCount := map[string]int{}
+	order := []string{}
+	for _, lane := range lanes {
+		if lane.ProjectId == "" {
+			continue
+		}
+		if laneCount[lane.ProjectId] == 0 {
+			order = append(order, lane.ProjectId)
+		}
+		laneCount[lane.ProjectId]++
+	}
+
+	hintsBySlug := map[string]delivery.CheckoutHints{}
+	for _, draft := range req.Projects {
+		hintsBySlug[draft.Slug] = delivery.CheckoutHints{
+			LocalPath:     draft.LocalPath,
+			WorkspaceRoot: req.WorkspaceRoot,
+			DefaultBranch: draft.DefaultBranch,
+		}
+	}
+
+	for _, projectID := range order {
+		project, err := s.deliveries.GetProject(ctx, projectID)
+		if err != nil {
+			return fmt.Errorf("deliveryservice: read project %s: %w", projectID, err)
+		}
+		mode, err := s.deliveries.ProjectWorktreeMode(ctx, projectID)
+		if err != nil {
+			return fmt.Errorf("deliveryservice: read worktree mode for %s: %w", project.Slug, err)
+		}
+		hints := hintsBySlug[project.Slug]
+		hints.WorkspaceRoot = req.WorkspaceRoot
+
+		switch mode {
+		case protocol.DeliveryProjectMetadataWorktreeModeWorktree:
+			created, problems, err := s.deliveries.ProvisionLaneWorktrees(ctx, orchestrationID, projectID, hints)
+			if err != nil {
+				return fmt.Errorf("deliveryservice: create worktrees for %s: %w", project.Slug, err)
+			}
+			report.Worktrees = append(report.Worktrees, created...)
+			for _, problem := range problems {
+				report.Warnings = append(report.Warnings, "worktree: "+problem)
+			}
+		case protocol.DeliveryProjectMetadataWorktreeModeMainCheckout:
+			// Chosen deliberately, so there is nothing to say about it.
+		default:
+			decision := delivery.WorktreeDecision(project, laneCount[projectID])
+			if err := s.deliveries.OpenWorktreeQuestion(ctx, reconcileKey(orchestrationID, "worktree", projectID), orchestrationID, projectID, decision.Question); err != nil {
+				return fmt.Errorf("deliveryservice: ask where %s should be worked in: %w", project.Slug, err)
+			}
+			if report.NeedsInput == nil {
+				report.NeedsInput = decision
+			}
+		}
+	}
+	return nil
 }

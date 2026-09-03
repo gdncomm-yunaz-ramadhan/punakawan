@@ -37,7 +37,6 @@ type App struct {
 	Policy          *policy.Policy
 	Supervisor      *tools.Supervisor
 	Inspector       *gitops.Inspector
-	Worktrees       *gitops.WorktreeManager
 	Workflow        *workflow.Store
 	AdapterRegistry *adapters.Registry
 	// Credentials is the host's provider organisation store, or nil when
@@ -131,15 +130,6 @@ func load(ws *workspace.Workspace) (*App, error) {
 		}
 		roots = append(roots, path)
 	}
-	// Task worktrees now live under Punakawan's central data dir rather
-	// than inside the workspace (PR1 project hygiene), so every git
-	// invocation this Supervisor makes against a worktree path needs that
-	// directory allowed too.
-	worktreesDir, err := storage.WorktreesDir()
-	if err != nil {
-		return nil, err
-	}
-	roots = append(roots, worktreesDir)
 	sup := tools.New(roots...)
 
 	workflowRoot, err := ws.WorkflowRoot()
@@ -215,7 +205,6 @@ func load(ws *workspace.Workspace) (*App, error) {
 		registry.SetOrgEnvResolver(creds.AdapterOrgEnv())
 	}
 	a.AdapterRegistry = registry
-	a.Worktrees = gitops.NewWorktreeManager(sup, pol)
 
 	return a, nil
 }

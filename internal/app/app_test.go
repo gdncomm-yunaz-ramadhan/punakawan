@@ -20,7 +20,7 @@ func TestLoadWiresServices(t *testing.T) {
 	if a.Policy == nil {
 		t.Fatal("expected a default policy to be loaded when no policy.yaml exists")
 	}
-	if a.Supervisor == nil || a.AdapterRegistry == nil || a.Inspector == nil || a.Worktrees == nil {
+	if a.Supervisor == nil || a.AdapterRegistry == nil || a.Inspector == nil {
 		t.Fatalf("expected all services to be wired, got %+v", a)
 	}
 
@@ -53,7 +53,7 @@ func TestLoadOutsideAnyProjectIsGlobal(t *testing.T) {
 	if a.Workspace.Root != dataDir {
 		t.Fatalf("Root = %q, want the machine data dir %q", a.Workspace.Root, dataDir)
 	}
-	if a.Policy == nil || a.Supervisor == nil || a.AdapterRegistry == nil || a.Inspector == nil || a.Worktrees == nil {
+	if a.Policy == nil || a.Supervisor == nil || a.AdapterRegistry == nil || a.Inspector == nil {
 		t.Fatalf("expected every service to be wired with no project in scope, got %+v", a)
 	}
 

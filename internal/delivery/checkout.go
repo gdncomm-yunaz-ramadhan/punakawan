@@ -1,4 +1,4 @@
-package deliveryservice
+package delivery
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/gitops"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -24,7 +23,21 @@ import (
 // the next call for the same source tries again.
 const cloneTimeout = 10 * time.Minute
 
-// resolveProjectCheckout answers where project is checked out on this
+// CheckoutHints are the places a caller already knows to look for a
+// project's checkout, plus whether it may clone when none of them is it.
+type CheckoutHints struct {
+	// LocalPath is a path the caller stated outright.
+	LocalPath string
+	// WorkspaceRoot is the caller's own checkout, if it has one.
+	WorkspaceRoot string
+	// DefaultBranch is recorded with the path, since a delivery profile
+	// has to name one.
+	DefaultBranch string
+	// AllowClone permits the one step that reaches the network.
+	AllowClone bool
+}
+
+// ResolveProjectCheckout answers where project is checked out on this
 // machine, and remembers the answer so the next delivery - started from
 // anywhere - does not have to work it out again.
 //
@@ -40,28 +53,28 @@ const cloneTimeout = 10 * time.Minute
 // writes a whole repository to disk, which is not something to do as a
 // side effect of recording work; it happens when the delivery is actually
 // given somewhere to work, which is a step somebody has agreed to.
-func (s *Service) resolveProjectCheckout(ctx context.Context, project *protocol.DeliveryProject, draft ProjectDraft, workspaceRoot string, allowClone bool) (path string, cloned bool, err error) {
-	identity := delivery.RepositoryIdentity(project.RepositoryUrl)
+func (s *Store) ResolveProjectCheckout(ctx context.Context, project *protocol.DeliveryProject, hints CheckoutHints) (path string, cloned bool, err error) {
+	identity := RepositoryIdentity(project.RepositoryUrl)
 
-	if profile, perr := s.deliveries.GetDeliveryProfile(ctx, project.Id); perr == nil {
+	if profile, perr := s.GetDeliveryProfile(ctx, project.Id); perr == nil {
 		if profile.LocalPath != nil && matchesRepository(ctx, *profile.LocalPath, identity) {
 			return *profile.LocalPath, false, nil
 		}
-	} else if !errors.Is(perr, delivery.ErrNotFound) {
+	} else if !errors.Is(perr, ErrNotFound) {
 		return "", false, perr
 	}
 
-	for _, candidate := range []string{draft.LocalPath, workspaceRoot} {
+	for _, candidate := range []string{hints.LocalPath, hints.WorkspaceRoot} {
 		if matchesRepository(ctx, candidate, identity) {
 			abs, aerr := filepath.Abs(candidate)
 			if aerr != nil {
 				return "", false, aerr
 			}
-			return abs, false, s.rememberCheckout(ctx, project, draft, abs)
+			return abs, false, s.rememberCheckout(ctx, project, hints, abs)
 		}
 	}
 
-	if !allowClone {
+	if !hints.AllowClone {
 		return "", false, fmt.Errorf("no checkout of %s is known on this machine", project.RepositoryUrl)
 	}
 	if strings.TrimSpace(project.RepositoryUrl) == "" {
@@ -71,20 +84,23 @@ func (s *Service) resolveProjectCheckout(ctx context.Context, project *protocol.
 	if cerr != nil {
 		return "", false, cerr
 	}
-	return target, true, s.rememberCheckout(ctx, project, draft, target)
+	return target, true, s.rememberCheckout(ctx, project, hints, target)
 }
 
 // rememberCheckout records path against the project so it is found from
 // any directory next time.
-func (s *Service) rememberCheckout(ctx context.Context, project *protocol.DeliveryProject, draft ProjectDraft, path string) error {
-	baseBranch := strings.TrimSpace(draft.DefaultBranch)
+func (s *Store) rememberCheckout(ctx context.Context, project *protocol.DeliveryProject, hints CheckoutHints, path string) error {
+	baseBranch := strings.TrimSpace(hints.DefaultBranch)
 	if baseBranch == "" && project.DefaultBranch != nil {
 		baseBranch = *project.DefaultBranch
 	}
 	if baseBranch == "" {
 		baseBranch = "main"
 	}
-	return s.deliveries.RememberProjectCheckout(ctx, "checkout:"+project.Id+":"+path, project.Id, path, project.RepositoryUrl, baseBranch)
+	// The profile's canonical_remote is a remote name, not a url: it is
+	// what worktree creation fetches from. Everything punakawan resolves
+	// or clones here has exactly one, and it is called origin.
+	return s.RememberProjectCheckout(ctx, "checkout:"+project.Id+":"+path, project.Id, path, "origin", baseBranch)
 }
 
 // matchesRepository reports whether dir is a checkout of the repository
@@ -102,7 +118,7 @@ func matchesRepository(ctx context.Context, dir, identity string) bool {
 	if !ok {
 		return false
 	}
-	return delivery.RepositoryIdentity(remote) == identity
+	return RepositoryIdentity(remote) == identity
 }
 
 // cloneCheckout clones repositoryURL into the machine's checkouts
@@ -151,6 +167,6 @@ func checkoutDirName(repositoryURL, slug string) string {
 			return '-'
 		}
 	}, name)
-	sum := sha256.Sum256([]byte(delivery.RepositoryIdentity(repositoryURL)))
+	sum := sha256.Sum256([]byte(RepositoryIdentity(repositoryURL)))
 	return name + "-" + hex.EncodeToString(sum[:])[:8]
 }

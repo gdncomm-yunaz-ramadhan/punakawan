@@ -253,6 +253,13 @@ type ReconcileReport struct {
 	Plans        []string `json:"plans"`
 	RunnableWork []string `json:"runnable_work,omitempty"`
 	Skipped      []string `json:"skipped,omitempty"`
+	// Worktrees names each lane worktree this call created.
+	Worktrees []string `json:"worktrees,omitempty"`
+	// NeedsInput carries a question about work that is already recorded -
+	// where a project's lanes should be worked, so far. It is not the
+	// pre-write refusal StartOrResolve returns: the delivery exists, and
+	// this says what it is waiting to be told.
+	NeedsInput *protocol.NeedUserInput `json:"needs_input,omitempty"`
 	// Checkouts names the directory each project resolved to, so a caller
 	// can see which tree its lanes will be worked in - and, when
 	// punakawan had to clone the repository itself, that it did.
