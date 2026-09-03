@@ -49,7 +49,7 @@ func TestRealManifestsLoadAndValidate(t *testing.T) {
 		"hydrate_jira_delivery", "hydrate_github_pull_request", "propose_github_pr_review",
 		"get_github_pr_review", "submit_github_pr_review", "map_delivery_work_item",
 		"get_delivery", "answer_delivery_question", "log_delivery_work", "retry_worklog_sync",
-		"cancel_jira_write_intent", "cancel_delivery", "complete_delivery_lane", "complete_delivery",
+		"cancel_delivery", "complete_delivery_lane", "complete_delivery",
 	}
 	capReg := capability.NewRegistry()
 	for _, name := range realToolNames {

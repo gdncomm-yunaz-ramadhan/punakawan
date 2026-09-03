@@ -42,29 +42,6 @@ type Store struct {
 	// least one explicit task-bound worklog has been recorded. It is opt-in
 	// so existing non-Jira delivery callers remain unchanged.
 	requireJiraWorkLogs bool
-	// terminalEffects is nil unless WithTerminalEffectEnqueuer is passed to
-	// NewStore. It is the seam Task 6's durable provider outbox fills in to
-	// enqueue a delivery's terminal provider writes inside
-	// CompleteOrchestration's own transaction; with none configured there is
-	// nothing to enqueue yet.
-	terminalEffects TerminalEffectEnqueuer
-}
-
-// TerminalEffectEnqueuer enqueues a delivery's terminal provider effects
-// (e.g. closing a linked Jira issue, a final PR comment) from inside the
-// same transaction that marks its execution terminal. It is a narrow seam
-// for Task 6's durable outbox, not the outbox itself - CompleteOrchestration
-// calls it, if configured, after every other completion mutation in that
-// transaction has already been written.
-type TerminalEffectEnqueuer interface {
-	EnqueueTerminalEffects(ctx context.Context, tx *sql.Tx, orchestrationID string) error
-}
-
-// WithTerminalEffectEnqueuer configures Store to enqueue terminal provider
-// effects atomically with CompleteOrchestration. Without this option (the
-// default), completion enqueues nothing extra.
-func WithTerminalEffectEnqueuer(e TerminalEffectEnqueuer) StoreOption {
-	return func(s *Store) { s.terminalEffects = e }
 }
 
 // NewStore wraps an opened storage kernel database. opts is variadic so
@@ -578,12 +555,10 @@ func (s *Store) CancelOrchestration(ctx context.Context, idempotencyKey, id stri
 	}
 	// Cancellation is reported as delivery.failed rather than
 	// delivery.completed since it means the delivery did not reach a
-	// successful outcome. Nothing in this package currently ever appends
-	// orchestration.completed (there is no "mark this orchestration
-	// successfully done" call anywhere yet), so delivery.completed has no
-	// dispatch point to wire today; a future addition of that call is the
-	// natural place to dispatch it. Only the fresh-cancel path dispatches
-	// here, never the duplicate-idempotency-key retry, for the same reason
+	// successful outcome; CompleteOrchestration dispatches
+	// delivery.completed for the successful one. Only the fresh-cancel
+	// path dispatches here, never the duplicate-idempotency-key retry,
+	// for the same reason
 	// CreateOrchestrationWithOptions only dispatches on its own fresh
 	// path.
 	if err == nil {

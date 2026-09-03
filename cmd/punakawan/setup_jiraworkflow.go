@@ -39,6 +39,7 @@ transition_on_complete: false
 # transitions:
 #   TRF:
 #     start_status: In Progress
+#     review_status: In Review
 #     complete_status: Ready for QA
 
 # Status names this workspace treats as "not real work", excluded from the

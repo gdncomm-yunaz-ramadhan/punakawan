@@ -17,6 +17,7 @@ import (
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/daemon"
+	"github.com/ygrip/punakawan/internal/jiraworkflow"
 	"github.com/ygrip/punakawan/internal/mcpserver"
 	"github.com/ygrip/punakawan/internal/panel/assets"
 	"github.com/ygrip/punakawan/internal/providercreds"
@@ -75,6 +76,11 @@ type doctorReport struct {
 	// "complete" throughout the entire period in which every snapshot was
 	// priced unknown because the catalog did not know the model.
 	Pricing doctorOK `json:"pricing"`
+	// JiraWriteBack reports whether this workspace will write anything
+	// back to Jira. A workspace with no jira-workflow.yaml silently drops
+	// every comment, worklog and transition a delivery produces - no
+	// error, no log line, nothing in the delivery record.
+	JiraWriteBack doctorOK `json:"jira_write_back"`
 }
 
 func newDoctorCmd() *cobra.Command {
@@ -118,7 +124,7 @@ func newDoctorCmd() *cobra.Command {
 // permanently fail doctor merely because trust for a hook has not yet been
 // granted by the client.
 func (r doctorReport) allOK() bool {
-	if !r.Storage.OK || !r.Daemon.OK || !r.PanelAssets.OK || !r.WorkflowStorage.OK || !r.Pricing.OK {
+	if !r.Storage.OK || !r.Daemon.OK || !r.PanelAssets.OK || !r.WorkflowStorage.OK || !r.Pricing.OK || !r.JiraWriteBack.OK {
 		return false
 	}
 	for _, a := range r.Adapters {
@@ -159,6 +165,7 @@ func printDoctorReport(out interface{ Write([]byte) (int, error) }, r doctorRepo
 		}
 	}
 	line("pricing          %-4s %s", statusWord(r.Pricing.OK), r.Pricing.Detail)
+	line("jira_write_back  %-4s %s", statusWord(r.JiraWriteBack.OK), r.JiraWriteBack.Detail)
 	line("panel_assets     %-4s %s", statusWord(r.PanelAssets.OK), r.PanelAssets.Detail)
 	line("workflow_storage %-4s %s", statusWord(r.WorkflowStorage.OK), r.WorkflowStorage.Detail)
 }
@@ -184,6 +191,7 @@ func runDoctor(ctx context.Context) doctorReport {
 		report.Adapters["atlassian"] = doctorAdapterReport{Entrypoint: detail, Handshake: detail, Credentials: detail, Connectivity: detail}
 		report.Adapters["github"] = doctorAdapterReport{Entrypoint: detail, Handshake: detail, Credentials: detail, Connectivity: detail}
 		report.WorkflowStorage = doctorOK{OK: false, Detail: detail}
+		report.JiraWriteBack = doctorOK{OK: false, Detail: detail}
 	} else {
 		defer func() {
 			if ws.Ephemeral {
@@ -191,6 +199,7 @@ func runDoctor(ctx context.Context) doctorReport {
 			}
 		}()
 		report.WorkflowStorage = checkWorkflowStorage(ws)
+		report.JiraWriteBack = checkJiraWriteBack(ws)
 
 		global, err := workspace.LoadGlobalConfig()
 		if err != nil {
@@ -209,6 +218,46 @@ func runDoctor(ctx context.Context) doctorReport {
 	report.Pricing = checkPricing(ctx)
 
 	return report
+}
+
+// checkJiraWriteBack reports whether this workspace will write a
+// delivery's comments, worklogs and transitions back to Jira.
+//
+// Without .punakawan/jira-workflow.yaml the config loader returns its
+// default, whose auto_log is false, and the Jira hook returns on its first
+// line. A whole delivery then completes having recorded its work only
+// inside punakawan - which is invisible to everyone who reads Jira - and
+// nothing anywhere says why. Naming the file, and the command that writes
+// it, is the entire fix.
+func checkJiraWriteBack(ws *workspace.Workspace) doctorOK {
+	path := ws.JiraWorkflowPath()
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return doctorOK{OK: false, Detail: fmt.Sprintf("no %s: nothing this delivery does will reach Jira; run punakawan setup here to write one", path)}
+		}
+		return doctorOK{OK: false, Detail: err.Error()}
+	}
+	cfg, err := jiraworkflow.Load(path)
+	if err != nil {
+		return doctorOK{OK: false, Detail: fmt.Sprintf("load %s: %v", path, err)}
+	}
+	if !cfg.AutoLog {
+		return doctorOK{OK: false, Detail: fmt.Sprintf("auto_log is false in %s, so every comment, worklog and transition is dropped", path)}
+	}
+	var enabled []string
+	if cfg.LogWork {
+		enabled = append(enabled, "worklogs")
+	}
+	if len(cfg.CommentEvents) > 0 {
+		enabled = append(enabled, fmt.Sprintf("%d comment event(s)", len(cfg.CommentEvents)))
+	}
+	if len(cfg.Transitions) > 0 {
+		enabled = append(enabled, fmt.Sprintf("%d project transition policy(ies)", len(cfg.Transitions)))
+	}
+	if len(enabled) == 0 {
+		return doctorOK{OK: false, Detail: fmt.Sprintf("auto_log is on in %s but nothing is enabled under it", path)}
+	}
+	return doctorOK{OK: true, Detail: strings.Join(enabled, ", ")}
 }
 
 // checkPricing reports where model prices came from, unpriceable recorded

@@ -154,6 +154,36 @@ func (s *Service) OnDeliveryCompleted(ctx context.Context, deliveryID string) er
 	return nil
 }
 
+// OnImplementationCompleted moves a linked issue to the project's
+// configured TransitionPolicy.ReviewStatus when a lane's work reaches a
+// terminal outcome.
+//
+// A lane completing used to post a comment and nothing else, so an issue
+// whose work was finished and awaiting review still read as in progress.
+// It is policy-driven and silent by default: a workspace whose workflow
+// has no state between in-progress and done configures no review_status
+// and nothing moves.
+func (s *Service) OnImplementationCompleted(ctx context.Context, deliveryID string) error {
+	if s.cfg == nil || !s.cfg.AutoLog {
+		return nil
+	}
+	issueKey, err := s.resolveIssueKey(ctx, deliveryID)
+	if err != nil {
+		return fmt.Errorf("jiraintegration: resolve linked jira issue for delivery %s: %w", deliveryID, err)
+	}
+	if issueKey == "" {
+		return nil
+	}
+	policy, ok := s.cfg.TransitionPolicyFor(jiraworkflow.ProjectKeyFromIssueKey(issueKey))
+	if !ok || policy.ReviewStatus == "" {
+		return nil
+	}
+	if err := s.enqueueTransition(ctx, deliveryID, issueKey, policy.ReviewStatus); err != nil {
+		return fmt.Errorf("jiraintegration: enqueue review transition for %s: %w", issueKey, err)
+	}
+	return nil
+}
+
 // OnWorkRecorded enqueues one jira.worklog intent for the immutable work
 // interval identified by worklogID - the delivery ledger entry's own
 // durable id, which is what the enqueued intent's fingerprint keys on, so

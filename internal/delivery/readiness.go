@@ -35,6 +35,10 @@ const (
 	GapSessionNotFinalized = "session_not_finalized"
 	// GapCostUnknown - tokens were recorded but could not be priced.
 	GapCostUnknown = "cost_unknown"
+	// GapJiraWriteBackOff - the delivery is for a Jira issue, but this
+	// workspace writes nothing back to Jira, so everything it recorded
+	// stayed inside punakawan.
+	GapJiraWriteBackOff = "jira_write_back_off"
 )
 
 // ReadinessGap is one reason a delivery is not finished. Subjects are the
@@ -165,6 +169,42 @@ func AssessCompletionReadiness(view *DeliveryView) Readiness {
 	}
 
 	return Readiness{Ready: len(gaps) == 0, Gaps: gaps}
+}
+
+// JiraWriteBackGap reports a delivery that is for a Jira issue in a
+// workspace whose Jira write-back is switched off, naming the config file
+// that switches it on.
+//
+// It is separate from AssessCompletionReadiness because it is the only
+// gap that cannot be seen in the view: the config lives in the workspace,
+// not in the delivery. Without it a Jira delivery completes reporting
+// unsynced worklogs and pointing at retry_worklog_sync - which redispatches
+// into the same closed gate and changes nothing.
+func JiraWriteBackGap(view *DeliveryView, configPath string) *ReadinessGap {
+	if view == nil {
+		return nil
+	}
+	var issues []string
+	seen := map[string]bool{}
+	for _, source := range view.RequirementSources {
+		if source == nil || source.Provider != "jira" || source.ExternalId == nil {
+			continue
+		}
+		key := strings.TrimSpace(*source.ExternalId)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		issues = append(issues, key)
+	}
+	if len(issues) == 0 {
+		return nil
+	}
+	return &ReadinessGap{
+		Code:     GapJiraWriteBackOff,
+		Detail:   fmt.Sprintf("this delivery is for %s but nothing it recorded will reach Jira - no comment, worklog or transition - because Jira write-back is off in %s; punakawan setup writes that file", strings.Join(issues, ", "), configPath),
+		Subjects: issues,
+	}
 }
 
 // uncoveredRequirementKeys names every captured requirement source no

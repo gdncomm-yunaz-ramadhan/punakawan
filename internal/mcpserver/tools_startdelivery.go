@@ -402,6 +402,7 @@ func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, 
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
 		readiness := delivery.AssessCompletionReadiness(view)
+		addJiraWriteBackGap(a, view, &readiness)
 		return nil, DeliveryViewOutput{View: *view, Readiness: &readiness}, nil
 	}
 }
@@ -543,6 +544,7 @@ func completeDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequ
 			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: build delivery view: %w", err)
 		}
 		readiness := delivery.AssessCompletionReadiness(before)
+		addJiraWriteBackGap(a, before, &readiness)
 		if !readiness.Ready && !in.AcknowledgeGaps {
 			return nil, DeliveryViewOutput{Readiness: &readiness}, fmt.Errorf(
 				"mcpserver: this delivery is not finished: %s. Close each gap, or pass acknowledge_gaps to complete anyway and record them as waived", readiness.Summary())
@@ -590,4 +592,21 @@ func jiraOrgResolver() deliveryservice.Option {
 	return deliveryservice.WithJiraOrgResolver(func(org string) (string, error) {
 		return store.ResolveOrgID(providercreds.ProviderJira, org)
 	})
+}
+
+// addJiraWriteBackGap folds in the one readiness gap that is not visible
+// in the delivery view - a Jira delivery in a workspace configured to
+// write nothing back to Jira. A workspace that cannot even be read is not
+// evidence of anything, so it adds nothing.
+func addJiraWriteBackGap(a *app.App, view *delivery.DeliveryView, readiness *delivery.Readiness) {
+	cfg, err := a.JiraWorkflow()
+	if err != nil || (cfg != nil && cfg.AutoLog) {
+		return
+	}
+	gap := delivery.JiraWriteBackGap(view, a.Workspace.JiraWorkflowPath())
+	if gap == nil {
+		return
+	}
+	readiness.Gaps = append(readiness.Gaps, *gap)
+	readiness.Ready = false
 }

@@ -294,3 +294,34 @@ func TestCheckAdapterEntrypointRejectsAnUntrustedRepositoryLocalCommand(t *testi
 		t.Fatalf("handshake = %q, want %q when entrypoint failed", report.Handshake, doctorStatusMissing)
 	}
 }
+
+// A workspace with no jira-workflow.yaml drops every comment, worklog and
+// transition a Jira delivery produces, with no error and no log line. The
+// whole point of the check is that it says so before a delivery relies on
+// it.
+func TestDoctorReportsJiraWriteBackThatIsSwitchedOff(t *testing.T) {
+	root := t.TempDir()
+	ws := &workspace.Workspace{Root: root}
+	if err := os.MkdirAll(filepath.Dir(ws.JiraWorkflowPath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := checkJiraWriteBack(ws)
+	if missing.OK || !strings.Contains(missing.Detail, "jira-workflow.yaml") {
+		t.Fatalf("no config: %+v, want a failure naming the file", missing)
+	}
+
+	if err := os.WriteFile(ws.JiraWorkflowPath(), []byte("auto_log: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if off := checkJiraWriteBack(ws); off.OK || !strings.Contains(off.Detail, "auto_log") {
+		t.Fatalf("auto_log false: %+v, want a failure naming auto_log", off)
+	}
+
+	if err := os.WriteFile(ws.JiraWorkflowPath(), []byte("auto_log: true\nlog_work: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if on := checkJiraWriteBack(ws); !on.OK {
+		t.Fatalf("auto_log true: %+v, want OK", on)
+	}
+}

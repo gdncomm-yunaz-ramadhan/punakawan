@@ -47,6 +47,13 @@ func assessJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 		if err != nil {
 			return nil, AssessJiraDeliveryOutput{}, fmt.Errorf("mcpserver: assess Jira delivery: %w", err)
 		}
+		// Reading an issue closely enough to judge its clarity is a touch of
+		// it, when the snapshot assessed names an issue this delivery mapped.
+		if snapshotID != "" {
+			if snapshot, err := store.GetJiraSnapshot(ctx, snapshotID); err == nil {
+				touchJiraIssue(ctx, store, key+":touch", in.ExecutionID, in.SessionID, snapshot.JiraIssueKey, assessment.AssessedAt)
+			}
+		}
 		execution, err := store.GetExecutionByCase(ctx, assessment.CaseID)
 		if err != nil {
 			return nil, AssessJiraDeliveryOutput{}, err
@@ -86,6 +93,10 @@ func mapDeliveryWorkItemHandler(a *app.App) func(context.Context, *mcp.CallToolR
 		if err != nil {
 			return nil, MapDeliveryWorkItemOutput{}, fmt.Errorf("mcpserver: map delivery work item: %w", err)
 		}
+		// Binding a task to an issue is an engagement with that issue, so
+		// the mapping's own first_touched_at is the moment it was made
+		// rather than whenever some later tool happened to reach it.
+		touchJiraIssue(ctx, store, key+":touch", mapping.ExecutionID, in.SessionID, mapping.JiraIssueKey, mapping.CreatedAt)
 		view, err := store.BuildDeliveryView(ctx, mapping.OrchestrationID)
 		if err != nil {
 			return nil, MapDeliveryWorkItemOutput{}, err

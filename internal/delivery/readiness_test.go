@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/ygrip/punakawan/pkg/protocol"
@@ -229,5 +230,30 @@ func TestWaivedGapsEventLeavesACompletedOrchestrationCompleted(t *testing.T) {
 	}
 	if orch.Status != protocol.DeliveryOrchestrationStatusCompleted {
 		t.Fatalf("status = %q, want completed", orch.Status)
+	}
+}
+
+// The delivery that prompted this completed reporting unsynced worklogs
+// and pointing at retry_worklog_sync - which redispatches into the same
+// closed gate. Nothing anywhere said the workspace was configured to write
+// nothing back to Jira.
+func TestJiraWriteBackGapNamesTheIssueAndTheConfigFile(t *testing.T) {
+	key := "PAY-7001"
+	view := &DeliveryView{RequirementSources: []*protocol.RequirementSource{{Provider: "jira", ExternalId: &key}}}
+
+	gap := JiraWriteBackGap(view, "/w/.punakawan/jira-workflow.yaml")
+	if gap == nil {
+		t.Fatal("JiraWriteBackGap = nil, want a gap for a Jira-sourced delivery")
+	}
+	if gap.Code != GapJiraWriteBackOff || len(gap.Subjects) != 1 || gap.Subjects[0] != key {
+		t.Fatalf("gap = %+v, want %s naming %s", gap, GapJiraWriteBackOff, key)
+	}
+	if !strings.Contains(gap.Detail, "jira-workflow.yaml") {
+		t.Fatalf("gap.Detail = %q, want it to name the file that switches write-back on", gap.Detail)
+	}
+
+	// A delivery with no Jira source is unaffected by Jira configuration.
+	if gap := JiraWriteBackGap(&DeliveryView{}, "/w/.punakawan/jira-workflow.yaml"); gap != nil {
+		t.Fatalf("JiraWriteBackGap on an adhoc delivery = %+v, want nil", gap)
 	}
 }

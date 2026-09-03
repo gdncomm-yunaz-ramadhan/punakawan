@@ -51,6 +51,12 @@ type JiraWorkItemMapping struct {
 	TouchCount          int        `json:"touch_count"`
 }
 
+// JiraWriteIntent is a row of the legacy jira_write_intents table.
+// Nothing writes it any more: every Jira effect a delivery produces is now
+// one durable outbox intent in provider_write_intents, enqueued by
+// internal/jirahooks and executed by the daemon's worker pool. The type and
+// its read path stay so a delivery recorded before that move still reports
+// what it recorded, the same way the legacy usage ledger does.
 type JiraWriteIntent struct {
 	ID             string         `json:"id"`
 	CaseID         string         `json:"case_id"`
@@ -264,123 +270,22 @@ func (s *Store) TouchJiraWorkItem(ctx context.Context, key, executionID, session
 	return scanWorkItem(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, session_id, orchestration_id, parent_task_id, requirement_source_id, jira_issue_key, created_at, first_touched_at, last_touched_at, touch_count FROM jira_work_item_mappings WHERE id = ?`, mappingID))
 }
 
-func (s *Store) CreateJiraWriteIntent(ctx context.Context, idempotencyKey, executionID, sessionID, jiraIssueKey, action string, payload map[string]any) (*JiraWriteIntent, error) {
-	_, issueKey, err := canonicalJiraSource(jiraIssueKey)
-	if err != nil {
-		return nil, err
+// TouchJiraWorkItemForTask touches the Jira issue mapped to one task of
+// this delivery, for a caller that knows which task it just finished but
+// not which issue that task was bound to (complete_delivery_lane). A task
+// with no mapping is ErrNotFound, exactly as touching an unmapped issue
+// directly is: a touch enriches a durable mapping, it never invents one.
+func (s *Store) TouchJiraWorkItemForTask(ctx context.Context, key, orchestrationID, parentTaskID, sessionID string, at time.Time) (*JiraWorkItemMapping, error) {
+	var executionID, issueKey string
+	if err := s.db.Reader().QueryRowContext(ctx, `SELECT execution_id, jira_issue_key FROM jira_work_item_mappings WHERE orchestration_id = ? AND parent_task_id = ? ORDER BY created_at, id LIMIT 1`, orchestrationID, parentTaskID).Scan(&executionID, &issueKey); err != nil {
+		return nil, noRow(err)
 	}
-	if strings.TrimSpace(action) == "" {
-		return nil, fmt.Errorf("delivery: Jira write action is required")
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("delivery: encode Jira write intent: %w", err)
-	}
-	var out JiraWriteIntent
-	now := time.Now().UTC()
-	err = s.db.Write(ctx, idempotencyKey, "create Jira write intent "+action, func(tx *sql.Tx) error {
-		var exec DeliveryExecution
-		if err := scanExecution(tx.QueryRowContext(ctx, `SELECT id, case_id, orchestration_id, ordinal, status, session_id, started_at, ended_at FROM delivery_executions WHERE id = ?`, executionID), &exec); err != nil {
-			return err
-		}
-		if sessionID != "" {
-			if err := requireSessionScope(ctx, tx, sessionID, &exec); err != nil {
-				return err
-			}
-		}
-		out = JiraWriteIntent{ID: newID(), CaseID: exec.CaseID, ExecutionID: exec.ID, SessionID: sessionID, JiraIssueKey: issueKey, Action: strings.TrimSpace(action), Payload: payload, IdempotencyKey: idempotencyKey, Status: "pending", CreatedAt: now, UpdatedAt: now}
-		_, err = tx.ExecContext(ctx, `INSERT INTO jira_write_intents (id, case_id, execution_id, session_id, jira_issue_key, action, payload, idempotency_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`, out.ID, out.CaseID, out.ExecutionID, out.SessionID, out.JiraIssueKey, out.Action, string(encoded), out.IdempotencyKey, now.Format(timeLayout), now.Format(timeLayout))
-		return err
-	})
-	if errors.Is(err, storage.ErrDuplicateWrite) {
-		return s.GetJiraWriteIntentByKey(ctx, idempotencyKey)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
+	return s.TouchJiraWorkItem(ctx, key, executionID, sessionID, issueKey, at)
 }
 
-// ResolveJiraWriteIntent records an adapter attempt's durable result. A failed
-// attempt has a scheduled retry and remains visible instead of disappearing.
-func (s *Store) ResolveJiraWriteIntent(ctx context.Context, idempotencyKey, intentID, externalID, failure string, retryAt *time.Time) (*JiraWriteIntent, error) {
-	now := time.Now().UTC()
-	var retryValue any
-	if retryAt != nil {
-		retryValue = retryAt.UTC().Format(timeLayout)
-	}
-	err := s.db.Write(ctx, idempotencyKey, "resolve Jira write intent "+intentID, func(tx *sql.Tx) error {
-		status := "succeeded"
-		if strings.TrimSpace(failure) != "" {
-			status = "failed"
-			if retryAt != nil {
-				status = "retrying"
-			}
-		}
-		result, err := tx.ExecContext(ctx, `UPDATE jira_write_intents SET status = ?, attempt_count = attempt_count + 1, retry_at = ?, last_error = ?, external_id = ?, updated_at = ? WHERE id = ? AND status != 'succeeded'`, status, retryValue, strings.TrimSpace(failure), strings.TrimSpace(externalID), now.Format(timeLayout), intentID)
-		if err != nil {
-			return err
-		}
-		n, err := result.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			var found int
-			if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM jira_write_intents WHERE id = ?`, intentID).Scan(&found); err != nil {
-				return err
-			}
-			if found == 0 {
-				return ErrNotFound
-			}
-		}
-		return nil
-	})
-	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
-		return nil, err
-	}
-	return s.GetJiraWriteIntent(ctx, intentID)
-}
-
-// CancelJiraWriteIntent prevents a stale pending or retrying intent from being
-// executed. Repeating cancellation returns the same durable intent.
-func (s *Store) CancelJiraWriteIntent(ctx context.Context, idempotencyKey, intentID string) (*JiraWriteIntent, error) {
-	now := time.Now().UTC()
-	err := s.db.Write(ctx, idempotencyKey, "cancel Jira write intent "+intentID, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, `UPDATE jira_write_intents SET status = 'cancelled', retry_at = NULL, updated_at = ? WHERE id = ? AND status IN ('pending', 'retrying')`, now.Format(timeLayout), intentID)
-		if err != nil {
-			return err
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if changed == 1 {
-			return nil
-		}
-		var status string
-		if err := tx.QueryRowContext(ctx, `SELECT status FROM jira_write_intents WHERE id = ?`, intentID).Scan(&status); err != nil {
-			return noRow(err)
-		}
-		if status == "cancelled" {
-			return nil
-		}
-		return ErrInvalidState
-	})
-	if errors.Is(err, storage.ErrDuplicateWrite) {
-		return s.GetJiraWriteIntent(ctx, intentID)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("delivery: cancel Jira write intent: %w", err)
-	}
-	return s.GetJiraWriteIntent(ctx, intentID)
-}
-
-func (s *Store) GetJiraWriteIntent(ctx context.Context, id string) (*JiraWriteIntent, error) {
-	return scanWriteIntent(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, session_id, jira_issue_key, action, payload, idempotency_key, status, attempt_count, retry_at, last_error, external_id, created_at, updated_at FROM jira_write_intents WHERE id = ?`, id))
-}
-func (s *Store) GetJiraWriteIntentByKey(ctx context.Context, key string) (*JiraWriteIntent, error) {
-	return scanWriteIntent(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, session_id, jira_issue_key, action, payload, idempotency_key, status, attempt_count, retry_at, last_error, external_id, created_at, updated_at FROM jira_write_intents WHERE idempotency_key = ?`, key))
+// GetJiraSnapshot reads one captured Jira source snapshot by id.
+func (s *Store) GetJiraSnapshot(ctx context.Context, id string) (*JiraSourceSnapshot, error) {
+	return scanSnapshot(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, session_id, jira_issue_key, version, title, body, content_hash, captured_at FROM jira_source_snapshots WHERE id = ?`, id))
 }
 
 func scanSnapshot(row lifecycleScanner) (*JiraSourceSnapshot, error) {

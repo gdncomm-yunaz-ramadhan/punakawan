@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -70,9 +69,7 @@ func logDeliveryWorkHandler(a *app.App) func(context.Context, *mcp.CallToolReque
 		// a far smaller harm than reporting a recorded interval as an
 		// error.
 		if entry.ExecutionID != "" {
-			if _, err := store.TouchJiraWorkItem(ctx, "touch:"+entry.ID, entry.ExecutionID, entry.SessionID, entry.JiraIssueKey, entry.CreatedAt); err != nil {
-				slog.Warn("mcpserver: touch jira work item", "worklog_id", entry.ID, "jira_issue_key", entry.JiraIssueKey, "error", err)
-			}
+			touchJiraIssue(ctx, store, "touch:"+entry.ID, entry.ExecutionID, entry.SessionID, entry.JiraIssueKey, entry.CreatedAt)
 		}
 		view, err := store.BuildDeliveryView(ctx, in.OrchestrationID)
 		if err != nil {

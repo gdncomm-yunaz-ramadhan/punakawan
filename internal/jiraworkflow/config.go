@@ -97,11 +97,18 @@ type Config struct {
 }
 
 // TransitionPolicy names the Jira workflow status a project's issues
-// should be moved to when a delivery starts and when it completes. Either
-// field may be empty, meaning "attempt no transition for that instant" -
-// a workspace can configure just one of the two.
+// should be moved to when a delivery starts, when a lane's work finishes,
+// and when the delivery completes. Any field may be empty, meaning
+// "attempt no transition for that instant" - a workspace can configure
+// only the ones its workflow actually has.
 type TransitionPolicy struct {
-	StartStatus    string `yaml:"start_status"`
+	StartStatus string `yaml:"start_status"`
+	// ReviewStatus is the status an issue moves to when the work on it is
+	// finished but the delivery as a whole is not - a lane reaching a
+	// terminal outcome. Empty means a lane completing moves nothing,
+	// which is the right default: not every workflow has a state between
+	// in-progress and done.
+	ReviewStatus   string `yaml:"review_status"`
 	CompleteStatus string `yaml:"complete_status"`
 }
 

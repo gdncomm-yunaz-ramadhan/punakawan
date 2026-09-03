@@ -99,7 +99,7 @@ get_delivery reads the current state, its next_action, its readiness (the same g
 
 Optional, and worth doing rather than assumed: assess_jira_delivery records how clear the source was, report_delivery_progress records a durable progress note, and checkpoint_delivery_session records a resumable summary and handoff. Nothing forces them, so a delivery that reports none simply made that choice.
 
-To assess a Jira issue: resolve it, hydrate its parent and every subtask, reason over visible source, then record clarity and rationale with assess_jira_delivery. Propose parent Fibonacci story points from total subtask complexity, and lower agent-assisted original estimates per subtask from expected execution time. Jira writes are queued as durable intents and executed by intent_id or by execution_id; cancel stale pending ones with cancel_jira_write_intent.
+To assess a Jira issue: resolve it, hydrate its parent and every subtask, reason over visible source, then record clarity and rationale with assess_jira_delivery. Propose parent Fibonacci story points from total subtask complexity, and lower agent-assisted original estimates per subtask from expected execution time.
 
 For provider access beyond these tools, use list_adapter_operations to discover live operation descriptions and input schemas, then call_adapter_operation with an exact declared operation. Runtime mechanics stay delegated to connected adapters.
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -113,10 +114,9 @@ type DeliveryLifecycle struct {
 // completed and ended, closes every still-active session, and advances
 // delivery_projection_versions. It marks the execution terminal without
 // ending its lifetime case; the next StartOrResolveExecution call for the
-// same Jira source opens the next ordinal. terminalEffects is the seam
-// Task 6's durable outbox will fill to enqueue terminal provider writes in
-// the same transaction; nil (the default - no Store option sets it yet)
-// means there is nothing to enqueue.
+// same Jira source opens the next ordinal. Once committed it dispatches
+// delivery.completed, which is what carries the completion back to the
+// linked issue.
 func (s *Store) CompleteOrchestration(ctx context.Context, idempotencyKey, orchestrationID string, expectedRevision int) (*protocol.DeliveryOrchestration, error) {
 	now := time.Now().UTC()
 	err := s.db.Write(ctx, idempotencyKey, "complete orchestration "+orchestrationID, func(tx *sql.Tx) error {
@@ -154,16 +154,18 @@ func (s *Store) CompleteOrchestration(ctx context.Context, idempotencyKey, orche
 		if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_projection_versions (orchestration_id, revision, updated_at) VALUES (?, 1, ?) ON CONFLICT(orchestration_id) DO UPDATE SET revision = delivery_projection_versions.revision + 1, updated_at = excluded.updated_at`, orchestrationID, now.Format(timeLayout)); err != nil {
 			return err
 		}
-		if s.terminalEffects != nil {
-			if err := s.terminalEffects.EnqueueTerminalEffects(ctx, tx, orchestrationID); err != nil {
-				return err
-			}
-		}
 		return nil
 	})
 	if err != nil && !errors.Is(err, storage.ErrDuplicateWrite) {
 		return nil, err
 	}
+	// Completion appended its event and closed its rows but told nobody,
+	// so OnDeliveryCompleted - the completion comment and the transition
+	// back to the linked issue - was unreachable. Dispatched after the
+	// write commits, like every other hook here: a hook-plumbing problem
+	// must not undo a delivery that has already finished.
+	s.dispatchOrchestrationEvent(ctx, orchestrationID, "", deliveryhooks.EventDeliveryCompleted,
+		"delivery completed", s.pullRequestURLs(ctx, orchestrationID))
 	return s.GetOrchestration(ctx, orchestrationID)
 }
 

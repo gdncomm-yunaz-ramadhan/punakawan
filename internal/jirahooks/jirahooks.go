@@ -34,6 +34,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"sync"
 
 	"github.com/ygrip/punakawan/internal/adapters"
 	"github.com/ygrip/punakawan/internal/delivery"
@@ -44,6 +46,25 @@ import (
 	"github.com/ygrip/punakawan/internal/providerwrite"
 	"github.com/ygrip/punakawan/internal/storage"
 )
+
+// announceDisabled logs, once per delivery, that Jira write-back is off.
+func (h *JiraHook) announceDisabled(deliveryID string) {
+	h.announcedMu.Lock()
+	defer h.announcedMu.Unlock()
+	if h.announced == nil {
+		h.announced = map[string]bool{}
+	}
+	if h.announced[deliveryID] {
+		return
+	}
+	h.announced[deliveryID] = true
+	reason := "auto_log is false"
+	if h.cfg == nil {
+		reason = "this workspace has no .punakawan/jira-workflow.yaml"
+	}
+	slog.Info("jirahooks: not writing anything back to Jira for this delivery",
+		"delivery_id", deliveryID, "reason", reason, "fix", "run punakawan setup in this workspace")
+}
 
 // gateResolver is the subset of *adapters.Registry's behavior JiraHook
 // depends on - resolving the running atlassian adapter's Gate on demand -
@@ -64,6 +85,12 @@ type JiraHook struct {
 	registry gateResolver
 	outbox   *outbox.Store
 	cfg      *jiraworkflow.Config
+
+	// announced tracks the deliveries already told about write-back being
+	// off, so the notice is one line per delivery rather than one per
+	// event.
+	announcedMu sync.Mutex
+	announced   map[string]bool
 }
 
 // NewJiraHook builds a JiraHook. db must be the same storage kernel handle
@@ -90,6 +117,13 @@ func NewJiraHook(db *storage.DB, store *delivery.Store, registry *adapters.Regis
 // newTestHook does, without needing a corresponding Service rebuild.
 func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error {
 	if h.cfg == nil || !h.cfg.AutoLog {
+		// This gate returned a bare nil, and a workspace with no
+		// jira-workflow.yaml at all lands here: a whole delivery's
+		// comments, worklogs and transitions were dropped with no error,
+		// no log line and nothing in the delivery record to say so.
+		// Announce it once per delivery rather than per event, so a run
+		// says it is not writing to Jira without repeating itself.
+		h.announceDisabled(event.DeliveryID)
 		return nil
 	}
 
@@ -100,6 +134,13 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 		return h.service().OnDeliveryCompleted(ctx, event.DeliveryID)
 	case deliveryhooks.EventWorkLogged:
 		if err := h.service().OnWorkRecorded(ctx, event.EntityID); err != nil {
+			return err
+		}
+	case deliveryhooks.EventImplementationCompleted:
+		// Falls through to the comment path below: a lane finishing is
+		// worth saying on the issue whether or not the workflow has a
+		// status to move it to.
+		if err := h.service().OnImplementationCompleted(ctx, event.DeliveryID); err != nil {
 			return err
 		}
 	}

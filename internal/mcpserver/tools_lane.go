@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -86,6 +87,11 @@ func completeDeliveryLaneHandler(a *app.App) func(context.Context, *mcp.CallTool
 		})
 		if err != nil {
 			return nil, CompleteDeliveryLaneOutput{}, fmt.Errorf("mcpserver: complete delivery lane: %w", err)
+		}
+		// Finishing a lane engages whichever issue that lane's task was
+		// mapped to; a lane with no mapped task simply has nothing to touch.
+		if lane.ParentTaskId != nil && *lane.ParentTaskId != "" {
+			touchJiraIssueForTask(ctx, store, "touch:lane:"+lane.Id+":"+string(lane.Status), in.OrchestrationID, *lane.ParentTaskId, sessionID, time.Now().UTC())
 		}
 		view, err := store.BuildDeliveryView(ctx, in.OrchestrationID)
 		if err != nil {
