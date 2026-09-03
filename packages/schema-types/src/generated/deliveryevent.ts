@@ -22,6 +22,7 @@ export interface DeliveryEvent {
     | "orchestration.created"
     | "orchestration.cancelled"
     | "orchestration.completed"
+    | "orchestration.completed_with_gaps"
     | "orchestration.details_updated"
     | "project.attached"
     | "project.detached"

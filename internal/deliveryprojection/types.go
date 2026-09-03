@@ -89,13 +89,53 @@ type Session struct {
 	StoppedAt   *time.Time `json:"stopped_at,omitempty"`
 }
 
+// ModelUsage is one model's share of a delivery's usage.
+type ModelUsage struct {
+	Model            string  `json:"model"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	CacheReadTokens  int64   `json:"cache_read_tokens"`
+	EstimatedCost    float64 `json:"estimated_cost,omitempty"`
+	Currency         string  `json:"currency,omitempty"`
+	// Priced is false when the catalog named no rate for this model, in
+	// which case EstimatedCost is absent rather than zero.
+	Priced bool `json:"priced"`
+}
+
+// SessionUsage is one agent session's share of a delivery's usage.
+type SessionUsage struct {
+	SessionID         string  `json:"session_id"`
+	ExternalSessionID string  `json:"external_session_id,omitempty"`
+	ClientKind        string  `json:"client_kind,omitempty"`
+	Participant       string  `json:"participant,omitempty"`
+	InputTokens       int64   `json:"input_tokens"`
+	OutputTokens      int64   `json:"output_tokens"`
+	CacheWriteTokens  int64   `json:"cache_write_tokens"`
+	CacheReadTokens   int64   `json:"cache_read_tokens"`
+	ToolCalls         int64   `json:"tool_calls"`
+	ElapsedMS         int64   `json:"elapsed_ms"`
+	EstimatedCost     float64 `json:"estimated_cost,omitempty"`
+	Currency          string  `json:"currency,omitempty"`
+	Priced            bool    `json:"priced"`
+}
+
 // Usage is a delivery's cumulative, additive-across-sessions agent usage.
 type Usage struct {
 	InputTokens  int64 `json:"input_tokens"`
 	OutputTokens int64 `json:"output_tokens"`
-	CacheTokens  int64 `json:"cache_tokens"`
-	ToolCalls    int64 `json:"tool_calls"`
-	ElapsedMS    int64 `json:"elapsed_ms"`
+	// CacheTokens is CacheWriteTokens+CacheReadTokens, kept because the
+	// two are priced very differently - a cache read costs a fraction of a
+	// write - and a single fused figure cannot be checked against a bill.
+	CacheTokens      int64 `json:"cache_tokens"`
+	CacheWriteTokens int64 `json:"cache_write_tokens"`
+	CacheReadTokens  int64 `json:"cache_read_tokens"`
+	// TotalTokens counts all four kinds. The panel used to add input and
+	// output alone, which excluded the cache tokens that were most of the
+	// bill.
+	TotalTokens int64 `json:"total_tokens"`
+	ToolCalls   int64 `json:"tool_calls"`
+	ElapsedMS   int64 `json:"elapsed_ms"`
 	// EstimatedCosts maps currency to amount; more than one entry means the
 	// delivery's contributing sessions priced in more than one currency.
 	// Empty when no contributing snapshot ever named a cost at all.
@@ -108,6 +148,11 @@ type Usage struct {
 	// and deduplicated. PricingComplete says the sum is partial; this says
 	// which model to add to the catalog to make it whole.
 	UnpricedModels []string `json:"unpriced_models,omitempty"`
+	// ByModel and BySession break the totals down along the two axes a
+	// reader asks about: what was spent on which model, and in which
+	// sitting.
+	ByModel   []ModelUsage   `json:"by_model,omitempty"`
+	BySession []SessionUsage `json:"by_session,omitempty"`
 }
 
 // DeliverySummary is the panel list page's one row: enough to render,

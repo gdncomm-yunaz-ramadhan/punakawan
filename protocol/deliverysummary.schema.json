@@ -4,101 +4,342 @@
   "title": "DeliverySummary",
   "description": "One delivery's compact panel-list row: enough to render, search, and sort every delivery without a per-card follow-up fetch. Carries no scheduler-internal concepts (lanes, blocked counts, pending questions, a lane-derived next action).",
   "type": "object",
-  "required": ["id", "title", "status", "projects", "usage", "updated_at", "cancellable", "projection_revision"],
+  "required": [
+    "id",
+    "title",
+    "status",
+    "projects",
+    "usage",
+    "updated_at",
+    "cancellable",
+    "projection_revision"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string" },
-    "title": { "type": "string" },
-    "status": { "type": "string", "enum": ["pending", "active", "completed", "cancelled"] },
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "completed",
+        "cancelled"
+      ]
+    },
     "source": {
       "type": "object",
       "description": "The delivery's originating Jira issue. Absent for an ad-hoc delivery with no single originating issue.",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "type": "string", "enum": ["jira", "adhoc"] },
-        "key": { "type": "string" },
-        "title": { "type": "string" },
-        "status": { "type": "string", "description": "The last locally observed Jira status - the target status of the most recent transition this delivery itself requested, never a live Jira read." }
+        "kind": {
+          "type": "string",
+          "enum": [
+            "jira",
+            "adhoc"
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "description": "The last locally observed Jira status - the target status of the most recent transition this delivery itself requested, never a live Jira read."
+        }
       }
     },
     "projects": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "slug"],
+        "required": [
+          "id",
+          "slug"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string" },
-          "slug": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
         }
       }
     },
     "plan": {
       "type": "object",
       "description": "The delivery's own cross-project high-level plan link.",
-      "required": ["id", "revision", "objective"],
+      "required": [
+        "id",
+        "revision",
+        "objective"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string" },
-        "revision": { "type": "integer" },
-        "objective": { "type": "string" },
-        "status": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
       }
     },
     "workflow": {
       "type": "object",
-      "required": ["id", "name"],
+      "required": [
+        "id",
+        "name"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
       }
     },
     "progress": {
       "type": "object",
-      "required": ["summary", "reported_at"],
+      "required": [
+        "summary",
+        "reported_at"
+      ],
       "additionalProperties": false,
       "properties": {
-        "percent": { "type": "number" },
-        "summary": { "type": "string" },
-        "reported_at": { "type": "string", "format": "date-time" }
+        "percent": {
+          "type": "number"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "reported_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "session": {
       "type": "object",
-      "required": ["status", "started_at"],
+      "required": [
+        "status",
+        "started_at"
+      ],
       "additionalProperties": false,
       "properties": {
-        "participant": { "type": "string" },
-        "provider": { "type": "string" },
-        "model": { "type": "string" },
-        "status": { "type": "string" },
-        "started_at": { "type": "string", "format": "date-time" },
-        "stopped_at": { "type": "string", "format": "date-time" }
+        "participant": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stopped_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "usage": {
       "type": "object",
-      "required": ["input_tokens", "output_tokens", "cache_tokens", "tool_calls", "elapsed_ms", "estimated_costs", "pricing_complete"],
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "cache_tokens",
+        "tool_calls",
+        "elapsed_ms",
+        "estimated_costs",
+        "pricing_complete",
+        "cache_write_tokens",
+        "cache_read_tokens",
+        "total_tokens"
+      ],
       "additionalProperties": false,
       "properties": {
-        "input_tokens": { "type": "integer" },
-        "output_tokens": { "type": "integer" },
-        "cache_tokens": { "type": "integer" },
-        "tool_calls": { "type": "integer" },
-        "elapsed_ms": { "type": "integer" },
+        "input_tokens": {
+          "type": "integer"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "cache_tokens": {
+          "type": "integer"
+        },
+        "tool_calls": {
+          "type": "integer"
+        },
+        "elapsed_ms": {
+          "type": "integer"
+        },
         "estimated_costs": {
           "type": "object",
           "description": "Currency to amount. More than one entry means the delivery's contributing sessions priced in more than one currency; empty when no contributing snapshot ever named a cost at all.",
-          "additionalProperties": { "type": "number" }
+          "additionalProperties": {
+            "type": "number"
+          }
         },
-        "pricing_complete": { "type": "boolean", "description": "False whenever any contributing usage was priced against an unknown model rate - the totals are then a partial, never a fabricated, sum." },
-        "unpriced_models": { "type": "array", "items": { "type": "string" }, "description": "Model ids that could not be priced, sorted and deduplicated. pricing_complete says the sum is partial; this says which model to add to the catalog to make it whole." }
+        "pricing_complete": {
+          "type": "boolean",
+          "description": "False whenever any contributing usage was priced against an unknown model rate - the totals are then a partial, never a fabricated, sum."
+        },
+        "unpriced_models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Model ids that could not be priced, sorted and deduplicated. pricing_complete says the sum is partial; this says which model to add to the catalog to make it whole."
+        },
+        "cache_write_tokens": {
+          "type": "integer"
+        },
+        "cache_read_tokens": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer",
+          "description": "All four token kinds. Input plus output alone excludes the cache tokens that are usually most of the bill."
+        },
+        "by_model": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "One model's share of a delivery's usage. A delivery's cost is driven by which model spent which kind of token - a cache read costs a fraction of an output token - so a single summed figure cannot be checked or attributed.",
+            "required": [
+              "model",
+              "input_tokens",
+              "output_tokens",
+              "cache_write_tokens",
+              "cache_read_tokens",
+              "priced"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "input_tokens": {
+                "type": "integer"
+              },
+              "output_tokens": {
+                "type": "integer"
+              },
+              "cache_write_tokens": {
+                "type": "integer"
+              },
+              "cache_read_tokens": {
+                "type": "integer"
+              },
+              "estimated_cost": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "priced": {
+                "type": "boolean",
+                "description": "False when the catalog named no rate for this model, in which case estimated_cost is absent rather than zero."
+              }
+            }
+          }
+        },
+        "by_session": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "One agent session's share of a delivery's usage. A delivery worked across several sessions otherwise reports one lump that says nothing about which sitting spent it.",
+            "required": [
+              "session_id",
+              "input_tokens",
+              "output_tokens",
+              "cache_write_tokens",
+              "cache_read_tokens",
+              "tool_calls",
+              "elapsed_ms",
+              "priced"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "session_id": {
+                "type": "string"
+              },
+              "external_session_id": {
+                "type": "string"
+              },
+              "client_kind": {
+                "type": "string"
+              },
+              "participant": {
+                "type": "string"
+              },
+              "input_tokens": {
+                "type": "integer"
+              },
+              "output_tokens": {
+                "type": "integer"
+              },
+              "cache_write_tokens": {
+                "type": "integer"
+              },
+              "cache_read_tokens": {
+                "type": "integer"
+              },
+              "tool_calls": {
+                "type": "integer"
+              },
+              "elapsed_ms": {
+                "type": "integer"
+              },
+              "estimated_cost": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "priced": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
       }
     },
-    "updated_at": { "type": "string", "format": "date-time" },
-    "cancellable": { "type": "boolean" },
-    "projection_revision": { "type": "integer", "description": "delivery_projection_versions' current revision for this delivery - the number a caller compares across list/detail calls, and passes back as since_revision to the watch endpoint." }
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cancellable": {
+      "type": "boolean"
+    },
+    "projection_revision": {
+      "type": "integer",
+      "description": "delivery_projection_versions' current revision for this delivery - the number a caller compares across list/detail calls, and passes back as since_revision to the watch endpoint."
+    }
   }
 }

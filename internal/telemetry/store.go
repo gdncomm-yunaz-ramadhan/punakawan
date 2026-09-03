@@ -224,6 +224,47 @@ type pricingEntry struct {
 	Known bool       `json:"known"`
 }
 
+// withCountersFromModelUsage fills a snapshot's flat token counters from
+// its per-model usage when the caller reported only the latter.
+//
+// The two are separate fields, and a caller that names its models without
+// restating the totals would otherwise store a row whose counters say zero
+// while its model usage says otherwise - so the delivery's totals and its
+// per-model breakdown would describe the same snapshot differently. They
+// are the same measurement; nothing should be able to report one without
+// the other.
+func withCountersFromModelUsage(req SnapshotRequest) SnapshotRequest {
+	if len(req.ModelUsage) == 0 {
+		return req
+	}
+	if req.InputTokens != 0 || req.OutputTokens != 0 || req.CacheWriteTokens != 0 || req.CacheReadTokens != 0 {
+		return req
+	}
+	for _, mu := range req.ModelUsage {
+		req.InputTokens += mu.InputTokens
+		req.OutputTokens += mu.OutputTokens
+		req.CacheWriteTokens += mu.CacheWriteTokens
+		req.CacheReadTokens += mu.CacheReadTokens
+	}
+	return req
+}
+
+// costForModelUsage prices one model's tokens at rate. It is shared by
+// the snapshot pricing path and the per-model breakdown so the two cannot
+// disagree about what a delivery cost. A rate that names no cache price
+// bills nothing for cache, which is not the same as billing zero: the
+// provider does not charge for it at all.
+func costForModelUsage(usage modelUsageEntry, rate ModelRate) float64 {
+	cost := float64(usage.InputTokens)*rate.InputPerMillion/1e6 + float64(usage.OutputTokens)*rate.OutputPerMillion/1e6
+	if rate.CacheWritePerMillion != nil {
+		cost += float64(usage.CacheWriteTokens) * *rate.CacheWritePerMillion / 1e6
+	}
+	if rate.CacheReadPerMillion != nil {
+		cost += float64(usage.CacheReadTokens) * *rate.CacheReadPerMillion / 1e6
+	}
+	return cost
+}
+
 type estimatedCost struct {
 	Amount   float64 `json:"amount,omitempty"`
 	Currency string  `json:"currency,omitempty"`
@@ -279,13 +320,10 @@ func (s *Store) priceSnapshot(req SnapshotRequest, at time.Time) (modelUsageJSON
 			allKnown = false
 			continue
 		}
-		cost := float64(mu.InputTokens)*rate.InputPerMillion/1e6 + float64(mu.OutputTokens)*rate.OutputPerMillion/1e6
-		if rate.CacheWritePerMillion != nil {
-			cost += float64(mu.CacheWriteTokens) * *rate.CacheWritePerMillion / 1e6
-		}
-		if rate.CacheReadPerMillion != nil {
-			cost += float64(mu.CacheReadTokens) * *rate.CacheReadPerMillion / 1e6
-		}
+		cost := costForModelUsage(modelUsageEntry{
+			InputTokens: mu.InputTokens, OutputTokens: mu.OutputTokens,
+			CacheWriteTokens: mu.CacheWriteTokens, CacheReadTokens: mu.CacheReadTokens,
+		}, rate)
 		if currency == "" {
 			currency = rate.Currency
 		} else if currency != rate.Currency {
@@ -357,6 +395,7 @@ func (s *Store) IngestSnapshot(ctx context.Context, req SnapshotRequest) (UsageP
 	if observedAt.IsZero() {
 		observedAt = time.Now().UTC()
 	}
+	req = withCountersFromModelUsage(req)
 
 	var orchestrationID string
 	err := s.db.Write(ctx, "telemetry-snapshot:"+newID(), "ingest usage snapshot "+sessionID+":"+sourceID, func(tx *sql.Tx) error {
@@ -432,6 +471,7 @@ func (s *Store) Finalize(ctx context.Context, req FinalizeRequest) (AgentSession
 			if strings.TrimSpace(snap.SourceID) == "" {
 				return fmt.Errorf("telemetry: finalize: snapshot requires source_id")
 			}
+			snap = withCountersFromModelUsage(snap)
 			observedAt := snap.ObservedAt
 			if observedAt.IsZero() {
 				observedAt = stoppedAt
@@ -519,99 +559,77 @@ func (s *Store) GetSnapshot(ctx context.Context, sessionID, sourceID string) (*S
 	return &out, nil
 }
 
+// usageJoinSQL is the sessions-to-snapshots join both usage projections
+// read. A session with no snapshot yet still produces a row, so its
+// telemetry status counts even before it has spent anything.
+const usageJoinSQL = `
+	SELECT sess.id, COALESCE(sess.external_session_id, ''), COALESCE(sess.client_kind, ''),
+	       COALESCE(sess.participant, ''), sess.telemetry_status,
+	       COALESCE(snap.input_tokens, 0), COALESCE(snap.output_tokens, 0),
+	       COALESCE(snap.cache_write_tokens, 0), COALESCE(snap.cache_read_tokens, 0),
+	       COALESCE(snap.tool_calls, 0), COALESCE(snap.elapsed_ms, 0),
+	       COALESCE(snap.model_usage_json, ''), COALESCE(snap.pricing_json, ''),
+	       COALESCE(snap.estimated_cost_json, '')
+	FROM agent_sessions sess
+	LEFT JOIN agent_usage_snapshots snap ON snap.session_id = sess.id`
+
+// ScanUsageRow reads one usageJoinSQL row. It is exported so the delivery
+// projection's batch query can read the same shape rather than
+// re-implementing the join and the accumulation, which is how the two
+// last disagreed about what a delivery had spent.
+func ScanUsageRow(scan func(dest ...any) error) (UsageRow, error) {
+	var row UsageRow
+	err := scan(&row.SessionID, &row.ExternalSessionID, &row.ClientKind, &row.Participant, &row.TelemetryStatus,
+		&row.InputTokens, &row.OutputTokens, &row.CacheWriteTokens, &row.CacheReadTokens,
+		&row.ToolCalls, &row.ElapsedMS, &row.ModelUsageJSON, &row.PricingJSON, &row.CostJSON)
+	return row, err
+}
+
+// UsageJoinSQL returns the join, so a caller can add its own WHERE clause.
+func UsageJoinSQL() string { return usageJoinSQL }
+
+// UsageRow is one row of that join.
+type UsageRow = snapshotRow
+
+// FoldUsageRows turns a set of usage rows into one delivery's projection.
+func FoldUsageRows(orchestrationID string, rows []UsageRow) (UsageProjection, error) {
+	acc := newUsageAccumulator()
+	for _, row := range rows {
+		if err := acc.add(row); err != nil {
+			return UsageProjection{}, err
+		}
+	}
+	return acc.projection(orchestrationID), nil
+}
+
 // TotalsByDelivery sums every session's every source's current snapshot
-// for orchestrationID. Totals are additive across every session that
-// shares this orchestration id (continuation, or two agents on the same
-// delivery); two different orchestration ids never contribute to each
-// other's totals.
+// for orchestrationID, and breaks the result down by model and by
+// session. Totals are additive across every session that shares this
+// orchestration id (continuation, or two agents on the same delivery);
+// two different orchestration ids never contribute to each other's
+// totals.
 func (s *Store) TotalsByDelivery(ctx context.Context, orchestrationID string) (UsageProjection, error) {
-	rows, err := s.db.Reader().QueryContext(ctx, `
-		SELECT sess.telemetry_status,
-		       COALESCE(snap.input_tokens, 0), COALESCE(snap.output_tokens, 0),
-		       COALESCE(snap.cache_write_tokens, 0), COALESCE(snap.cache_read_tokens, 0),
-		       COALESCE(snap.tool_calls, 0), COALESCE(snap.elapsed_ms, 0),
-		       snap.estimated_cost_json, snap.pricing_json
-		FROM agent_sessions sess
-		LEFT JOIN agent_usage_snapshots snap ON snap.session_id = sess.id
-		WHERE sess.orchestration_id = ?`, orchestrationID)
+	rows, err := s.db.Reader().QueryContext(ctx, usageJoinSQL+`
+	WHERE sess.orchestration_id = ?`, orchestrationID)
 	if err != nil {
 		return UsageProjection{}, fmt.Errorf("telemetry: totals by delivery: %w", err)
 	}
 	defer rows.Close()
 
-	projection := UsageProjection{OrchestrationID: orchestrationID, TelemetryStatus: "complete"}
-	unpricedSeen := map[string]bool{}
-	var costKnownAny, costFullyKnown bool
-	costFullyKnown = true
-	var costTotal float64
-	currency := ""
+	acc := newUsageAccumulator()
 	for rows.Next() {
-		var sessionTelemetryStatus string
-		var input, output, cacheWrite, cacheRead, toolCalls, elapsed int64
-		var costJSON, pricingJSON sql.NullString
-		if err := rows.Scan(&sessionTelemetryStatus, &input, &output, &cacheWrite, &cacheRead, &toolCalls, &elapsed, &costJSON, &pricingJSON); err != nil {
+		row, err := ScanUsageRow(rows.Scan)
+		if err != nil {
 			return UsageProjection{}, fmt.Errorf("telemetry: totals by delivery: %w", err)
 		}
-		// Collect the model ids that failed to resolve. "Cost unknown"
-		// on its own gives a reader nothing to act on; the model name is
-		// the whole lead - it says which catalog entry is missing.
-		if pricingJSON.Valid {
-			var entries []pricingEntry
-			if err := json.Unmarshal([]byte(pricingJSON.String), &entries); err != nil {
-				return UsageProjection{}, fmt.Errorf("telemetry: decode pricing: %w", err)
-			}
-			for _, entry := range entries {
-				if entry.Known || unpricedSeen[entry.Model] {
-					continue
-				}
-				unpricedSeen[entry.Model] = true
-				projection.UnpricedModels = append(projection.UnpricedModels, entry.Model)
-			}
+		if err := acc.add(row); err != nil {
+			return UsageProjection{}, err
 		}
-		if sessionTelemetryStatus != "complete" {
-			projection.TelemetryStatus = "incomplete"
-		}
-		projection.Counters.InputTokens += input
-		projection.Counters.OutputTokens += output
-		projection.Counters.CacheWriteTokens += cacheWrite
-		projection.Counters.CacheReadTokens += cacheRead
-		projection.Counters.ToolCalls += toolCalls
-		projection.Counters.ElapsedMS += elapsed
-		if !costJSON.Valid {
-			continue
-		}
-		var cost estimatedCost
-		if err := json.Unmarshal([]byte(costJSON.String), &cost); err != nil {
-			return UsageProjection{}, fmt.Errorf("telemetry: decode estimated cost: %w", err)
-		}
-		if !cost.Known {
-			costFullyKnown = false
-			continue
-		}
-		costKnownAny = true
-		// A snapshot whose only usage was non-billable is known to have
-		// cost nothing and names no currency. It must not claim the
-		// delivery's currency slot, or the first real priced snapshot
-		// after it reads as a currency mismatch.
-		if cost.Currency == "" && cost.Amount == 0 {
-			continue
-		}
-		if currency == "" {
-			currency = cost.Currency
-		} else if currency != cost.Currency {
-			costFullyKnown = false
-		}
-		costTotal += cost.Amount
 	}
 	if err := rows.Err(); err != nil {
 		return UsageProjection{}, fmt.Errorf("telemetry: totals by delivery: %w", err)
 	}
-	sort.Strings(projection.UnpricedModels)
-	projection.TotalTokens = projection.Counters.InputTokens + projection.Counters.OutputTokens + projection.Counters.CacheWriteTokens + projection.Counters.CacheReadTokens
-	if costKnownAny {
-		projection.EstimatedCost = &CostTotal{Amount: costTotal, Currency: currency, FullyKnown: costFullyKnown}
-	}
-	return projection, nil
+	return acc.projection(orchestrationID), nil
 }
 
 // UnresolvedModels names every model id recorded in the last limit

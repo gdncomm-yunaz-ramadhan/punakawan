@@ -134,6 +134,45 @@ type UsageTotals struct {
 	ElapsedMS        int64
 }
 
+// ModelUsageTotals is one model's share of a delivery's usage.
+//
+// A delivery's cost is driven by which model spent which kind of token -
+// a cache read is a twenty-fifth the price of an output token - so a
+// single summed figure cannot be checked, attributed, or acted on. Every
+// number here is already recorded per snapshot; this is the shape that
+// carries it out.
+type ModelUsageTotals struct {
+	Model            string  `json:"model"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	CacheReadTokens  int64   `json:"cache_read_tokens"`
+	EstimatedCost    float64 `json:"estimated_cost,omitempty"`
+	Currency         string  `json:"currency,omitempty"`
+	// Priced is false when the catalog named no rate for this model, in
+	// which case EstimatedCost is absent rather than zero.
+	Priced bool `json:"priced"`
+}
+
+// SessionUsageTotals is one agent session's share of a delivery's usage.
+// A delivery worked across several sessions otherwise reports one lump
+// that says nothing about which sitting spent it.
+type SessionUsageTotals struct {
+	SessionID         string  `json:"session_id"`
+	ExternalSessionID string  `json:"external_session_id,omitempty"`
+	ClientKind        string  `json:"client_kind,omitempty"`
+	Participant       string  `json:"participant,omitempty"`
+	InputTokens       int64   `json:"input_tokens"`
+	OutputTokens      int64   `json:"output_tokens"`
+	CacheWriteTokens  int64   `json:"cache_write_tokens"`
+	CacheReadTokens   int64   `json:"cache_read_tokens"`
+	ToolCalls         int64   `json:"tool_calls"`
+	ElapsedMS         int64   `json:"elapsed_ms"`
+	EstimatedCost     float64 `json:"estimated_cost,omitempty"`
+	Currency          string  `json:"currency,omitempty"`
+	Priced            bool    `json:"priced"`
+}
+
 // CostTotal is one delivery's summed estimated cost. FullyKnown is false
 // whenever any contributing snapshot's cost was unknown or currencies
 // disagreed - Amount/Currency still reflect the sum of whatever portion
@@ -165,4 +204,11 @@ type UsageProjection struct {
 	// the generated "array" validation on every delivery that has nothing
 	// to report.
 	UnpricedModels []string `json:"unpriced_models,omitempty"`
+	// ByModel and BySession break Counters down along the two axes a
+	// reader actually asks about: what was spent on which model, and in
+	// which sitting. Both are omitempty for the same reason as
+	// UnpricedModels - a nil slice reflected into an MCP output schema
+	// serializes as null and fails its "array" validation.
+	ByModel   []ModelUsageTotals   `json:"by_model,omitempty"`
+	BySession []SessionUsageTotals `json:"by_session,omitempty"`
 }

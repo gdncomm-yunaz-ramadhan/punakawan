@@ -6,9 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ygrip/punakawan/internal/adapters"
@@ -354,17 +353,26 @@ func usageOrEmpty(u Usage) Usage {
 
 func usageFromProjection(u telemetry.UsageProjection) Usage {
 	out := Usage{
-		InputTokens:     u.Counters.InputTokens,
-		OutputTokens:    u.Counters.OutputTokens,
-		CacheTokens:     u.Counters.CacheWriteTokens + u.Counters.CacheReadTokens,
-		ToolCalls:       u.Counters.ToolCalls,
-		ElapsedMS:       u.Counters.ElapsedMS,
-		EstimatedCosts:  map[string]float64{},
-		PricingComplete: u.TelemetryStatus == "complete",
-		UnpricedModels:  u.UnpricedModels,
+		InputTokens:      u.Counters.InputTokens,
+		OutputTokens:     u.Counters.OutputTokens,
+		CacheTokens:      u.Counters.CacheWriteTokens + u.Counters.CacheReadTokens,
+		CacheWriteTokens: u.Counters.CacheWriteTokens,
+		CacheReadTokens:  u.Counters.CacheReadTokens,
+		TotalTokens:      u.TotalTokens,
+		ToolCalls:        u.Counters.ToolCalls,
+		ElapsedMS:        u.Counters.ElapsedMS,
+		EstimatedCosts:   map[string]float64{},
+		PricingComplete:  u.TelemetryStatus == "complete",
+		UnpricedModels:   u.UnpricedModels,
 	}
 	if u.EstimatedCost != nil {
 		out.EstimatedCosts[u.EstimatedCost.Currency] = u.EstimatedCost.Amount
+	}
+	for _, m := range u.ByModel {
+		out.ByModel = append(out.ByModel, ModelUsage(m))
+	}
+	for _, sess := range u.BySession {
+		out.BySession = append(out.BySession, SessionUsage(sess))
 	}
 	return out
 }
@@ -521,89 +529,40 @@ ORDER BY execution_id, started_at DESC, id DESC`)
 	return out, rows.Err()
 }
 
+// batchUsage reads the same join and folds through the same accumulator
+// as telemetry.TotalsByDelivery. It used to re-implement both, which is
+// how the list and the detail came to report different numbers for one
+// delivery.
 func (p *Projector) batchUsage(ctx context.Context) (map[string]Usage, error) {
-	rows, err := p.read.QueryContext(ctx, `
-SELECT sess.orchestration_id, sess.telemetry_status,
-       COALESCE(snap.input_tokens, 0), COALESCE(snap.output_tokens, 0),
-       COALESCE(snap.cache_write_tokens, 0), COALESCE(snap.cache_read_tokens, 0),
-       COALESCE(snap.tool_calls, 0), COALESCE(snap.elapsed_ms, 0),
-       snap.estimated_cost_json, snap.pricing_json
-FROM agent_sessions sess
-LEFT JOIN agent_usage_snapshots snap ON snap.session_id = sess.id`)
+	rows, err := p.read.QueryContext(ctx, `SELECT sess.orchestration_id, `+
+		strings.TrimPrefix(strings.TrimSpace(telemetry.UsageJoinSQL()), "SELECT "))
 	if err != nil {
 		return nil, fmt.Errorf("deliveryprojection: batch usage: %w", err)
 	}
 	defer rows.Close()
 
-	type costJSON struct {
-		Amount   float64 `json:"amount,omitempty"`
-		Currency string  `json:"currency,omitempty"`
-		Known    bool    `json:"known"`
-	}
-	type pricingJSON struct {
-		Model string `json:"model"`
-		Known bool   `json:"known"`
-	}
-	out := map[string]Usage{}
-	incomplete := map[string]bool{}
-	unpriced := map[string]map[string]bool{}
+	byDelivery := map[string][]telemetry.UsageRow{}
 	for rows.Next() {
-		var orchestrationID, telemetryStatus string
-		var input, output, cacheWrite, cacheRead, toolCalls, elapsed int64
-		var costRaw, pricingRaw sql.NullString
-		if err := rows.Scan(&orchestrationID, &telemetryStatus, &input, &output, &cacheWrite, &cacheRead, &toolCalls, &elapsed, &costRaw, &pricingRaw); err != nil {
+		var orchestrationID string
+		row, err := telemetry.ScanUsageRow(func(dest ...any) error {
+			return rows.Scan(append([]any{&orchestrationID}, dest...)...)
+		})
+		if err != nil {
 			return nil, fmt.Errorf("deliveryprojection: scan usage: %w", err)
 		}
-		if pricingRaw.Valid {
-			var entries []pricingJSON
-			if err := json.Unmarshal([]byte(pricingRaw.String), &entries); err != nil {
-				return nil, fmt.Errorf("deliveryprojection: decode usage pricing: %w", err)
-			}
-			for _, entry := range entries {
-				if entry.Known {
-					continue
-				}
-				if unpriced[orchestrationID] == nil {
-					unpriced[orchestrationID] = map[string]bool{}
-				}
-				unpriced[orchestrationID][entry.Model] = true
-			}
-		}
-		u, ok := out[orchestrationID]
-		if !ok {
-			u = Usage{EstimatedCosts: map[string]float64{}, PricingComplete: true}
-		}
-		u.InputTokens += input
-		u.OutputTokens += output
-		u.CacheTokens += cacheWrite + cacheRead
-		u.ToolCalls += toolCalls
-		u.ElapsedMS += elapsed
-		if telemetryStatus != "complete" {
-			incomplete[orchestrationID] = true
-		}
-		if costRaw.Valid {
-			var cost costJSON
-			if err := json.Unmarshal([]byte(costRaw.String), &cost); err != nil {
-				return nil, fmt.Errorf("deliveryprojection: decode usage cost: %w", err)
-			}
-			if cost.Known {
-				u.EstimatedCosts[cost.Currency] += cost.Amount
-			}
-		}
-		out[orchestrationID] = u
+		byDelivery[orchestrationID] = append(byDelivery[orchestrationID], row)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for id := range incomplete {
-		u := out[id]
-		u.PricingComplete = false
-		out[id] = u
-	}
-	for id, models := range unpriced {
-		u := out[id]
-		u.UnpricedModels = slices.Sorted(maps.Keys(models))
-		out[id] = u
+
+	out := make(map[string]Usage, len(byDelivery))
+	for orchestrationID, usageRows := range byDelivery {
+		projection, err := telemetry.FoldUsageRows(orchestrationID, usageRows)
+		if err != nil {
+			return nil, fmt.Errorf("deliveryprojection: batch usage: %w", err)
+		}
+		out[orchestrationID] = usageFromProjection(projection)
 	}
 	return out, nil
 }

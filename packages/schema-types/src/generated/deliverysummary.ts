@@ -73,6 +73,40 @@ export interface DeliverySummary {
      * Model ids that could not be priced, sorted and deduplicated. pricing_complete says the sum is partial; this says which model to add to the catalog to make it whole.
      */
     unpriced_models?: string[];
+    cache_write_tokens: number;
+    cache_read_tokens: number;
+    /**
+     * All four token kinds. Input plus output alone excludes the cache tokens that are usually most of the bill.
+     */
+    total_tokens: number;
+    by_model?: {
+      model: string;
+      input_tokens: number;
+      output_tokens: number;
+      cache_write_tokens: number;
+      cache_read_tokens: number;
+      estimated_cost?: number;
+      currency?: string;
+      /**
+       * False when the catalog named no rate for this model, in which case estimated_cost is absent rather than zero.
+       */
+      priced: boolean;
+    }[];
+    by_session?: {
+      session_id: string;
+      external_session_id?: string;
+      client_kind?: string;
+      participant?: string;
+      input_tokens: number;
+      output_tokens: number;
+      cache_write_tokens: number;
+      cache_read_tokens: number;
+      tool_calls: number;
+      elapsed_ms: number;
+      estimated_cost?: number;
+      currency?: string;
+      priced: boolean;
+    }[];
   };
   updated_at: string;
   cancellable: boolean;
