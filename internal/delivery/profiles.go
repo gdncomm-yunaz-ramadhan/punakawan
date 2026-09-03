@@ -152,3 +152,80 @@ func nullableInt(v int) interface{} {
 	}
 	return v
 }
+
+// RememberProjectCheckout records where this project is checked out,
+// leaving every other setting on its profile as it was.
+//
+// SetDeliveryProfile replaces a profile wholesale, which is right for a
+// caller stating a project's whole delivery configuration and wrong for
+// one that has just learned a path. Nothing wrote local_path at all before
+// this - it was a field with no writer - which is why a delivery could
+// only ever work against the directory its MCP server happened to be
+// started in.
+func (s *Store) RememberProjectCheckout(ctx context.Context, idempotencyKey, projectID, localPath, canonicalRemote, baseBranch string) error {
+	in := ProfileInput{LocalPath: localPath, CanonicalRemote: canonicalRemote, BaseBranch: baseBranch}
+	id := stableProfileID(projectID)
+	existing, err := s.GetDeliveryProfile(ctx, projectID)
+	switch {
+	case err == nil:
+		id = existing.Id
+		in = profileInputFrom(existing)
+		in.LocalPath = localPath
+		if canonicalRemote != "" {
+			in.CanonicalRemote = canonicalRemote
+		}
+		if in.BaseBranch == "" {
+			in.BaseBranch = baseBranch
+		}
+	case errors.Is(err, ErrNotFound):
+	default:
+		return err
+	}
+	if in.BaseBranch == "" {
+		return fmt.Errorf("delivery: remember checkout for project %s: no base branch is known for it", projectID)
+	}
+	if _, err := s.SetDeliveryProfile(ctx, idempotencyKey, id, projectID, in); err != nil {
+		return err
+	}
+	return nil
+}
+
+// stableProfileID derives the id of a project's one profile, so a caller
+// that has never seen the row does not have to invent one.
+func stableProfileID(projectID string) string {
+	return "profile-" + projectID
+}
+
+// profileInputFrom is the settable half of an existing profile, so a
+// caller changing one field keeps the rest.
+func profileInputFrom(p *protocol.ProjectDeliveryProfile) ProfileInput {
+	in := ProfileInput{
+		BaseBranch:          p.BaseBranch,
+		RequiredExecutables: p.RequiredExecutables,
+		RequiredServices:    p.RequiredServices,
+		QualityRules:        p.QualityRules,
+		VerificationGates:   p.VerificationGates,
+	}
+	if p.LocalPath != nil {
+		in.LocalPath = *p.LocalPath
+	}
+	if p.CanonicalRemote != nil {
+		in.CanonicalRemote = *p.CanonicalRemote
+	}
+	if p.Provider != nil {
+		in.Provider = string(*p.Provider)
+	}
+	if p.BuildCommand != nil {
+		in.BuildCommand = *p.BuildCommand
+	}
+	if p.TestCommand != nil {
+		in.TestCommand = *p.TestCommand
+	}
+	if p.CiAdapter != nil {
+		in.CIAdapter = *p.CiAdapter
+	}
+	if p.MaxConcurrentWorkers != nil {
+		in.MaxConcurrentWorkers = *p.MaxConcurrentWorkers
+	}
+	return in
+}

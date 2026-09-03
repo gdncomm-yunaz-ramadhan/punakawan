@@ -186,11 +186,16 @@ type ProjectDraft struct {
 	Slug          string
 	RepositoryURL string
 	DefaultBranch string
-	TaskKey       string
-	Title         string
-	Plan          PlanDraft
-	PlanID        string
-	PlanRevision  int
+	// LocalPath is where this repository is checked out, when the caller
+	// already knows. Left empty, reconciliation works it out and records
+	// what it found, so it only has to be stated once - and only when
+	// punakawan cannot see the checkout from where it is running.
+	LocalPath    string
+	TaskKey      string
+	Title        string
+	Plan         PlanDraft
+	PlanID       string
+	PlanRevision int
 }
 
 // SessionStart is the durable agent session StartOrResolve opens once
@@ -226,6 +231,12 @@ type StartRequest struct {
 	Projects      []ProjectDraft
 	Session       SessionStart
 	ResumeToken   string
+	// WorkspaceRoot is the caller's own checkout, when it has one. It is
+	// the second place reconciliation looks for a project's directory:
+	// starting a delivery from inside the repository it is for is how
+	// punakawan learns where that repository lives, once, for every later
+	// delivery started from anywhere else.
+	WorkspaceRoot string
 }
 
 // ReconcileReport summarizes what one StartOrResolve call created,
@@ -242,6 +253,10 @@ type ReconcileReport struct {
 	Plans        []string `json:"plans"`
 	RunnableWork []string `json:"runnable_work,omitempty"`
 	Skipped      []string `json:"skipped,omitempty"`
+	// Checkouts names the directory each project resolved to, so a caller
+	// can see which tree its lanes will be worked in - and, when
+	// punakawan had to clone the repository itself, that it did.
+	Checkouts []string `json:"checkouts,omitempty"`
 	// Warnings names what this delivery went ahead without. Missing a
 	// plan or a stated clarity is worth saying and not worth blocking on:
 	// a trivial task deserves neither ceremony, and both can be supplied

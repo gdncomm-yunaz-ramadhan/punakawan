@@ -75,6 +75,25 @@ func WorktreesDir() (string, error) {
 	return worktreesDir, nil
 }
 
+// CheckoutsDir returns the directory clones punakawan makes on a
+// caller's behalf live under, creating it if absent.
+//
+// A delivery names repositories, not directories, so a project nobody has
+// ever opened on this machine has no checkout to work in. Cloning it here
+// keeps that clone out of wherever the caller happened to be standing,
+// beside the worktrees cut from it.
+func CheckoutsDir() (string, error) {
+	dir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	checkoutsDir := filepath.Join(dir, "checkouts")
+	if err := os.MkdirAll(checkoutsDir, 0o700); err != nil {
+		return "", fmt.Errorf("storage: create checkouts dir %s: %w", checkoutsDir, err)
+	}
+	return checkoutsDir, nil
+}
+
 // IndexesDir returns the central directory search indexes are built
 // under, creating it if absent.
 func IndexesDir() (string, error) {

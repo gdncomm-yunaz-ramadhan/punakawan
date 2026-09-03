@@ -147,6 +147,20 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 		if firstDraftForSlug {
 			report.Projects = append(report.Projects, project.Id)
 
+			// Where this project actually is on disk, recorded so every
+			// later delivery for it - started from any directory - finds
+			// the same tree. A project nobody can locate does not stop
+			// the delivery: its lanes are still real work somebody can do
+			// by hand, and the reason is reported rather than raised.
+			switch path, cloned, err := s.resolveProjectCheckout(ctx, project, draft, req.WorkspaceRoot, false); {
+			case err != nil:
+				report.Warnings = append(report.Warnings, fmt.Sprintf("project %q: %v - pass its local_path, start a delivery from inside the checkout once, or let punakawan clone it when the lane is given a worktree", draft.Slug, err))
+			case cloned:
+				report.Checkouts = append(report.Checkouts, fmt.Sprintf("%s -> %s (cloned)", draft.Slug, path))
+			default:
+				report.Checkouts = append(report.Checkouts, fmt.Sprintf("%s -> %s", draft.Slug, path))
+			}
+
 			orch, err := s.deliveries.GetOrchestration(ctx, orchestrationID)
 			if err != nil {
 				return report, fmt.Errorf("deliveryservice: read orchestration before attach: %w", err)

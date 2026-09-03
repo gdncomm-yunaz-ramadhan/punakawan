@@ -136,6 +136,7 @@ type StartDeliveryProject struct {
 	Slug          string `json:"slug" jsonschema:"unique short identifier for this project; registering the same slug again updates it rather than failing"`
 	RepositoryUrl string `json:"repository_url"`
 	DefaultBranch string `json:"default_branch,omitempty"`
+	LocalPath     string `json:"local_path,omitempty" jsonschema:"absolute path of this repository's checkout on this machine. Omit it: punakawan uses the one it already recorded, or the checkout you are calling from, and remembers what it found. State it when the checkout is somewhere neither of those finds"`
 	// PlanID and PlanRevision name this project's already-saved detailed
 	// plan. They must be supplied together, and the plan is linked to the
 	// delivery after this project has been registered.
@@ -253,6 +254,7 @@ func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context
 			HighLevelPlan:        in.Plan.toDraft(),
 			Projects:             startDeliveryProjectDrafts(in),
 			Session:              startDeliverySession(req, in.Session, a.Workspace.Root),
+			WorkspaceRoot:        projectWorkspaceRoot(a),
 		}
 		if in.Source != nil {
 			start.Source = &deliveryservice.SourceIdentity{
@@ -331,6 +333,7 @@ func startDeliveryProjectDrafts(in StartDeliveryInput) []deliveryservice.Project
 			Slug:          strings.TrimSpace(p.Slug),
 			RepositoryURL: strings.TrimSpace(p.RepositoryUrl),
 			DefaultBranch: strings.TrimSpace(p.DefaultBranch),
+			LocalPath:     strings.TrimSpace(p.LocalPath),
 			PlanID:        strings.TrimSpace(p.PlanID),
 			PlanRevision:  p.PlanRevision,
 		}
@@ -695,4 +698,15 @@ func answerRequirementClarity(ctx context.Context, store *delivery.Store, in Ans
 		}
 	}
 	return nil
+}
+
+// projectWorkspaceRoot is the checkout this call was made from, when
+// there is one. With no project in scope the workspace root is the
+// machine's data directory, which is not a checkout of anything and must
+// never be offered as one project's directory.
+func projectWorkspaceRoot(a *app.App) string {
+	if a.Workspace == nil || a.Workspace.Global {
+		return ""
+	}
+	return a.Workspace.Root
 }

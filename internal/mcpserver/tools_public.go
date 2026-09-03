@@ -54,6 +54,9 @@ type UpsertProjectInput struct {
 	Slug          string `json:"slug"`
 	RepositoryURL string `json:"repository_url"`
 	DefaultBranch string `json:"default_branch,omitempty"`
+	// LocalPath records where this repository is checked out, so a
+	// delivery for it can be started from any directory.
+	LocalPath string `json:"local_path,omitempty" jsonschema:"absolute path of this repository's checkout on this machine; recorded so a delivery for this project can be started from anywhere"`
 	// Metadata is optional and merged field-by-field into whatever is
 	// already stored, not replaced wholesale: pass only the facts you
 	// actually know, e.g. {"package_manager": "pnpm"}.
@@ -83,6 +86,15 @@ func upsertProjectHandler(a *app.App) func(context.Context, *mcp.CallToolRequest
 			project, err = store.MergeProjectMetadata(ctx, delivery.NewID(), project.Id, *in.Metadata)
 			if err != nil {
 				return nil, UpsertProjectOutput{}, fmt.Errorf("mcpserver: upsert_project: merge metadata: %w", err)
+			}
+		}
+		if localPath := strings.TrimSpace(in.LocalPath); localPath != "" {
+			branch := strings.TrimSpace(in.DefaultBranch)
+			if branch == "" && project.DefaultBranch != nil {
+				branch = *project.DefaultBranch
+			}
+			if err := store.RememberProjectCheckout(ctx, delivery.NewID(), project.Id, localPath, in.RepositoryURL, branch); err != nil {
+				return nil, UpsertProjectOutput{}, fmt.Errorf("mcpserver: upsert_project: record local path: %w", err)
 			}
 		}
 		return nil, UpsertProjectOutput{Project: *project}, nil
