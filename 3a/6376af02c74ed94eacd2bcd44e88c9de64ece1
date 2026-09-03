@@ -1,0 +1,23 @@
+internal/telemetry/usageaccumulator.go
+  a97deff596c14d9f 1-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "3a6376af02c74ed94eacd2bcd44e88c9de64ece1",
+  "prompts": {
+    "a97deff596c14d9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a1e97913-4ae9-4a6e-9951-77d4563ed873",
+        "model": "claude-opus-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 265,
+      "total_deletions": 0,
+      "accepted_lines": 265,
+      "overriden_lines": 0
+    }
+  }
+}
