@@ -97,43 +97,52 @@ func New(deliveries *delivery.Store, plans *plan.Store, opts ...Option) *Service
 	return s
 }
 
-// requirePlan refuses to open a delivery that names no plan.
+// planWarnings reports what a delivery is missing about its plan without
+// refusing to open it.
 //
-// A delivery is the execution of a plan; one started without a plan has
-// nothing to say what it is for, nothing for a later session to resume
-// against, and nothing a reviewer can hold the work up against. This was
-// optional, and the optionality was invisible afterwards - the delivery
-// looked exactly like one whose plan was simply not linked.
+// A delivery is the execution of a plan, and one started without a plan
+// has nothing for a later session to resume against - but that is a
+// reason to say so, not a reason to stand between somebody and the work.
+// A trivial fix does not owe anybody a document, and a plan can be
+// supplied by calling start_delivery again for the same issue, so this
+// warns at the start and leaves a completion gap behind.
 //
-// A named plan is also checked to exist. The only validation the
-// orchestration ever applied was that an id and a positive revision were
-// supplied together, so "has a plan" could be satisfied by any two
-// values. Both answers are missing_context rather than errors: retrying
-// with the plan is the fix, and this runs before anything is written.
-func (s *Service) requirePlan(ctx context.Context, req StartRequest) (*protocol.NeedUserInput, error) {
+// A named plan is checked to exist and dropped when it does not: the only
+// validation the orchestration ever applied was that an id and a positive
+// revision were supplied together, so "has a plan" could be satisfied by
+// any two values, and pointing a delivery at a plan nobody saved is worse
+// than pointing it at none.
+func (s *Service) planWarnings(ctx context.Context, req *StartRequest) ([]string, error) {
 	planID := strings.TrimSpace(req.PlanID)
+	if planID != "" && s.plans != nil {
+		exists, err := s.plans.ExistsRevision(ctx, planID, req.PlanRevision)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			warning := fmt.Sprintf("no plan %s revision %d is saved, so this delivery names none - save it with plan_save, or pass plan with the content to save", planID, req.PlanRevision)
+			req.PlanID, req.PlanRevision = "", 0
+			return []string{warning}, nil
+		}
+	}
 	if planID == "" && req.HighLevelPlan.IsEmpty() {
-		return &protocol.NeedUserInput{
-			Kind:          protocol.NeedUserInputKindMissingContext,
-			Question:      "A delivery is the execution of a plan: supply plan with the plan to work from, or plan_id and plan_revision naming one already saved.",
-			MissingFields: []string{"plan"},
-		}, nil
-	}
-	if planID == "" || s.plans == nil {
-		return nil, nil
-	}
-	exists, err := s.plans.ExistsRevision(ctx, planID, req.PlanRevision)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return &protocol.NeedUserInput{
-			Kind:          protocol.NeedUserInputKindMissingContext,
-			Question:      fmt.Sprintf("No plan %s revision %d is saved. Save it with plan_save, or supply plan with the content to save.", planID, req.PlanRevision),
-			MissingFields: []string{"plan_id"},
-		}, nil
+		return []string{"this delivery names no plan, so nothing says what it is for or what a later session should resume against - pass plan, or plan_id and plan_revision, on a later start_delivery for the same source"}, nil
 	}
 	return nil, nil
+}
+
+// clarityWarnings reports a Jira delivery that never said how well its
+// requirement is understood.
+//
+// Stating it was required for a while, which made a one-line fix carry
+// the same ceremony as a vague epic. A caller that judged nothing simply
+// gets told what stating it would have bought - it is not asked twice and
+// nothing is guessed on its behalf.
+func clarityWarnings(source SourceIdentity) []string {
+	if source.Kind != SourceJira || strings.TrimSpace(source.Clarity) != "" {
+		return nil
+	}
+	return []string{"this delivery never said whether its issue is clear enough to build from - pass source.clarity (" + delivery.ClarityClear + " or " + delivery.ClarityNeedsClarification + ") to record that judgement and, when it is unclear, ask the question on the issue"}
 }
 
 // StartOrResolve resolves req.Source to one delivery lifetime and
@@ -184,11 +193,11 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 	if needsInput != nil {
 		return StartResult{}, needsInput, nil
 	}
-	if needsInput, err := s.requirePlan(ctx, req); err != nil {
+	warnings, err := s.planWarnings(ctx, &req)
+	if err != nil {
 		return StartResult{}, nil, err
-	} else if needsInput != nil {
-		return StartResult{}, needsInput, nil
 	}
+	warnings = append(warnings, clarityWarnings(normalized)...)
 	if strings.TrimSpace(req.IdempotencyKey) == "" {
 		return StartResult{}, nil, fmt.Errorf("deliveryservice: idempotency_key is required")
 	}
@@ -213,6 +222,7 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 	if err != nil {
 		return StartResult{}, nil, err
 	}
+	report.Warnings = append(warnings, report.Warnings...)
 	result := StartResult{
 		Lifetime:         *resolved.Lifetime,
 		Execution:        *resolved.Execution,

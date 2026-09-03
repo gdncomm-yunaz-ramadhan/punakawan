@@ -37,10 +37,11 @@ type StartDeliverySource struct {
 	Tenant string `json:"tenant,omitempty" jsonschema:"the Jira organisation this issue belongs to, as named by punakawan setup jira --list. Omit it: the default organisation is used when it can see the issue, and you are asked which one holds it when it cannot"`
 	Key    string `json:"key,omitempty" jsonschema:"required when kind is jira: the exact issue key, e.g. ABC-123"`
 	// Clarity and ClarityRationale are your judgement of the issue, made
-	// before any work is opened against it. They are required for a Jira
-	// source: a requirement nobody judged is exactly what produces a
-	// delivery built on a guess.
-	Clarity          string `json:"clarity,omitempty" jsonschema:"required when kind is jira: clear | needs_clarification - whether this issue says enough to build from, judged from the issue itself"`
+	// before any work is opened against it. A delivery that states none
+	// is started and warned about rather than refused: a one-line fix
+	// does not need an assessment, and a vague epic is exactly where one
+	// pays for itself.
+	Clarity          string `json:"clarity,omitempty" jsonschema:"clear | needs_clarification - whether this issue says enough to build from, judged from the issue itself. Scale it to the work: a trivial task needs a word, not an assessment. Omitting it is reported as a warning"`
 	ClarityRationale string `json:"clarity_rationale,omitempty" jsonschema:"why. Required when clarity is needs_clarification: this text is posted on the issue as the question to answer, so write it for whoever has to answer it"`
 }
 
@@ -90,10 +91,12 @@ type StartDeliveryInput struct {
 	// Plan, or PlanID and PlanRevision, name the cross-project plan this
 	// delivery executes. One of them is required: a delivery is the
 	// execution of a plan, and one started without a plan has nothing to
-	// say what it is for and nothing a later session can resume against.
-	// Project-specific detailed plans belong on the matching project
-	// entries below.
-	Plan         *StartDeliveryPlan `json:"plan,omitempty" jsonschema:"the plan this delivery executes, saved as part of starting it. Supply this or plan_id. Passing it again on a later start_delivery for the same issue saves the next revision of the same plan"`
+	// say what it is for and nothing a later session can resume against -
+	// reported as a warning and a completion gap rather than refused, so
+	// a small task can be a one-line objective and nothing is blocked on
+	// writing more than the work is worth. Project-specific detailed
+	// plans belong on the matching project entries below.
+	Plan         *StartDeliveryPlan `json:"plan,omitempty" jsonschema:"the plan this delivery executes, saved as part of starting it. Supply this or plan_id; size it to the work - one objective line is a plan. Passing it again on a later start_delivery for the same issue saves the next revision of the same plan"`
 	PlanID       string             `json:"plan_id,omitempty" jsonschema:"id of a plan already saved with plan_save; pass plan_revision with it. Supply this or plan"`
 	PlanRevision int                `json:"plan_revision,omitempty"`
 	// IdempotencyKey is optional: repeating the same key on retry

@@ -35,6 +35,9 @@ const (
 	GapSessionNotFinalized = "session_not_finalized"
 	// GapCostUnknown - tokens were recorded but could not be priced.
 	GapCostUnknown = "cost_unknown"
+	// GapPlanMissing - the delivery names no plan, so nothing says what
+	// it was for or what its work should have been held up against.
+	GapPlanMissing = "plan_missing"
 	// GapRequirementUnclear - somebody judged the requirement too vague
 	// to build from and the question they asked has not been answered.
 	GapRequirementUnclear = "requirement_unclear"
@@ -126,6 +129,16 @@ func AssessCompletionReadiness(view *DeliveryView) Readiness {
 			Code:     GapRequirementUncovered,
 			Detail:   fmt.Sprintf("%d captured requirement(s) have no lane covering them", len(uncovered)),
 			Subjects: uncovered,
+		})
+	}
+
+	// Starting without a plan is a warning, not a refusal - a trivial
+	// task owes nobody a document. Finishing without one is still worth
+	// naming, so it is here rather than in the way.
+	if view.PlanID == "" {
+		gaps = append(gaps, ReadinessGap{
+			Code:   GapPlanMissing,
+			Detail: "this delivery names no plan, so nothing says what it was for - start_delivery for the same source with plan, or plan_id and plan_revision, attaches one",
 		})
 	}
 

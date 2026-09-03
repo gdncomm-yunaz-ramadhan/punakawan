@@ -100,6 +100,17 @@ func TestAssessCompletionReadinessIsCleanWhenEverythingIsReported(t *testing.T) 
 		t.Fatalf("CompleteLaneWork: %v", err)
 	}
 
+	orch, err := s.GetOrchestration(ctx, orchID)
+	if err != nil {
+		t.Fatalf("GetOrchestration: %v", err)
+	}
+	planID, planRevision := "PLAN-1", 1
+	if _, err := s.UpdateOrchestrationDetails(ctx, "plan-1", orchID, orch.Revision, OrchestrationDetails{
+		PlanID: &planID, PlanRevision: &planRevision,
+	}); err != nil {
+		t.Fatalf("UpdateOrchestrationDetails: %v", err)
+	}
+
 	view, err := s.BuildDeliveryView(ctx, orchID)
 	if err != nil {
 		t.Fatalf("BuildDeliveryView: %v", err)

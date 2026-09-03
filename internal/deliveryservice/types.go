@@ -88,9 +88,13 @@ func NormalizeSource(in SourceIdentity) (SourceIdentity, *protocol.NeedUserInput
 		if key == "" {
 			missing = append(missing, "source.key")
 		}
-		if clarity != delivery.ClarityClear && clarity != delivery.ClarityNeedsClarification {
+		// An unstated clarity is a warning, not a question: a one-line fix
+		// should not have to carry an assessment. A stated one has to be
+		// one of the two legal values, so a typo is caught rather than
+		// filed as a judgement nobody made.
+		if clarity != "" && clarity != delivery.ClarityClear && clarity != delivery.ClarityNeedsClarification {
 			missing = append(missing, "source.clarity")
-			question = "Say whether this issue is clear enough to build from: source.clarity is " + delivery.ClarityClear + " or " + delivery.ClarityNeedsClarification + "."
+			question = "source.clarity is " + delivery.ClarityClear + " or " + delivery.ClarityNeedsClarification + "."
 		} else if clarity == delivery.ClarityNeedsClarification && rationale == "" {
 			missing = append(missing, "source.clarity_rationale")
 			question = "Say what is unclear: the rationale is posted on the issue as the question to answer."
@@ -238,6 +242,11 @@ type ReconcileReport struct {
 	Plans        []string `json:"plans"`
 	RunnableWork []string `json:"runnable_work,omitempty"`
 	Skipped      []string `json:"skipped,omitempty"`
+	// Warnings names what this delivery went ahead without. Missing a
+	// plan or a stated clarity is worth saying and not worth blocking on:
+	// a trivial task deserves neither ceremony, and both can be supplied
+	// by starting the same source again.
+	Warnings []string `json:"warnings,omitempty"`
 	// UncoveredRequirements names every requirement source this delivery
 	// captured that no task covers, so nothing was opened to do it.
 	// Reconciliation maps in one direction only - task to source - so

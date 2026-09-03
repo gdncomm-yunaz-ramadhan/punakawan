@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/delivery"
@@ -193,16 +194,19 @@ func TestStartOrResolveReusesTheOrganisationAnActiveLifetimeAlreadyNames(t *test
 	}
 }
 
-// A delivery is the execution of a plan. Starting one without a plan used
-// to be accepted silently, and afterwards looked exactly like a delivery
-// whose plan had simply not been linked.
-func TestStartOrResolveRefusesToOpenADeliveryWithNoPlan(t *testing.T) {
+// A delivery is the execution of a plan, and one started without a plan
+// has nothing a later session can resume against - but that is worth
+// saying, not worth standing in the way of the work. It warns, opens the
+// delivery, and leaves a gap behind; naming a plan nobody saved is the
+// same answer rather than a pointer to nothing.
+func TestStartOrResolveWarnsButStartsADeliveryWithNoPlan(t *testing.T) {
 	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("storage.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := New(delivery.NewStore(db), plan.NewStore(db))
+	store := delivery.NewStore(db)
+	svc := New(store, plan.NewStore(db))
 
 	req := jiraRequest("acme", "PAY-1", "planless")
 	req.HighLevelPlan = PlanDraft{}
@@ -211,31 +215,46 @@ func TestStartOrResolveRefusesToOpenADeliveryWithNoPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartOrResolve: %v", err)
 	}
-	if needsInput == nil || len(needsInput.MissingFields) != 1 || needsInput.MissingFields[0] != "plan" {
-		t.Fatalf("needsInput = %+v, want a question naming plan", needsInput)
+	if needsInput != nil {
+		t.Fatalf("needsInput = %+v, want none - a missing plan does not block the work", needsInput)
 	}
-	if result.Execution.OrchestrationID != "" {
-		t.Fatalf("result = %+v, want nothing started", result)
+	if result.Execution.OrchestrationID == "" {
+		t.Fatal("no delivery was opened; a missing plan is a warning, not a refusal")
+	}
+	if len(result.Reconciliation.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want exactly the missing-plan warning", result.Reconciliation.Warnings)
+	}
+	view, err := store.BuildDeliveryView(context.Background(), result.Execution.OrchestrationID)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	readiness := delivery.AssessCompletionReadiness(view)
+	if !slices.ContainsFunc(readiness.Gaps, func(gap delivery.ReadinessGap) bool { return gap.Code == delivery.GapPlanMissing }) {
+		t.Fatalf("gaps = %+v, want %s so completing without a plan still says so", readiness.Gaps, delivery.GapPlanMissing)
 	}
 
-	var cases int
-	if err := db.Reader().QueryRowContext(context.Background(), `SELECT COUNT(1) FROM delivery_cases`).Scan(&cases); err != nil {
-		t.Fatalf("count delivery_cases: %v", err)
-	}
-	if cases != 0 {
-		t.Fatalf("delivery_cases = %d rows, want none written for a delivery that was never opened", cases)
-	}
-
-	// Naming a plan that was never saved is the same answer: "has a plan"
-	// used to be satisfiable with any two values, since nothing looked it
-	// up.
-	req.PlanID, req.PlanRevision = "PLAN-NOT-SAVED", 3
-	_, needsInput, err = svc.StartOrResolve(context.Background(), req)
+	// Naming a plan that was never saved points the delivery at nothing,
+	// which is worse than pointing it at none: the reference is dropped
+	// and reported.
+	unsaved := jiraRequest("acme", "PAY-2", "unsaved plan")
+	unsaved.HighLevelPlan = PlanDraft{}
+	unsaved.PlanID, unsaved.PlanRevision = "PLAN-NOT-SAVED", 3
+	result, needsInput, err = svc.StartOrResolve(context.Background(), unsaved)
 	if err != nil {
 		t.Fatalf("StartOrResolve with an unsaved plan: %v", err)
 	}
-	if needsInput == nil || len(needsInput.MissingFields) != 1 || needsInput.MissingFields[0] != "plan_id" {
-		t.Fatalf("needsInput = %+v, want a question naming plan_id", needsInput)
+	if needsInput != nil {
+		t.Fatalf("needsInput = %+v, want none", needsInput)
+	}
+	if len(result.Reconciliation.Warnings) != 1 || !strings.Contains(result.Reconciliation.Warnings[0], "PLAN-NOT-SAVED") {
+		t.Fatalf("Warnings = %v, want one naming the plan nobody saved", result.Reconciliation.Warnings)
+	}
+	dropped, err := store.BuildDeliveryView(context.Background(), result.Execution.OrchestrationID)
+	if err != nil {
+		t.Fatalf("BuildDeliveryView: %v", err)
+	}
+	if dropped.PlanID != "" {
+		t.Fatalf("delivery kept plan reference %q, want it dropped rather than dangling", dropped.PlanID)
 	}
 }
 
@@ -290,16 +309,34 @@ func TestStartOrResolveMovesTheDeliveryOntoARevisedPlan(t *testing.T) {
 	}
 }
 
-// A requirement nobody judged is what produces a delivery built on a
-// guess, so the judgement is asked for at the point work is opened - not
-// left to a separate tool an agent may never call.
-func TestStartOrResolveRequiresAStatedClarityForAJiraSource(t *testing.T) {
+// Stating clarity was required for a while, which made a one-line fix
+// carry the same ceremony as a vague epic. It is a warning now: an
+// unstated judgement is reported and nothing is guessed, while a stated
+// one that is neither legal value is still caught.
+func TestStartOrResolveWarnsAboutAnUnstatedClarity(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
 	unjudged := jiraRequest("acme", "PAY-1", "unjudged")
 	unjudged.Source.Clarity = ""
-	_, needsInput, err := svc.StartOrResolve(ctx, unjudged)
+	result, needsInput, err := svc.StartOrResolve(ctx, unjudged)
+	if err != nil {
+		t.Fatalf("StartOrResolve: %v", err)
+	}
+	if needsInput != nil {
+		t.Fatalf("needsInput = %+v, want none - a trivial task owes nobody an assessment", needsInput)
+	}
+	if result.Execution.OrchestrationID == "" {
+		t.Fatal("no delivery was opened for an unjudged issue")
+	}
+	if len(result.Reconciliation.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want exactly the unstated-clarity warning", result.Reconciliation.Warnings)
+	}
+
+	// A clarity that is neither legal value is a typo, not a judgement.
+	typo := jiraRequest("acme", "PAY-2", "typo")
+	typo.Source.Clarity = "clearish"
+	_, needsInput, err = svc.StartOrResolve(ctx, typo)
 	if err != nil {
 		t.Fatalf("StartOrResolve: %v", err)
 	}
@@ -308,8 +345,8 @@ func TestStartOrResolveRequiresAStatedClarityForAJiraSource(t *testing.T) {
 	}
 
 	// Unclear without saying what is unclear leaves nobody anything to
-	// answer, so it is the same refusal.
-	silent := jiraRequest("acme", "PAY-1", "silent")
+	// answer, so that one is still a question.
+	silent := jiraRequest("acme", "PAY-3", "silent")
 	silent.Source.Clarity = delivery.ClarityNeedsClarification
 	_, needsInput, err = svc.StartOrResolve(ctx, silent)
 	if err != nil {
