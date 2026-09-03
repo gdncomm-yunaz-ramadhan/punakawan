@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/deliveryservice"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/telemetry"
 )
 
@@ -27,7 +28,7 @@ func TestDeliveryAdhocIsolation(t *testing.T) {
 			Title:          "Investigate flaky checkout test",
 			Description:    "The checkout suite fails intermittently on CI.",
 			Session:        deliveryservice.SessionStart{Participant: "agent-1"},
-			HighLevelPlan:  deliveryservice.PlanDraft{Title: "Investigate flaky checkout test", Content: "Reproduce, bisect, fix."},
+			HighLevelPlan:  deliveryservice.PlanDraft{Objective: "Investigate flaky checkout test", Steps: []plan.PlanStep{{Objective: "Reproduce, bisect, fix"}}},
 		})
 		if err != nil {
 			t.Fatalf("StartOrResolve(%s): %v", idempotencyKey, err)

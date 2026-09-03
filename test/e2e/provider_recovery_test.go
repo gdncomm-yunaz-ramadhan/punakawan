@@ -35,6 +35,7 @@ func TestProviderRecoveryDedupesLostResponses(t *testing.T) {
 		IdempotencyKey: "start-rec-1",
 		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "rec-1"},
 		Title:          "Investigate outage",
+		HighLevelPlan:  deliveryservice.PlanDraft{Objective: "Investigate outage"},
 		Session:        deliveryservice.SessionStart{Participant: "agent-1"},
 	})
 	if err != nil {

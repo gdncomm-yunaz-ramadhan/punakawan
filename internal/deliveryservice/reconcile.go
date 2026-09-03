@@ -70,25 +70,24 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 		report.Requirements = append(report.Requirements, rs.Id)
 	}
 
-	if strings.TrimSpace(req.HighLevelPlan.Title) != "" || strings.TrimSpace(req.HighLevelPlan.Content) != "" {
-		highLevel, err := s.plans.SaveWithKey(ctx, reconcileKey(orchestrationID, "highlevel-plan", ""), req.HighLevelPlan.toPlan(stableID("delivery-plan", orchestrationID)))
+	// The delivery's own plan, whether its content arrived here to be
+	// saved or it names a revision saved earlier. Both end up linked and
+	// recorded the same way: a plan named but not linked left the panel's
+	// Plans tab empty for a delivery that certainly had one, and left a
+	// second start_delivery naming a newer revision changing nothing.
+	deliveryPlan := plan.Plan{ID: strings.TrimSpace(req.PlanID), Revision: req.PlanRevision}
+	if !req.HighLevelPlan.IsEmpty() {
+		saved, err := s.plans.SaveWithKey(ctx, reconcileKey(orchestrationID, "highlevel-plan", req.HighLevelPlan.ReasonForChange), req.HighLevelPlan.toPlan(stableID("delivery-plan", orchestrationID)))
 		if err != nil {
 			return report, fmt.Errorf("deliveryservice: save high-level plan: %w", err)
 		}
-		if err := s.deliveries.LinkDeliveryPlan(ctx, reconcileKey(orchestrationID, "link-highlevel-plan", ""), orchestrationID, highLevel.ID, highLevel.Revision); err != nil {
-			return report, fmt.Errorf("deliveryservice: link high-level plan: %w", err)
+		deliveryPlan = saved
+	}
+	if deliveryPlan.ID != "" {
+		if err := s.linkDeliveryPlan(ctx, orchestrationID, deliveryPlan); err != nil {
+			return report, err
 		}
-		orch, err := s.deliveries.GetOrchestration(ctx, orchestrationID)
-		if err != nil {
-			return report, fmt.Errorf("deliveryservice: read orchestration before recording high-level plan: %w", err)
-		}
-		planID, planRevision := highLevel.ID, highLevel.Revision
-		if _, err := s.deliveries.UpdateOrchestrationDetails(ctx, reconcileKey(orchestrationID, "highlevel-plan-details", planRef(highLevel)), orchestrationID, orch.Revision, delivery.OrchestrationDetails{
-			PlanID: &planID, PlanRevision: &planRevision,
-		}); err != nil {
-			return report, fmt.Errorf("deliveryservice: record high-level plan on orchestration: %w", err)
-		}
-		report.Plans = append(report.Plans, planRef(highLevel))
+		report.Plans = append(report.Plans, planRef(deliveryPlan))
 	}
 
 	sources, err := s.deliveries.ListRequirementSources(ctx, orchestrationID)
@@ -127,7 +126,7 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 			}
 		}
 
-		if firstDraftForSlug && (strings.TrimSpace(draft.Plan.Title) != "" || strings.TrimSpace(draft.Plan.Content) != "") {
+		if firstDraftForSlug && !draft.Plan.IsEmpty() {
 			projectPlan, err := s.plans.SaveWithKey(ctx, reconcileKey(orchestrationID, "plan", project.Id), draft.Plan.toPlan(stableID("project-plan", project.Id), project.Id))
 			if err != nil {
 				return report, fmt.Errorf("deliveryservice: save project plan for %q: %w", draft.Slug, err)
@@ -237,17 +236,56 @@ func uncoveredRequirements(ctx context.Context, s *Service, orchestrationID stri
 
 // toPlan turns a not-yet-saved PlanDraft into an actual plan.Plan ready
 // for Store.SaveWithKey: id is this lineage's stable identity (see
+// linkDeliveryPlan links one plan revision to the delivery and points the
+// orchestration at it, leaving both alone when they already say so.
+//
+// Pointing the orchestration is what makes a revision visible as the
+// delivery's current plan and what emits plan.created/plan.revised - and
+// so, in a workspace that asks for it, what says on the Jira issue that
+// the plan changed.
+func (s *Service) linkDeliveryPlan(ctx context.Context, orchestrationID string, p plan.Plan) error {
+	ref := planRef(p)
+	if err := s.deliveries.LinkDeliveryPlan(ctx, reconcileKey(orchestrationID, "link-delivery-plan", ref), orchestrationID, p.ID, p.Revision); err != nil {
+		return fmt.Errorf("deliveryservice: link delivery plan %s: %w", ref, err)
+	}
+	orch, err := s.deliveries.GetOrchestration(ctx, orchestrationID)
+	if err != nil {
+		return fmt.Errorf("deliveryservice: read orchestration before recording plan %s: %w", ref, err)
+	}
+	if orch.PlanId != nil && *orch.PlanId == p.ID && orch.PlanRevision != nil && *orch.PlanRevision == p.Revision {
+		return nil
+	}
+	planID, planRevision := p.ID, p.Revision
+	if _, err := s.deliveries.UpdateOrchestrationDetails(ctx, reconcileKey(orchestrationID, "delivery-plan-details", ref), orchestrationID, orch.Revision, delivery.OrchestrationDetails{
+		PlanID: &planID, PlanRevision: &planRevision,
+	}); err != nil {
+		return fmt.Errorf("deliveryservice: record plan %s on orchestration: %w", ref, err)
+	}
+	return nil
+}
+
 // stableID), and projectIDs is empty for the cross-project high-level
 // plan or exactly the one project a detailed plan belongs to.
 func (d PlanDraft) toPlan(id string, projectIDs ...string) plan.Plan {
-	objective := strings.TrimSpace(d.Title)
+	objective := strings.TrimSpace(d.Objective)
+	if objective == "" {
+		objective = strings.TrimSpace(d.Title)
+	}
 	if objective == "" {
 		objective = strings.TrimSpace(d.Content)
 	}
 	if objective == "" {
 		objective = "untitled plan"
 	}
-	return plan.Plan{ID: id, ProjectIDs: projectIDs, Objective: objective, LegacyMarkdown: d.Content}
+	return plan.Plan{
+		ID: id, ProjectIDs: projectIDs, Objective: objective,
+		Steps:              d.Steps,
+		AcceptanceCriteria: d.AcceptanceCriteria,
+		Verification:       strings.TrimSpace(d.Verification),
+		Assumptions:        d.Assumptions,
+		ReasonForChange:    strings.TrimSpace(d.ReasonForChange),
+		LegacyMarkdown:     d.Content,
+	}
 }
 
 // planRef renders one saved plan revision as the compact "id@revision"

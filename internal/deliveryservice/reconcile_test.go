@@ -96,8 +96,8 @@ func newServiceWithJira(t *testing.T) (*Service, *fakeJiraHydrator) {
 	return New(store, plan.NewStore(db), WithJiraHydrator(hydrator)), hydrator
 }
 
-func planDraft(title string) PlanDraft {
-	return PlanDraft{Title: title}
+func planDraft(objective string) PlanDraft {
+	return PlanDraft{Objective: objective}
 }
 
 func projectDraft(slug, repositoryURL, taskKey string) ProjectDraft {
@@ -222,6 +222,7 @@ func TestReconcileWithoutJiraHydratorCapturesSuppliedRequirementDrafts(t *testin
 
 	result := mustStart(t, svc, StartRequest{
 		IdempotencyKey: "start-adhoc-reconcile",
+		HighLevelPlan:  planDraft("One-off cleanup"),
 		Source:         &SourceIdentity{Kind: SourceAdhoc},
 		Title:          "One-off cleanup",
 		Requirements: []RequirementDraft{
@@ -279,6 +280,7 @@ func TestReconcileNamesRequirementsNoTaskCovers(t *testing.T) {
 	// key and the subtask is covered by nothing.
 	result := mustStart(t, svc, StartRequest{
 		IdempotencyKey: "start-uncovered",
+		HighLevelPlan:  planDraft("Cover the parent only"),
 		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
 		Projects: []ProjectDraft{{
 			Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout",
@@ -301,6 +303,7 @@ func TestReconcileNamesNothingUncoveredWhenEveryRequirementHasATask(t *testing.T
 
 	result := mustStart(t, svc, StartRequest{
 		IdempotencyKey: "start-covered",
+		HighLevelPlan:  planDraft("Cover parent and subtask"),
 		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
 		Projects: []ProjectDraft{
 			{Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout", Title: "parent work", TaskKey: "ABC-123"},

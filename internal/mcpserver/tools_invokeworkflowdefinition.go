@@ -112,6 +112,12 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 			IdempotencyKey:       delivery.NewID(),
 			Source:               source,
 			WorkflowDefinitionID: def.ID,
+			// The definition's own plan, already saved above. Naming it
+			// here rather than attaching it afterwards is what satisfies
+			// the rule that a delivery is opened against a plan, and it
+			// links the plan as well as pointing at it.
+			PlanID:       planID,
+			PlanRevision: planRevision,
 			// A run with no session records no usage at all, so one is
 			// always opened, named after the definition that started it.
 			Session: startDeliverySession(nil, &StartDeliverySessionStart{Participant: "workflow:" + def.ID}, a.Workspace.Root),
@@ -122,18 +128,7 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 		if needsInput != nil {
 			return "", fmt.Errorf("delivery-shaped definition %q needs input: %s", def.ID, needsInput.Question)
 		}
-		orchestrationID := result.Execution.OrchestrationID
-		orch, err := store.GetOrchestration(ctx, orchestrationID)
-		if err != nil {
-			return "", err
-		}
-		if _, err := store.UpdateOrchestrationDetails(ctx, delivery.NewID(), orchestrationID, orch.Revision, delivery.OrchestrationDetails{
-			PlanID:       &planID,
-			PlanRevision: &planRevision,
-		}); err != nil {
-			return "", fmt.Errorf("attach plan to delivery for definition %q: %w", def.ID, err)
-		}
-		return orchestrationID, nil
+		return result.Execution.OrchestrationID, nil
 	}
 
 	references, err := referencesFromInputs(inputs)

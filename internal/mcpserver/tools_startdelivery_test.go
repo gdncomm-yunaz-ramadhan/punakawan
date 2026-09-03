@@ -16,6 +16,13 @@ func jiraSource(key string) map[string]any {
 	return map[string]any{"kind": "jira", "tenant": "test-tenant", "key": key}
 }
 
+// testPlan is the plan every start_delivery call now has to carry: a
+// delivery is the execution of one, so a call without it is answered with
+// a question instead of a delivery.
+func testPlan() map[string]any {
+	return map[string]any{"objective": "deliver the work"}
+}
+
 // TestStartDeliveryReconcilesProjectsPlansAndSessionInOneCall is the
 // contract the whole tool exists for: one call must leave a delivery that
 // can actually run and actually be measured - real lanes wired to real
@@ -31,6 +38,7 @@ func TestStartDeliveryReconcilesProjectsPlansAndSessionInOneCall(t *testing.T) {
 
 	var started StartDeliveryOutput
 	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":        testPlan(),
 		"source":      jiraSource("PAY-3001"),
 		"title":       "migrate checkout to the new payments API",
 		"description": "raise the charge endpoint onto v2",
@@ -116,6 +124,7 @@ func TestStartDeliveryReusesOneLifetimePerJiraKey(t *testing.T) {
 
 	var first StartDeliveryOutput
 	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":            testPlan(),
 		"source":          jiraSource("PAY-1"),
 		"idempotency_key": "retry-key-mcp",
 	}, &first)
@@ -125,6 +134,7 @@ func TestStartDeliveryReusesOneLifetimePerJiraKey(t *testing.T) {
 
 	var retried StartDeliveryOutput
 	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":            testPlan(),
 		"source":          jiraSource("PAY-1"),
 		"idempotency_key": "retry-key-mcp",
 	}, &retried)
@@ -134,6 +144,7 @@ func TestStartDeliveryReusesOneLifetimePerJiraKey(t *testing.T) {
 
 	var extended StartDeliveryOutput
 	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":   testPlan(),
 		"source": jiraSource("PAY-1"),
 		"projects": []map[string]any{{
 			"slug":           "billing-worker",
@@ -176,7 +187,7 @@ func TestGetDeliveryAnswerRoutingAndCancel(t *testing.T) {
 	ctx := context.Background()
 
 	var started StartDeliveryOutput
-	callTool(t, cs, "start_delivery", map[string]any{"source": jiraSource("PAY-42")}, &started)
+	callTool(t, cs, "start_delivery", map[string]any{"source": jiraSource("PAY-42"), "plan": testPlan()}, &started)
 
 	var got DeliveryViewOutput
 	callTool(t, cs, "get_delivery", map[string]any{"orchestration_id": started.OrchestrationId}, &got)
@@ -255,6 +266,7 @@ func TestCompleteDeliveryRefusesAnUnfinishedDeliveryUntilAcknowledged(t *testing
 
 	var started StartDeliveryOutput
 	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":   testPlan(),
 		"source": jiraSource("PAY-77"),
 		"projects": []map[string]any{{
 			"slug": "gate-target", "repository_url": "https://example.test/gate-target.git",
@@ -335,6 +347,7 @@ func TestStartDeliveryReturnsTheSessionIdTheUsageToolsRequire(t *testing.T) {
 
 	var started StartDeliveryOutput
 	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":    testPlan(),
 		"source":  jiraSource("PAY-99"),
 		"session": map[string]any{"participant": "semar"},
 	}, &started)

@@ -26,6 +26,7 @@ func jiraRequest(tenant, key, session string) StartRequest {
 		IdempotencyKey: "start-" + session,
 		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: tenant, Key: key},
 		Title:          "Deliver " + key,
+		HighLevelPlan:  PlanDraft{Objective: "Deliver " + key},
 		Session:        SessionStart{Participant: session},
 	}
 }
@@ -35,6 +36,7 @@ func adhocRequest(prompt, session string) StartRequest {
 		IdempotencyKey: "start-" + session,
 		Source:         &SourceIdentity{Kind: SourceAdhoc},
 		Title:          prompt,
+		HighLevelPlan:  PlanDraft{Objective: prompt},
 		Session:        SessionStart{Participant: session},
 	}
 }
@@ -184,5 +186,102 @@ func TestStartOrResolveReusesTheOrganisationAnActiveLifetimeAlreadyNames(t *test
 	}
 	if asked != 1 {
 		t.Fatalf("resolver saw a blank organisation %d times, want once - the second start reads what the first recorded", asked)
+	}
+}
+
+// A delivery is the execution of a plan. Starting one without a plan used
+// to be accepted silently, and afterwards looked exactly like a delivery
+// whose plan had simply not been linked.
+func TestStartOrResolveRefusesToOpenADeliveryWithNoPlan(t *testing.T) {
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	svc := New(delivery.NewStore(db), plan.NewStore(db))
+
+	req := jiraRequest("acme", "PAY-1", "planless")
+	req.HighLevelPlan = PlanDraft{}
+
+	result, needsInput, err := svc.StartOrResolve(context.Background(), req)
+	if err != nil {
+		t.Fatalf("StartOrResolve: %v", err)
+	}
+	if needsInput == nil || len(needsInput.MissingFields) != 1 || needsInput.MissingFields[0] != "plan" {
+		t.Fatalf("needsInput = %+v, want a question naming plan", needsInput)
+	}
+	if result.Execution.OrchestrationID != "" {
+		t.Fatalf("result = %+v, want nothing started", result)
+	}
+
+	var cases int
+	if err := db.Reader().QueryRowContext(context.Background(), `SELECT COUNT(1) FROM delivery_cases`).Scan(&cases); err != nil {
+		t.Fatalf("count delivery_cases: %v", err)
+	}
+	if cases != 0 {
+		t.Fatalf("delivery_cases = %d rows, want none written for a delivery that was never opened", cases)
+	}
+
+	// Naming a plan that was never saved is the same answer: "has a plan"
+	// used to be satisfiable with any two values, since nothing looked it
+	// up.
+	req.PlanID, req.PlanRevision = "PLAN-NOT-SAVED", 3
+	_, needsInput, err = svc.StartOrResolve(context.Background(), req)
+	if err != nil {
+		t.Fatalf("StartOrResolve with an unsaved plan: %v", err)
+	}
+	if needsInput == nil || len(needsInput.MissingFields) != 1 || needsInput.MissingFields[0] != "plan_id" {
+		t.Fatalf("needsInput = %+v, want a question naming plan_id", needsInput)
+	}
+}
+
+// The plan a delivery executes has to be able to change: the requirement
+// moves, or the first plan turns out to be wrong.
+func TestStartOrResolveMovesTheDeliveryOntoARevisedPlan(t *testing.T) {
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := delivery.NewStore(db)
+	svc := New(store, plan.NewStore(db))
+	ctx := context.Background()
+
+	first, needsInput, err := svc.StartOrResolve(ctx, jiraRequest("acme", "PAY-1", "first"))
+	if err != nil || needsInput != nil {
+		t.Fatalf("first start: needsInput=%v err=%v", needsInput, err)
+	}
+	orchestrationID := first.Execution.OrchestrationID
+
+	before, err := store.GetOrchestration(ctx, orchestrationID)
+	if err != nil {
+		t.Fatalf("GetOrchestration: %v", err)
+	}
+	if before.PlanId == nil || before.PlanRevision == nil || *before.PlanRevision != 1 {
+		t.Fatalf("orchestration plan = %v r%v, want the first revision", before.PlanId, before.PlanRevision)
+	}
+
+	revised := jiraRequest("acme", "PAY-1", "second")
+	revised.HighLevelPlan = PlanDraft{Objective: "Deliver PAY-1 the other way", ReasonForChange: "the requirement moved"}
+	if _, needsInput, err := svc.StartOrResolve(ctx, revised); err != nil || needsInput != nil {
+		t.Fatalf("second start: needsInput=%v err=%v", needsInput, err)
+	}
+
+	after, err := store.GetOrchestration(ctx, orchestrationID)
+	if err != nil {
+		t.Fatalf("GetOrchestration after revising: %v", err)
+	}
+	if after.PlanRevision == nil || *after.PlanRevision != 2 || *after.PlanId != *before.PlanId {
+		t.Fatalf("orchestration plan = %v r%v, want the same lineage at revision 2", after.PlanId, after.PlanRevision)
+	}
+
+	// Linked, not merely named: a plan the delivery points at but never
+	// linked left the panel's Plans tab empty for a delivery that had one.
+	var links int
+	if err := db.Reader().QueryRowContext(ctx, `SELECT COUNT(1) FROM delivery_plan_links WHERE orchestration_id = ? AND scope = 'delivery'`, orchestrationID).Scan(&links); err != nil {
+		t.Fatalf("count delivery_plan_links: %v", err)
+	}
+	if links != 2 {
+		t.Fatalf("delivery plan links = %d, want one per revision", links)
 	}
 }

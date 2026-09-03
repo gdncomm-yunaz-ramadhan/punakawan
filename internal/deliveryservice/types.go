@@ -13,6 +13,7 @@ import (
 
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/jirahooks"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/telemetry"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
@@ -116,9 +117,31 @@ type RequirementDraft struct {
 // reconcile turns into an actual plan.Plan via SaveWithKey. It is the
 // content half of the pair: a caller that has already saved a plan names
 // it by id and revision instead (StartRequest.PlanID, ProjectDraft.PlanID).
+//
+// It carries the same fields plan_save takes rather than a title and a
+// blob, because this is now the path a delivery's plan normally arrives
+// by: a plan folded into prose is a plan nothing downstream can read a
+// step or an acceptance criterion out of.
 type PlanDraft struct {
-	Title   string
-	Content string
+	Title              string
+	Content            string
+	Objective          string
+	Steps              []plan.PlanStep
+	AcceptanceCriteria []string
+	Verification       string
+	Assumptions        []string
+	// ReasonForChange is recorded on the revision this draft creates. It
+	// is what makes a later revision legible as a change rather than a
+	// second plan that happens to share a lineage.
+	ReasonForChange string
+}
+
+// IsEmpty reports whether this draft carries nothing worth saving.
+func (d PlanDraft) IsEmpty() bool {
+	return strings.TrimSpace(d.Title) == "" && strings.TrimSpace(d.Content) == "" &&
+		strings.TrimSpace(d.Objective) == "" && len(d.Steps) == 0 &&
+		len(d.AcceptanceCriteria) == 0 && strings.TrimSpace(d.Verification) == "" &&
+		len(d.Assumptions) == 0
 }
 
 // ProjectDraft is one project a delivery should be reconciled onto, plus

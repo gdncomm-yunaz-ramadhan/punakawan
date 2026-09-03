@@ -25,6 +25,7 @@ func TestJiraDeliveryCanBindAndLogWork(t *testing.T) {
 
 	var started StartDeliveryOutput
 	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":   map[string]any{"objective": "deliver the work"},
 		"source": jiraSource("PAY-7001"),
 		"projects": []map[string]any{{
 			"slug":           "payments-api",

@@ -82,6 +82,7 @@ func TestPanelProjectionRefresh(t *testing.T) {
 		IdempotencyKey: "start-panel-1",
 		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceAdhoc},
 		Title:          "Panel projection smoke",
+		HighLevelPlan:  deliveryservice.PlanDraft{Objective: "Panel projection smoke"},
 		Session:        deliveryservice.SessionStart{Participant: "agent-1"},
 	})
 	if err != nil {

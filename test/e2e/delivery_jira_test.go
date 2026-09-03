@@ -34,11 +34,12 @@ func TestDeliveryJiraWorkflow(t *testing.T) {
 		IdempotencyKey: "start-abc-1",
 		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "abc-1"},
 		Title:          "Widget epic",
+		HighLevelPlan:  deliveryservice.PlanDraft{Objective: "Deliver the widget epic"},
 		Session:        deliveryservice.SessionStart{Participant: "agent-1"},
 		Projects: []deliveryservice.ProjectDraft{{
 			Slug: "widget-svc", RepositoryURL: repoDir, DefaultBranch: "main",
 			TaskKey: "ABC-2", Title: "Implement widget",
-			Plan: deliveryservice.PlanDraft{Title: "Implement widget", Content: "Do the widget work end to end."},
+			Plan: deliveryservice.PlanDraft{Objective: "Implement widget end to end"},
 		}},
 	})
 	if err != nil {

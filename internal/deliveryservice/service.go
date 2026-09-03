@@ -97,6 +97,45 @@ func New(deliveries *delivery.Store, plans *plan.Store, opts ...Option) *Service
 	return s
 }
 
+// requirePlan refuses to open a delivery that names no plan.
+//
+// A delivery is the execution of a plan; one started without a plan has
+// nothing to say what it is for, nothing for a later session to resume
+// against, and nothing a reviewer can hold the work up against. This was
+// optional, and the optionality was invisible afterwards - the delivery
+// looked exactly like one whose plan was simply not linked.
+//
+// A named plan is also checked to exist. The only validation the
+// orchestration ever applied was that an id and a positive revision were
+// supplied together, so "has a plan" could be satisfied by any two
+// values. Both answers are missing_context rather than errors: retrying
+// with the plan is the fix, and this runs before anything is written.
+func (s *Service) requirePlan(ctx context.Context, req StartRequest) (*protocol.NeedUserInput, error) {
+	planID := strings.TrimSpace(req.PlanID)
+	if planID == "" && req.HighLevelPlan.IsEmpty() {
+		return &protocol.NeedUserInput{
+			Kind:          protocol.NeedUserInputKindMissingContext,
+			Question:      "A delivery is the execution of a plan: supply plan with the plan to work from, or plan_id and plan_revision naming one already saved.",
+			MissingFields: []string{"plan"},
+		}, nil
+	}
+	if planID == "" || s.plans == nil {
+		return nil, nil
+	}
+	exists, err := s.plans.ExistsRevision(ctx, planID, req.PlanRevision)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return &protocol.NeedUserInput{
+			Kind:          protocol.NeedUserInputKindMissingContext,
+			Question:      fmt.Sprintf("No plan %s revision %d is saved. Save it with plan_save, or supply plan with the content to save.", planID, req.PlanRevision),
+			MissingFields: []string{"plan_id"},
+		}, nil
+	}
+	return nil, nil
+}
+
 // StartOrResolve resolves req.Source to one delivery lifetime and
 // execution, validating every required piece of context before writing
 // anything. It returns a structured NeedUserInput - never a partially
@@ -143,6 +182,11 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 		return StartResult{}, nil, err
 	}
 	if needsInput != nil {
+		return StartResult{}, needsInput, nil
+	}
+	if needsInput, err := s.requirePlan(ctx, req); err != nil {
+		return StartResult{}, nil, err
+	} else if needsInput != nil {
 		return StartResult{}, needsInput, nil
 	}
 	if strings.TrimSpace(req.IdempotencyKey) == "" {

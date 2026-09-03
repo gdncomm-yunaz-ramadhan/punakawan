@@ -25,6 +25,7 @@ import (
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryservice"
 	"github.com/ygrip/punakawan/internal/jirahooks"
+	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -35,6 +36,35 @@ type StartDeliverySource struct {
 	Kind   string `json:"kind" jsonschema:"jira | adhoc"`
 	Tenant string `json:"tenant,omitempty" jsonschema:"the Jira organisation this issue belongs to, as named by punakawan setup jira --list. Omit it: the default organisation is used when it can see the issue, and you are asked which one holds it when it cannot"`
 	Key    string `json:"key,omitempty" jsonschema:"required when kind is jira: the exact issue key, e.g. ABC-123"`
+}
+
+// StartDeliveryPlan is plan content supplied inline, saved and linked as
+// part of starting the delivery. It carries what plan_save takes, so a
+// plan reaches the delivery as steps and criteria rather than as prose
+// nothing downstream can read a step out of.
+type StartDeliveryPlan struct {
+	Objective          string          `json:"objective" jsonschema:"what this delivery achieves, in one line"`
+	Steps              []plan.PlanStep `json:"steps,omitempty" jsonschema:"the work, in order; each step names its objective, expected outcome and how it is verified"`
+	AcceptanceCriteria []string        `json:"acceptance_criteria,omitempty"`
+	Verification       string          `json:"verification,omitempty" jsonschema:"how the delivery as a whole is checked"`
+	Assumptions        []string        `json:"assumptions,omitempty"`
+	// ReasonForChange belongs on a revision, not a first version: it says
+	// why this plan differs from the one the delivery was carrying.
+	ReasonForChange string `json:"reason_for_change,omitempty" jsonschema:"why the plan changed, when this call revises one the delivery already had"`
+}
+
+func (p *StartDeliveryPlan) toDraft() deliveryservice.PlanDraft {
+	if p == nil {
+		return deliveryservice.PlanDraft{}
+	}
+	return deliveryservice.PlanDraft{
+		Objective:          p.Objective,
+		Steps:              p.Steps,
+		AcceptanceCriteria: p.AcceptanceCriteria,
+		Verification:       p.Verification,
+		Assumptions:        p.Assumptions,
+		ReasonForChange:    p.ReasonForChange,
+	}
 }
 
 // StartDeliveryInput is start_delivery's input: one delivery source, the
@@ -51,11 +81,15 @@ type StartDeliveryInput struct {
 	// Omitted, the orchestration simply carries none - nothing invents
 	// prose the way a missing title is derived.
 	Description string `json:"description,omitempty" jsonschema:"longer prose about what this delivery is for and why it exists, for whoever reads the run later. Omitting it leaves the delivery with no description at all; unlike title, nothing is derived in its place"`
-	// PlanID and PlanRevision name the already-saved cross-project plan
-	// for the delivery. Project-specific detailed plans belong on the
-	// matching project entries below.
-	PlanID       string `json:"plan_id,omitempty" jsonschema:"id of a plan already saved with plan_save; pass plan_revision with it"`
-	PlanRevision int    `json:"plan_revision,omitempty"`
+	// Plan, or PlanID and PlanRevision, name the cross-project plan this
+	// delivery executes. One of them is required: a delivery is the
+	// execution of a plan, and one started without a plan has nothing to
+	// say what it is for and nothing a later session can resume against.
+	// Project-specific detailed plans belong on the matching project
+	// entries below.
+	Plan         *StartDeliveryPlan `json:"plan,omitempty" jsonschema:"the plan this delivery executes, saved as part of starting it. Supply this or plan_id. Passing it again on a later start_delivery for the same issue saves the next revision of the same plan"`
+	PlanID       string             `json:"plan_id,omitempty" jsonschema:"id of a plan already saved with plan_save; pass plan_revision with it. Supply this or plan"`
+	PlanRevision int                `json:"plan_revision,omitempty"`
 	// IdempotencyKey is optional: repeating the same key on retry
 	// resolves to the same orchestration instead of minting a second
 	// one for the same request.
@@ -207,6 +241,7 @@ func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context
 			WorkflowDefinitionID: in.WorkflowDefinitionId,
 			PlanID:               in.PlanID,
 			PlanRevision:         in.PlanRevision,
+			HighLevelPlan:        in.Plan.toDraft(),
 			Projects:             startDeliveryProjectDrafts(in),
 			Session:              startDeliverySession(req, in.Session, a.Workspace.Root),
 		}
