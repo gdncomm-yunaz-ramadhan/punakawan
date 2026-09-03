@@ -244,6 +244,66 @@ func (s *Service) OnWorkRecorded(ctx context.Context, worklogID string) error {
 	return nil
 }
 
+// PostComment posts an arbitrary, caller-supplied comment body to issueKey,
+// executed synchronously so the caller gets a definitive result in the same
+// call.
+//
+// Unlike OnDeliveryStarted/OnDeliveryCompleted/etc., this is not gated by
+// s.cfg.AutoLog: those methods post fixed, template-generated comments at
+// lifecycle instants a workspace opted into, while this is an explicit,
+// agent-directed action for an arbitrary comment - it must work even for a
+// workspace with no Jira workflow configuration (nil cfg) or with AutoLog
+// disabled, the same way a human posting a comment by hand doesn't need
+// auto-logging turned on.
+//
+// idempotencyKey should be reused only when retrying this exact intended
+// comment (e.g. the caller's own call failed and it is trying again); a
+// different comment, even to the same issue, needs its own key - it is
+// folded into the outbox fingerprint verbatim, not hashed from the comment
+// body, so it carries no notion of "same content" on its own.
+func (s *Service) PostComment(ctx context.Context, deliveryID, issueKey, commentBody, idempotencyKey string) (outbox.Intent, error) {
+	issueKey = strings.TrimSpace(issueKey)
+	if issueKey == "" {
+		return outbox.Intent{}, fmt.Errorf("jiraintegration: post comment requires issue_key")
+	}
+	commentBody = strings.TrimSpace(commentBody)
+	if commentBody == "" {
+		return outbox.Intent{}, fmt.Errorf("jiraintegration: post comment requires comment_body")
+	}
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" {
+		return outbox.Intent{}, fmt.Errorf("jiraintegration: post comment requires idempotency_key")
+	}
+
+	adapterID, err := s.adapterIDFor(ctx, deliveryID)
+	if err != nil {
+		return outbox.Intent{}, err
+	}
+	payload, err := json.Marshal(map[string]any{"comment_body": commentBody})
+	if err != nil {
+		return outbox.Intent{}, fmt.Errorf("jiraintegration: encode comment payload: %w", err)
+	}
+	resolved, err := providerwrite.ExecuteNow(ctx, s.outbox, s.registry, "jira-post-comment-"+idempotencyKey, outbox.Intent{
+		OrchestrationID: deliveryID, AdapterID: adapterID, Operation: "atlassian.addJiraComment",
+		TargetKey: issueKey, PayloadJSON: string(payload),
+		OperationFingerprint: providerwrite.JiraCommentFingerprint(deliveryID, "manual:"+idempotencyKey, issueKey),
+	})
+	if err != nil {
+		return outbox.Intent{}, fmt.Errorf("jiraintegration: post comment to %s: %w", issueKey, err)
+	}
+	if resolved.Status != outbox.StatusSucceeded {
+		reason := resolved.LastErrorRedacted
+		if reason == "" {
+			reason = fmt.Sprintf("intent ended in status %q", resolved.Status)
+		}
+		if _, cancelErr := s.outbox.Cancel(ctx, resolved.ID, "jiraintegration: giving up after one synchronous post_comment attempt"); cancelErr != nil {
+			return outbox.Intent{}, fmt.Errorf("jiraintegration: cancel unresolved comment intent: %w", cancelErr)
+		}
+		return outbox.Intent{}, fmt.Errorf("jiraintegration: comment on %s did not post: %s", issueKey, reason)
+	}
+	return resolved, nil
+}
+
 // ReconcileIntent re-reads remote Jira state to positively determine
 // whether one of Service's own ambiguous write attempts already applied,
 // dispatching by intent.Operation to the matching exported reconciler in

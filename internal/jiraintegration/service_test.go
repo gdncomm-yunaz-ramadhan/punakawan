@@ -513,6 +513,105 @@ func TestReconcileIntent_UnregisteredOperationIsUnknown(t *testing.T) {
 	}
 }
 
+func TestPostComment_PostsAndDedupesOnRetry(t *testing.T) {
+	svc, store, _, fc := newTestService(t, nil)
+	fc.responses = map[string]string{"atlassian.addJiraComment": `{"ok":true,"commentId":"c-1"}`}
+	ctx := context.Background()
+	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	captureJiraRequirement(t, store, orch.Id, "PAY-1")
+
+	first, err := svc.PostComment(ctx, orch.Id, "PAY-1", "hello there", "idem-1")
+	if err != nil {
+		t.Fatalf("PostComment: %v", err)
+	}
+	if first.Status != outbox.StatusSucceeded || first.ExternalID != "c-1" {
+		t.Fatalf("first = %+v, want succeeded with external id c-1", first)
+	}
+	// A retry with the same idempotency key must not enqueue a second
+	// intent, and must resolve to the same one already recorded.
+	second, err := svc.PostComment(ctx, orch.Id, "PAY-1", "hello there", "idem-1")
+	if err != nil {
+		t.Fatalf("PostComment (retry): %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("retry resolved to a different intent: first=%s second=%s", first.ID, second.ID)
+	}
+
+	var commentCalls int
+	for _, c := range fc.calls {
+		if c["op"] == "atlassian.addJiraComment" {
+			commentCalls++
+		}
+	}
+	if commentCalls != 1 {
+		t.Fatalf("calls = %+v, want exactly one addJiraComment call", fc.calls)
+	}
+}
+
+func TestPostComment_DifferentIdempotencyKeysAreDistinctCalls(t *testing.T) {
+	svc, store, _, fc := newTestService(t, nil)
+	fc.responses = map[string]string{"atlassian.addJiraComment": `{"ok":true,"commentId":"c-1"}`}
+	ctx := context.Background()
+	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	captureJiraRequirement(t, store, orch.Id, "PAY-1")
+
+	if _, err := svc.PostComment(ctx, orch.Id, "PAY-1", "first comment", "idem-1"); err != nil {
+		t.Fatalf("PostComment (idem-1): %v", err)
+	}
+	if _, err := svc.PostComment(ctx, orch.Id, "PAY-1", "second comment", "idem-2"); err != nil {
+		t.Fatalf("PostComment (idem-2): %v", err)
+	}
+
+	var commentCalls int
+	for _, c := range fc.calls {
+		if c["op"] == "atlassian.addJiraComment" {
+			commentCalls++
+		}
+	}
+	if commentCalls != 2 {
+		t.Fatalf("calls = %+v, want two distinct addJiraComment calls for two different idempotency keys", fc.calls)
+	}
+}
+
+// TestPostComment_RoutesToTheOrganisationTheDeliveryBelongsTo mirrors
+// TestWritesRouteToTheOrganisationTheDeliveryBelongsTo for the explicit,
+// agent-directed PostComment path: it must resolve the adapter the same
+// per-organisation way every other Jira write does.
+func TestPostComment_RoutesToTheOrganisationTheDeliveryBelongsTo(t *testing.T) {
+	svc, store, _, fc := newTestService(t, nil)
+	fc.responses = map[string]string{"atlassian.addJiraComment": `{"ok":true,"commentId":"c-1"}`}
+	ctx := context.Background()
+
+	resolved, err := store.StartOrResolveExecution(ctx, "start-1", delivery.SourceIdentity{
+		Kind: delivery.SourceKindJira, Provider: "jira", Tenant: "gdncomm", Key: "PAY-1",
+	}, delivery.OrchestrationOptions{})
+	if err != nil {
+		t.Fatalf("StartOrResolveExecution: %v", err)
+	}
+	deliveryID := resolved.Execution.OrchestrationID
+	captureJiraRequirement(t, store, deliveryID, "PAY-1")
+
+	if _, err := svc.PostComment(ctx, deliveryID, "PAY-1", "hello there", "idem-1"); err != nil {
+		t.Fatalf("PostComment: %v", err)
+	}
+
+	asked := svc.registry.(*fakeGateResolver).asked
+	if len(asked) == 0 {
+		t.Fatal("expected PostComment to resolve an adapter")
+	}
+	for _, adapterID := range asked {
+		if adapterID != "atlassian:gdncomm" {
+			t.Errorf("write routed to %q, want atlassian:gdncomm", adapterID)
+		}
+	}
+}
+
 // TestWritesRouteToTheOrganisationTheDeliveryBelongsTo is the whole point
 // of per-organisation adapter ids: two Jira sites are two credentials, so
 // a write for one must never be handed to the process holding the
