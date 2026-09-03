@@ -67,12 +67,6 @@ type rowQuerier interface {
 
 const caseColumns = `id, source_kind, source_provider, source_tenant, source_key, jira_issue_key, status, created_at, updated_at`
 
-// getActiveJiraLifetime finds the open lifetime for a Jira key. It
-// deliberately ignores the tenant: a Jira issue is one piece of work no
-// matter which adapter instance a caller reached it through, and keying
-// this lookup by tenant as well is what previously let the same issue key
-// open a second, parallel delivery whenever two callers named the tenant
-// differently. The tenant is still recorded on the case for provenance.
 // getActiveJiraLifetime finds the active lifetime for one Jira issue at
 // one organisation. Two sites can issue the same key, so the organisation
 // is part of the identity.
@@ -93,6 +87,30 @@ func getActiveJiraLifetime(ctx context.Context, q rowQuerier, canonicalKey, org 
 		  AND (source_tenant = ? OR COALESCE(source_tenant, '') = '')
 		ORDER BY CASE WHEN source_tenant = ? THEN 0 ELSE 1 END, created_at DESC
 		LIMIT 1`, canonicalKey, org, org))
+}
+
+// ActiveJiraOrgForKey returns the organisation an active lifetime for
+// issueKey is already recorded against.
+//
+// It exists so a question about which site holds an issue is asked once:
+// the first delivery for that key settled it, and the answer has been on
+// the case ever since. ok is false when no lifetime exists or the one
+// that does names no organisation - both of which leave the caller to
+// resolve the organisation the way it would have anyway.
+func (s *Store) ActiveJiraOrgForKey(ctx context.Context, issueKey string) (string, bool, error) {
+	key := strings.ToUpper(strings.TrimSpace(issueKey))
+	if key == "" {
+		return "", false, nil
+	}
+	lifetime, err := getActiveJiraLifetime(ctx, s.db.Reader(), "jira:"+key, "")
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	org := strings.TrimSpace(lifetime.SourceTenant)
+	return org, org != "", nil
 }
 
 func getLifetimeByID(ctx context.Context, q rowQuerier, id string) (*DeliveryLifetime, error) {

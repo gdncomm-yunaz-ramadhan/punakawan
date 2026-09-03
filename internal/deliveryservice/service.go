@@ -50,7 +50,12 @@ type Service struct {
 // what keeps "gdn" and "gdncomm" from becoming two deliveries for one
 // issue, while still letting two genuinely different sites hold the same
 // issue key.
-type JiraOrgResolver func(org string) (string, error)
+//
+// It is given the issue key as well, so a host with several organisations
+// can answer "the default one, which can actually see this issue" rather
+// than "the default one" - and return a decision to put to a human when
+// it cannot. A resolver that only canonicalizes names ignores the key.
+type JiraOrgResolver func(ctx context.Context, org, issueKey string) (string, *protocol.NeedUserInput, error)
 
 // WithJiraOrgResolver wires the organisation resolution StartOrResolve
 // applies to a Jira source before anything is written.
@@ -106,7 +111,17 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 	}
 	source := *req.Source
 	if source.Kind == SourceJira && s.orgs != nil {
-		org, err := s.orgs(source.Tenant)
+		if strings.TrimSpace(source.Tenant) == "" {
+			// An issue that already has a lifetime already answered this
+			// question; asking a second time would ask the same person
+			// twice and risk a second delivery for one issue.
+			if remembered, ok, err := s.deliveries.ActiveJiraOrgForKey(ctx, source.Key); err != nil {
+				return StartResult{}, nil, err
+			} else if ok {
+				source.Tenant = remembered
+			}
+		}
+		org, needsInput, err := s.orgs(ctx, source.Tenant, source.Key)
 		if err != nil {
 			// A tenant this host holds no credentials for is the caller's
 			// to correct, not a server fault: answering with the question
@@ -117,6 +132,9 @@ func (s *Service) StartOrResolve(ctx context.Context, req StartRequest) (StartRe
 				Question:      err.Error(),
 				MissingFields: []string{"source.tenant"},
 			}, nil
+		}
+		if needsInput != nil {
+			return StartResult{}, needsInput, nil
 		}
 		source.Tenant = org
 	}

@@ -108,7 +108,7 @@ func createDeliveryRun(ctx context.Context, a *app.App, def workflowdef.Definiti
 		if err != nil {
 			return "", err
 		}
-		result, needsInput, err := deliveryservice.New(store, plans, deliveryservice.WithTelemetryStore(ts), deliveryservice.WithAgentRegistry(agentReg), jiraOrgResolver()).StartOrResolve(ctx, deliveryservice.StartRequest{
+		result, needsInput, err := deliveryservice.New(store, plans, deliveryservice.WithTelemetryStore(ts), deliveryservice.WithAgentRegistry(agentReg), jiraOrgResolver(a)).StartOrResolve(ctx, deliveryservice.StartRequest{
 			IdempotencyKey:       delivery.NewID(),
 			Source:               source,
 			WorkflowDefinitionID: def.ID,

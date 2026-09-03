@@ -8,6 +8,7 @@ import (
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/plan"
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 func newService(t *testing.T) *Service {
@@ -109,5 +110,79 @@ func TestAdhocStartAlwaysCreatesNewLifetime(t *testing.T) {
 	b := mustStart(t, svc, adhocRequest("same prompt", "session-b"))
 	if a.Lifetime.ID == b.Lifetime.ID {
 		t.Fatalf("Lifetime.ID = %q, want a different lifetime for each ad-hoc start", b.Lifetime.ID)
+	}
+}
+
+// The whole point of resolving the organisation before identity: a
+// question must leave nothing behind. Hydration used to notice the wrong
+// site two steps later, by which time the delivery already existed and
+// its 404 was recorded as a skipped step rather than a wrong site.
+func TestStartOrResolveWritesNothingWhenTheOrganisationIsStillAQuestion(t *testing.T) {
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := delivery.NewStore(db)
+
+	question := &protocol.NeedUserInput{
+		Kind:     protocol.NeedUserInputKindDecisionRequired,
+		Question: "Which Jira organisation holds PAY-1?",
+		Options:  []protocol.NeedUserInputOptionsElem{{Id: "acme", Label: "acme", Impact: "starts there"}},
+	}
+	svc := New(store, plan.NewStore(db), WithJiraOrgResolver(
+		func(context.Context, string, string) (string, *protocol.NeedUserInput, error) {
+			return "", question, nil
+		},
+	))
+
+	result, needsInput, err := svc.StartOrResolve(context.Background(), jiraRequest("", "PAY-1", "asker"))
+	if err != nil {
+		t.Fatalf("StartOrResolve: %v", err)
+	}
+	if needsInput == nil || len(needsInput.Options) != 1 {
+		t.Fatalf("needsInput = %+v, want the resolver's question", needsInput)
+	}
+	if result.Execution.OrchestrationID != "" {
+		t.Fatalf("result = %+v, want nothing started", result)
+	}
+
+	var cases int
+	if err := db.Reader().QueryRowContext(context.Background(), `SELECT COUNT(1) FROM delivery_cases`).Scan(&cases); err != nil {
+		t.Fatalf("count delivery_cases: %v", err)
+	}
+	if cases != 0 {
+		t.Fatalf("delivery_cases = %d rows, want none written for an unanswered question", cases)
+	}
+}
+
+// Once an issue has a lifetime it has already answered which site holds
+// it; asking again risks a second delivery for one issue.
+func TestStartOrResolveReusesTheOrganisationAnActiveLifetimeAlreadyNames(t *testing.T) {
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := delivery.NewStore(db)
+
+	asked := 0
+	resolver := WithJiraOrgResolver(func(_ context.Context, named, _ string) (string, *protocol.NeedUserInput, error) {
+		if named == "" {
+			asked++
+			return "acme", nil, nil
+		}
+		return named, nil, nil
+	})
+	svc := New(store, plan.NewStore(db), resolver)
+
+	if _, needsInput, err := svc.StartOrResolve(context.Background(), jiraRequest("", "PAY-1", "first")); err != nil || needsInput != nil {
+		t.Fatalf("first start: needsInput=%v err=%v", needsInput, err)
+	}
+	if _, needsInput, err := svc.StartOrResolve(context.Background(), jiraRequest("", "PAY-1", "second")); err != nil || needsInput != nil {
+		t.Fatalf("second start: needsInput=%v err=%v", needsInput, err)
+	}
+	if asked != 1 {
+		t.Fatalf("resolver saw a blank organisation %d times, want once - the second start reads what the first recorded", asked)
 	}
 }
