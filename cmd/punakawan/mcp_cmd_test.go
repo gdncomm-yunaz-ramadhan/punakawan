@@ -20,13 +20,13 @@ func TestLoadAppOptionalSucceedsOutsideAnyProject(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(prevDir) }()
 
-	a, err := loadAppOptional()
+	a, err := loadApp()
 	if err != nil {
-		t.Fatalf("loadAppOptional: %v", err)
+		t.Fatalf("loadApp: %v", err)
 	}
 	defer a.Close()
 
-	if a.Workspace == nil || !a.Workspace.Ephemeral {
-		t.Fatalf("expected an ephemeral workspace outside any project, got %+v", a.Workspace)
+	if a.Workspace == nil || !a.Workspace.Global {
+		t.Fatalf("expected the global workspace outside any project, got %+v", a.Workspace)
 	}
 }

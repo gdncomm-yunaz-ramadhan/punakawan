@@ -90,8 +90,15 @@ func newPanelCmd() *cobra.Command {
 			// detects .punakawan/workspace.yaml." Re-running `panel` in
 			// the same workspace is idempotent (Register updates
 			// last_seen_at rather than erroring).
-			if _, err := reg.Register(a.Workspace.ID, a.Workspace.Root, a.Workspace.Name, time.Now().UTC()); err != nil {
-				return fmt.Errorf("panel: register workspace: %w", err)
+			//
+			// Started from a directory that is not a project - which is
+			// now allowed, and is what running the panel from anywhere
+			// means - there is nothing to register: the panel serves the
+			// projects already in the registry and pins none of them.
+			if !a.Workspace.Global {
+				if _, err := reg.Register(a.Workspace.ID, a.Workspace.Root, a.Workspace.Name, time.Now().UTC()); err != nil {
+					return fmt.Errorf("panel: register workspace: %w", err)
+				}
 			}
 
 			// The daemon is optional for the panel as a whole - only the

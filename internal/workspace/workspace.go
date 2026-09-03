@@ -3,7 +3,6 @@
 package workspace
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,11 +89,13 @@ type Workspace struct {
 	// Root is the directory containing .punakawan/. Not part of the YAML.
 	Root string `yaml:"-"`
 
-	// Ephemeral marks a workspace DiscoverOrEphemeral fabricated because no
-	// real project was found - Root is a throwaway temp directory, not a
-	// checkout, and Repositories is deliberately empty (there is no
-	// repository to claim one exists). Not part of the YAML.
-	Ephemeral bool `yaml:"-"`
+	// Global marks the workspace Discover returns when there is no project
+	// above the directory it was asked about: Root is this machine's data
+	// directory, and Repositories is deliberately empty, because there is
+	// no checkout to claim one exists. Punakawan is a machine-wide control
+	// plane, so running it from a directory that happens not to be a
+	// repository is ordinary rather than an error. Not part of the YAML.
+	Global bool `yaml:"-"`
 }
 
 // Discover walks upward from startDir looking for .punakawan/workspace.yaml,
@@ -103,8 +104,9 @@ type Workspace struct {
 // knowledge/tasks/policy/adapter overrides) - if none is found, Discover
 // falls back to an implicit single-repository workspace rooted at the
 // nearest .git, so punakawan can attach to any git-tracked project without
-// per-project scaffolding. An error is returned only if neither a
-// workspace.yaml nor a .git directory is found above startDir.
+// per-project scaffolding. Above neither, it returns the Global workspace:
+// a machine-wide control plane has to be usable from a directory that is
+// not a project, and the panel, doctor and the MCP server all are.
 func Discover(startDir string) (*Workspace, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
@@ -126,53 +128,30 @@ func Discover(startDir string) (*Workspace, error) {
 
 	gitRoot, err := findGitRoot(dir)
 	if err != nil {
-		return nil, fmt.Errorf("%w above %s", ErrNotFound, startDir)
+		return GlobalWorkspace()
 	}
 	return implicitWorkspace(gitRoot), nil
 }
 
-// ErrNotFound is Discover's error when neither a workspace.yaml nor a .git
-// directory is found above startDir. DiscoverOrEphemeral matches against it
-// to know when to fall back rather than fail.
-var ErrNotFound = errors.New("workspace: no workspace.yaml or git repository found")
-
-// DiscoverOrEphemeral is Discover, except that finding no project at all is
-// not an error: it falls back to a fresh, throwaway workspace rooted at a
-// new temp directory instead. This is for entrypoints that must be able to
-// start with no project in scope at all - the daemon and the MCP server
-// (punakawan mcp serve), whose whole premise is one project-independent
-// process a client attaches to before naming any project - as opposed to
-// every other CLI command, which is inherently run against a specific
-// project checkout and should keep failing fast via Discover when there
-// isn't one. The returned Workspace's Root is real and writable (so every
-// existing Load side effect - policy defaults, workflow/prreview/
-// contextrequest store creation - behaves exactly as it does for a real
-// project, just scoped to a directory nothing else will ever read), but it
-// is not a real project: category-c tools that need an actual git
-// repository there (worktree/branch/PR operations) fail naturally and
-// clearly, the same way they would against any empty directory, rather than
-// through special-cased nil checks. The caller owns cleaning it up (see
-// App.Close).
-func DiscoverOrEphemeral(startDir string) (*Workspace, error) {
-	ws, err := Discover(startDir)
-	if err == nil {
-		return ws, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
+// GlobalWorkspace is the workspace for "no project in scope" - rooted at
+// this machine's data directory, where everything punakawan owns already
+// lives.
+//
+// It replaces a fabricated temp directory that existed only so the stores
+// opened at load time had somewhere to write, and had to be deleted again
+// on close - which is what made a workflow saved with no project in scope
+// disappear. Nothing is fabricated now, so nothing has to be cleaned up.
+func GlobalWorkspace() (*Workspace, error) {
+	root, err := storage.DataDir()
+	if err != nil {
 		return nil, err
 	}
-
-	root, mkErr := os.MkdirTemp("", "punakawan-noproject-")
-	if mkErr != nil {
-		return nil, fmt.Errorf("workspace: create ephemeral root: %w", mkErr)
-	}
-	id := filepath.Base(root)
 	return &Workspace{
-		Version:   SupportedVersion,
-		ID:        id,
-		Name:      id,
-		Root:      root,
-		Ephemeral: true,
+		Version: SupportedVersion,
+		ID:      "global",
+		Name:    "No project in scope",
+		Root:    root,
+		Global:  true,
 	}, nil
 }
 
@@ -256,17 +235,12 @@ func (w *Workspace) RepositoryPath(id string) (string, error) {
 }
 
 // WorkflowRoot returns the directory workflow definitions and run state
-// should be persisted under. For a real project it is the workspace root,
-// same as before. For an ephemeral workspace (DiscoverOrEphemeral found no
-// real project, so Root is a throwaway directory App.Close removes), it is
-// instead the machine-wide data directory: a workflow saved with no
-// project in scope must survive that ephemeral root being deleted, rather
-// than being silently wiped the moment the caller closes.
+// should be persisted under. It is the workspace root - which for the
+// global workspace is already the machine-wide data directory, so a
+// workflow saved with no project in scope has a durable home rather than
+// a temporary one.
 func (w *Workspace) WorkflowRoot() (string, error) {
-	if !w.Ephemeral {
-		return w.Root, nil
-	}
-	return storage.DataDir()
+	return w.Root, nil
 }
 
 // PolicyPath returns the absolute path to the workspace's policy file,

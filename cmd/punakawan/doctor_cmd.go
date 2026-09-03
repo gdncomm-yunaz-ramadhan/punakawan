@@ -185,7 +185,7 @@ func runDoctor(ctx context.Context) doctorReport {
 	report.Daemon = checkDaemon(ctx)
 	report.PanelAssets = checkPanelAssets()
 
-	ws, wsErr := workspace.DiscoverOrEphemeral(currentDirOrEmpty())
+	ws, wsErr := workspace.Discover(currentDirOrEmpty())
 	if wsErr != nil {
 		detail := fmt.Sprintf("resolve workspace: %v", wsErr)
 		report.Adapters["atlassian"] = doctorAdapterReport{Entrypoint: detail, Handshake: detail, Credentials: detail, Connectivity: detail}
@@ -193,11 +193,6 @@ func runDoctor(ctx context.Context) doctorReport {
 		report.WorkflowStorage = doctorOK{OK: false, Detail: detail}
 		report.JiraWriteBack = doctorOK{OK: false, Detail: detail}
 	} else {
-		defer func() {
-			if ws.Ephemeral {
-				os.RemoveAll(ws.Root)
-			}
-		}()
 		report.WorkflowStorage = checkWorkflowStorage(ws)
 		report.JiraWriteBack = checkJiraWriteBack(ws)
 
@@ -230,6 +225,12 @@ func runDoctor(ctx context.Context) doctorReport {
 // nothing anywhere says why. Naming the file, and the command that writes
 // it, is the entire fix.
 func checkJiraWriteBack(ws *workspace.Workspace) doctorOK {
+	// The config says how one project's issues are written back to, so
+	// there is nothing to check - and nowhere to run setup - when doctor
+	// was run from a directory that is not a project.
+	if ws.Global {
+		return doctorOK{OK: true, Detail: "no project in scope; run doctor inside a project to check its Jira write-back"}
+	}
 	path := ws.JiraWorkflowPath()
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {

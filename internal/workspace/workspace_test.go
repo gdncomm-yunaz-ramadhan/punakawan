@@ -32,39 +32,36 @@ func TestDiscoverFromNestedDir(t *testing.T) {
 	}
 }
 
-func TestDiscoverNotFound(t *testing.T) {
-	if _, err := Discover(t.TempDir()); err == nil {
-		t.Fatal("expected error when neither workspace.yaml nor a git repository is present")
-	}
-}
+// TestDiscoverOutsideAProjectIsGlobal: a directory that is neither a
+// workspace nor a repository used to be an error, which is what stopped
+// the panel, doctor and every other command from running anywhere but
+// inside a checkout. It now resolves to the machine's own data directory.
+func TestDiscoverOutsideAProjectIsGlobal(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("PUNAKAWAN_DATA_DIR", dataDir)
 
-func TestDiscoverOrEphemeralFallsBackWhenNothingFound(t *testing.T) {
-	ws, err := DiscoverOrEphemeral(t.TempDir())
+	ws, err := Discover(t.TempDir())
 	if err != nil {
-		t.Fatalf("DiscoverOrEphemeral: %v", err)
+		t.Fatalf("Discover: %v", err)
 	}
-	if !ws.Ephemeral {
-		t.Fatal("expected Ephemeral=true when no project was found")
+	if !ws.Global {
+		t.Fatal("expected Global=true when no project was found")
 	}
-	if ws.Root == "" {
-		t.Fatal("expected a real, non-empty ephemeral root")
-	}
-	if info, err := os.Stat(ws.Root); err != nil || !info.IsDir() {
-		t.Fatalf("expected ws.Root to be a real, existing directory: %v", err)
+	if ws.Root != dataDir {
+		t.Fatalf("Root = %q, want the machine data dir %q", ws.Root, dataDir)
 	}
 	if len(ws.Repositories) != 0 {
 		t.Fatalf("expected no fabricated repositories, got %v", ws.Repositories)
 	}
-	os.RemoveAll(ws.Root)
 }
 
-func TestDiscoverOrEphemeralPrefersARealProject(t *testing.T) {
-	ws, err := DiscoverOrEphemeral(fixtureRoot)
+func TestDiscoverPrefersARealProjectOverTheGlobalWorkspace(t *testing.T) {
+	ws, err := Discover(fixtureRoot)
 	if err != nil {
-		t.Fatalf("DiscoverOrEphemeral: %v", err)
+		t.Fatalf("Discover: %v", err)
 	}
-	if ws.Ephemeral {
-		t.Fatal("expected a real project to win over the ephemeral fallback")
+	if ws.Global {
+		t.Fatal("expected a real project to win over the global workspace")
 	}
 	if ws.ID != "fixture-workspace" {
 		t.Fatalf("unexpected id: %q", ws.ID)
@@ -232,22 +229,24 @@ func TestWorkflowRootIsWorkspaceRootForARealProject(t *testing.T) {
 	}
 }
 
-func TestWorkflowRootIsDataDirForAnEphemeralWorkspace(t *testing.T) {
+// A workflow saved with no project in scope has to survive the session
+// that saved it. It used to be written under a temp directory the process
+// deleted on close.
+func TestWorkflowRootIsDataDirWithNoProjectInScope(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("PUNAKAWAN_DATA_DIR", dataDir)
 
-	ws, err := DiscoverOrEphemeral(t.TempDir())
+	ws, err := Discover(t.TempDir())
 	if err != nil {
-		t.Fatalf("DiscoverOrEphemeral: %v", err)
+		t.Fatalf("Discover: %v", err)
 	}
-	defer os.RemoveAll(ws.Root)
 
 	root, err := ws.WorkflowRoot()
 	if err != nil {
 		t.Fatalf("WorkflowRoot: %v", err)
 	}
 	if root != dataDir {
-		t.Fatalf("WorkflowRoot = %q, want the process-wide data dir %q (not the deleted-on-close ephemeral root %q)", root, dataDir, ws.Root)
+		t.Fatalf("WorkflowRoot = %q, want the process-wide data dir %q", root, dataDir)
 	}
 }
 

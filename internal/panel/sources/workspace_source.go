@@ -80,6 +80,13 @@ func (w *WorkspaceSource) List(ctx context.Context) ([]contract.WorkspaceSummary
 		return nil, fmt.Errorf("sources: list workspaces: %w", err)
 	}
 	if len(entries) == 0 {
+		// Outside any project there is nothing to fall back to: the
+		// workspace this panel loaded is the machine's data directory,
+		// and describing it would list punakawan's own state as a
+		// project.
+		if w.App.Workspace.Global {
+			return nil, nil
+		}
 		detail, err := w.describe(ctx, w.App, nil, true)
 		if err != nil {
 			return nil, err
@@ -133,7 +140,7 @@ func (w *WorkspaceSource) Get(ctx context.Context, workspaceID string) (contract
 		return w.describe(ctx, rt.App, &entry, false)
 	}
 
-	other, err := app.Load(entry.Path)
+	other, err := app.LoadProject(entry.Path)
 	if err != nil {
 		return unavailableDetail(entry, err), nil
 	}
@@ -165,7 +172,7 @@ func (w *WorkspaceSource) summaryFor(ctx context.Context, entry protocol.PanelWo
 		return detail.WorkspaceSummary
 	}
 
-	other, err := app.Load(entry.Path)
+	other, err := app.LoadProject(entry.Path)
 	if err != nil {
 		return unavailableDetail(entry, err).WorkspaceSummary
 	}

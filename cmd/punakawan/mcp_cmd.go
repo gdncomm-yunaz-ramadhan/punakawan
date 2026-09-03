@@ -27,7 +27,7 @@ func newMCPServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Serve Punakawan's focused project/workflow/plan/delivery tools over stdio",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := loadAppOptional()
+			a, err := loadApp()
 			if err != nil {
 				return err
 			}
@@ -56,15 +56,14 @@ func normalizeHTTPAddr(addr string) string {
 	return addr
 }
 
-// loadAppOptional is loadApp, except that starting outside any project is
-// not an error - the MCP server is meant to be one project-independent
-// process a client attaches to before naming any project, unlike every
-// other CLI command here, which is inherently scoped to a checkout and
-// should keep failing fast via loadApp.
-func loadAppOptional() (*app.App, error) {
+// loadApp wires up the app against whatever the current directory turns
+// out to be. Starting outside any project is ordinary here: the MCP server
+// is one project-independent process a client attaches to before naming
+// any project.
+func loadApp() (*app.App, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	return app.LoadOptional(cwd)
+	return app.Load(cwd)
 }

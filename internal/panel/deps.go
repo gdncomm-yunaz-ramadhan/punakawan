@@ -54,14 +54,21 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 	// closed by the manager (Phase 3, §10.3). The cap and idle-shutdown window
 	// are the manager's own internal defaults - there is no user-tunable
 	// settings surface for them.
-	runtimeMgr := runtime.NewManager(a.Workspace.ID, a)
+	// A panel started outside any project has no primary: the global
+	// workspace is this machine's data directory, not a project somebody
+	// would expect to see listed, pinned or resolvable by id.
+	primaryID, primaryRoot := a.Workspace.ID, a.Workspace.Root
+	if a.Workspace.Global {
+		primaryID, primaryRoot = "", ""
+	}
+	runtimeMgr := runtime.NewManager(primaryID, a)
 
 	// Front the deep per-workspace inspector with a stale-while-revalidate
 	// snapshot cache so /workspaces, /overview, and the Tier-2 reconciler
 	// serve cached counts instead of opening Dolt / running bd + git on every
 	// request (Phase 1, §10.2). ttl=0 keeps snapshot.DefaultTTL.
 	wsSource := &sources.WorkspaceSource{App: a, Registry: reg, Runtime: runtimeMgr}
-	workspaceReader := sources.NewCachedWorkspaceReader(wsSource, reg, a.Workspace.ID, 0)
+	workspaceReader := sources.NewCachedWorkspaceReader(wsSource, reg, primaryID, 0)
 	// The project source composes the (cached) workspace reader for its counts
 	// and the registry for id->root resolution; it serves both the metadata
 	// (ProjectReader) and role-config (RolesReader) surfaces, which share the
@@ -69,8 +76,8 @@ func NewReaders(a *app.App, reg *registry.Store) Readers {
 	projectSource := &ProjectSource{
 		Workspace:   workspaceReader,
 		Registry:    reg,
-		PrimaryID:   a.Workspace.ID,
-		PrimaryRoot: a.Workspace.Root,
+		PrimaryID:   primaryID,
+		PrimaryRoot: primaryRoot,
 		Runtime:     runtimeMgr,
 	}
 	return Readers{

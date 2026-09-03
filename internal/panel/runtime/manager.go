@@ -202,7 +202,7 @@ func NewManager(primaryID string, primaryApp *app.App, opts ...Option) *ProjectR
 		primaryID:   primaryID,
 		maxActive:   defaultMaxActive,
 		idleTimeout: defaultIdleTimeout,
-		loader:      func(path string) (*app.App, error) { return app.Load(path) },
+		loader:      func(path string) (*app.App, error) { return app.LoadProject(path) },
 		closer:      func(a *app.App) error { return a.Close() },
 		now:         time.Now,
 		newTimer: func(d time.Duration, f func()) scheduledTimer {

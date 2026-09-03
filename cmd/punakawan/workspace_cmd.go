@@ -38,7 +38,7 @@ func newWorkspaceRegisterCmd() *cobra.Command {
 			if len(args) == 1 {
 				path = args[0]
 			}
-			a, err := app.Load(path)
+			a, err := app.LoadProject(path)
 			if err != nil {
 				return err
 			}
@@ -150,7 +150,7 @@ func newWorkspaceShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			a, err := app.Load(cwd)
+			a, err := app.LoadProject(cwd)
 			if err != nil {
 				return err
 			}

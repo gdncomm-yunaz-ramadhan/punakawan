@@ -65,12 +65,14 @@ clarification_status: ""
 // does not.
 func reportJiraWorkflowSetup(cmd *cobra.Command) {
 	errOut := cmd.ErrOrStderr()
-	ws, err := workspace.DiscoverOrEphemeral(currentDirOrEmpty())
+	ws, err := workspace.Discover(currentDirOrEmpty())
 	if err != nil {
 		fmt.Fprintf(errOut, "setup: skip jira workflow config: %v\n", err)
 		return
 	}
-	if ws.Ephemeral {
+	// The config describes how one project's issues are written back to,
+	// so there is nothing to write when setup is run outside a project.
+	if ws.Global {
 		return
 	}
 

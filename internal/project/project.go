@@ -124,7 +124,10 @@ func Load(root string) (*Project, error) {
 func synthesize(root string) *Project {
 	id := filepath.Base(root)
 	name := id
-	if ws, err := workspace.Discover(root); err == nil {
+	// A directory that is not a project resolves to the global workspace,
+	// whose id names punakawan's own state rather than anything here, so
+	// the directory's own name stays the better answer.
+	if ws, err := workspace.Discover(root); err == nil && !ws.Global {
 		if ws.ID != "" {
 			id = ws.ID
 		}
