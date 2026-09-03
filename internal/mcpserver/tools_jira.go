@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ygrip/punakawan/internal/app"
@@ -23,6 +25,14 @@ type AssessJiraDeliveryInput struct {
 type AssessJiraDeliveryOutput struct {
 	Assessment delivery.JiraAssessment `json:"assessment"`
 	View       delivery.DeliveryView   `json:"view"`
+
+	// SubtaskBreakdown and SubtaskBreakdownNote are a best-effort,
+	// never-persisted read of the parent issue's subtasks with story
+	// points/estimated hours where resolvable - see
+	// jirahooks.SuggestSubtaskBreakdown. Absent (not fabricated) when
+	// nothing could be resolved.
+	SubtaskBreakdown     []jirahooks.SubtaskEstimate `json:"subtask_breakdown,omitempty"`
+	SubtaskBreakdownNote string                      `json:"subtask_breakdown_note,omitempty"`
 }
 
 func assessJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, AssessJiraDeliveryInput) (*mcp.CallToolResult, AssessJiraDeliveryOutput, error) {
@@ -62,8 +72,52 @@ func assessJiraDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRe
 		if err != nil {
 			return nil, AssessJiraDeliveryOutput{}, err
 		}
-		return nil, AssessJiraDeliveryOutput{Assessment: *assessment, View: *view}, nil
+		out := AssessJiraDeliveryOutput{Assessment: *assessment, View: *view}
+		out.SubtaskBreakdown, out.SubtaskBreakdownNote = suggestSubtaskBreakdown(ctx, a, store, execution.ID, key, view)
+		return nil, out, nil
 	}
+}
+
+// suggestSubtaskBreakdown is a best-effort, additive-only read of the
+// delivery's subtask story points/hours - it must never fail or change
+// assess_jira_delivery's existing Assessment/View return values, so every
+// failure here degrades to an empty result rather than propagating.
+func suggestSubtaskBreakdown(ctx context.Context, a *app.App, store *delivery.Store, executionID, idempotencyKey string, view *delivery.DeliveryView) ([]jirahooks.SubtaskEstimate, string) {
+	outboxStore, err := a.OpenOutbox()
+	if err != nil {
+		return nil, ""
+	}
+	cfg, err := a.JiraWorkflow()
+	if err != nil {
+		cfg = nil
+	}
+	lifecycle := jirahooks.NewLifecycle(store, a.AdapterRegistry, outboxStore)
+	breakdown, note := lifecycle.SuggestSubtaskBreakdown(ctx, executionID, idempotencyKey+":breakdown", cfg)
+	if len(breakdown) == 0 || view.Lifecycle == nil {
+		return breakdown, note
+	}
+
+	covered := map[string]bool{}
+	for _, item := range view.Lifecycle.WorkItems {
+		covered[strings.ToUpper(item.JiraIssueKey)] = true
+	}
+	var uncovered []string
+	for _, estimate := range breakdown {
+		key := strings.ToUpper(strings.TrimSpace(estimate.IssueKey))
+		if key == "" || covered[key] {
+			continue
+		}
+		uncovered = append(uncovered, estimate.IssueKey)
+	}
+	if len(uncovered) == 0 {
+		return breakdown, note
+	}
+	sort.Strings(uncovered)
+	uncoveredNote := fmt.Sprintf("%d subtask(s) not yet reflected as start_delivery tasks: %s", len(uncovered), strings.Join(uncovered, ", "))
+	if note == "" {
+		return breakdown, uncoveredNote
+	}
+	return breakdown, note + "; " + uncoveredNote
 }
 
 type MapDeliveryWorkItemInput struct {
