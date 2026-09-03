@@ -204,3 +204,52 @@ func TestResolveOrgIDPicksTheDefaultAndRefusesAnUnknownName(t *testing.T) {
 		}
 	}
 }
+
+// The live case this exists for: an organisation named after the site it
+// was configured from ("gdncomm") holding a credential whose account is a
+// different name ("gdncomm-yunaz-ramadhan"). Every repository under that
+// account resolved to an organisation nothing was configured for.
+func TestMatchOwnerFallsBackFromIdToAccountToDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.yaml")
+	body := "version: " + SupportedVersion + "\norgs:\n" +
+		"  - id: acme\n    provider: github\n    base_url: https://github.com\n    account: acme-bot\n    token: a\n    default: true\n" +
+		"  - id: other\n    provider: github\n    base_url: https://github.com\n    account: other-bot\n    token: b\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write credentials: %v", err)
+	}
+	store := Open(path)
+
+	for _, tc := range []struct {
+		owner string
+		want  string
+	}{
+		{"other", "other"},       // exact id
+		{"Other-Bot", "other"},   // account, case-insensitively
+		{"someone-else", "acme"}, // nothing matches, so the default answers
+		{"", "acme"},             // named nobody at all
+	} {
+		org, ok, err := store.MatchOwner(ProviderGitHub, tc.owner)
+		if err != nil || !ok {
+			t.Fatalf("MatchOwner(%q) = %v, ok=%v, err=%v", tc.owner, org.ID, ok, err)
+		}
+		if org.ID != tc.want {
+			t.Errorf("MatchOwner(%q) = %q, want %q", tc.owner, org.ID, tc.want)
+		}
+	}
+
+	// Candidates puts the default first so a host with several
+	// organisations tries the same one a host with one would.
+	orgs, err := store.Candidates(ProviderGitHub)
+	if err != nil {
+		t.Fatalf("Candidates: %v", err)
+	}
+	if len(orgs) != 2 || orgs[0].ID != "acme" {
+		t.Fatalf("Candidates = %v, want the default first", orgIDs(orgs))
+	}
+
+	// Nothing configured is not a match, and must never be reported as one.
+	empty := Open(filepath.Join(t.TempDir(), "credentials.yaml"))
+	if _, ok, err := empty.MatchOwner(ProviderGitHub, "acme"); err != nil || ok {
+		t.Fatalf("MatchOwner on an empty store = ok:%v err:%v, want no match", ok, err)
+	}
+}

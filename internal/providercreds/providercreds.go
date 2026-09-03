@@ -395,6 +395,75 @@ func (s *Store) MarkVerified(provider Provider, id string, at time.Time) error {
 	return fmt.Errorf("%w: %s organisation %q", ErrNotFound, provider, id)
 }
 
+// Candidates lists the organisations worth trying for a provider, the
+// default first and the rest in configured order.
+//
+// Resolving one organisation is Get's job; this is for the callers that
+// have to look somewhere else when the first answer turns out to be
+// wrong - an issue key that is not at the default site, a repository that
+// is not under the default owner. Ordering the default first is what
+// keeps a host that has several organisations behaving exactly like a
+// host that has one for as long as the default is right.
+func (s *Store) Candidates(provider Provider) ([]Org, error) {
+	orgs, err := s.ListFor(provider)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Org, 0, len(orgs))
+	for _, org := range orgs {
+		if org.Default {
+			out = append(out, org)
+		}
+	}
+	for _, org := range orgs {
+		if !org.Default {
+			out = append(out, org)
+		}
+	}
+	return out, nil
+}
+
+// MatchOwner resolves a provider-side owner - a GitHub repository owner,
+// a Jira site name - to the one organisation whose credentials speak for
+// it: an exact organisation id, else the organisation whose Account is
+// that owner, else the provider's default.
+//
+// The Account step is what a personal or sub-organisation repository
+// needs. An organisation is named after the site it was configured from,
+// while the owner is whatever account the token belongs to, and the two
+// are routinely different; matching only on the id leaves a repository
+// the credential can see resolving to an organisation nothing is
+// configured for. ok is false when nothing matches and no default exists,
+// which is the caller's cue to ask rather than guess.
+func (s *Store) MatchOwner(provider Provider, owner string) (Org, bool, error) {
+	orgs, err := s.ListFor(provider)
+	if err != nil {
+		return Org{}, false, err
+	}
+	wanted := NormalizeOrgID(owner)
+	if wanted != "" {
+		for _, org := range orgs {
+			if org.ID == wanted {
+				return org, true, nil
+			}
+		}
+		for _, org := range orgs {
+			if NormalizeOrgID(org.Account) == wanted {
+				return org, true, nil
+			}
+		}
+	}
+	for _, org := range orgs {
+		if org.Default {
+			return org, true, nil
+		}
+	}
+	if len(orgs) == 1 {
+		return orgs[0], true, nil
+	}
+	return Org{}, false, nil
+}
+
 func orgIDs(orgs []Org) []string {
 	out := make([]string, 0, len(orgs))
 	for _, org := range orgs {
