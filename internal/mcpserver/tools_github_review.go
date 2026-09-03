@@ -10,6 +10,7 @@ import (
 	"github.com/ygrip/punakawan/internal/app"
 	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/githubintegration"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 type HydrateGitHubPullRequestInput struct {
@@ -18,13 +19,21 @@ type HydrateGitHubPullRequestInput struct {
 }
 
 type HydrateGitHubPullRequestOutput struct {
-	Context map[string]any `json:"context"`
+	// Status is "hydrated", or "needs_input" when the repository named
+	// could not be settled without a decision only a human can make.
+	Status     string                  `json:"status,omitempty"`
+	NeedsInput *protocol.NeedUserInput `json:"needs_input,omitempty"`
+	// Repository is the exact owner/repo this call read, which is not
+	// always the string the caller passed: a bare name or an omitted one
+	// is resolved here.
+	Repository string         `json:"repository,omitempty"`
+	Context    map[string]any `json:"context,omitempty"`
 }
 
 func hydrateGitHubPullRequestHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, HydrateGitHubPullRequestInput) (*mcp.CallToolResult, HydrateGitHubPullRequestOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in HydrateGitHubPullRequestInput) (*mcp.CallToolResult, HydrateGitHubPullRequestOutput, error) {
-		if in.Repository == "" || in.PullRequestNumber <= 0 {
-			return nil, HydrateGitHubPullRequestOutput{}, fmt.Errorf("mcpserver: hydrate GitHub pull request requires repository and positive pull_request_number")
+		if in.PullRequestNumber <= 0 {
+			return nil, HydrateGitHubPullRequestOutput{}, fmt.Errorf("mcpserver: hydrate GitHub pull request requires a positive pull_request_number")
 		}
 		outboxStore, err := a.OpenOutbox()
 		if err != nil {
@@ -34,13 +43,20 @@ func hydrateGitHubPullRequestHandler(a *app.App) func(context.Context, *mcp.Call
 		if err != nil {
 			return nil, HydrateGitHubPullRequestOutput{}, err
 		}
+		repository, needsInput, err := resolveGitHubRepository(ctx, a, store, in.Repository)
+		if err != nil {
+			return nil, HydrateGitHubPullRequestOutput{}, err
+		}
+		if needsInput != nil {
+			return nil, HydrateGitHubPullRequestOutput{Status: "needs_input", NeedsInput: needsInput}, nil
+		}
 		svc := githubintegration.NewService(a.AdapterRegistry, outboxStore, gitHubOrgResolver(a, store))
-		runID := fmt.Sprintf("github-pr-%s-%d", in.Repository, in.PullRequestNumber)
-		out, err := svc.HydratePullRequest(ctx, runID, in.Repository, in.PullRequestNumber)
+		runID := fmt.Sprintf("github-pr-%s-%d", repository, in.PullRequestNumber)
+		out, err := svc.HydratePullRequest(ctx, runID, repository, in.PullRequestNumber)
 		if err != nil {
 			return nil, HydrateGitHubPullRequestOutput{}, fmt.Errorf("mcpserver: hydrate GitHub pull request: %w", err)
 		}
-		return nil, HydrateGitHubPullRequestOutput{Context: out}, nil
+		return nil, HydrateGitHubPullRequestOutput{Status: "hydrated", Repository: repository, Context: out}, nil
 	}
 }
 
@@ -56,7 +72,11 @@ type ProposeGitHubPRReviewInput struct {
 }
 
 type ProposeGitHubPRReviewOutput struct {
-	Review delivery.GitHubPRReview `json:"review"`
+	// Status is "proposed", or "needs_input" when the repository could
+	// not be settled without a decision only a human can make.
+	Status     string                   `json:"status,omitempty"`
+	NeedsInput *protocol.NeedUserInput  `json:"needs_input,omitempty"`
+	Review     *delivery.GitHubPRReview `json:"review,omitempty"`
 }
 
 func proposeGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, ProposeGitHubPRReviewInput) (*mcp.CallToolResult, ProposeGitHubPRReviewOutput, error) {
@@ -69,11 +89,22 @@ func proposeGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallToo
 		if key == "" {
 			key = delivery.NewID()
 		}
-		review, err := store.ProposeGitHubPRReview(ctx, key, in.Repository, in.PullRequestNumber, in.HeadSHA, in.Findings, in.Body, in.Verdict, in.DeliveryExecutionID)
+		// Resolving before the proposal is persisted is the point: a
+		// review stored against an unresolvable repository used to be
+		// accepted here and fail only at submit time, by which point the
+		// findings it carries have nowhere to go.
+		repository, needsInput, err := resolveGitHubRepository(ctx, a, store, in.Repository)
+		if err != nil {
+			return nil, ProposeGitHubPRReviewOutput{}, err
+		}
+		if needsInput != nil {
+			return nil, ProposeGitHubPRReviewOutput{Status: "needs_input", NeedsInput: needsInput}, nil
+		}
+		review, err := store.ProposeGitHubPRReview(ctx, key, repository, in.PullRequestNumber, in.HeadSHA, in.Findings, in.Body, in.Verdict, in.DeliveryExecutionID)
 		if err != nil {
 			return nil, ProposeGitHubPRReviewOutput{}, fmt.Errorf("mcpserver: propose GitHub PR review: %w", err)
 		}
-		return nil, ProposeGitHubPRReviewOutput{Review: *review}, nil
+		return nil, ProposeGitHubPRReviewOutput{Status: "proposed", Review: review}, nil
 	}
 }
 
