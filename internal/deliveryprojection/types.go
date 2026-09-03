@@ -105,19 +105,25 @@ type ModelUsage struct {
 
 // SessionUsage is one agent session's share of a delivery's usage.
 type SessionUsage struct {
-	SessionID         string  `json:"session_id"`
-	ExternalSessionID string  `json:"external_session_id,omitempty"`
-	ClientKind        string  `json:"client_kind,omitempty"`
-	Participant       string  `json:"participant,omitempty"`
-	InputTokens       int64   `json:"input_tokens"`
-	OutputTokens      int64   `json:"output_tokens"`
-	CacheWriteTokens  int64   `json:"cache_write_tokens"`
-	CacheReadTokens   int64   `json:"cache_read_tokens"`
-	ToolCalls         int64   `json:"tool_calls"`
-	ElapsedMS         int64   `json:"elapsed_ms"`
-	EstimatedCost     float64 `json:"estimated_cost,omitempty"`
-	Currency          string  `json:"currency,omitempty"`
-	Priced            bool    `json:"priced"`
+	SessionID         string `json:"session_id"`
+	ExternalSessionID string `json:"external_session_id,omitempty"`
+	ClientKind        string `json:"client_kind,omitempty"`
+	Participant       string `json:"participant,omitempty"`
+	// A client session that only ever fired lifecycle hooks has no
+	// delivery_sessions row, so this is the only place it is visible - and
+	// it is exactly the session whose usage the delivery is reporting.
+	Status           string  `json:"status,omitempty"`
+	StartedAt        string  `json:"started_at,omitempty"`
+	StoppedAt        string  `json:"stopped_at,omitempty"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	CacheReadTokens  int64   `json:"cache_read_tokens"`
+	ToolCalls        int64   `json:"tool_calls"`
+	ElapsedMS        int64   `json:"elapsed_ms"`
+	EstimatedCost    float64 `json:"estimated_cost,omitempty"`
+	Currency         string  `json:"currency,omitempty"`
+	Priced           bool    `json:"priced"`
 }
 
 // Usage is a delivery's cumulative, additive-across-sessions agent usage.

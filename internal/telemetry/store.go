@@ -123,6 +123,26 @@ func (s *Store) Begin(ctx context.Context, req BeginRequest) (AgentSession, erro
 		existing, err := scanSession(tx.QueryRowContext(ctx, `SELECT `+selectSessionColumns+` FROM agent_sessions WHERE client_kind = ? AND external_session_id = ?`, clientKind, externalID))
 		if err == nil {
 			out = *existing
+			// A session's delivery used to be fixed at whatever the first
+			// hook happened to see. A SessionStart that fires before the
+			// agent opens its delivery therefore pinned the whole sitting
+			// to the previous one: 6.6M tokens of work were filed against
+			// an already-completed execution while the execution that did
+			// the work reported nothing. The caller reads the worktree
+			// marker on every hook, so it always knows the delivery the
+			// work is actually going to - follow it.
+			//
+			// Only while the session is still open. A closed session is
+			// history: whatever it spent, it spent on the delivery it was
+			// attached to at the time.
+			if existing.Status == "active" && existing.OrchestrationID != deliveryID {
+				if _, err := tx.ExecContext(ctx, `UPDATE agent_sessions SET orchestration_id = ?, execution_id = ? WHERE id = ?`,
+					deliveryID, executionID, existing.ID); err != nil {
+					return err
+				}
+				out.OrchestrationID = deliveryID
+				out.ExecutionID = executionID
+			}
 			return nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -565,6 +585,7 @@ func (s *Store) GetSnapshot(ctx context.Context, sessionID, sourceID string) (*S
 const usageJoinSQL = `
 	SELECT sess.id, COALESCE(sess.external_session_id, ''), COALESCE(sess.client_kind, ''),
 	       COALESCE(sess.participant, ''), sess.telemetry_status,
+	       COALESCE(sess.status, ''), COALESCE(sess.started_at, ''), COALESCE(sess.stopped_at, ''),
 	       COALESCE(snap.input_tokens, 0), COALESCE(snap.output_tokens, 0),
 	       COALESCE(snap.cache_write_tokens, 0), COALESCE(snap.cache_read_tokens, 0),
 	       COALESCE(snap.tool_calls, 0), COALESCE(snap.elapsed_ms, 0),
@@ -580,6 +601,7 @@ const usageJoinSQL = `
 func ScanUsageRow(scan func(dest ...any) error) (UsageRow, error) {
 	var row UsageRow
 	err := scan(&row.SessionID, &row.ExternalSessionID, &row.ClientKind, &row.Participant, &row.TelemetryStatus,
+		&row.Status, &row.StartedAt, &row.StoppedAt,
 		&row.InputTokens, &row.OutputTokens, &row.CacheWriteTokens, &row.CacheReadTokens,
 		&row.ToolCalls, &row.ElapsedMS, &row.ModelUsageJSON, &row.PricingJSON, &row.CostJSON)
 	return row, err

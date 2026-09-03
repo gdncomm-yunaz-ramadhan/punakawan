@@ -52,6 +52,9 @@ type snapshotRow struct {
 	ClientKind        string
 	Participant       string
 	TelemetryStatus   string
+	Status            string
+	StartedAt         string
+	StoppedAt         string
 
 	InputTokens      int64
 	OutputTokens     int64
@@ -213,6 +216,9 @@ func (a *usageAccumulator) foldSession(row snapshotRow, cost float64, currency s
 			ExternalSessionID: row.ExternalSessionID,
 			ClientKind:        row.ClientKind,
 			Participant:       row.Participant,
+			Status:            row.Status,
+			StartedAt:         row.StartedAt,
+			StoppedAt:         row.StoppedAt,
 			Priced:            true,
 		}
 		a.sessions[row.SessionID] = entry

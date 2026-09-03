@@ -324,6 +324,15 @@
               },
               "priced": {
                 "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string"
+              },
+              "stopped_at": {
+                "type": "string"
               }
             }
           }

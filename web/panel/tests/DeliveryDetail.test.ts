@@ -360,6 +360,55 @@ describe("DeliveryDetail", () => {
     expect(within(panel).getByText("openai")).toBeTruthy();
   });
 
+  // A Claude session that only ever fired lifecycle hooks has no
+  // delivery_sessions row, so it used to be invisible here while its
+  // tokens were counted in the delivery's totals.
+  it("lists an agent session that reported usage but never opened a delivery session", async () => {
+    installBackend(
+      detail({
+        sessions: [],
+        usage: {
+          input_tokens: 102,
+          output_tokens: 19_260,
+          cache_tokens: 4_502_454,
+          cache_write_tokens: 243_904,
+          cache_read_tokens: 4_258_550,
+          total_tokens: 4_521_816,
+          tool_calls: 25,
+          elapsed_ms: 428_416,
+          estimated_costs: { USD: 1.65 },
+          pricing_complete: true,
+          by_session: [
+            {
+              session_id: "sess-hooks-only",
+              external_session_id: "8d043cc1-6763-436b-96cb-acbee5cdc376",
+              client_kind: "claude-code",
+              status: "closed",
+              started_at: "2026-09-02T23:11:32Z",
+              input_tokens: 102,
+              output_tokens: 19_260,
+              cache_write_tokens: 243_904,
+              cache_read_tokens: 4_258_550,
+              tool_calls: 25,
+              elapsed_ms: 428_416,
+              estimated_cost: 1.65,
+              currency: "USD",
+              priced: true,
+            },
+          ],
+        },
+      } as Partial<DeliveryDetailModel>),
+    );
+
+    render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("tab", { name: "Sessions" });
+    await fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
+    const panel = screen.getByRole("tabpanel", { name: "Sessions" });
+
+    expect(within(panel).getByText("8d043cc1-6763-436b-96cb-acbee5cdc376")).toBeTruthy();
+    expect(within(panel).getByText("4,521,816")).toBeTruthy();
+  });
+
   it("shows an Activity tab with the merged timeline", async () => {
     installBackend(
       detail({

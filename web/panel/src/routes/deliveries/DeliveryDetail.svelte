@@ -472,6 +472,30 @@
             emptyMessage="No sessions recorded."
           />
         </TableCard>
+        <TableCard title="Agent sessions" size="full">
+          <DataTable
+            columns={[
+              { key: "who", label: "Session" },
+              { key: "client", label: "Client" },
+              { key: "status", label: "Status", sortable: true },
+              { key: "started", label: "Started", sortable: true },
+              { key: "tokens", label: "Tokens", align: "right", sortable: true },
+              { key: "cost", label: "Cost", align: "right" },
+            ]}
+            rows={(d.usage.by_session ?? []).map((session) => ({
+              id: session.session_id,
+              who: session.participant || session.external_session_id || session.session_id,
+              client: session.client_kind || "unknown",
+              status: session.status || "unknown",
+              started: session.started_at ? formatDate(session.started_at) : "Not recorded",
+              tokens: formatTokens(
+                session.input_tokens + session.output_tokens + session.cache_write_tokens + session.cache_read_tokens,
+              ),
+              cost: session.priced ? formatMoney(session.estimated_cost ?? 0, session.currency ?? "USD") : "No price",
+            }))}
+            emptyMessage="No agent session has reported usage against this delivery."
+          />
+        </TableCard>
       </BentoGrid>
     </div>
   {:else if activeId === "activity"}

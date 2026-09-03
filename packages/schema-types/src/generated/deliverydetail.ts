@@ -88,6 +88,9 @@ export interface DeliveryDetail {
       estimated_cost?: number;
       currency?: string;
       priced: boolean;
+      status?: string;
+      started_at?: string;
+      stopped_at?: string;
     }[];
   };
   updated_at: string;

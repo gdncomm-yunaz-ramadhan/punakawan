@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"testing"
 )
 
@@ -99,5 +100,61 @@ func TestByModelMarksTheModelThatCouldNotBePriced(t *testing.T) {
 	}
 	if entry.InputTokens != 10 || entry.OutputTokens != 20 {
 		t.Fatalf("entry = %+v, want its tokens counted even though its cost is unknown", entry)
+	}
+}
+
+// The delivery that prompted this ran a session whose SessionStart fired
+// two minutes before the agent opened the execution it then worked on. The
+// session's delivery was fixed at whatever that first hook saw, so 6.6M
+// tokens were filed against an already-completed execution while the one
+// that did the work reported nothing.
+func TestBeginFollowsAnActiveSessionToTheDeliveryItIsNowWorkingOn(t *testing.T) {
+	store := newTelemetryStore(t)
+	first := mustBegin(t, store, BeginRequest{
+		DeliveryID: "orc-1", ExecutionID: "exec-1", ClientKind: "claude-code", ExternalSessionID: "ext-1",
+	})
+	mustSnapshot(t, store, SnapshotRequest{
+		SessionID: first.ID, SourceID: "main", Sequence: 1,
+		ModelUsage: []ModelUsage{{Model: "claude-sonnet-5", InputTokens: 10, OutputTokens: 20}},
+	})
+
+	moved := mustBegin(t, store, BeginRequest{
+		DeliveryID: "orc-2", ExecutionID: "exec-2", ClientKind: "claude-code", ExternalSessionID: "ext-1",
+	})
+	if moved.ID != first.ID {
+		t.Fatalf("session id = %q, want the same session %q resolved again", moved.ID, first.ID)
+	}
+	if moved.OrchestrationID != "orc-2" || moved.ExecutionID != "exec-2" {
+		t.Fatalf("session = %s/%s, want it moved to the delivery it is now working on", moved.OrchestrationID, moved.ExecutionID)
+	}
+
+	// Its usage moves with it - snapshots hang off the session, so the
+	// delivery that did the work is the one that reports the spend.
+	if got := mustTotals(t, store, "orc-2"); got.Counters.InputTokens != 10 {
+		t.Fatalf("orc-2 input tokens = %d, want the session's 10", got.Counters.InputTokens)
+	}
+	if got := mustTotals(t, store, "orc-1"); got.Counters.InputTokens != 0 {
+		t.Fatalf("orc-1 input tokens = %d, want none left behind", got.Counters.InputTokens)
+	}
+}
+
+// A closed session is history: whatever it spent, it spent on the delivery
+// it was attached to at the time.
+func TestBeginLeavesAClosedSessionWhereItIs(t *testing.T) {
+	store := newTelemetryStore(t)
+	session := mustBegin(t, store, BeginRequest{
+		DeliveryID: "orc-1", ExecutionID: "exec-1", ClientKind: "claude-code", ExternalSessionID: "ext-1",
+	})
+	if _, _, err := store.Finalize(context.Background(), FinalizeRequest{
+		SessionID: session.ID, StopID: "stop-1", StopReason: "session_end",
+	}); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+
+	again := mustBegin(t, store, BeginRequest{
+		DeliveryID: "orc-2", ExecutionID: "exec-2", ClientKind: "claude-code", ExternalSessionID: "ext-1",
+	})
+	if again.OrchestrationID != "orc-1" {
+		t.Fatalf("closed session moved to %q, want it left on orc-1", again.OrchestrationID)
 	}
 }
