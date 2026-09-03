@@ -184,6 +184,9 @@ func TestServerInstructionsOnlyNameRealTools(t *testing.T) {
 		"intent_id": true, "next_action": true, "needs_input": true,
 		"telemetry_session_id": true, "acknowledge_gaps": true,
 		"uncovered_requirements": true,
+		// Clarity values, not tools: they are named because an agent has
+		// to pass one of them verbatim.
+		"needs_clarification": true, "clarity_rationale": true,
 	}
 	for _, word := range regexp.MustCompile(`[a-z]+(?:_[a-z]+)+`).FindAllString(serverInstructions, -1) {
 		if notATool[word] || registered.Has(word) {

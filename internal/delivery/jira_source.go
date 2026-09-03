@@ -109,8 +109,17 @@ func (s *Store) CaptureJiraSnapshot(ctx context.Context, idempotencyKey, executi
 	return &out, nil
 }
 
+// AssessJira records one judgement of how clear a Jira source is.
+// Assessments are append-only: a delivery re-assessed after the question
+// was answered keeps the earlier judgement alongside the newer one, which
+// is what makes "it was unclear and then it was answered" readable later.
+//
+// A replayed idempotency key returns the assessment that key already
+// recorded rather than an error, because this now runs on retryable paths
+// - start_delivery records the clarity it was given, and a retried start
+// must not fail on the assessment it already wrote.
 func (s *Store) AssessJira(ctx context.Context, idempotencyKey, executionID, sessionID, snapshotID, clarity, rationale string) (*JiraAssessment, error) {
-	if clarity != "clear" && clarity != "needs_clarification" {
+	if clarity != ClarityClear && clarity != ClarityNeedsClarification {
 		return nil, fmt.Errorf("delivery: invalid Jira clarity")
 	}
 	if strings.TrimSpace(rationale) == "" {
@@ -118,7 +127,9 @@ func (s *Store) AssessJira(ctx context.Context, idempotencyKey, executionID, ses
 	}
 	var out JiraAssessment
 	now := time.Now().UTC()
+	recorded := false
 	err := s.db.Write(ctx, idempotencyKey, "assess Jira delivery "+executionID, func(tx *sql.Tx) error {
+		recorded = true
 		var exec DeliveryExecution
 		if err := scanExecution(tx.QueryRowContext(ctx, `SELECT id, case_id, orchestration_id, ordinal, status, session_id, started_at, ended_at FROM delivery_executions WHERE id = ?`, executionID), &exec); err != nil {
 			return err
@@ -141,11 +152,30 @@ func (s *Store) AssessJira(ctx context.Context, idempotencyKey, executionID, ses
 		_, err := tx.ExecContext(ctx, `INSERT INTO jira_assessments (id, case_id, execution_id, session_id, snapshot_id, clarity, rationale, assessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, out.ID, out.CaseID, out.ExecutionID, out.SessionID, out.SnapshotID, out.Clarity, out.Rationale, now.Format(timeLayout))
 		return err
 	})
+	if errors.Is(err, storage.ErrDuplicateWrite) || (err == nil && !recorded) {
+		return s.getJiraAssessmentByKey(ctx, idempotencyKey, executionID)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
+
+// getJiraAssessmentByKey reads back the assessment a replayed
+// idempotency key already recorded. jira_assessments does not store the
+// key, so the newest assessment for that execution is the one that write
+// produced.
+func (s *Store) getJiraAssessmentByKey(ctx context.Context, idempotencyKey, executionID string) (*JiraAssessment, error) {
+	_ = idempotencyKey
+	return scanAssessment(s.db.Reader().QueryRowContext(ctx, `SELECT id, case_id, execution_id, session_id, snapshot_id, clarity, rationale, assessed_at FROM jira_assessments WHERE execution_id = ? ORDER BY assessed_at DESC, id DESC LIMIT 1`, executionID))
+}
+
+// Jira requirement clarity, as the jira_assessments CHECK constraint
+// defines it.
+const (
+	ClarityClear              = "clear"
+	ClarityNeedsClarification = "needs_clarification"
+)
 
 // MapWorkItemToJiraTask permits a Jira task only when it is an exact Jira
 // requirement already grouped by that parent task; arbitrary issue keys are

@@ -114,7 +114,7 @@ func TestReconcileCreatesRunnableMultiProjectDelivery(t *testing.T) {
 
 	result := mustStart(t, svc, StartRequest{
 		IdempotencyKey: "start-abc-123",
-		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
+		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123", Clarity: delivery.ClarityClear},
 		Title:          "Checkout migration",
 		HighLevelPlan:  planDraft("Move checkout to payments v2"),
 		Projects: []ProjectDraft{
@@ -157,7 +157,7 @@ func TestReconcileCreatesRunnableMultiProjectDelivery(t *testing.T) {
 	jira.Issue("ABC-123").WithSubtasks("ABC-124", "ABC-125", "ABC-126")
 	second := mustStart(t, svc, StartRequest{
 		IdempotencyKey: "start-abc-123-round-2",
-		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
+		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123", Clarity: delivery.ClarityClear},
 		Title:          "Checkout migration",
 		HighLevelPlan:  planDraft("Move checkout to payments v2"),
 		Projects: []ProjectDraft{
@@ -249,7 +249,7 @@ func TestReconcileIsIdempotentOnExactRetry(t *testing.T) {
 
 	req := StartRequest{
 		IdempotencyKey: "start-xyz-1",
-		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "XYZ-1"},
+		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "XYZ-1", Clarity: delivery.ClarityClear},
 		Title:          "Retry check",
 		HighLevelPlan:  planDraft("Retry check plan"),
 		Projects: []ProjectDraft{
@@ -281,7 +281,7 @@ func TestReconcileNamesRequirementsNoTaskCovers(t *testing.T) {
 	result := mustStart(t, svc, StartRequest{
 		IdempotencyKey: "start-uncovered",
 		HighLevelPlan:  planDraft("Cover the parent only"),
-		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
+		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123", Clarity: delivery.ClarityClear},
 		Projects: []ProjectDraft{{
 			Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout",
 			Title: "the parent's own work", TaskKey: "ABC-123",
@@ -304,7 +304,7 @@ func TestReconcileNamesNothingUncoveredWhenEveryRequirementHasATask(t *testing.T
 	result := mustStart(t, svc, StartRequest{
 		IdempotencyKey: "start-covered",
 		HighLevelPlan:  planDraft("Cover parent and subtask"),
-		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123"},
+		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: "cloud-1", Key: "ABC-123", Clarity: delivery.ClarityClear},
 		Projects: []ProjectDraft{
 			{Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout", Title: "parent work", TaskKey: "ABC-123"},
 			{Slug: "checkout", RepositoryURL: "https://github.com/acme/checkout", Title: "subtask work", TaskKey: "ABC-124"},

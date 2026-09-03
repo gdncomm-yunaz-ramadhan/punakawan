@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryservice"
 	"github.com/ygrip/punakawan/internal/githubintegration"
 )
@@ -32,7 +33,7 @@ func TestDeliveryJiraWorkflow(t *testing.T) {
 
 	start, needInput, err := svc.StartOrResolve(ctx, deliveryservice.StartRequest{
 		IdempotencyKey: "start-abc-1",
-		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "abc-1"},
+		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "abc-1", Clarity: delivery.ClarityClear},
 		Title:          "Widget epic",
 		HighLevelPlan:  deliveryservice.PlanDraft{Objective: "Deliver the widget epic"},
 		Session:        deliveryservice.SessionStart{Participant: "agent-1"},
@@ -173,7 +174,7 @@ func TestDeliveryJiraWorkflow(t *testing.T) {
 	// either reusing the completed execution or opening an unrelated case.
 	start2, needInput2, err := svc.StartOrResolve(ctx, deliveryservice.StartRequest{
 		IdempotencyKey: "start-abc-1-again",
-		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "abc-1"},
+		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "abc-1", Clarity: delivery.ClarityClear},
 		Title:          "Widget epic, round two",
 		Session:        deliveryservice.SessionStart{Participant: "agent-1"},
 	})

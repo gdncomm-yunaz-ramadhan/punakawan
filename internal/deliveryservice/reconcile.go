@@ -90,6 +90,16 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 		report.Plans = append(report.Plans, planRef(deliveryPlan))
 	}
 
+	// The clarity the caller stated when it started this delivery. It is
+	// recorded through the same call assess_jira_delivery makes, so there
+	// is one assessment writer and one place the two legal values live.
+	if req.Source != nil && req.Source.Kind == SourceJira && req.Source.Clarity != "" {
+		if _, err := s.deliveries.AssessJira(ctx, reconcileKey(orchestrationID, "clarity", req.Source.Clarity),
+			resolved.Execution.ID, "", "", req.Source.Clarity, clarityRationale(*req.Source)); err != nil {
+			return report, fmt.Errorf("deliveryservice: record requirement clarity: %w", err)
+		}
+	}
+
 	sources, err := s.deliveries.ListRequirementSources(ctx, orchestrationID)
 	if err != nil {
 		return report, fmt.Errorf("deliveryservice: list requirement sources: %w", err)
@@ -236,6 +246,16 @@ func uncoveredRequirements(ctx context.Context, s *Service, orchestrationID stri
 
 // toPlan turns a not-yet-saved PlanDraft into an actual plan.Plan ready
 // for Store.SaveWithKey: id is this lineage's stable identity (see
+// clarityRationale is the rationale to record with an assessment. A clear
+// requirement need not explain itself, but an assessment row still wants
+// a reason, so a plain one stands in.
+func clarityRationale(source SourceIdentity) string {
+	if rationale := strings.TrimSpace(source.ClarityRationale); rationale != "" {
+		return rationale
+	}
+	return "Stated clear when this delivery was started."
+}
+
 // linkDeliveryPlan links one plan revision to the delivery and points the
 // orchestration at it, leaving both alone when they already say so.
 //

@@ -16,8 +16,8 @@ type AssessJiraDeliveryInput struct {
 	SnapshotID     string `json:"snapshot_id,omitempty"`
 	SnapshotTitle  string `json:"snapshot_title,omitempty"`
 	SnapshotBody   string `json:"snapshot_body,omitempty"`
-	Clarity        string `json:"clarity"`
-	Rationale      string `json:"rationale"`
+	Clarity        string `json:"clarity" jsonschema:"clear | needs_clarification"`
+	Rationale      string `json:"rationale" jsonschema:"why the source reads as it does; required. When the clarity is needs_clarification this is the question posted on the issue"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 type AssessJiraDeliveryOutput struct {

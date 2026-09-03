@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ygrip/punakawan/internal/delivery"
 	"github.com/ygrip/punakawan/internal/deliveryservice"
 	"github.com/ygrip/punakawan/internal/githubintegration"
 	"github.com/ygrip/punakawan/internal/outbox"
@@ -33,7 +34,7 @@ func TestProviderRecoveryDedupesLostResponses(t *testing.T) {
 
 	start, needInput, err := svc.StartOrResolve(ctx, deliveryservice.StartRequest{
 		IdempotencyKey: "start-rec-1",
-		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "rec-1"},
+		Source:         &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceJira, Provider: "jira", Tenant: "tenant-1", Key: "rec-1", Clarity: delivery.ClarityClear},
 		Title:          "Investigate outage",
 		HighLevelPlan:  deliveryservice.PlanDraft{Objective: "Investigate outage"},
 		Session:        deliveryservice.SessionStart{Participant: "agent-1"},

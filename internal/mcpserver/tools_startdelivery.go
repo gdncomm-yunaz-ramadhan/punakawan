@@ -36,6 +36,12 @@ type StartDeliverySource struct {
 	Kind   string `json:"kind" jsonschema:"jira | adhoc"`
 	Tenant string `json:"tenant,omitempty" jsonschema:"the Jira organisation this issue belongs to, as named by punakawan setup jira --list. Omit it: the default organisation is used when it can see the issue, and you are asked which one holds it when it cannot"`
 	Key    string `json:"key,omitempty" jsonschema:"required when kind is jira: the exact issue key, e.g. ABC-123"`
+	// Clarity and ClarityRationale are your judgement of the issue, made
+	// before any work is opened against it. They are required for a Jira
+	// source: a requirement nobody judged is exactly what produces a
+	// delivery built on a guess.
+	Clarity          string `json:"clarity,omitempty" jsonschema:"required when kind is jira: clear | needs_clarification - whether this issue says enough to build from, judged from the issue itself"`
+	ClarityRationale string `json:"clarity_rationale,omitempty" jsonschema:"why. Required when clarity is needs_clarification: this text is posted on the issue as the question to answer, so write it for whoever has to answer it"`
 }
 
 // StartDeliveryPlan is plan content supplied inline, saved and linked as
@@ -247,9 +253,11 @@ func startDeliveryHandler(a *app.App, agentReg agent.AgentRegistry) func(context
 		}
 		if in.Source != nil {
 			start.Source = &deliveryservice.SourceIdentity{
-				Kind:   deliveryservice.SourceKind(strings.TrimSpace(in.Source.Kind)),
-				Tenant: in.Source.Tenant,
-				Key:    in.Source.Key,
+				Kind:             deliveryservice.SourceKind(strings.TrimSpace(in.Source.Kind)),
+				Tenant:           in.Source.Tenant,
+				Key:              in.Source.Key,
+				Clarity:          in.Source.Clarity,
+				ClarityRationale: in.Source.ClarityRationale,
 			}
 		}
 

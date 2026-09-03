@@ -3,6 +3,7 @@ package deliveryservice
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/ygrip/punakawan/internal/delivery"
@@ -24,10 +25,13 @@ func newService(t *testing.T) *Service {
 func jiraRequest(tenant, key, session string) StartRequest {
 	return StartRequest{
 		IdempotencyKey: "start-" + session,
-		Source:         &SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: tenant, Key: key},
-		Title:          "Deliver " + key,
-		HighLevelPlan:  PlanDraft{Objective: "Deliver " + key},
-		Session:        SessionStart{Participant: session},
+		Source: &SourceIdentity{
+			Kind: SourceJira, Provider: "jira", Tenant: tenant, Key: key,
+			Clarity: delivery.ClarityClear,
+		},
+		Title:         "Deliver " + key,
+		HighLevelPlan: PlanDraft{Objective: "Deliver " + key},
+		Session:       SessionStart{Participant: session},
 	}
 }
 
@@ -283,5 +287,78 @@ func TestStartOrResolveMovesTheDeliveryOntoARevisedPlan(t *testing.T) {
 	}
 	if links != 2 {
 		t.Fatalf("delivery plan links = %d, want one per revision", links)
+	}
+}
+
+// A requirement nobody judged is what produces a delivery built on a
+// guess, so the judgement is asked for at the point work is opened - not
+// left to a separate tool an agent may never call.
+func TestStartOrResolveRequiresAStatedClarityForAJiraSource(t *testing.T) {
+	svc := newService(t)
+	ctx := context.Background()
+
+	unjudged := jiraRequest("acme", "PAY-1", "unjudged")
+	unjudged.Source.Clarity = ""
+	_, needsInput, err := svc.StartOrResolve(ctx, unjudged)
+	if err != nil {
+		t.Fatalf("StartOrResolve: %v", err)
+	}
+	if needsInput == nil || !slices.Contains(needsInput.MissingFields, "source.clarity") {
+		t.Fatalf("needsInput = %+v, want a question naming source.clarity", needsInput)
+	}
+
+	// Unclear without saying what is unclear leaves nobody anything to
+	// answer, so it is the same refusal.
+	silent := jiraRequest("acme", "PAY-1", "silent")
+	silent.Source.Clarity = delivery.ClarityNeedsClarification
+	_, needsInput, err = svc.StartOrResolve(ctx, silent)
+	if err != nil {
+		t.Fatalf("StartOrResolve: %v", err)
+	}
+	if needsInput == nil || !slices.Contains(needsInput.MissingFields, "source.clarity_rationale") {
+		t.Fatalf("needsInput = %+v, want a question naming source.clarity_rationale", needsInput)
+	}
+
+	// An adhoc delivery has no Jira issue to judge and is unaffected.
+	if _, needsInput, err := svc.StartOrResolve(ctx, adhocRequest("one-off cleanup", "adhoc")); err != nil || needsInput != nil {
+		t.Fatalf("adhoc start: needsInput=%v err=%v", needsInput, err)
+	}
+}
+
+// The clarity a start states is recorded as the delivery's own
+// assessment, through the same call assess_jira_delivery makes, and a
+// retried start records one rather than failing on the one it wrote.
+func TestStartOrResolveRecordsTheStatedClarityOnce(t *testing.T) {
+	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := delivery.NewStore(db)
+	svc := New(store, plan.NewStore(db))
+	ctx := context.Background()
+
+	req := jiraRequest("acme", "PAY-1", "judge")
+	req.Source.Clarity = delivery.ClarityNeedsClarification
+	req.Source.ClarityRationale = "The acceptance criteria name no API"
+
+	start, needsInput, err := svc.StartOrResolve(ctx, req)
+	if err != nil || needsInput != nil {
+		t.Fatalf("StartOrResolve: needsInput=%v err=%v", needsInput, err)
+	}
+	if _, _, err := svc.StartOrResolve(ctx, req); err != nil {
+		t.Fatalf("retried StartOrResolve: %v", err)
+	}
+
+	lifecycle, err := store.GetDeliveryLifecycle(ctx, start.Execution.OrchestrationID)
+	if err != nil {
+		t.Fatalf("GetDeliveryLifecycle: %v", err)
+	}
+	if len(lifecycle.Assessments) != 1 {
+		t.Fatalf("assessments = %d, want exactly one for a start and its retry", len(lifecycle.Assessments))
+	}
+	got := lifecycle.Assessments[0]
+	if got.Clarity != delivery.ClarityNeedsClarification || got.Rationale != req.Source.ClarityRationale {
+		t.Fatalf("assessment = %+v, want the clarity and rationale the start stated", got)
 	}
 }

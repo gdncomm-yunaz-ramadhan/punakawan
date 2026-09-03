@@ -46,6 +46,17 @@ type SourceIdentity struct {
 	Provider string
 	Tenant   string
 	Key      string
+	// Clarity is the caller's own judgement of whether the Jira issue
+	// says enough to build from: "clear" or "needs_clarification", the
+	// values delivery.Store.AssessJira validates. It is required for a
+	// Jira source, because a delivery worked against a requirement
+	// nobody judged is the failure this exists to prevent, and an
+	// optional judgement is one an agent will simply not make.
+	Clarity string
+	// ClarityRationale says why. It is required when the requirement is
+	// unclear: that rationale is the question that gets asked on the
+	// issue, so an empty one leaves nobody anything to answer.
+	ClarityRationale string
 }
 
 // NormalizeSource validates and canonicalizes a caller-supplied source:
@@ -67,21 +78,34 @@ func NormalizeSource(in SourceIdentity) (SourceIdentity, *protocol.NeedUserInput
 	case SourceJira:
 		tenant := strings.TrimSpace(in.Tenant)
 		key := strings.ToUpper(strings.TrimSpace(in.Key))
+		clarity := strings.TrimSpace(in.Clarity)
+		rationale := strings.TrimSpace(in.ClarityRationale)
 		var missing []string
+		question := "Starting a Jira delivery requires the adapter tenant and the issue key."
 		if tenant == "" {
 			missing = append(missing, "source.tenant")
 		}
 		if key == "" {
 			missing = append(missing, "source.key")
 		}
+		if clarity != delivery.ClarityClear && clarity != delivery.ClarityNeedsClarification {
+			missing = append(missing, "source.clarity")
+			question = "Say whether this issue is clear enough to build from: source.clarity is " + delivery.ClarityClear + " or " + delivery.ClarityNeedsClarification + "."
+		} else if clarity == delivery.ClarityNeedsClarification && rationale == "" {
+			missing = append(missing, "source.clarity_rationale")
+			question = "Say what is unclear: the rationale is posted on the issue as the question to answer."
+		}
 		if len(missing) > 0 {
 			return SourceIdentity{}, &protocol.NeedUserInput{
 				Kind:          protocol.NeedUserInputKindMissingContext,
-				Question:      "Starting a Jira delivery requires the adapter tenant and the issue key.",
+				Question:      question,
 				MissingFields: missing,
 			}, nil
 		}
-		return SourceIdentity{Kind: SourceJira, Provider: "jira", Tenant: tenant, Key: key}, nil, nil
+		return SourceIdentity{
+			Kind: SourceJira, Provider: "jira", Tenant: tenant, Key: key,
+			Clarity: clarity, ClarityRationale: rationale,
+		}, nil, nil
 	default:
 		return SourceIdentity{}, &protocol.NeedUserInput{
 			Kind:          protocol.NeedUserInputKindMissingContext,

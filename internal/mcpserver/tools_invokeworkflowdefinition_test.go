@@ -129,7 +129,7 @@ func TestInvokeWorkflowJiraSourceRoutesThroughStartOrResolve(t *testing.T) {
 	callTool(t, cs, "invoke_workflow", map[string]any{
 		"definition_id": "jira-source-delivery",
 		"inputs": map[string]any{
-			"source": map[string]any{"kind": "jira", "tenant": "tenant-a", "key": "SRC-1"},
+			"source": map[string]any{"kind": "jira", "tenant": "tenant-a", "key": "SRC-1", "clarity": "clear"},
 		},
 	}, &first)
 	if first.RunId == "" {
@@ -140,7 +140,7 @@ func TestInvokeWorkflowJiraSourceRoutesThroughStartOrResolve(t *testing.T) {
 	callTool(t, cs, "invoke_workflow", map[string]any{
 		"definition_id": "jira-source-delivery",
 		"inputs": map[string]any{
-			"source": map[string]any{"kind": "jira", "tenant": "tenant-a", "key": "SRC-1"},
+			"source": map[string]any{"kind": "jira", "tenant": "tenant-a", "key": "SRC-1", "clarity": "clear"},
 		},
 	}, &second)
 	if second.RunId != first.RunId {
@@ -157,7 +157,7 @@ func TestStartDeliveryRejectsUnknownWorkflowDefinitionId(t *testing.T) {
 	ctx := context.Background()
 
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "start_delivery", Arguments: map[string]any{
-		"source":                 map[string]any{"kind": "jira", "tenant": "test-tenant", "key": "JIRA-1"},
+		"source":                 map[string]any{"kind": "jira", "tenant": "test-tenant", "key": "JIRA-1", "clarity": "clear"},
 		"plan":                   testPlan(),
 		"workflow_definition_id": "does-not-exist",
 	}})
@@ -188,7 +188,7 @@ func TestStartDeliveryRejectsDisabledWorkflowDefinitionId(t *testing.T) {
 	})
 
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "start_delivery", Arguments: map[string]any{
-		"source":                 map[string]any{"kind": "jira", "tenant": "test-tenant", "key": "JIRA-1"},
+		"source":                 map[string]any{"kind": "jira", "tenant": "test-tenant", "key": "JIRA-1", "clarity": "clear"},
 		"plan":                   testPlan(),
 		"workflow_definition_id": "disabled-delivery",
 	}})

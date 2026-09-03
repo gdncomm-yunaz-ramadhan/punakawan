@@ -13,7 +13,7 @@ import (
 
 // jiraSource is the identity every delivery in this file starts from.
 func jiraSource(key string) map[string]any {
-	return map[string]any{"kind": "jira", "tenant": "test-tenant", "key": key}
+	return map[string]any{"kind": "jira", "tenant": "test-tenant", "key": key, "clarity": "clear"}
 }
 
 // testPlan is the plan every start_delivery call now has to carry: a

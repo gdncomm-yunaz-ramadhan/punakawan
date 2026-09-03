@@ -164,10 +164,19 @@ func sourceFromInputs(inputs map[string]any) (*deliveryservice.SourceIdentity, b
 	kind, _ := m["kind"].(string)
 	tenant, _ := m["tenant"].(string)
 	key, _ := m["key"].(string)
+	clarity, _ := m["clarity"].(string)
+	rationale, _ := m["clarity_rationale"].(string)
 	if kind == "" {
 		return nil, false, fmt.Errorf(`input "source.kind" is required when "source" is given`)
 	}
-	return &deliveryservice.SourceIdentity{Kind: deliveryservice.SourceKind(kind), Tenant: tenant, Key: key}, true, nil
+	// Clarity travels with the source here for the same reason it does on
+	// start_delivery: a definition that starts a Jira delivery is opening
+	// work against a requirement, and the judgement of that requirement
+	// belongs with the inputs that name it.
+	return &deliveryservice.SourceIdentity{
+		Kind: deliveryservice.SourceKind(kind), Tenant: tenant, Key: key,
+		Clarity: clarity, ClarityRationale: rationale,
+	}, true, nil
 }
 
 // referencesFromInputs extracts inputs["references"] as a []string,
