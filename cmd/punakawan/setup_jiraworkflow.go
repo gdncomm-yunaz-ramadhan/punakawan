@@ -27,6 +27,7 @@ comment_events:
   - delivery.started
   - delivery.completed
   - review.changes_required
+  - requirement.clarification_requested
 
 # Project time tracking: measured intervals recorded with log_delivery_work
 # are pushed to the issue as Jira worklog entries.

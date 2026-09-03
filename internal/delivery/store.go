@@ -589,6 +589,27 @@ func (s *Store) ResolveInput(ctx context.Context, idempotencyKey, orchestrationI
 	return s.appendOrchestrationEvent(ctx, idempotencyKey, orchestrationID, expectedRevision, protocol.DeliveryEventTypeInputResolved, map[string]interface{}{"reference": reference})
 }
 
+// ResolvePendingInput resolves reference when it is actually one of the
+// orchestration's open questions, and does nothing when it is not.
+//
+// It exists for callers that answer a question as a side effect of doing
+// the thing it asked about - routing a task, recording a clarity - where
+// the caller knows the reference but has no revision to expect, and where
+// answering the same question twice must not fail.
+func (s *Store) ResolvePendingInput(ctx context.Context, idempotencyKey, orchestrationID, reference string) error {
+	orch, err := s.GetOrchestration(ctx, orchestrationID)
+	if err != nil {
+		return err
+	}
+	for _, open := range orch.UnresolvedInputs {
+		if open.Reference == reference {
+			_, err := s.ResolveInput(ctx, idempotencyKey, orchestrationID, orch.Revision, reference)
+			return err
+		}
+	}
+	return nil
+}
+
 // UpdateOrchestrationDetails appends orchestration.details_updated,
 // changing whichever of title, description, plan reference, and session
 // id the caller supplied and leaving the rest alone. A call that asks

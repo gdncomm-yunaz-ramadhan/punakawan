@@ -57,6 +57,13 @@ const (
 	// EventDeliveryFailed fires when a delivery orchestration reaches a
 	// terminal status other than completed (e.g. cancelled).
 	EventDeliveryFailed EventType = "delivery.failed"
+	// EventRequirementUnclear fires when a delivery's Jira source is
+	// judged not to say enough to build from. The judgement is recorded
+	// either way; this fires only for the half that somebody has to
+	// answer, so a workspace can put that question on the issue rather
+	// than leaving it inside punakawan where the person who wrote the
+	// requirement will never see it.
+	EventRequirementUnclear EventType = "requirement.clarification_requested"
 	// EventWorkLogged fires after an actual, task-bound work interval is
 	// recorded in the delivery ledger. Hooks may project it to Jira, but the
 	// internal ledger remains authoritative if that side effect fails.

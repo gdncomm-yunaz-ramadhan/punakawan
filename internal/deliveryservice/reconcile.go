@@ -98,6 +98,26 @@ func (s *Service) reconcile(ctx context.Context, req StartRequest, resolved *del
 			resolved.Execution.ID, "", "", req.Source.Clarity, clarityRationale(*req.Source)); err != nil {
 			return report, fmt.Errorf("deliveryservice: record requirement clarity: %w", err)
 		}
+		// An unclear requirement is a question somebody has to answer, so
+		// it is carried as one - visible on the delivery and asked
+		// wherever the workspace projects delivery events - rather than
+		// as a judgement filed away where only a later reader finds it.
+		switch req.Source.Clarity {
+		case delivery.ClarityNeedsClarification:
+			// The rationale is part of the key: a requirement raised as
+			// unclear a second time, for a different reason, is a
+			// different question and has to be asked again.
+			rationale := clarityRationale(*req.Source)
+			if err := s.deliveries.OpenClarityQuestion(ctx, reconcileKey(orchestrationID, "clarity-question", req.Source.Key+"|"+rationale),
+				orchestrationID, req.Source.Key, rationale); err != nil {
+				return report, fmt.Errorf("deliveryservice: open clarity question: %w", err)
+			}
+		case delivery.ClarityClear:
+			if err := s.deliveries.CloseClarityQuestion(ctx, reconcileKey(orchestrationID, "clarity-answered", req.Source.Key),
+				orchestrationID, req.Source.Key); err != nil {
+				return report, fmt.Errorf("deliveryservice: close clarity question: %w", err)
+			}
+		}
 	}
 
 	sources, err := s.deliveries.ListRequirementSources(ctx, orchestrationID)

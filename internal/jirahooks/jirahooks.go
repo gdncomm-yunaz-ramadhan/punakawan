@@ -136,6 +136,13 @@ func (h *JiraHook) Handle(ctx context.Context, event deliveryhooks.Event) error 
 		if err := h.service().OnWorkRecorded(ctx, event.EntityID); err != nil {
 			return err
 		}
+	case deliveryhooks.EventRequirementUnclear:
+		// Falls through to the comment path below: the rationale is the
+		// question, and it is worth asking on the issue whether or not
+		// the workflow has a status to park it in.
+		if err := h.service().OnRequirementUnclear(ctx, event.DeliveryID); err != nil {
+			return err
+		}
 	case deliveryhooks.EventImplementationCompleted:
 		// Falls through to the comment path below: a lane finishing is
 		// worth saying on the issue whether or not the workflow has a

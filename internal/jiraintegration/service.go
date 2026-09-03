@@ -184,6 +184,32 @@ func (s *Service) OnImplementationCompleted(ctx context.Context, deliveryID stri
 	return nil
 }
 
+// OnRequirementUnclear parks a linked issue in the workspace's
+// clarification status when it has one.
+//
+// ClarificationStatus has been configurable since this package's Jira
+// workflow config existed and nothing ever transitioned to it, because
+// nothing downstream of a "needs clarification" judgement did anything at
+// all. This is what it was for: an issue whose delivery is waiting on an
+// answer reads as waiting, rather than as in progress with nobody on it.
+// Workspaces that have no such status configure none and nothing moves.
+func (s *Service) OnRequirementUnclear(ctx context.Context, deliveryID string) error {
+	if s.cfg == nil || !s.cfg.AutoLog || s.cfg.ClarificationStatus == "" {
+		return nil
+	}
+	issueKey, err := s.resolveIssueKey(ctx, deliveryID)
+	if err != nil {
+		return fmt.Errorf("jiraintegration: resolve linked jira issue for delivery %s: %w", deliveryID, err)
+	}
+	if issueKey == "" {
+		return nil
+	}
+	if err := s.enqueueTransition(ctx, deliveryID, issueKey, s.cfg.ClarificationStatus); err != nil {
+		return fmt.Errorf("jiraintegration: enqueue clarification transition for %s: %w", issueKey, err)
+	}
+	return nil
+}
+
 // OnWorkRecorded enqueues one jira.worklog intent for the immutable work
 // interval identified by worklogID - the delivery ledger entry's own
 // durable id, which is what the enqueued intent's fingerprint keys on, so

@@ -374,3 +374,62 @@ func TestStartDeliveryReturnsTheSessionIdTheUsageToolsRequire(t *testing.T) {
 		},
 	}, &ingested)
 }
+
+// TestStartDeliveryUnclearRequirementHoldsUntilAnswered: stating
+// needs_clarification when starting a delivery has to leave something
+// somebody can act on. Before this, clarity was recorded and nothing
+// else happened - no question, no gap, nothing on the issue - so a
+// delivery against a requirement nobody understood looked exactly like
+// one against a requirement everybody did, and could be completed.
+func TestStartDeliveryUnclearRequirementHoldsUntilAnswered(t *testing.T) {
+	a := newTestApp(t)
+	cs := connect(t, a)
+
+	source := jiraSource("PAY-4100")
+	source["clarity"] = "needs_clarification"
+	source["clarity_rationale"] = "the issue never says which currencies are in scope"
+
+	var started StartDeliveryOutput
+	callTool(t, cs, "start_delivery", map[string]any{
+		"plan":   testPlan(),
+		"source": source,
+		"title":  "charge in more currencies",
+	}, &started)
+
+	reference := delivery.ClarityQuestionReference("PAY-4100")
+	var got DeliveryViewOutput
+	callTool(t, cs, "get_delivery", map[string]any{"orchestration_id": started.OrchestrationId}, &got)
+	if len(got.View.PendingQuestions) != 1 || got.View.PendingQuestions[0] != reference {
+		t.Fatalf("PendingQuestions = %v, want exactly %s", got.View.PendingQuestions, reference)
+	}
+	if !hasGap(got.Readiness, delivery.GapRequirementUnclear) {
+		t.Fatalf("readiness = %+v, want a %s gap holding the delivery", got.Readiness, delivery.GapRequirementUnclear)
+	}
+
+	callTool(t, cs, "answer_delivery_question", map[string]any{
+		"orchestration_id":  started.OrchestrationId,
+		"reference":         reference,
+		"clarity":           "clear",
+		"clarity_rationale": "scoped to EUR and GBP",
+	}, &got)
+	if len(got.View.PendingQuestions) != 0 {
+		t.Fatalf("PendingQuestions = %v, want none once the question is answered", got.View.PendingQuestions)
+	}
+
+	callTool(t, cs, "get_delivery", map[string]any{"orchestration_id": started.OrchestrationId}, &got)
+	if hasGap(got.Readiness, delivery.GapRequirementUnclear) {
+		t.Fatalf("readiness = %+v, want the %s gap cleared by the answer", got.Readiness, delivery.GapRequirementUnclear)
+	}
+}
+
+func hasGap(readiness *delivery.Readiness, code string) bool {
+	if readiness == nil {
+		return false
+	}
+	for _, gap := range readiness.Gaps {
+		if gap.Code == code {
+			return true
+		}
+	}
+	return false
+}

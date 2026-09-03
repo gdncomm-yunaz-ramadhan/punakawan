@@ -460,11 +460,19 @@ func getDeliveryHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, 
 //   - Ambiguous-routing case: the "question" was actually about which
 //     project an already-created parent task belongs to. Set
 //     parent_task_id and project_id; this calls RouteParentTask instead.
-//     expected_revision is not used for this case - RouteParentTask has
-//     no revision parameter.
+//     Supply reference and expected_revision as well when the routing
+//     question is one of the pending ones, so answering it also clears
+//     it.
+//   - Requirement-clarity case: the question was raised by starting the
+//     delivery with clarity needs_clarification. Set reference (the
+//     clarity:<ISSUE-KEY> pending question) plus clarity and
+//     clarity_rationale; this records a fresh assessment. Answering
+//     clear clears the question and its completion gap; answering
+//     needs_clarification again records and asks the new question
+//     instead.
 type AnswerDeliveryQuestionInput struct {
 	OrchestrationId  string `json:"orchestration_id"`
-	Reference        string `json:"reference" jsonschema:"the pending question's reference, from get_delivery's pending_questions; required for the resolved-requirement case, ignored for the routing case"`
+	Reference        string `json:"reference" jsonschema:"the pending question's reference, from get_delivery's pending_questions; required for the resolved-requirement and requirement-clarity cases, optional for the routing case"`
 	ExpectedRevision int    `json:"expected_revision,omitempty" jsonschema:"resolved-requirement case only: the orchestration's current revision from get_delivery, so answering an already-superseded question is never silently accepted"`
 
 	Provider   string `json:"provider,omitempty" jsonschema:"resolved-requirement case: jira | confluence | github | url | freetext"`
@@ -472,6 +480,9 @@ type AnswerDeliveryQuestionInput struct {
 	Url        string `json:"url,omitempty" jsonschema:"resolved-requirement case: canonical source url"`
 	Title      string `json:"title,omitempty" jsonschema:"resolved-requirement case: human-readable title"`
 	Summary    string `json:"summary,omitempty" jsonschema:"resolved-requirement case: short summary; freetext requires title or summary"`
+
+	Clarity          string `json:"clarity,omitempty" jsonschema:"requirement-clarity case: clear | needs_clarification - what the requirement now says, after the answer"`
+	ClarityRationale string `json:"clarity_rationale,omitempty" jsonschema:"requirement-clarity case: why. Required when clarity is needs_clarification: it is posted on the issue as the question still to answer"`
 
 	ParentTaskId string `json:"parent_task_id,omitempty" jsonschema:"ambiguous-routing case: the parent task this question was actually about"`
 	ProjectId    string `json:"project_id,omitempty" jsonschema:"ambiguous-routing case: the project to route parent_task_id to"`
@@ -485,9 +496,18 @@ func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallTo
 		}
 
 		switch {
+		case in.Clarity != "":
+			if err := answerRequirementClarity(ctx, store, in); err != nil {
+				return nil, DeliveryViewOutput{}, err
+			}
 		case in.ParentTaskId != "" && in.ProjectId != "":
 			if _, err := store.RouteParentTask(ctx, delivery.NewID(), in.OrchestrationId, in.ParentTaskId, in.ProjectId); err != nil {
 				return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: route parent task: %w", err)
+			}
+			// Routing used to answer the question without clearing it,
+			// so a routed task left its own question pending forever.
+			if err := store.ResolvePendingInput(ctx, delivery.NewID(), in.OrchestrationId, in.Reference); err != nil {
+				return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: resolve input: %w", err)
 			}
 		case in.Provider != "":
 			src := delivery.SourceInput{
@@ -501,7 +521,7 @@ func answerDeliveryQuestionHandler(a *app.App) func(context.Context, *mcp.CallTo
 				return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: resolve input: %w", err)
 			}
 		default:
-			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: answer_delivery_question requires either provider (resolved-requirement case) or both parent_task_id and project_id (routing case)")
+			return nil, DeliveryViewOutput{}, fmt.Errorf("mcpserver: answer_delivery_question requires provider (resolved-requirement case), clarity (requirement-clarity case), or both parent_task_id and project_id (routing case)")
 		}
 
 		view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
@@ -634,4 +654,42 @@ func addJiraWriteBackGap(a *app.App, view *delivery.DeliveryView, readiness *del
 	}
 	readiness.Gaps = append(readiness.Gaps, *gap)
 	readiness.Ready = false
+}
+
+// answerRequirementClarity records what the requirement says now that
+// somebody has answered the clarity question, through the same assessment
+// writer start_delivery and assess_jira_delivery use. A clear answer
+// closes the question and with it the completion gap; an answer that is
+// still needs_clarification replaces the standing question with the new
+// one, so the delivery keeps holding and the issue is told why.
+func answerRequirementClarity(ctx context.Context, store *delivery.Store, in AnswerDeliveryQuestionInput) error {
+	if !delivery.IsClarityQuestion(in.Reference) {
+		return fmt.Errorf("mcpserver: answer_delivery_question: reference %q is not a requirement-clarity question - pass the clarity:<ISSUE-KEY> reference from get_delivery's pending_questions", in.Reference)
+	}
+	issueKey := delivery.ClarityQuestionIssueKey(in.Reference)
+	view, err := store.BuildDeliveryView(ctx, in.OrchestrationId)
+	if err != nil {
+		return fmt.Errorf("mcpserver: build delivery view: %w", err)
+	}
+	if view.Lifecycle == nil {
+		return fmt.Errorf("mcpserver: answer_delivery_question: delivery %s has no execution to record an assessment against", in.OrchestrationId)
+	}
+	rationale := strings.TrimSpace(in.ClarityRationale)
+	if _, err := store.AssessJira(ctx, delivery.NewID(), view.Lifecycle.Execution.ID, "", "", in.Clarity, rationale); err != nil {
+		return fmt.Errorf("mcpserver: record requirement clarity: %w", err)
+	}
+	switch in.Clarity {
+	case delivery.ClarityClear:
+		if err := store.CloseClarityQuestion(ctx, delivery.NewID(), in.OrchestrationId, issueKey); err != nil {
+			return fmt.Errorf("mcpserver: close clarity question: %w", err)
+		}
+	case delivery.ClarityNeedsClarification:
+		if err := store.CloseClarityQuestion(ctx, delivery.NewID(), in.OrchestrationId, issueKey); err != nil {
+			return fmt.Errorf("mcpserver: close clarity question: %w", err)
+		}
+		if err := store.OpenClarityQuestion(ctx, delivery.NewID(), in.OrchestrationId, issueKey, rationale); err != nil {
+			return fmt.Errorf("mcpserver: open clarity question: %w", err)
+		}
+	}
+	return nil
 }

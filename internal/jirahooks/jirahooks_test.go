@@ -430,3 +430,56 @@ func TestHandle_ProjectsExplicitWorklogToExactJiraTask(t *testing.T) {
 		t.Fatalf("sync status = %q, want synced (observer must mark the ledger entry synced)", synced.SyncStatus)
 	}
 }
+
+// TestHandle_RequirementUnclearCommentsAndMovesTheIssue: the point of
+// recording an unclear requirement is that the person who wrote it finds
+// out. The rationale has to reach the issue as a comment, and a workspace
+// naming a clarification status has to see the issue moved there -
+// clarification_status existed as config with nothing writing it.
+func TestHandle_RequirementUnclearCommentsAndMovesTheIssue(t *testing.T) {
+	cfg := &jiraworkflow.Config{
+		AutoLog:             true,
+		CommentEvents:       []string{string(deliveryhooks.EventRequirementUnclear)},
+		ClarificationStatus: "Needs Info",
+	}
+	hook, store, ob, fc := newTestHook(t, cfg)
+	fc.responses = map[string]string{
+		"atlassian.getJiraIssue":               `{"normalized":{"key":"PAY-1","status":"In Progress"}}`,
+		"atlassian.getTransitionsForJiraIssue": `{"transitions":[{"id":"41","name":"Need Info","toStatus":{"id":"4","name":"Needs Info"}}]}`,
+	}
+	ctx := context.Background()
+	orch, err := store.CreateOrchestration(ctx, "create-1", delivery.NewID(), nil)
+	if err != nil {
+		t.Fatalf("CreateOrchestration: %v", err)
+	}
+	captureJiraRequirement(t, store, orch.Id, "PAY-1")
+
+	if err := hook.Handle(ctx, deliveryhooks.Event{
+		Type:       deliveryhooks.EventRequirementUnclear,
+		DeliveryID: orch.Id,
+		Revision:   1,
+		Summary:    "the issue never says which currencies are in scope",
+	}); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	drainOutbox(t, ob, hook.registry, nil)
+
+	var comment, transition map[string]any
+	for _, c := range fc.calls {
+		switch c["op"] {
+		case "atlassian.addJiraComment":
+			comment = c
+		case "atlassian.transitionJiraIssue":
+			transition = c
+		}
+	}
+	if comment == nil {
+		t.Fatalf("calls = %+v, want a comment carrying the rationale", fc.calls)
+	}
+	if body, _ := comment["commentBody"].(string); !strings.Contains(body, "the issue never says which currencies are in scope") {
+		t.Fatalf("comment body = %q, want the rationale in it", comment["commentBody"])
+	}
+	if transition == nil || transition["transitionId"] != "41" {
+		t.Fatalf("transition = %+v, want the issue moved to the clarification status", transition)
+	}
+}

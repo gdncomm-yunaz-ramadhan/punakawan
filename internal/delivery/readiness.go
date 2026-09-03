@@ -35,6 +35,9 @@ const (
 	GapSessionNotFinalized = "session_not_finalized"
 	// GapCostUnknown - tokens were recorded but could not be priced.
 	GapCostUnknown = "cost_unknown"
+	// GapRequirementUnclear - somebody judged the requirement too vague
+	// to build from and the question they asked has not been answered.
+	GapRequirementUnclear = "requirement_unclear"
 	// GapJiraWriteBackOff - the delivery is for a Jira issue, but this
 	// workspace writes nothing back to Jira, so everything it recorded
 	// stayed inside punakawan.
@@ -123,6 +126,23 @@ func AssessCompletionReadiness(view *DeliveryView) Readiness {
 			Code:     GapRequirementUncovered,
 			Detail:   fmt.Sprintf("%d captured requirement(s) have no lane covering them", len(uncovered)),
 			Subjects: uncovered,
+		})
+	}
+
+	// A delivery cannot be finished against a requirement nobody has
+	// explained yet. The question is already on the view; this is what
+	// stops it from being completed around.
+	var unclear []string
+	for _, question := range view.PendingQuestions {
+		if IsClarityQuestion(question) {
+			unclear = append(unclear, ClarityQuestionIssueKey(question))
+		}
+	}
+	if len(unclear) > 0 {
+		gaps = append(gaps, ReadinessGap{
+			Code:     GapRequirementUnclear,
+			Detail:   fmt.Sprintf("%s was started as needing clarification and nobody has answered - answer_delivery_question with a clarity records the answer", strings.Join(unclear, ", ")),
+			Subjects: unclear,
 		})
 	}
 

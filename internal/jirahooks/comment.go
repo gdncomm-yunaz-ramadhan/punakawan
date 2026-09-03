@@ -65,6 +65,8 @@ func eventLabel(eventType deliveryhooks.EventType) string {
 		return "delivery completed"
 	case deliveryhooks.EventDeliveryFailed:
 		return "delivery failed"
+	case deliveryhooks.EventRequirementUnclear:
+		return "needs clarification before work starts"
 	default:
 		return string(eventType)
 	}

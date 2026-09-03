@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ygrip/punakawan/internal/deliveryhooks"
 	"github.com/ygrip/punakawan/internal/storage"
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 type JiraSourceSnapshot struct {
@@ -176,6 +178,68 @@ const (
 	ClarityClear              = "clear"
 	ClarityNeedsClarification = "needs_clarification"
 )
+
+// clarityQuestionPrefix marks an unresolved input that is a question
+// about the requirement itself rather than a reference nothing could
+// classify. Both live in the same list because both are "this delivery is
+// waiting on an answer", which is what a reader of pending_questions
+// wants to know.
+const clarityQuestionPrefix = "clarity:"
+
+// ClarityQuestionReference names the pending question recorded for one
+// issue whose requirement was judged unclear.
+func ClarityQuestionReference(issueKey string) string {
+	return clarityQuestionPrefix + strings.ToUpper(strings.TrimSpace(issueKey))
+}
+
+// ClarityQuestionIssueKey is the issue key one of these references names.
+func ClarityQuestionIssueKey(reference string) string {
+	return strings.TrimPrefix(reference, clarityQuestionPrefix)
+}
+
+// IsClarityQuestion reports whether a pending question reference is one
+// of these rather than an unclassifiable requirement reference.
+func IsClarityQuestion(reference string) bool {
+	return strings.HasPrefix(reference, clarityQuestionPrefix)
+}
+
+// OpenClarityQuestion records that this delivery is waiting on an answer
+// about what its requirement means, and asks for it wherever the
+// workspace projects delivery events - on the Jira issue itself, for a
+// workspace with write-back on.
+//
+// Recording "needs clarification" used to do nothing beyond storing the
+// judgement: no gate, no question, nothing on the issue. The person who
+// wrote the requirement had no way to learn it was unclear, and the
+// delivery looked exactly like one that was understood.
+func (s *Store) OpenClarityQuestion(ctx context.Context, idempotencyKey, orchestrationID, issueKey, rationale string) error {
+	orch, err := s.GetOrchestration(ctx, orchestrationID)
+	if err != nil {
+		return err
+	}
+	reference := ClarityQuestionReference(issueKey)
+	for _, open := range orch.UnresolvedInputs {
+		if open.Reference == reference {
+			return nil
+		}
+	}
+	note := strings.TrimSpace(rationale)
+	input := protocol.DeliveryOrchestrationUnresolvedInputsElem{Reference: reference}
+	if note != "" {
+		input.Note = &note
+	}
+	if _, err := s.RegisterInput(ctx, idempotencyKey, orchestrationID, orch.Revision, input); err != nil {
+		return err
+	}
+	s.dispatchOrchestrationEvent(ctx, orchestrationID, "", deliveryhooks.EventRequirementUnclear, note, nil)
+	return nil
+}
+
+// CloseClarityQuestion clears the question opened for issueKey, for a
+// caller that has just recorded an assessment answering it.
+func (s *Store) CloseClarityQuestion(ctx context.Context, idempotencyKey, orchestrationID, issueKey string) error {
+	return s.ResolvePendingInput(ctx, idempotencyKey, orchestrationID, ClarityQuestionReference(issueKey))
+}
 
 // MapWorkItemToJiraTask permits a Jira task only when it is an exact Jira
 // requirement already grouped by that parent task; arbitrary issue keys are

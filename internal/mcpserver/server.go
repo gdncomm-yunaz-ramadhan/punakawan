@@ -93,7 +93,7 @@ Delivery call order. Follow it in this sequence - each step depends on ids the p
 4. log_delivery_work when work on that task is done, with the lane_id from get_delivery and a measured interval. It requires the mapping from step 3. Retry an unsynced interval with retry_worklog_sync rather than recording it again.
 5. complete_delivery_lane once that lane's work is finished, reporting what you verified and whether the lane was accepted or failed. This is the only thing that moves a lane out of runnable; skip it and the lane stays open forever with all six verification dimensions pending. Failing a lane is a real outcome, not an error.
 6. ingest_delivery_usage_snapshot during the session and finalize_delivery_session at its end, both taking the telemetry_session_id from step 2, and reporting provider-observed usage with the current unit price and price source whenever they can be obtained; never ask humans to maintain price tables.
-7. complete_delivery, or cancel_delivery if the work is abandoned. It is refused while the delivery still has gaps - open lanes, unreported verification, uncovered requirements, unsynced worklogs, open sessions, unpriceable usage. Close them; pass acknowledge_gaps only for a gap you genuinely cannot close, which records it as waived rather than hiding it.
+7. complete_delivery, or cancel_delivery if the work is abandoned. It is refused while the delivery still has gaps - open lanes, unreported verification, uncovered requirements, an unanswered clarity question, unsynced worklogs, open sessions, unpriceable usage. Close them; pass acknowledge_gaps only for a gap you genuinely cannot close, which records it as waived rather than hiding it.
 
 get_delivery reads the current state, its next_action, its readiness (the same gaps step 7 checks), and the ids the steps above need. invoke_workflow starts a delivery from a saved workflow definition instead of step 2.
 
@@ -103,7 +103,7 @@ To assess a Jira issue: resolve it, hydrate its parent and every subtask, reason
 
 For provider access beyond these tools, use list_adapter_operations to discover live operation descriptions and input schemas, then call_adapter_operation with an exact declared operation. Runtime mechanics stay delegated to connected adapters.
 
-Execute complete, authorized delivery work without asking for confirmation. Ask the user only when a required input is missing or contradictory, or when a material decision has multiple defensible outcomes. In those cases return needs_input with one precise question and, for a decision, finite options with impacts. Do not create approval requests or a pending-question queue.`
+Execute complete, authorized delivery work without asking for confirmation. Ask the user only when a required input is missing or contradictory, or when a material decision has multiple defensible outcomes. In those cases return needs_input with one precise question and, for a decision, finite options with impacts. Do not create approval requests or a pending-question queue of your own. Starting a delivery with clarity needs_clarification is different: punakawan itself records that one question, asks it on the issue, and holds the delivery until answer_delivery_question answers it.`
 
 // serverInstructionsRevision identifies serverInstructionsBody's exact
 // content: a client reconnecting after a punakawan upgrade can compare
