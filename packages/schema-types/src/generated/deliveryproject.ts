@@ -25,7 +25,7 @@ export interface DeliveryProject {
    */
   revision: number;
   /**
-   * Static repository configuration facts (package manager, layout, naming convention, test framework, linters, formatters). Captured automatically when an agent's tool call touches a recognized config file (go.mod, package.json, a lockfile, .golangci.yml, etc.), or set explicitly via upsert_project. Each field is merged independently on write, never wholesale-replaced, so one detector's update never erases another's.
+   * Static repository facts: its configuration (package manager, layout, naming convention, test framework, linters, formatters) and the provider routing already resolved for it. Configuration is captured automatically when an agent's tool call touches a recognized config file (go.mod, package.json, a lockfile, .golangci.yml, etc.), or set explicitly via upsert_project. Each field is merged independently on write, never wholesale-replaced, so one detector's update never erases another's.
    */
   metadata?: {
     package_manager?: string;
@@ -35,5 +35,9 @@ export interface DeliveryProject {
     linters?: string[];
     formatters?: string[];
     editorconfig?: boolean;
+    /**
+     * The configured GitHub organisation whose credential reaches this repository, remembered the first time it was resolved. A repository owner is not always an organisation id - a credential holds an account of whatever name its token belongs to - so this records which credential was proven to work rather than deriving it again. It is a local routing fact and never a credential.
+     */
+    github_org?: string;
   };
 }

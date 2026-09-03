@@ -41,6 +41,11 @@ type App struct {
 	Worktrees       *gitops.WorktreeManager
 	Workflow        *workflow.Store
 	AdapterRegistry *adapters.Registry
+	// Credentials is the host's provider organisation store, or nil when
+	// this host has no readable credentials path. It is held here rather
+	// than reopened per call site so every consumer resolves an
+	// organisation against exactly the file the adapter registry does.
+	Credentials     *providercreds.Store
 	PrReviews       *prreview.Store
 	ContextRequests *contextrequest.Store
 	// RoleConfig resolves a project's persisted role prompt preferences
@@ -206,7 +211,9 @@ func load(ws *workspace.Workspace) (*App, error) {
 	// credentials, read here rather than inherited from this process's
 	// environment - which holds at most one organisation's.
 	if credsPath, err := workspace.GlobalCredentialsPath(); err == nil {
-		registry.SetOrgEnvResolver(providercreds.Open(credsPath).AdapterOrgEnv())
+		creds := providercreds.Open(credsPath)
+		a.Credentials = creds
+		registry.SetOrgEnvResolver(creds.AdapterOrgEnv())
 	}
 	a.AdapterRegistry = registry
 	a.Worktrees = gitops.NewWorktreeManager(sup, pol)

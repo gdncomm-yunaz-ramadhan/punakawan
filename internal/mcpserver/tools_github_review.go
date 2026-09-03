@@ -30,7 +30,11 @@ func hydrateGitHubPullRequestHandler(a *app.App) func(context.Context, *mcp.Call
 		if err != nil {
 			return nil, HydrateGitHubPullRequestOutput{}, err
 		}
-		svc := githubintegration.NewService(a.AdapterRegistry, outboxStore)
+		store, err := OpenDeliveryStore(ctx, a)
+		if err != nil {
+			return nil, HydrateGitHubPullRequestOutput{}, err
+		}
+		svc := githubintegration.NewService(a.AdapterRegistry, outboxStore, gitHubOrgResolver(a, store))
 		runID := fmt.Sprintf("github-pr-%s-%d", in.Repository, in.PullRequestNumber)
 		out, err := svc.HydratePullRequest(ctx, runID, in.Repository, in.PullRequestNumber)
 		if err != nil {
@@ -149,7 +153,7 @@ func submitGitHubPRReviewHandler(a *app.App) func(context.Context, *mcp.CallTool
 			return nil, SubmitGitHubPRReviewOutput{}, err
 		}
 		comments, _ := params["comments"].([]map[string]any)
-		svc := githubintegration.NewService(a.AdapterRegistry, outboxStore)
+		svc := githubintegration.NewService(a.AdapterRegistry, outboxStore, gitHubOrgResolver(a, store))
 		externalID, err := svc.SubmitReview(ctx, githubintegration.SubmitReviewRequest{
 			RunID: "github-pr-review-" + review.ID, Repository: review.Repository, PullRequestNumber: review.PullRequestNumber,
 			HeadSHA: review.HeadSHA, Body: review.Body, Event: review.Verdict, Comments: comments, ReviewID: review.ID,

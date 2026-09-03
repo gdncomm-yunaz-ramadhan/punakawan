@@ -32,15 +32,40 @@ type GateResolver interface {
 	Gate(ctx context.Context, adapterID string) (*adapters.Gate, error)
 }
 
+// RepositoryOrgResolver names the configured organisation whose
+// credentials reach a repository, reporting false when this host has
+// nothing configured for it. It takes the whole repository rather than
+// its owner because the owner in "owner/repo" is not necessarily an
+// organisation id: a credential configured from one site routinely holds
+// an account of a different name, and a repository already resolved once
+// is remembered against the repository itself.
+type RepositoryOrgResolver func(ctx context.Context, repository string) (orgID string, ok bool)
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithRepositoryOrgResolver wires organisation resolution. Without it a
+// Service keeps deriving the organisation from the owner alone, which is
+// correct for a host whose organisations are named after their owners and
+// is what every caller did before.
+func WithRepositoryOrgResolver(resolve RepositoryOrgResolver) Option {
+	return func(s *Service) { s.orgs = resolve }
+}
+
 // Service implements GitHub pull request hydration and review submission.
 type Service struct {
 	registry GateResolver
 	outbox   *outbox.Store
+	orgs     RepositoryOrgResolver
 }
 
 // NewService builds a Service.
-func NewService(registry GateResolver, outboxStore *outbox.Store) *Service {
-	return &Service{registry: registry, outbox: outboxStore}
+func NewService(registry GateResolver, outboxStore *outbox.Store, opts ...Option) *Service {
+	s := &Service{registry: registry, outbox: outboxStore}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // ErrReviewProposalStale is returned by SubmitReview when the pull
@@ -74,7 +99,7 @@ func (e *ErrReviewProposalStale) Error() string {
 // know whether it saw the full picture should check that field rather
 // than assume it.
 func (s *Service) HydratePullRequest(ctx context.Context, runID, repository string, pullRequestNumber int) (map[string]any, error) {
-	gate, err := s.registry.Gate(ctx, gitHubAdapterID(repository))
+	gate, err := s.registry.Gate(ctx, s.adapterIDFor(ctx, repository))
 	if err != nil {
 		return nil, fmt.Errorf("githubintegration: open github adapter: %w", err)
 	}
@@ -148,7 +173,7 @@ func pageComplete(result map[string]any) bool {
 // current head SHA, the one read SubmitReview needs to detect a stale
 // proposal without paying for a full HydratePullRequest.
 func (s *Service) currentHeadSHA(ctx context.Context, runID, repository string, pullRequestNumber int) (string, error) {
-	gate, err := s.registry.Gate(ctx, gitHubAdapterID(repository))
+	gate, err := s.registry.Gate(ctx, s.adapterIDFor(ctx, repository))
 	if err != nil {
 		return "", fmt.Errorf("githubintegration: open github adapter: %w", err)
 	}
@@ -195,7 +220,7 @@ func (s *Service) CreatePullRequest(ctx context.Context, req CreatePullRequestRe
 		return 0, "", fmt.Errorf("githubintegration: encode github.createPullRequest payload for %s: %w", req.Repository, err)
 	}
 	resolved, err := providerwrite.ExecuteNow(ctx, s.outbox, s.registry, req.RunID, outbox.Intent{
-		AdapterID: gitHubAdapterID(req.Repository), Operation: "github.createPullRequest", TargetKey: req.Repository,
+		AdapterID: s.adapterIDFor(ctx, req.Repository), Operation: "github.createPullRequest", TargetKey: req.Repository,
 		PayloadJSON:          string(payload),
 		OperationFingerprint: providerwrite.GitHubCreatePRFingerprint(req.Repository, req.HeadBranch, req.BaseBranch),
 	})
@@ -272,7 +297,7 @@ func (s *Service) SubmitReview(ctx context.Context, req SubmitReviewRequest) (ex
 		return "", fmt.Errorf("githubintegration: encode github pull request review payload: %w", err)
 	}
 	resolved, err := providerwrite.ExecuteNow(ctx, s.outbox, s.registry, req.RunID, outbox.Intent{
-		AdapterID: gitHubAdapterID(req.Repository), Operation: "github.createPullRequestReview", TargetKey: req.Repository,
+		AdapterID: s.adapterIDFor(ctx, req.Repository), Operation: "github.createPullRequestReview", TargetKey: req.Repository,
 		PayloadJSON:          string(payload),
 		OperationFingerprint: providerwrite.GitHubReviewFingerprint(req.Repository, req.PullRequestNumber, req.HeadSHA, req.ReviewID),
 	})
@@ -292,15 +317,26 @@ func (s *Service) SubmitReview(ctx context.Context, req SubmitReviewRequest) (ex
 	return resolved.ExternalID, nil
 }
 
-// gitHubAdapterID names the adapter process that speaks for the
-// organisation a repository belongs to. A repository is always written
-// "owner/repo", so the owner is the organisation and no separate lookup
-// is needed. A repository given without an owner keeps using the bare
-// "github" adapter.
-func gitHubAdapterID(repository string) string {
+// adapterIDFor names the adapter process that speaks for the organisation
+// a repository belongs to.
+//
+// A repository is always written "owner/repo", and the owner used to be
+// taken as the organisation directly. That is right only while every
+// organisation is named after its owner: a credential configured from one
+// site holds an account of whatever name the token belongs to, and a
+// repository under that account resolved to an adapter id no credential
+// answered for. With a resolver wired the owner is looked up first; with
+// none, or with nothing configured for it, the old derivation stands. A
+// repository given without an owner keeps using the bare "github" adapter.
+func (s *Service) adapterIDFor(ctx context.Context, repository string) string {
 	owner, _, found := strings.Cut(strings.TrimSpace(repository), "/")
 	if !found {
 		return "github"
+	}
+	if s.orgs != nil {
+		if org, ok := s.orgs(ctx, repository); ok {
+			return adapters.QualifyAdapterID("github", providercreds.NormalizeOrgID(org))
+		}
 	}
 	return adapters.QualifyAdapterID("github", providercreds.NormalizeOrgID(owner))
 }

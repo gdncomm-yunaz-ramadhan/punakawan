@@ -13,6 +13,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
 // adapterGate is the minimal surface CheckGitHubRepositoryAccess needs
@@ -63,4 +66,66 @@ func CheckGitHubRepositoryAccess(ctx context.Context, gate adapterGate, repoSlug
 	push := result.Normalized.Permissions != nil && result.Normalized.Permissions.Push
 	detail = fmt.Sprintf("repository %s is accessible; push access: %v", repoSlug, push)
 	return true, push, push, detail, nil
+}
+
+// GitHubOrgForRepository returns the organisation whose credential was
+// last proven to reach repository ("owner/repo"), as remembered on the
+// registered project for it.
+//
+// A repository owner is not always an organisation id - a credential
+// holds an account of whatever name its token belongs to, so a personal
+// or sub-organisation repository is reached by an organisation named
+// after somewhere else entirely. Rather than re-derive that every time,
+// the answer is remembered where the repository already is. A repository
+// no project is registered for, or one two projects claim, remembers
+// nothing: this reports what is recorded, it never guesses.
+func (s *Store) GitHubOrgForRepository(ctx context.Context, repository string) (string, bool, error) {
+	project, err := s.projectForGitHubRepository(ctx, repository)
+	if err != nil || project == nil {
+		return "", false, err
+	}
+	if project.Metadata == nil || project.Metadata.GithubOrg == nil {
+		return "", false, nil
+	}
+	org := strings.TrimSpace(*project.Metadata.GithubOrg)
+	return org, org != "", nil
+}
+
+// RememberGitHubOrg records that org's credential reaches repository, on
+// the project registered for it. It merges one metadata field and never
+// writes the host's credentials file: which organisation speaks for one
+// repository is a local routing fact, not a change to what this machine
+// is configured with.
+func (s *Store) RememberGitHubOrg(ctx context.Context, repository, org string) error {
+	org = strings.TrimSpace(org)
+	if org == "" {
+		return nil
+	}
+	project, err := s.projectForGitHubRepository(ctx, repository)
+	if err != nil || project == nil {
+		return err
+	}
+	if project.Metadata != nil && project.Metadata.GithubOrg != nil && strings.TrimSpace(*project.Metadata.GithubOrg) == org {
+		return nil
+	}
+	_, err = s.MergeProjectMetadata(ctx, "github-org:"+project.Id+":"+org, project.Id,
+		protocol.DeliveryProjectMetadata{GithubOrg: &org})
+	return err
+}
+
+// projectForGitHubRepository resolves "owner/repo" to the single active
+// project registered for it, or nil when zero or several claim it.
+func (s *Store) projectForGitHubRepository(ctx context.Context, repository string) (*protocol.DeliveryProject, error) {
+	repository = strings.Trim(strings.TrimSpace(repository), "/")
+	if repository == "" {
+		return nil, nil
+	}
+	projects, err := s.FindProjectsByRepositoryURL(ctx, "https://github.com/"+repository)
+	if err != nil {
+		return nil, err
+	}
+	if len(projects) != 1 {
+		return nil, nil
+	}
+	return &projects[0], nil
 }
