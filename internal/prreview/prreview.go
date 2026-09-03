@@ -34,14 +34,10 @@ type Store struct {
 	mu   sync.Mutex
 }
 
-// OpenStore ensures .punakawan/pr-reviews/ exists under workspaceRoot and
-// returns a Store backed by reviews.jsonl within it.
+// OpenStore returns a Store backed by .punakawan/pr-reviews/reviews.jsonl
+// under workspaceRoot, creating nothing until the first Append.
 func OpenStore(workspaceRoot string) (*Store, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "pr-reviews")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("prreview: create %s: %w", dir, err)
-	}
-	return &Store{path: filepath.Join(dir, "reviews.jsonl")}, nil
+	return &Store{path: filepath.Join(workspaceRoot, ".punakawan", "pr-reviews", "reviews.jsonl")}, nil
 }
 
 // Append writes one record to the store.
@@ -49,6 +45,10 @@ func (s *Store) Append(rec Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("prreview: create %s: %w", dir, err)
+	}
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("prreview: open %s: %w", s.path, err)

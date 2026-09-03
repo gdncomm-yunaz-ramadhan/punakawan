@@ -190,7 +190,7 @@ type GetWorkflowOutput struct {
 
 func getWorkflowHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, GetWorkflowInput) (*mcp.CallToolResult, GetWorkflowOutput, error) {
 	return func(_ context.Context, _ *mcp.CallToolRequest, in GetWorkflowInput) (*mcp.CallToolResult, GetWorkflowOutput, error) {
-		store, err := workflowdef.Open(a.Workspace.Root)
+		store, err := openWorkflowDefinitions(a)
 		if err != nil {
 			return nil, GetWorkflowOutput{}, fmt.Errorf("mcpserver: get_workflow: %w", err)
 		}
@@ -208,7 +208,7 @@ type ListWorkflowsOutput struct {
 
 func listWorkflowsHandler(a *app.App) func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, ListWorkflowsOutput, error) {
 	return func(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ListWorkflowsOutput, error) {
-		store, err := workflowdef.Open(a.Workspace.Root)
+		store, err := openWorkflowDefinitions(a)
 		if err != nil {
 			return nil, ListWorkflowsOutput{}, fmt.Errorf("mcpserver: list_workflows: %w", err)
 		}

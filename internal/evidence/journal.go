@@ -20,14 +20,11 @@ type Journal struct {
 	mu   sync.Mutex
 }
 
-// OpenJournal ensures .punakawan/runs/<runID>/ exists and returns a Journal
-// backed by events.jsonl within it.
+// OpenJournal returns a Journal backed by
+// .punakawan/runs/<runID>/events.jsonl, creating nothing until the first
+// Append.
 func OpenJournal(workspaceRoot, runID string) (*Journal, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "runs", runID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("evidence: create %s: %w", dir, err)
-	}
-	return &Journal{path: filepath.Join(dir, "events.jsonl")}, nil
+	return &Journal{path: filepath.Join(workspaceRoot, ".punakawan", "runs", runID, "events.jsonl")}, nil
 }
 
 // Append writes one event to the journal.
@@ -35,6 +32,10 @@ func (j *Journal) Append(event protocol.Event) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
+	dir := filepath.Dir(j.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("evidence: create %s: %w", dir, err)
+	}
 	f, err := os.OpenFile(j.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("evidence: open %s: %w", j.path, err)

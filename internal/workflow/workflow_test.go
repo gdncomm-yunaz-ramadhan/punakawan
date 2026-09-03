@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,6 +20,9 @@ func newTestStore(t *testing.T) *Store {
 
 func appendRaw(t *testing.T, path string, data string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create %s: %v", filepath.Dir(path), err)
+	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)

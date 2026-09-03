@@ -30,7 +30,7 @@ func saveWorkflowDefinitionHandler(a *app.App, reg *toolIndex) func(context.Cont
 		if err := workflowdef.Validate(definition, workflowdef.NewCapabilitySet(reg.Names(), nil)); err != nil {
 			return nil, SaveWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: save_workflow: %w", err)
 		}
-		store, err := workflowdef.Open(a.Workspace.Root)
+		store, err := openWorkflowDefinitions(a)
 		if err != nil {
 			return nil, SaveWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: save_workflow: %w", err)
 		}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -69,5 +70,29 @@ func TestLoadOptionalPrefersARealProject(t *testing.T) {
 
 	if a.Workspace == nil || a.Workspace.Ephemeral || a.Workspace.ID != "fixture-workspace" {
 		t.Fatalf("expected a real project to win over the ephemeral fallback, got %+v", a.Workspace)
+	}
+}
+
+// TestLoadLeavesAGitRepositoryUntouched: opening a project must not write
+// into it. Three stores used to MkdirAll on open, so every command that
+// only reads - workspace show, doctor, and the panel listing every
+// registered project - left a .punakawan directory behind in whatever
+// repository it had been pointed at, including repositories the user had
+// never opened themselves.
+func TestLoadLeavesAGitRepositoryUntouched(t *testing.T) {
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+
+	a, err := Load(root)
+	if err != nil {
+		t.Fatalf("app.Load: %v", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+
+	if _, err := os.Stat(filepath.Join(root, ".punakawan")); !os.IsNotExist(err) {
+		t.Fatalf("loading the project created .punakawan in it: %v", err)
 	}
 }

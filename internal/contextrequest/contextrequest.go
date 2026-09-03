@@ -25,14 +25,11 @@ type Store struct {
 	mu   sync.Mutex
 }
 
-// OpenStore ensures .punakawan/context-requests/ exists under
-// workspaceRoot and returns a Store backed by requests.jsonl within it.
+// OpenStore returns a Store backed by
+// .punakawan/context-requests/requests.jsonl under workspaceRoot,
+// creating nothing until the first Append.
 func OpenStore(workspaceRoot string) (*Store, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "context-requests")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("contextrequest: create %s: %w", dir, err)
-	}
-	return &Store{path: filepath.Join(dir, "requests.jsonl")}, nil
+	return &Store{path: filepath.Join(workspaceRoot, ".punakawan", "context-requests", "requests.jsonl")}, nil
 }
 
 // Append writes a new record (an initial submission, or a later
@@ -41,6 +38,10 @@ func (s *Store) Append(rec protocol.MissingContextRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("contextrequest: create %s: %w", dir, err)
+	}
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("contextrequest: open %s: %w", s.path, err)

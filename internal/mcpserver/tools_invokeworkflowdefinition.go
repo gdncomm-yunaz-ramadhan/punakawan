@@ -30,7 +30,7 @@ type InvokeWorkflowDefinitionOutput struct {
 
 func invokeWorkflowDefinitionHandler(a *app.App, agentReg agent.AgentRegistry) func(context.Context, *mcp.CallToolRequest, InvokeWorkflowDefinitionInput) (*mcp.CallToolResult, InvokeWorkflowDefinitionOutput, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in InvokeWorkflowDefinitionInput) (*mcp.CallToolResult, InvokeWorkflowDefinitionOutput, error) {
-		defStore, err := workflowdef.Open(a.Workspace.Root)
+		defStore, err := openWorkflowDefinitions(a)
 		if err != nil {
 			return nil, InvokeWorkflowDefinitionOutput{}, fmt.Errorf("mcpserver: open workflow definition store: %w", err)
 		}

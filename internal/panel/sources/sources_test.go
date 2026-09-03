@@ -141,9 +141,11 @@ func newTestRun(a *app.App, id string) protocol.WorkflowRun {
 
 func openTestRegistry(t *testing.T) *registry.Store {
 	t.Helper()
-	// A dedicated, isolated storage kernel per call, so tests that do not
-	// otherwise set PUNAKAWAN_DATA_DIR never share (and leak entries through)
-	// this machine's real registry.
+	// A dedicated, isolated storage kernel and data directory per call, so
+	// tests that do not otherwise set PUNAKAWAN_DATA_DIR never share (and
+	// leak entries through) this machine's real registry, or through the
+	// persisted panel snapshots that now live beside it.
+	t.Setenv("PUNAKAWAN_DATA_DIR", t.TempDir())
 	db, err := storage.Open(context.Background(), filepath.Join(t.TempDir(), "registry.db"))
 	if err != nil {
 		t.Fatalf("storage.Open: %v", err)

@@ -2,6 +2,8 @@ package sources
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"github.com/ygrip/punakawan/internal/panel/contract"
 	"github.com/ygrip/punakawan/internal/panel/registry"
 	"github.com/ygrip/punakawan/internal/panel/snapshot"
+	"github.com/ygrip/punakawan/internal/storage"
 	"github.com/ygrip/punakawan/pkg/protocol"
 )
 
@@ -50,7 +53,7 @@ type CachedWorkspaceReader struct {
 // (used to stamp WorkspaceSummary.Primary). ttl overrides the cache
 // staleness threshold when > 0.
 //
-// Every snapshot is also persisted to <project root>/.punakawan/<snapshotFileName>
+// Every snapshot is also persisted under the machine's data directory
 // (see loadPersistedSnapshot/savePersistedSnapshot) so a `punakawan panel`
 // restart - which always starts with an empty in-memory cache - loads each
 // project's last-known counts from disk instead of recomputing them live:
@@ -67,8 +70,8 @@ func NewCachedWorkspaceReader(inner contract.WorkspaceReader, reg *registry.Stor
 	}
 	opts := []snapshot.Option{
 		snapshot.WithPersistence(
-			func(projectID string) (*snapshot.ProjectSnapshot, bool) { return loadPersistedSnapshot(reg, projectID) },
-			func(snap *snapshot.ProjectSnapshot) { savePersistedSnapshot(reg, snap) },
+			loadPersistedSnapshot,
+			savePersistedSnapshot,
 		),
 	}
 	if ttl > 0 {
@@ -78,25 +81,38 @@ func NewCachedWorkspaceReader(inner contract.WorkspaceReader, reg *registry.Stor
 	return c
 }
 
-// snapshotFileName names the per-project persisted ProjectSnapshot file
-// within its ".punakawan" directory, alongside workspace.yaml and the
-// project's other generated (gitignored) state.
-const snapshotFileName = "panel-snapshot.json"
+// snapshotDirName names the directory under the machine's data directory
+// holding one persisted ProjectSnapshot per project.
+//
+// These are a cache of counts the panel can always recompute, so they are
+// runtime state rather than anything belonging to a project. They used to
+// be written into each project's own .punakawan directory, which meant
+// merely listing projects in the panel wrote a file into every repository
+// on the list - including repositories the user had not opened.
+const snapshotDirName = "panel-snapshots"
 
-// loadPersistedSnapshot reads projectID's last-saved snapshot from its own
-// project root, resolved via reg. ok is false whenever the project is
-// unknown to reg, has never been saved, or the file cannot be read/decoded
-// - persistence is strictly best-effort, so any of these just falls back
-// to the cache's normal cold-start behavior (a live recompute).
-func loadPersistedSnapshot(reg *registry.Store, projectID string) (*snapshot.ProjectSnapshot, bool) {
-	if reg == nil {
-		return nil, false
+// snapshotPath is where projectID's persisted snapshot lives. The id is
+// hashed rather than used directly: a project id is not guaranteed to be a
+// safe file name, and the file is never meant to be found by hand.
+func snapshotPath(projectID string) (string, error) {
+	dir, err := storage.DataDir()
+	if err != nil {
+		return "", err
 	}
-	entry, err := reg.Get(projectID)
+	sum := sha256.Sum256([]byte(projectID))
+	return filepath.Join(dir, snapshotDirName, hex.EncodeToString(sum[:])+".json"), nil
+}
+
+// loadPersistedSnapshot reads projectID's last-saved snapshot. ok is false
+// whenever it has never been saved or cannot be read/decoded - persistence
+// is strictly best-effort, so any of these just falls back to the cache's
+// normal cold-start behavior (a live recompute).
+func loadPersistedSnapshot(projectID string) (*snapshot.ProjectSnapshot, bool) {
+	path, err := snapshotPath(projectID)
 	if err != nil {
 		return nil, false
 	}
-	data, err := os.ReadFile(filepath.Join(entry.Path, ".punakawan", snapshotFileName))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false
 	}
@@ -107,34 +123,32 @@ func loadPersistedSnapshot(reg *registry.Store, projectID string) (*snapshot.Pro
 	return &snap, true
 }
 
-// savePersistedSnapshot durably writes snap to its project's own root
-// (resolved via reg), so the next `punakawan panel` process can load it
-// back via loadPersistedSnapshot. Writes to a temp file first and renames
-// into place so a concurrent loader never observes a half-written file.
-// Persistence is best-effort: any failure here (an unregistered project, a
-// read-only project root, ...) is silently skipped rather than surfaced,
-// since it must never fail the refresh that produced snap.
-func savePersistedSnapshot(reg *registry.Store, snap *snapshot.ProjectSnapshot) {
-	if reg == nil || snap == nil {
+// savePersistedSnapshot durably writes snap so the next `punakawan panel`
+// process can load it back via loadPersistedSnapshot. Writes to a temp file
+// first and renames into place so a concurrent loader never observes a
+// half-written file. Persistence is best-effort: any failure here is
+// silently skipped rather than surfaced, since it must never fail the
+// refresh that produced snap.
+func savePersistedSnapshot(snap *snapshot.ProjectSnapshot) {
+	if snap == nil {
 		return
 	}
-	entry, err := reg.Get(snap.ProjectID)
+	path, err := snapshotPath(snap.ProjectID)
 	if err != nil {
 		return
 	}
-	dir := filepath.Join(entry.Path, ".punakawan")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return
 	}
 	data, err := json.Marshal(snap)
 	if err != nil {
 		return
 	}
-	tmp := filepath.Join(dir, snapshotFileName+".tmp")
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return
 	}
-	_ = os.Rename(tmp, filepath.Join(dir, snapshotFileName))
+	_ = os.Rename(tmp, path)
 }
 
 // List returns one WorkspaceSummary per registered project, served from the

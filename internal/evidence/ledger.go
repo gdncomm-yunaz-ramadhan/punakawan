@@ -27,14 +27,13 @@ type Ledger struct {
 	mu   sync.Mutex
 }
 
-// OpenLedger ensures .punakawan/evidence/<runID>/ exists and returns a
-// Ledger backed by records.jsonl within it.
+// OpenLedger returns a Ledger backed by
+// .punakawan/evidence/<runID>/records.jsonl, creating nothing until the
+// first Append. Browsing a run's evidence in the panel opens a ledger for
+// every run it lists, and those reads used to create a directory per run
+// inside the project being read.
 func OpenLedger(workspaceRoot, runID string) (*Ledger, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "evidence", runID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("evidence: create %s: %w", dir, err)
-	}
-	return &Ledger{path: filepath.Join(dir, "records.jsonl")}, nil
+	return &Ledger{path: filepath.Join(workspaceRoot, ".punakawan", "evidence", runID, "records.jsonl")}, nil
 }
 
 // Append writes one record to the ledger, in the order artifacts were
@@ -45,6 +44,10 @@ func (l *Ledger) Append(rec protocol.EvidenceRecord) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	dir := filepath.Dir(l.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("evidence: create %s: %w", dir, err)
+	}
 	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("evidence: open %s: %w", l.path, err)

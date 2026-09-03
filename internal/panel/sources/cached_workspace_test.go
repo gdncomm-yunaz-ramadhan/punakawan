@@ -188,8 +188,15 @@ func TestCachedWorkspaceReaderPersistsSnapshotAcrossRestarts(t *testing.T) {
 	if got := inner.calls("alpha"); got != 1 {
 		t.Fatalf("alpha Get calls after first process's List = %d, want 1", got)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".punakawan", snapshotFileName)); err != nil {
+	persisted, err := snapshotPath("alpha")
+	if err != nil {
+		t.Fatalf("snapshotPath: %v", err)
+	}
+	if _, err := os.Stat(persisted); err != nil {
 		t.Fatalf("expected a persisted snapshot file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".punakawan")); !os.IsNotExist(err) {
+		t.Fatalf("listing projects wrote into alpha's own directory: %v", err)
 	}
 
 	restarted := NewCachedWorkspaceReader(inner, reg, "alpha", time.Hour)
@@ -226,10 +233,14 @@ func TestCachedWorkspaceReaderRestartServesStalePersistedSnapshotWithoutBlocking
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".punakawan"), 0o755); err != nil {
-		t.Fatalf("mkdir .punakawan: %v", err)
+	persisted, err := snapshotPath("alpha")
+	if err != nil {
+		t.Fatalf("snapshotPath: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".punakawan", snapshotFileName), data, 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Dir(persisted), 0o700); err != nil {
+		t.Fatalf("mkdir snapshot dir: %v", err)
+	}
+	if err := os.WriteFile(persisted, data, 0o644); err != nil {
 		t.Fatalf("write persisted snapshot: %v", err)
 	}
 

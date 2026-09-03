@@ -31,14 +31,11 @@ type Store struct {
 	mu  sync.Mutex
 }
 
-// Open ensures <root>/.punakawan/workflows/ exists and returns a Store rooted
-// there.
+// Open returns a Store rooted at <root>/.punakawan/workflows/, creating
+// nothing: the directory appears when a definition is first saved, so a
+// caller that only lists definitions leaves the project untouched.
 func Open(root string) (*Store, error) {
-	dir := filepath.Join(root, ".punakawan", "workflows")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("workflowdef: create %s: %w", dir, err)
-	}
-	return &Store{dir: dir}, nil
+	return &Store{dir: filepath.Join(root, ".punakawan", "workflows")}, nil
 }
 
 // filePath returns the live YAML path for a definition id. The id is sanity
@@ -173,7 +170,11 @@ func (s *Store) writeAtomic(path string, def Definition) error {
 	if err != nil {
 		return fmt.Errorf("workflowdef: encode %s: %w", def.ID, err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*.yaml")
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("workflowdef: create %s: %w", dir, err)
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-*.yaml")
 	if err != nil {
 		return fmt.Errorf("workflowdef: temp file: %w", err)
 	}

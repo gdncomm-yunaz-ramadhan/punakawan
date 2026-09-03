@@ -38,6 +38,22 @@ func (r workflowDefinitionResolver) RequiredRoleStages(_ context.Context, id str
 	return stages, nil
 }
 
+// openWorkflowDefinitions opens the workflow definition store every MCP
+// tool reads and writes definitions through.
+//
+// It goes through WorkflowRoot() rather than the workspace root directly:
+// with no project in scope the root is a throwaway directory the process
+// deletes on close, so a definition saved there was silently gone by the
+// next session - while the run state beside it, which already used
+// WorkflowRoot(), survived.
+func openWorkflowDefinitions(a *app.App) (*workflowdef.Store, error) {
+	root, err := a.Workspace.WorkflowRoot()
+	if err != nil {
+		return nil, fmt.Errorf("mcpserver: resolve workflow root: %w", err)
+	}
+	return workflowdef.Open(root)
+}
+
 // OpenDeliveryStore is the single MCP binding from the public Delivery tools
 // to the delivery domain and its configured integration hooks.
 func OpenDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error) {
@@ -45,7 +61,7 @@ func OpenDeliveryStore(ctx context.Context, a *app.App) (*delivery.Store, error)
 	if err != nil {
 		return nil, fmt.Errorf("mcpserver: open storage kernel: %w", err)
 	}
-	definitionStore, err := workflowdef.Open(a.Workspace.Root)
+	definitionStore, err := openWorkflowDefinitions(a)
 	if err != nil {
 		return nil, fmt.Errorf("mcpserver: open workflow definition store: %w", err)
 	}

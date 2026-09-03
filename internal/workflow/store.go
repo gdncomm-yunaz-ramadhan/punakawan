@@ -45,14 +45,13 @@ type Store struct {
 	lastFileInfo os.FileInfo
 }
 
-// Open ensures .punakawan/workflow/ exists under workspaceRoot and returns
-// a Store backed by runs.jsonl within it.
+// Open returns a Store backed by .punakawan/workflow/runs.jsonl under
+// workspaceRoot. It creates nothing: the directory appears on the first
+// Append, so opening a project only to read it - which is what listing
+// projects in the panel, doctor and workspace show all do - leaves that
+// project exactly as it found it.
 func Open(workspaceRoot string) (*Store, error) {
-	dir := filepath.Join(workspaceRoot, ".punakawan", "workflow")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("workflow: create %s: %w", dir, err)
-	}
-	return &Store{path: filepath.Join(dir, "runs.jsonl")}, nil
+	return &Store{path: filepath.Join(workspaceRoot, ".punakawan", "workflow", "runs.jsonl")}, nil
 }
 
 // Append writes run's current state as a new entry in the run history.
@@ -60,6 +59,10 @@ func (s *Store) Append(run protocol.WorkflowRun) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("workflow: create %s: %w", dir, err)
+	}
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("workflow: open %s: %w", s.path, err)
