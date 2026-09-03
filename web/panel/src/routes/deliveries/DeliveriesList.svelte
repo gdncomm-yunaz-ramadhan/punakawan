@@ -196,14 +196,13 @@
   function formatCost(summary: DeliverySummary): string {
     const entries = Object.entries(summary.usage.estimated_costs ?? {});
     if (entries.length === 0) return "unknown";
-    const formatted = entries
+    return entries
       .map(([currency, amount]) => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount))
       .join(" · ");
-    return summary.usage.pricing_complete ? formatted : `${formatted} (partial)`;
   }
 
   // The list has no room to name the model inline, so it goes in the
-  // tooltip - the card still says "partial", and hovering says why.
+  // tooltip - the card carries a "partial" chip, and hovering says why.
   function costTitle(summary: DeliverySummary): string | undefined {
     if (summary.usage.pricing_complete) return undefined;
     const models = summary.usage.unpriced_models ?? [];
@@ -291,10 +290,15 @@
               {/if}
 
               <span class="stats" aria-label="Delivery usage">
-                <span><strong>{(s.usage.input_tokens + s.usage.output_tokens).toLocaleString()}</strong> tokens</span>
+                <span><strong>{(s.usage.total_tokens ?? 0).toLocaleString()}</strong> tokens</span>
                 <span><strong>{s.usage.tool_calls.toLocaleString()}</strong> tool calls</span>
                 <span><strong>{formatDuration(s.usage.elapsed_ms)}</strong> elapsed</span>
-                <span title={costTitle(s)}><strong>{formatCost(s)}</strong> cost</span>
+                <span title={costTitle(s)}>
+                  <strong>{formatCost(s)}</strong> cost
+                  {#if !s.usage.pricing_complete}
+                    <StatusBadge variant="warning" label="Partial" />
+                  {/if}
+                </span>
               </span>
               <span class="updated">Updated {formatDate(s.updated_at)}</span>
             </button>

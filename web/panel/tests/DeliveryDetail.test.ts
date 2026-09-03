@@ -17,7 +17,10 @@ function detail(over: Partial<DeliveryDetailModel> = {}): DeliveryDetailModel {
     usage: {
       input_tokens: 800,
       output_tokens: 200,
-      cache_tokens: 0,
+      cache_tokens: 1_500,
+      cache_write_tokens: 500,
+      cache_read_tokens: 1_000,
+      total_tokens: 2_500,
       tool_calls: 5,
       elapsed_ms: 90_000,
       estimated_costs: { USD: 12.5 },
@@ -88,19 +91,93 @@ describe("DeliveryDetail", () => {
     expect(screen.getByText("No activity recorded.")).toBeTruthy();
   });
 
-  it("opens cost detail from the estimated cost info button", async () => {
+  it("opens usage detail from the estimated cost info button", async () => {
     installBackend(detail());
 
     render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
     await screen.findByRole("heading", { name: "Migrate billing to v2" });
 
     await fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
-    await fireEvent.click(screen.getByLabelText("Cost detail"));
-    const dialog = screen.getByRole("dialog", { name: "Estimated cost detail" });
-    expect(dialog.textContent).toContain("Tokens");
+    await fireEvent.click(screen.getByLabelText("Usage detail"));
+    const dialog = screen.getByRole("dialog", { name: "Usage detail" });
     expect(dialog.textContent).toContain("$12.50");
     expect(dialog.textContent).toContain("Elapsed time");
     expect(dialog.textContent).toContain("Tool calls");
+    // The four token kinds are priced very differently, so the dialog has
+    // to name each rather than one fused figure.
+    for (const label of ["Total tokens", "Input", "Output", "Cache write", "Cache read"]) {
+      expect(dialog.textContent).toContain(label);
+    }
+    expect(dialog.textContent).toContain("1,000");
+  });
+
+  // A delivery run across several sittings on several models reports one
+  // lump otherwise, which says nothing about what drove the bill.
+  it("names each model and each session in the usage detail", async () => {
+    installBackend(
+      detail({
+        usage: {
+          input_tokens: 158,
+          output_tokens: 30_320,
+          cache_tokens: 6_601_696,
+          cache_write_tokens: 393_810,
+          cache_read_tokens: 6_207_886,
+          total_tokens: 6_632_174,
+          tool_calls: 39,
+          elapsed_ms: 796_393,
+          estimated_costs: { USD: 1.654274 },
+          pricing_complete: false,
+          unpriced_models: ["claude-sonnet-5"],
+          by_model: [
+            {
+              model: "claude-sonnet-5",
+              input_tokens: 158,
+              output_tokens: 30_320,
+              cache_write_tokens: 393_810,
+              cache_read_tokens: 6_207_886,
+              estimated_cost: 1.654274,
+              currency: "USD",
+              priced: false,
+            },
+          ],
+          by_session: [
+            {
+              session_id: "sess-late",
+              client_kind: "claude-code",
+              participant: "semar",
+              input_tokens: 102,
+              output_tokens: 19_260,
+              cache_write_tokens: 243_904,
+              cache_read_tokens: 4_258_550,
+              tool_calls: 25,
+              elapsed_ms: 428_416,
+              estimated_cost: 1.654274,
+              currency: "USD",
+              priced: true,
+            },
+          ],
+        },
+      } as Partial<DeliveryDetailModel>),
+    );
+
+    const { container } = render(DeliveryDetail, { props: { orchestrationId: "orc-1" } });
+    await screen.findByRole("heading", { name: "Migrate billing to v2" });
+    await fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+
+    // The tile carries the amount and a chip, not a sentence.
+    const costMetric = [...container.querySelectorAll(".metric")].find(
+      (m) => m.querySelector(".label")?.textContent === "Estimated cost",
+    );
+    expect(costMetric?.querySelector(".value")?.textContent).toBe("$1.65");
+    expect(costMetric?.textContent).toContain("Partial");
+    expect(costMetric?.textContent).not.toContain("no price for");
+
+    await fireEvent.click(screen.getByLabelText("Token detail"));
+    const dialog = screen.getByRole("dialog", { name: "Usage detail" });
+    expect(dialog.textContent).toContain("claude-sonnet-5");
+    expect(dialog.textContent).toContain("6,207,886");
+    expect(dialog.textContent).toContain("semar");
+    expect(dialog.textContent).toContain("No catalog price for claude-sonnet-5");
   });
 
   it("shows total linked projects, plans, and sessions in overview metrics", async () => {
@@ -132,7 +209,9 @@ describe("DeliveryDetail", () => {
     expect(metricValue("Total projects")).toBe("2");
     expect(metricValue("Total plans")).toBe("2");
     expect(metricValue("Total sessions")).toBe("3");
-    expect(metricValue("Tokens")).toBe("1,000");
+    // Every token kind, not input plus output: the cache tokens excluded
+    // by the old sum were most of a real delivery's bill.
+    expect(metricValue("Tokens")).toBe("2,500");
     expect(metricValue("Tool calls")).toBe("5");
   });
 

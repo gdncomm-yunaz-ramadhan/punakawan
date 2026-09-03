@@ -27,7 +27,7 @@
   let cancelling = $state(false);
   let cancelError: string | null = $state(null);
   let confirmingCancel = $state(false);
-  let costDetailOpen = $state(false);
+  let usageDetailOpen = $state(false);
 
   const WATCH_WAIT_SECONDS = 25;
 
@@ -110,24 +110,29 @@
     const ended = endedAt ? Date.parse(endedAt) : Date.now();
     return Number.isFinite(started) && Number.isFinite(ended) ? formatDuration(ended - started) : "Not recorded";
   }
-  // "Some usage has unknown pricing" on its own gives a reader nothing to
-  // do about it. Naming the model does: it is exactly the catalog entry
-  // that is missing.
-  function unpricedNote(usage: { pricing_complete: boolean; unpriced_models?: string[] }): string {
-    if (usage.pricing_complete) return "";
+  // A tile has room for a number, not a sentence. The amount stands
+  // alone; that it is partial is a chip, and which model is missing a
+  // price is in the tooltip and the usage dialog - "no price for
+  // claude-sonnet-5" wrapped over three lines of a small card and still
+  // did not say what to do about it.
+  function unpricedTitle(usage: { pricing_complete: boolean; unpriced_models?: string[] }): string | undefined {
+    if (usage.pricing_complete) return undefined;
     const models = usage.unpriced_models ?? [];
-    if (models.length === 0) return " (partial - some usage has unknown pricing)";
-    return ` (partial - no price for ${models.join(", ")})`;
+    return models.length ? `No catalog price for ${models.join(", ")}` : "Some usage has unknown pricing";
   }
 
-  function formatCosts(usage: { estimated_costs: Record<string, number>; pricing_complete: boolean; unpriced_models?: string[] }): string {
+  function formatMoney(amount: number, currency: string): string {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency || "USD" }).format(amount);
+  }
+
+  function formatCosts(usage: { estimated_costs: Record<string, number> }): string {
     const entries = Object.entries(usage.estimated_costs ?? {});
-    const note = unpricedNote(usage);
-    if (entries.length === 0) return note ? `No estimate${note}` : "No estimate";
-    const formatted = entries
-      .map(([currency, amount]) => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount))
-      .join(" · ");
-    return `${formatted}${note}`;
+    if (entries.length === 0) return "No estimate";
+    return entries.map(([currency, amount]) => formatMoney(amount, currency)).join(" · ");
+  }
+
+  function formatTokens(value: number | undefined): string {
+    return (value ?? 0).toLocaleString();
   }
 
   const statusVariants: Record<string, BadgeVariant> = {
@@ -263,12 +268,23 @@
         {#if d.workflow}<MetricCard size="small" columns={3} label="Workflow" value={d.workflow.name || d.workflow.id} />{/if}
         <MetricCard size="small" columns={3} label="Estimated cost" value={formatCosts(d.usage)}>
           {#snippet cornerAction()}
-            <button type="button" aria-label="Cost detail" onclick={() => (costDetailOpen = true)}>
+            <span class="tile-actions" title={unpricedTitle(d.usage)}>
+              {#if !d.usage.pricing_complete}
+                <StatusBadge variant="warning" label="Partial" />
+              {/if}
+              <button type="button" aria-label="Usage detail" onclick={() => (usageDetailOpen = true)}>
+                <Icon name="info" size={16} />
+              </button>
+            </span>
+          {/snippet}
+        </MetricCard>
+        <MetricCard size="small" columns={3} label="Tokens" value={formatTokens(d.usage.total_tokens)}>
+          {#snippet cornerAction()}
+            <button type="button" aria-label="Token detail" onclick={() => (usageDetailOpen = true)}>
               <Icon name="info" size={16} />
             </button>
           {/snippet}
         </MetricCard>
-        <MetricCard size="small" columns={3} label="Tokens" value={(d.usage.input_tokens + d.usage.output_tokens).toLocaleString()} />
         <MetricCard size="small" columns={3} label="Tool calls" value={d.usage.tool_calls.toLocaleString()} />
         <MetricCard size="small" columns={3} label="Total projects" value={(d.projects ?? []).length} />
         <MetricCard size="small" columns={3} label="Total lanes" value={(d.lanes ?? []).length} />
@@ -486,13 +502,66 @@
 {/if}
 
 {#if detail}
-  <Dialog open={costDetailOpen} title="Estimated cost detail" onclose={() => (costDetailOpen = false)}>
+  <Dialog open={usageDetailOpen} title="Usage detail" onclose={() => (usageDetailOpen = false)}>
     <dl class="breakdown">
-      <dt>Tokens</dt><dd>{(detail.usage.input_tokens + detail.usage.output_tokens).toLocaleString()}</dd>
+      <dt>Total tokens</dt><dd>{formatTokens(detail.usage.total_tokens)}</dd>
+      <dt>Input</dt><dd>{formatTokens(detail.usage.input_tokens)}</dd>
+      <dt>Output</dt><dd>{formatTokens(detail.usage.output_tokens)}</dd>
+      <dt>Cache write</dt><dd>{formatTokens(detail.usage.cache_write_tokens)}</dd>
+      <dt>Cache read</dt><dd>{formatTokens(detail.usage.cache_read_tokens)}</dd>
       <dt>Estimated cost</dt><dd>{formatCosts(detail.usage)}</dd>
       <dt>Elapsed time</dt><dd>{formatDuration(detail.usage.elapsed_ms)}</dd>
       <dt>Tool calls</dt><dd>{detail.usage.tool_calls.toLocaleString()}</dd>
     </dl>
+    {#if unpricedTitle(detail.usage)}
+      <p class="muted">{unpricedTitle(detail.usage)}</p>
+    {/if}
+
+    {#if (detail.usage.by_model ?? []).length > 0}
+      <h3>By model</h3>
+      <div class="usage-scroll">
+        <table class="usage-table">
+          <thead>
+            <tr><th scope="col">Model</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Cache write</th><th scope="col">Cache read</th><th scope="col">Cost</th></tr>
+          </thead>
+          <tbody>
+            {#each detail.usage.by_model ?? [] as row (row.model)}
+              <tr>
+                <td>{row.model}</td>
+                <td>{formatTokens(row.input_tokens)}</td>
+                <td>{formatTokens(row.output_tokens)}</td>
+                <td>{formatTokens(row.cache_write_tokens)}</td>
+                <td>{formatTokens(row.cache_read_tokens)}</td>
+                <td>{row.priced ? formatMoney(row.estimated_cost ?? 0, row.currency ?? "USD") : "No price"}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+
+    {#if (detail.usage.by_session ?? []).length > 0}
+      <h3>By session</h3>
+      <div class="usage-scroll">
+        <table class="usage-table">
+          <thead>
+            <tr><th scope="col">Session</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Cache write</th><th scope="col">Cache read</th><th scope="col">Cost</th></tr>
+          </thead>
+          <tbody>
+            {#each detail.usage.by_session ?? [] as row (row.session_id)}
+              <tr>
+                <td>{row.participant || row.client_kind || row.session_id}</td>
+                <td>{formatTokens(row.input_tokens)}</td>
+                <td>{formatTokens(row.output_tokens)}</td>
+                <td>{formatTokens(row.cache_write_tokens)}</td>
+                <td>{formatTokens(row.cache_read_tokens)}</td>
+                <td>{row.priced ? formatMoney(row.estimated_cost ?? 0, row.currency ?? "USD") : "No price"}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
   </Dialog>
 {/if}
 
@@ -540,6 +609,37 @@
     margin: 0;
     font-weight: 600;
     text-align: right;
+  }
+  /* The chip and the info button share the tile's one corner slot. */
+  .tile-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  /* A wide table inside a dialog scrolls itself rather than widening the
+     dialog past the viewport. */
+  .usage-scroll {
+    overflow-x: auto;
+  }
+  .usage-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .usage-table th,
+  .usage-table td {
+    padding: 0.3rem 0.6rem;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .usage-table th:first-child,
+  .usage-table td:first-child {
+    text-align: left;
+  }
+  .usage-table th {
+    color: var(--color-text-muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--color-border);
   }
   .progress-block {
     border-left: 3px solid var(--color-accent);
