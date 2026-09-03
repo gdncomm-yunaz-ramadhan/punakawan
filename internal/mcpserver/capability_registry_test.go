@@ -14,7 +14,7 @@ func TestCapabilityRegistryMatchesRegistration(t *testing.T) {
 		"start_delivery", "start_delivery_session", "checkpoint_delivery_session",
 		"ingest_delivery_usage_snapshot", "finalize_delivery_session",
 		"report_delivery_usage", "report_delivery_progress", "assess_jira_delivery", "hydrate_jira_delivery",
-		"hydrate_github_pull_request", "propose_github_pr_review", "get_github_pr_review", "submit_github_pr_review", "map_delivery_work_item", "get_delivery",
+		"hydrate_github_pull_request", "create_github_pull_request", "propose_github_pr_review", "get_github_pr_review", "submit_github_pr_review", "map_delivery_work_item", "get_delivery",
 		"answer_delivery_question", "log_delivery_work", "retry_worklog_sync", "post_jira_comment",
 		"cancel_delivery", "complete_delivery_lane", "complete_delivery",
 	}
