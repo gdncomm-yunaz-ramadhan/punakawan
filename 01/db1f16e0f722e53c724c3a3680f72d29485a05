@@ -1,0 +1,31 @@
+internal/mcpserver/tools_jiracomment_test.go
+  41ce7875a8fd949a 1-140
+internal/mcpserver/tools_jiracomment.go
+  41ce7875a8fd949a 1-50
+internal/mcpserver/tools_public.go
+  41ce7875a8fd949a 48
+internal/jiraintegration/service_test.go
+  41ce7875a8fd949a 516-614
+internal/jiraintegration/service.go
+  41ce7875a8fd949a 247-306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "01db1f16e0f722e53c724c3a3680f72d29485a05",
+  "prompts": {
+    "41ce7875a8fd949a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "919e38cb-4f9a-4b81-b97a-db920d186545",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "ygrip <yunaz.gilang@gmail.com>",
+      "messages": [],
+      "total_additions": 938,
+      "total_deletions": 4,
+      "accepted_lines": 935,
+      "overriden_lines": 0
+    }
+  }
+}
